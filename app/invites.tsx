@@ -1,5 +1,6 @@
 import React from "react";
-import { Alert, FlatList, Share, StyleSheet, Text, View } from "react-native";
+import { FlatList, Share, StyleSheet, Text, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
@@ -27,7 +28,7 @@ export default function Invites() {
     mutationFn: createInvite,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["invites", userId] }),
     onError: (err) =>
-      Alert.alert("No invitations left", err instanceof Error ? err.message : String(err)),
+      showAlert("No invitations left", err instanceof Error ? err.message : String(err)),
   });
 
   const used = (invites.data ?? []).filter((i) => i.used_by).length;

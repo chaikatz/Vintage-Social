@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -62,7 +62,7 @@ export default function UserProfile() {
   const followed = followingQ.data ?? false;
 
   const reportMember = () => {
-    Alert.alert(profile.username, undefined, [
+    showAlert(profile.username, undefined, [
       {
         text: "Report member",
         style: "destructive",

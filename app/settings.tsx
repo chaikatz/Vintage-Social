@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
@@ -10,6 +11,7 @@ import { Button } from "@/components/Button";
 import { colors, radii, spacing, type } from "@/theme";
 import { updateOwnProfile } from "@/api/profiles";
 import { mediaUrl, prepareAvatar, uploadFile } from "@/api/media";
+import { isDemoMode } from "@/lib/env";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
 
@@ -42,7 +44,9 @@ export default function Settings() {
     setBusy(true);
     try {
       let avatarPath: string | undefined;
-      if (newAvatarUri) {
+      if (newAvatarUri && isDemoMode()) {
+        avatarPath = newAvatarUri; // demo mode: keep the local uri, no upload
+      } else if (newAvatarUri) {
         const prepared = await prepareAvatar(newAvatarUri);
         avatarPath = await uploadFile("avatars", `${userId}/avatar.jpg`, prepared.uri, "image/jpeg");
       }
@@ -56,7 +60,7 @@ export default function Settings() {
       queryClient.invalidateQueries();
       router.back();
     } catch (err) {
-      Alert.alert("Couldn’t save", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t save", err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -89,7 +93,7 @@ export default function Settings() {
         title="Sign out"
         variant="danger"
         onPress={() =>
-          Alert.alert("Sign out?", undefined, [
+          showAlert("Sign out?", undefined, [
             { text: "Sign out", style: "destructive", onPress: signOut },
             { text: "Cancel", style: "cancel" },
           ])

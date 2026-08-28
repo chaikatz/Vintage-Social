@@ -1,7 +1,11 @@
 import { supabase } from "@/lib/supabase";
+import { isDemoMode } from "@/lib/env";
+import * as demo from "@/demo/store";
 import type { ActivityWithRefs } from "@/types/db";
 
 export async function fetchActivity(userId: string): Promise<ActivityWithRefs[]> {
+  if (isDemoMode()) return demo.demoFetchActivity(userId);
+
   const { data, error } = await supabase
     .from("activity")
     .select(
@@ -16,6 +20,10 @@ export async function fetchActivity(userId: string): Promise<ActivityWithRefs[]>
 }
 
 export async function markActivityRead(userId: string): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoMarkActivityRead(userId);
+    return;
+  }
   const { error } = await supabase
     .from("activity")
     .update({ read_at: new Date().toISOString() })

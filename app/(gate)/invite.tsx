@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Alert, StyleSheet, Text } from "react-native";
+import { StyleSheet, Text } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useRouter } from "expo-router";
 import { Screen } from "@/components/Screen";
 import { TextField } from "@/components/TextField";
@@ -54,7 +55,7 @@ export default function Invite() {
       await refreshProfile();
       router.replace("/");
     } catch (err) {
-      Alert.alert("Couldn’t join", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }

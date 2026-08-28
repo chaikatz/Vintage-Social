@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import * as ImageManipulator from "expo-image-manipulator";
 import { File } from "expo-file-system";
 import { decode } from "base64-arraybuffer";
@@ -61,20 +62,29 @@ export async function uploadFile(
   localUri: string,
   contentType: string,
 ): Promise<string> {
-  const base64 = await new File(localUri).base64();
+  let body: ArrayBuffer;
+  if (Platform.OS === "web") {
+    // expo-file-system's File API is native-only; browsers read blob/data
+    // uris through fetch.
+    body = await (await fetch(localUri)).arrayBuffer();
+  } else {
+    const base64 = await new File(localUri).base64();
+    body = decode(base64);
+  }
   const { error } = await supabase.storage
     .from(bucket)
-    .upload(path, decode(base64), { contentType, upsert: true });
+    .upload(path, body, { contentType, upsert: true });
   if (error) throw error;
   return path;
 }
 
 /**
- * Resolve a stored media path to a display URL. Seed data uses absolute
- * https URLs; real uploads store bucket-relative paths.
+ * Resolve a stored media path to a display URL. Seed/demo data uses
+ * absolute URLs (https, blob:, data:); real uploads store bucket-relative
+ * paths.
  */
 export function mediaUrl(bucket: Bucket, path: string | null): string | null {
   if (!path) return null;
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (/^(https?:|blob:|data:|file:)/.test(path)) return path;
   return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }

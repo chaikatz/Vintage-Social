@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Alert, FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, StyleSheet, Text, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -36,7 +37,7 @@ export default function AdminReports() {
       await resolveReport(report.id, "resolved", "Content removed");
     },
     onSuccess: refresh,
-    onError: (err) => Alert.alert("Action failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Action failed", err instanceof Error ? err.message : String(err)),
   });
 
   const openTarget = (report: ReportWithRefs) => {

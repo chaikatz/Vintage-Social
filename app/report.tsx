@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
@@ -40,11 +41,11 @@ export default function Report() {
         reason,
         details,
       });
-      Alert.alert("Thank you", "An admin will take a look.", [
+      showAlert("Thank you", "An admin will take a look.", [
         { text: "Done", onPress: () => router.back() },
       ]);
     } catch (err) {
-      Alert.alert("Couldn’t send report", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t send report", err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }

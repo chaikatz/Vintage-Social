@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabase";
+import { isDemoMode } from "@/lib/env";
+import * as demo from "@/demo/store";
 import type { CommentWithAuthor, PostRow, PostWithAuthor } from "@/types/db";
 
 export const FEED_PAGE_SIZE = 12;
@@ -10,6 +12,8 @@ const POST_WITH_AUTHOR = "*, author:profiles!posts_author_id_fkey(id, username, 
  * (plus their own posts). No ranking, no suggestions.
  */
 export async function fetchFeedPage(userId: string, page: number): Promise<PostWithAuthor[]> {
+  if (isDemoMode()) return demo.demoFetchFeedPage(userId, page, FEED_PAGE_SIZE);
+
   const { data: follows, error: followErr } = await supabase
     .from("follows")
     .select("followee_id")
@@ -31,6 +35,8 @@ export async function fetchFeedPage(userId: string, page: number): Promise<PostW
 }
 
 export async function fetchUserPosts(authorId: string): Promise<PostRow[]> {
+  if (isDemoMode()) return demo.demoFetchUserPosts(authorId);
+
   const { data, error } = await supabase
     .from("posts")
     .select("*")
@@ -42,6 +48,8 @@ export async function fetchUserPosts(authorId: string): Promise<PostRow[]> {
 }
 
 export async function fetchPost(postId: string): Promise<PostWithAuthor | null> {
+  if (isDemoMode()) return demo.demoFetchPost(postId);
+
   const { data, error } = await supabase
     .from("posts")
     .select(POST_WITH_AUTHOR)
@@ -66,11 +74,19 @@ export interface NewPost {
 }
 
 export async function createPost(post: NewPost): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoCreatePost(post);
+    return;
+  }
   const { error } = await supabase.from("posts").insert(post);
   if (error) throw error;
 }
 
 export async function deleteOwnPost(postId: string): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoDeletePost(postId);
+    return;
+  }
   const { error } = await supabase.from("posts").delete().eq("id", postId);
   if (error) throw error;
 }
@@ -78,6 +94,8 @@ export async function deleteOwnPost(postId: string): Promise<void> {
 /** Which of these posts has the viewer liked? Returns a set of post ids. */
 export async function fetchMyLikes(userId: string, postIds: string[]): Promise<Set<string>> {
   if (postIds.length === 0) return new Set();
+  if (isDemoMode()) return demo.demoFetchMyLikes(userId, postIds);
+
   const { data, error } = await supabase
     .from("likes")
     .select("post_id")
@@ -88,11 +106,19 @@ export async function fetchMyLikes(userId: string, postIds: string[]): Promise<S
 }
 
 export async function likePost(userId: string, postId: string): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoLike(userId, postId);
+    return;
+  }
   const { error } = await supabase.from("likes").insert({ post_id: postId, user_id: userId });
   if (error && error.code !== "23505") throw error; // ignore double-like races
 }
 
 export async function unlikePost(userId: string, postId: string): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoUnlike(userId, postId);
+    return;
+  }
   const { error } = await supabase
     .from("likes")
     .delete()
@@ -102,6 +128,8 @@ export async function unlikePost(userId: string, postId: string): Promise<void> 
 }
 
 export async function fetchComments(postId: string): Promise<CommentWithAuthor[]> {
+  if (isDemoMode()) return demo.demoFetchComments(postId);
+
   const { data, error } = await supabase
     .from("comments")
     .select("*, author:profiles!comments_author_id_fkey(id, username, avatar_url)")
@@ -113,6 +141,10 @@ export async function fetchComments(postId: string): Promise<CommentWithAuthor[]
 }
 
 export async function addComment(userId: string, postId: string, body: string): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoAddComment(userId, postId, body.trim());
+    return;
+  }
   const { error } = await supabase
     .from("comments")
     .insert({ post_id: postId, author_id: userId, body: body.trim() });
@@ -120,6 +152,10 @@ export async function addComment(userId: string, postId: string, body: string): 
 }
 
 export async function deleteOwnComment(commentId: string): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoDeleteComment(commentId);
+    return;
+  }
   const { error } = await supabase.from("comments").delete().eq("id", commentId);
   if (error) throw error;
 }

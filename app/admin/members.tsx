@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Alert, FlatList, Platform, StyleSheet, TextInput, View } from "react-native";
+import { FlatList, StyleSheet, TextInput, View } from "react-native";
+import { showAlert, showPrompt } from "@/utils/alert";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -28,38 +29,29 @@ export default function AdminMembers() {
 
   const warn = useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) => warnMember(id, note),
-    onSuccess: () => Alert.alert("Warning sent"),
-    onError: (err) => Alert.alert("Failed", err instanceof Error ? err.message : String(err)),
+    onSuccess: () => showAlert("Warning sent"),
+    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
   });
 
   const suspend = useMutation({
     mutationFn: ({ id, suspended, note }: { id: string; suspended: boolean; note: string }) =>
       setSuspension(id, suspended, note),
     onSuccess: refresh,
-    onError: (err) => Alert.alert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
   });
 
   const promptWarn = (member: ProfileRow) => {
-    if (Platform.OS === "ios") {
-      Alert.prompt(
-        `Warn ${member.username}`,
-        "The member sees this note in their activity.",
-        (note) => {
-          if (note?.trim()) warn.mutate({ id: member.id, note: note.trim() });
-        },
-      );
-    } else {
-      // Alert.prompt is iOS-only; elsewhere send the standard note.
-      warn.mutate({
-        id: member.id,
-        note: "Please keep VINTAGE quiet and personal — this is a gentle warning from the admins.",
-      });
-    }
+    showPrompt(
+      `Warn ${member.username}`,
+      "The member sees this note in their activity.",
+      (note) => warn.mutate({ id: member.id, note }),
+      "Please keep VINTAGE quiet and personal — this is a gentle warning from the admins.",
+    );
   };
 
   const toggleSuspension = (member: ProfileRow) => {
     const suspending = member.status !== "suspended";
-    Alert.alert(
+    showAlert(
       suspending ? `Suspend ${member.username}?` : `Reinstate ${member.username}?`,
       suspending
         ? "They will lose access until reinstated. This is a human decision — make it carefully."

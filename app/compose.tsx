@@ -1,6 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { showAlert } from "@/utils/alert";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -21,6 +21,7 @@ import { colors, radii, spacing, type } from "@/theme";
 import { FILTERS, FilteredImage, getFilter } from "@/filters";
 import type { FilteredImageHandle } from "@/filters";
 import { prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
+import { isDemoMode } from "@/lib/env";
 import { createPost } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_CAPTION_LENGTH } from "@/utils/validation";
@@ -74,7 +75,12 @@ export default function Compose() {
       let finalWidth = width;
       let finalHeight = height;
 
-      if (isVideo) {
+      if (isDemoMode()) {
+        // Demo mode (browser review): nothing uploads. The original local
+        // uri is stored and, like every demo post, the chosen filter is
+        // applied at display time — so the new post matches the feed.
+        mediaPath = uri;
+      } else if (isVideo) {
         const ext = uri.split(".").pop()?.toLowerCase() ?? "mp4";
         mediaPath = await uploadFile("media", `${userId}/${postId}.${ext}`, uri, `video/${ext === "mov" ? "quicktime" : "mp4"}`);
         try {
@@ -114,7 +120,7 @@ export default function Compose() {
       router.dismissAll();
       router.replace("/(tabs)");
     } catch (err) {
-      Alert.alert("Couldn’t publish", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t publish", err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }

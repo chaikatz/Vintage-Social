@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { Alert, FlatList, StyleSheet } from "react-native";
+import { FlatList, StyleSheet } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useRouter } from "expo-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -67,7 +68,7 @@ export default function Home() {
   const onMore = useCallback(
     (post: PostWithAuthor) => {
       if (post.author_id === userId) {
-        Alert.alert("Your post", undefined, [
+        showAlert("Your post", undefined, [
           {
             text: "Delete post",
             style: "destructive",
@@ -79,7 +80,7 @@ export default function Home() {
           { text: "Cancel", style: "cancel" },
         ]);
       } else {
-        Alert.alert(post.author.username, undefined, [
+        showAlert(post.author.username, undefined, [
           {
             text: "Report post",
             style: "destructive",

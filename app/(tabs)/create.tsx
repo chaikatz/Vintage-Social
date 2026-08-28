@@ -1,5 +1,6 @@
 import React from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import Feather from "@expo/vector-icons/Feather";
@@ -38,7 +39,7 @@ export default function Create() {
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     if (mediaType === "video" && asset.duration != null && asset.duration > (MAX_VIDEO_SECONDS + 1) * 1000) {
-      Alert.alert("Too long", `Videos on VINTAGE are at most ${MAX_VIDEO_SECONDS} seconds.`);
+      showAlert("Too long", `Videos on VINTAGE are at most ${MAX_VIDEO_SECONDS} seconds.`);
       return;
     }
     openCompose(asset, mediaType);
@@ -69,6 +70,8 @@ export default function Create() {
         </View>
       </Pressable>
 
+      {/* The camera is a native affordance; browser review uses the library picker. */}
+      {Platform.OS !== "web" ? (
       <Pressable style={styles.option} onPress={takePhoto}>
         <Feather name="camera" size={22} color={colors.ink} />
         <View style={styles.optionText}>
@@ -76,6 +79,7 @@ export default function Create() {
           <Text style={styles.optionSub}>Take one now</Text>
         </View>
       </Pressable>
+      ) : null}
 
       <Pressable style={styles.option} onPress={() => pick("video")}>
         <Feather name="film" size={22} color={colors.ink} />

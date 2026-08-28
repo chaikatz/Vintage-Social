@@ -2,7 +2,7 @@ import "react-native-url-polyfill/auto";
 import { createClient } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 import { AppState, Platform } from "react-native";
-import { requireEnv } from "./env";
+import { isDemoMode, requireEnv } from "./env";
 import type { Database } from "@/types/db";
 
 /**
@@ -16,7 +16,12 @@ const secureStoreAdapter = {
   removeItem: (key: string) => SecureStore.deleteItemAsync(key),
 };
 
-const { supabaseUrl, supabaseAnonKey } = requireEnv();
+// In demo mode (browser review without a backend) no request ever reaches
+// this client — the api layer branches into src/demo first — but the client
+// must still construct, so it gets inert placeholder credentials.
+const { supabaseUrl, supabaseAnonKey } = isDemoMode()
+  ? { supabaseUrl: "https://demo.invalid", supabaseAnonKey: "demo-anon-key" }
+  : requireEnv();
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {

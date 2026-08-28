@@ -12,7 +12,7 @@ visible AI features — on purpose.
 
 | Layer | Choice |
 | --- | --- |
-| App | Expo SDK 57 · React Native 0.86 · TypeScript (strict) |
+| App | Expo SDK 57 · React Native 0.86 · TypeScript (strict) · iOS-first, browser-reviewable |
 | Navigation | expo-router (file-based: gate → tabs) |
 | Data | Supabase — Postgres, Auth, Storage, RLS |
 | Client data | @tanstack/react-query |
@@ -30,7 +30,8 @@ app/                    expo-router routes
   post/[id].tsx         post detail + comments
   user/[username].tsx   member profiles
 src/
-  api/                  supabase queries & rpc wrappers
+  api/                  supabase queries & rpc wrappers (demo-mode aware)
+  demo/                 in-memory demo backend for browser review builds
   components/           reusable UI (PostCard, PhotoGrid, Avatar, …)
   filters/              the VINTAGE filter engine (see below)
   providers/            session/membership context
@@ -43,7 +44,76 @@ supabase/
   config.toml           local dev config (email confirmations off)
 ```
 
-## Getting started
+## Browser review (web preview)
+
+iOS is the source of truth; the web build exists so the current UI can be
+reviewed in a browser. When no Supabase credentials are configured (or
+`EXPO_PUBLIC_DEMO_MODE=1` is set), the app runs in **demo mode** against an
+in-memory data layer with the same fictional membership as `seed.sql` —
+zero backend required.
+
+### Local web preview
+
+```bash
+npm install
+npx expo start --web
+```
+
+That's it — with no `.env` present it boots straight into demo mode.
+On the landing screen: any email/password signs in as a member
+(elena.marchetti); an email containing `admin` (e.g. `admin@vintage.club`)
+opens the admin dashboard. The application and invite flows, feed, likes,
+comments, follows, search, activity, posting, reporting and moderation all
+work against the demo store. State resets on refresh (the signed-in demo
+user survives via sessionStorage).
+
+To preview the web app against a real Supabase backend instead, fill in
+`.env` — demo mode switches off automatically.
+
+### Deploying to Vercel
+
+`vercel.json` is committed, so no manual settings are needed:
+
+```bash
+npx vercel        # preview deploy
+npx vercel --prod # production
+```
+
+Or connect the repo in the Vercel dashboard — the config is picked up
+automatically. If you ever configure it by hand, the settings are:
+
+- **Framework preset:** Other
+- **Install command:** `npm install`
+- **Build command:** `npx expo export --platform web`
+- **Output directory:** `dist`
+- **Rewrite:** `/(.*)` → `/index.html` (SPA fallback)
+
+Deploy with no environment variables for the demo-mode review site, or set
+`EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` in Vercel to
+point the web build at a real backend.
+
+### What's mocked or degraded on web
+
+Native functionality is untouched — these fallbacks apply only to web
+builds, and most only to demo mode:
+
+- **Data & auth (demo mode):** in-memory store instead of Supabase; any
+  credentials sign in; invite codes only need the right shape; nothing
+  persists across refresh.
+- **Filters:** the GL shader pipeline is replaced by a CSS approximation
+  (`src/filters/cssFilter.ts`) for previews and display — close, not
+  pixel-identical; grain is omitted on web. In demo mode filters are
+  applied at display time (the placeholder photos are unfiltered).
+- **Publish bake:** on web the "baked" image comes from a canvas render of
+  the CSS approximation, not the GL snapshot.
+- **Camera:** hidden on web (library picking works, including for the
+  compose flow).
+- **Video thumbnails:** not generated on web; the grid falls back to the
+  raw media.
+- **Dialogs:** native action sheets become `window.confirm`/`prompt`.
+- **Haptics:** no-op.
+
+## Getting started (iOS + Supabase)
 
 ### 1. Backend (Supabase)
 

@@ -1,12 +1,22 @@
 import React from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { colors } from "@/theme";
 import { mediaUrl } from "@/api/media";
-import { filterSupportsDateStamp } from "@/filters";
+import { isDemoMode } from "@/lib/env";
+import { filterSupportsDateStamp, getFilter } from "@/filters";
+import { cssFilterFor } from "@/filters/cssFilter";
 import { DateStamp } from "./DateStamp";
 import type { PostRow } from "@/types/db";
+
+/**
+ * On iOS the filter is baked into the uploaded JPEG, so feeds show media
+ * as stored. In browser demo mode the placeholder photos are unfiltered,
+ * so the stored filter_id is applied at display time with the CSS
+ * approximation — the feed reads the way it would with real baked media.
+ */
+const APPLY_DISPLAY_FILTER = Platform.OS === "web" && isDemoMode();
 
 interface Props {
   post: Pick<
@@ -55,10 +65,28 @@ export function PostMedia({ post, onDoubleTap }: Props) {
   }
 
   const url = mediaUrl("media", post.media_path);
+  const web = APPLY_DISPLAY_FILTER ? cssFilterFor(getFilter(post.filter_id)) : null;
   return (
     <Pressable onPress={handlePress} style={[styles.media, { aspectRatio: ratio }]}>
       {url ? (
-        <Image source={{ uri: url }} style={StyleSheet.absoluteFill} contentFit="cover" transition={120} />
+        <Image
+          source={{ uri: url }}
+          style={[StyleSheet.absoluteFill, web ? ({ filter: web.filter } as object) : null]}
+          contentFit="cover"
+          transition={120}
+        />
+      ) : null}
+      {web?.fadeOverlay ? (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: web.fadeOverlay }]} />
+      ) : null}
+      {web?.tintOverlay ? (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: web.tintOverlay }]} />
+      ) : null}
+      {web?.vignetteBoxShadow ? (
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { boxShadow: web.vignetteBoxShadow } as object]}
+        />
       ) : null}
       {stamp}
     </Pressable>

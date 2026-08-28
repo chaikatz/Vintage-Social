@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { showAlert } from "@/utils/alert";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
@@ -91,7 +91,7 @@ export default function PostDetail() {
 
   const onMore = () => {
     if (post.author_id === userId) {
-      Alert.alert("Your post", undefined, [
+      showAlert("Your post", undefined, [
         {
           text: "Delete post",
           style: "destructive",
@@ -105,7 +105,7 @@ export default function PostDetail() {
         { text: "Cancel", style: "cancel" },
       ]);
     } else {
-      Alert.alert(post.author.username, undefined, [
+      showAlert(post.author.username, undefined, [
         {
           text: "Report post",
           style: "destructive",
@@ -120,7 +120,7 @@ export default function PostDetail() {
   const onCommentLongPress = (comment: CommentWithAuthor) => {
     const own = comment.author_id === userId;
     if (own || isAdmin) {
-      Alert.alert("Comment", undefined, [
+      showAlert("Comment", undefined, [
         {
           text: own ? "Delete comment" : "Remove comment (admin)",
           style: "destructive",
@@ -133,7 +133,7 @@ export default function PostDetail() {
         { text: "Cancel", style: "cancel" },
       ]);
     } else {
-      Alert.alert("Comment", undefined, [
+      showAlert("Comment", undefined, [
         {
           text: "Report comment",
           style: "destructive",

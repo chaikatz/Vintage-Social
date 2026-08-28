@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/components/Button";
 import { colors, spacing, type } from "@/theme";
+import { isDemoMode } from "@/lib/env";
 
 export default function Landing() {
   const router = useRouter();
@@ -31,6 +32,11 @@ export default function Landing() {
           onPress={() => router.push("/(gate)/sign-in")}
           style={styles.gap}
         />
+        {isDemoMode() ? (
+          <Text style={styles.demoNote}>
+            Browser review build · demo data · any sign-in works
+          </Text>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -55,4 +61,11 @@ const styles = StyleSheet.create({
   },
   actions: { paddingBottom: spacing.xl },
   gap: { marginTop: spacing.md },
+  demoNote: {
+    ...type.caption,
+    fontSize: 11,
+    textAlign: "center",
+    color: colors.inkFaint,
+    marginTop: spacing.lg,
+  },
 });

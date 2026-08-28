@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabase";
+import { isDemoMode } from "@/lib/env";
+import * as demo from "@/demo/store";
 import { prepareAvatar, uploadFile } from "./media";
 import { normalizeUsername } from "@/utils/validation";
 import type { ApplicationRow, InviteRow } from "@/types/db";
@@ -6,7 +8,7 @@ import type { ApplicationRow, InviteRow } from "@/types/db";
 /**
  * Membership flows. New accounts are created in `applied` status by a
  * database trigger; only an admin decision or a valid invite moves them to
- * `approved`.
+ * `approved`. In demo mode the same flows run against the in-memory store.
  */
 
 export interface ApplicationInput {
@@ -22,6 +24,8 @@ export interface ApplicationInput {
 }
 
 export async function checkUsernameAvailable(username: string): Promise<boolean> {
+  if (isDemoMode()) return demo.demoUsernameAvailable(normalizeUsername(username));
+
   const { data, error } = await supabase.rpc("username_available", {
     p_username: normalizeUsername(username),
   });
@@ -44,6 +48,19 @@ async function signUp(email: string, password: string, username: string, fullNam
 }
 
 export async function submitApplication(input: ApplicationInput): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoSubmitApplication({
+      fullName: input.fullName.trim(),
+      desiredUsername: normalizeUsername(input.desiredUsername),
+      avatarUri: input.avatarUri,
+      socialHandle: input.socialHandle.trim(),
+      city: input.city.trim(),
+      inviter: input.inviter.trim(),
+      reason: input.reason.trim(),
+    });
+    return;
+  }
+
   const user = await signUp(input.email, input.password, input.desiredUsername, input.fullName);
 
   let avatarPath: string | null = null;
@@ -76,6 +93,14 @@ export interface InviteSignupInput {
 
 /** Create an account and redeem an invite in one flow → instant approval. */
 export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
+  if (isDemoMode()) {
+    demo.demoJoinWithInvite({
+      fullName: input.fullName.trim(),
+      desiredUsername: normalizeUsername(input.desiredUsername),
+    });
+    return;
+  }
+
   await signUp(input.email, input.password, input.desiredUsername, input.fullName);
   const { data, error } = await supabase.rpc("redeem_invite", { p_code: input.code });
   if (error) throw error;
@@ -83,6 +108,8 @@ export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
 }
 
 export async function fetchMyApplication(userId: string): Promise<ApplicationRow | null> {
+  if (isDemoMode()) return demo.demoFetchMyApplication(userId);
+
   const { data, error } = await supabase
     .from("applications")
     .select("*")
@@ -95,6 +122,8 @@ export async function fetchMyApplication(userId: string): Promise<ApplicationRow
 }
 
 export async function fetchMyInvites(userId: string): Promise<InviteRow[]> {
+  if (isDemoMode()) return demo.demoFetchMyInvites(userId);
+
   const { data, error } = await supabase
     .from("invites")
     .select("*")
@@ -106,6 +135,8 @@ export async function fetchMyInvites(userId: string): Promise<InviteRow[]> {
 
 /** Mint a new invite code, limited server-side by the member's quota. */
 export async function createInvite(): Promise<string> {
+  if (isDemoMode()) return demo.demoCreateInvite();
+
   const { data, error } = await supabase.rpc("create_invite", {});
   if (error) throw error;
   return data as string;

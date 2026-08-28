@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
@@ -69,7 +70,7 @@ export default function Apply() {
       });
       router.replace("/(gate)/pending");
     } catch (err) {
-      Alert.alert("Application failed", err instanceof Error ? err.message : String(err));
+      showAlert("Application failed", err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }

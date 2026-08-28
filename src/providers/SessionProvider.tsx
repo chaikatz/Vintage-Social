@@ -8,6 +8,8 @@ import React, {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { isDemoMode } from "@/lib/env";
+import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
 
 interface SessionState {
@@ -18,13 +20,48 @@ interface SessionState {
   profileLoaded: boolean;
   isAdmin: boolean;
   isApprovedMember: boolean;
+  /** True when running against the in-memory demo backend (browser review). */
+  isDemo: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
 
-export function SessionProvider({ children }: { children: React.ReactNode }) {
+/** A minimal fake Session so route gates behave identically in demo mode. */
+function demoSession(profile: ProfileRow): Session {
+  return {
+    access_token: "demo",
+    refresh_token: "demo",
+    token_type: "bearer",
+    expires_in: 3600,
+    user: { id: profile.id, aud: "demo", created_at: profile.created_at },
+  } as unknown as Session;
+}
+
+function DemoSessionProvider({ children }: { children: React.ReactNode }) {
+  const [profile, setProfile] = useState<ProfileRow | null>(() => demoCurrentProfile());
+
+  useEffect(() => demoSubscribe(() => setProfile(demoCurrentProfile())), []);
+
+  const value = useMemo<SessionState>(
+    () => ({
+      session: profile ? demoSession(profile) : null,
+      profile,
+      profileLoaded: true,
+      isAdmin: profile?.role === "admin",
+      isApprovedMember: profile?.status === "approved",
+      isDemo: true,
+      refreshProfile: async () => setProfile(demoCurrentProfile()),
+      signOut: async () => demoSignOut(),
+    }),
+    [profile],
+  );
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+}
+
+function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
@@ -69,6 +106,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       profileLoaded,
       isAdmin: profile?.role === "admin",
       isApprovedMember: profile?.status === "approved",
+      isDemo: false,
       refreshProfile,
       signOut,
     }),
@@ -76,6 +114,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+}
+
+export function SessionProvider({ children }: { children: React.ReactNode }) {
+  if (isDemoMode()) return <DemoSessionProvider>{children}</DemoSessionProvider>;
+  return <SupabaseSessionProvider>{children}</SupabaseSessionProvider>;
 }
 
 export function useSession(): SessionState {
