@@ -1,0 +1,35 @@
+# Supabase local development configuration for VINTAGE.
+# Used by `npx supabase start` / `npx supabase db reset`.
+
+project_id = "vintage"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+
+[db]
+port = 54322
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+file_size_limit = "100MiB"
+
+[auth]
+enabled = true
+site_url = "vintage://"
+additional_redirect_urls = ["vintage://"]
+# Members sign in with email + password. Confirmations are disabled so the
+# demo application flow works without an SMTP server; enable them (and
+# configure SMTP) before any real deployment.
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+double_confirm_changes = false
