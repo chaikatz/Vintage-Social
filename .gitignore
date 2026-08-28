@@ -34,6 +34,11 @@ yarn-error.*
 .env
 .env*.local
 
+# EAS / Apple credentials — never commit these
+credentials.json
+*.ipa
+*.app.tar.gz
+
 # supabase local state
 supabase/.temp/
 supabase/.branches/

@@ -113,6 +113,63 @@ builds, and most only to demo mode:
 - **Dialogs:** native action sheets become `window.confirm`/`prompt`.
 - **Haptics:** no-op.
 
+## Running on a real iPhone (EAS development build)
+
+The repo is configured for EAS development builds (`eas.json`, profile
+`development`), so the actual VINTAGE app — with the GL filter pipeline and
+all native modules — runs on-device without Expo Go. The build installs a
+development client; JS is served live from your machine.
+
+One-time founder setup, command by command:
+
+```bash
+# 1. Log into Expo/EAS (creates a free account if you don't have one)
+npx eas-cli login
+
+# 2. Link this project to your Expo account (writes the projectId into app.json)
+npx eas-cli init
+
+# 3. Register your iPhone (opens a link/QR — open it ON the phone,
+#    install the provisioning profile it offers)
+npx eas-cli device:create
+
+# 4. Build the development app (EAS asks to log into your Apple Developer
+#    account the first time and generates certificates for you — say yes)
+npx eas-cli build --platform ios --profile development
+
+# 5. Install: when the build finishes, scan the QR code the CLI prints
+#    (or open the build link from expo.dev) on your iPhone and tap Install.
+
+# 6. Run it: start the dev server, then open the VINTAGE app on the phone —
+#    it connects to this server (same Wi-Fi network)
+npx expo start --dev-client
+```
+
+After the first build you only ever repeat step 6 for day-to-day work;
+rebuild (step 4) only when native dependencies or app config change.
+
+Notes:
+
+- **Apple Developer account** — a paid membership
+  (developer.apple.com/programs) is required for on-device builds. EAS
+  manages certificates and provisioning profiles on its servers; nothing
+  is stored in this repo.
+- **Bundle identifier** — `club.vintage.app` is a valid placeholder and
+  fine for development. Before production, confirm it's the identifier
+  you want (it becomes permanent once an app ships to the App Store) —
+  change it in `app.json` under `ios.bundleIdentifier` *before* your
+  first build if not, since EAS registers it with Apple.
+- **Backend on device** — the dev client loads JS from your machine, so
+  your local `.env` decides: absent → demo mode; filled in → your
+  Supabase project. No environment variables need to be configured in
+  EAS for development builds.
+- **No secrets in the repo** — `.gitignore` excludes `.env`,
+  `credentials.json` and signing artifacts; keep it that way.
+- `eas.json` also defines `development-simulator` (Xcode simulator
+  build), `preview` (installable release-mode build for testers) and
+  `production` (App Store build, `autoIncrement`). Nothing submits to
+  Apple unless you run `eas submit` yourself.
+
 ## Getting started (iOS + Supabase)
 
 ### 1. Backend (Supabase)
@@ -246,9 +303,10 @@ this repo:
    `supabase/config.toml` so the demo works without a mail server. Before
    production: configure SMTP in Supabase Auth and re-enable
    confirmations.
-3. **Apple credentials** — an Apple Developer account, bundle id
-   (`club.vintage.app` is a placeholder) and EAS setup (`npx eas init`,
-   `eas build`) for TestFlight/App Store builds. Camera/photo/microphone
+3. **Apple credentials** — an Apple Developer account for on-device and
+   App Store builds. EAS is already configured (`eas.json`); see
+   "Running on a real iPhone" above. `club.vintage.app` is a placeholder
+   bundle id — confirm it before your first build. Camera/photo/microphone
    usage strings are already configured in `app.json`.
 4. **App icon & splash** — `assets/` still contains Expo template art;
    replace with VINTAGE marks before shipping.
