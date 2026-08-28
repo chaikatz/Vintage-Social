@@ -154,7 +154,7 @@ Notes:
   (developer.apple.com/programs) is required for on-device builds. EAS
   manages certificates and provisioning profiles on its servers; nothing
   is stored in this repo.
-- **Bundle identifier** — `club.vintage.app` is a valid placeholder and
+- **Bundle identifier** — `com.vintage.social` is valid and
   fine for development. Before production, confirm it's the identifier
   you want (it becomes permanent once an app ships to the App Store) —
   change it in `app.json` under `ios.bundleIdentifier` *before* your
@@ -305,8 +305,8 @@ this repo:
    confirmations.
 3. **Apple credentials** — an Apple Developer account for on-device and
    App Store builds. EAS is already configured (`eas.json`); see
-   "Running on a real iPhone" above. `club.vintage.app` is a placeholder
-   bundle id — confirm it before your first build. Camera/photo/microphone
+   "Running on a real iPhone" above. The iOS bundle id is
+   `com.vintage.social` — confirm it before your first build. Camera/photo/microphone
    usage strings are already configured in `app.json`.
 4. **App icon & splash** — `assets/` still contains Expo template art;
    replace with VINTAGE marks before shipping.

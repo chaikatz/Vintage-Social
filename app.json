@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "club.vintage.app",
+      "bundleIdentifier": "com.vintage.social",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "VINTAGE needs access to your photo library so you can share photographs.",
         "NSCameraUsageDescription": "VINTAGE needs camera access so you can take photographs to share.",
