@@ -139,6 +139,16 @@ describe("demo media is bundled, not remote", () => {
     }
   });
 
+  it("keeps the two short-video posts (video lives in the same feed)", () => {
+    const videos = DEMO_POSTS.filter((p) => p.media_type === "video");
+    expect(videos).toHaveLength(2);
+    for (const v of videos) {
+      expect(v.media_path).toMatch(/^https:/);
+      expect(v.duration_seconds).toBeGreaterThan(0);
+      expect(v.thumb_path?.startsWith("demo:")).toBe(true);
+    }
+  });
+
   it("no fixture references an image host", () => {
     const blob = JSON.stringify([DEMO_POSTS, DEMO_PROFILES]);
     expect(blob).not.toContain("picsum.photos");
