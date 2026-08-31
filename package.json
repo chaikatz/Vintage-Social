@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "phone": "expo start --go --tunnel"
+    "phone": "expo start --go",
+    "phone:tunnel": "expo start --go --tunnel"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

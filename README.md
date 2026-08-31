@@ -29,9 +29,11 @@ Sign in with any email and password — use one containing `admin`
 the bundled demo world: 13 fictional members, 31 photographs, working
 feed, likes, comments, follows, posting and moderation.
 
-`npm run phone` uses a tunnel, so your phone and computer don't need to be
-on the same Wi-Fi. On the same network, plain `npx expo start --go` is
-faster.
+`npm run phone` serves over your local network, so keep the phone and the
+computer on the same Wi-Fi. If they can't be — a locked-down network, a
+remote machine — `npm run phone:tunnel` routes through ngrok instead. The
+tunnel is slower and needs outbound access to ngrok, which some networks
+and sandboxes block outright.
 
 This is the real native app — the GL filter pipeline, haptics, iOS scroll
 physics, the system photo picker. Go to the **+** tab, pick a photo from
@@ -49,9 +51,10 @@ runs only one SDK version at a time.
 **`command not found: npm`** — Node isn't installed. Get the LTS installer
 from nodejs.org, run it, then reopen Terminal.
 
-**The QR code won't connect** — `npm run phone` uses a tunnel, which works
-across different networks. If it still fails, try `npx expo start --go` on
-the same Wi-Fi as your phone.
+**The QR code won't connect** — check the phone and the computer are on the
+same Wi-Fi. If they can't be, use `npm run phone:tunnel`; if *that* fails
+with "ngrok tunnel took too long to connect," the network is blocking
+ngrok and there is no way around it from that machine.
 
 **Nothing loads / stale screen** — press `r` in the terminal to reload, or
 force-close Expo Go and scan again.
