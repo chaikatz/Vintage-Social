@@ -9,6 +9,7 @@ import type {
   ProfileRow,
   ReportRow,
 } from "@/types/db";
+import { demoAvatar, demoPhotoPath } from "./photos";
 
 /**
  * Demo-mode fixtures: the same fictional membership as supabase/seed.sql,
@@ -19,9 +20,9 @@ import type {
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
 const daysAgo = (d: number) => hoursAgo(d * 24);
 
-const face = (seed: string) => `https://picsum.photos/seed/${seed}/400/400`;
-const photo = (seed: string, w: number, h: number) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
-const thumb = (seed: string, w: number, h: number) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
+const face = (seed: string) => demoAvatar(seed);
+const photo = (seed: string) => demoPhotoPath(seed);
+const thumb = (seed: string) => demoPhotoPath(seed);
 
 export const DEMO_IDS = {
   admin: "demo-user-admin",
@@ -111,8 +112,8 @@ function post(
     id,
     author_id: authorId,
     media_type: "photo",
-    media_path: photo(seed, w, h),
-    thumb_path: thumb(seed, Math.round(w / 2.5), Math.round(h / 2.5)),
+    media_path: photo(seed),
+    thumb_path: thumb(seed),
     width: w,
     height: h,
     duration_seconds: null,
@@ -140,10 +141,7 @@ export const DEMO_POSTS: PostRow[] = [
   post("demo-post-09", DEMO_IDS.june, "kyoto-train", 1200, 960, "ninety-eight", "The slow line home.", 96, { show_date_stamp: true }),
   post("demo-post-10", DEMO_IDS.june, "kyoto-breakfast", 1200, 1200, "seventy", "Breakfast for one, table for four.", 264),
   post("demo-post-11", DEMO_IDS.june, "kyoto-video", 1280, 720, "neutral-aged", "Wind through the bamboo, fifteen seconds of it.", 168, {
-    media_type: "video",
-    media_path: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-    thumb_path: thumb("kyoto-video", 480, 480),
-    duration_seconds: 15,
+    thumb_path: thumb("kyoto-video"),
   }),
   post("demo-post-12", DEMO_IDS.arthur, "paris-cafe", 1200, 1500, "seventy", "The waiter has worked here forty years. It shows, kindly.", 26),
   post("demo-post-13", DEMO_IDS.arthur, "paris-stone", 1200, 1200, "archive-bw", "Rue des Barres, seven in the morning.", 120),
@@ -154,10 +152,7 @@ export const DEMO_POSTS: PostRow[] = [
   post("demo-post-18", DEMO_IDS.otis, "nola-porch", 1200, 1500, "seventy", "Porch light hour.", 18, { show_date_stamp: true }),
   post("demo-post-19", DEMO_IDS.otis, "nola-brass", 1200, 960, "ninety-eight", "Second line on Frenchmen. You could hear this photo.", 144),
   post("demo-post-20", DEMO_IDS.otis, "nola-video", 1280, 720, "ninety-eight", "Streetcar passing, thirty seconds of bell.", 240, {
-    media_type: "video",
-    media_path: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
-    thumb_path: thumb("nola-video", 480, 480),
-    duration_seconds: 30,
+    thumb_path: thumb("nola-video"),
   }),
   post("demo-post-21", DEMO_IDS.margot, "lyon-market", 1200, 1500, "neutral-aged", "The cheese man saves me the good one.", 30),
   post("demo-post-22", DEMO_IDS.margot, "lyon-traboule", 1200, 1200, "archive-bw", "Traboules before the tours arrive.", 192),

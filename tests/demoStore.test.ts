@@ -17,7 +17,7 @@ import {
   demoSubmitApplication,
   demoUnlike,
 } from "@/demo/store";
-import { DEMO_IDS } from "@/demo/fixtures";
+import { DEMO_IDS, DEMO_POSTS, DEMO_PROFILES } from "@/demo/fixtures";
 
 /** The demo store backs the browser-review build; keep its behavior honest. */
 describe("demo store", () => {
@@ -110,5 +110,37 @@ describe("demo store", () => {
     expect(demoSearchProfiles("elena").length).toBe(1);
     // ruby is still an applicant and must not surface in member search
     expect(demoSearchProfiles("ruby").length).toBe(0);
+  });
+});
+
+/**
+ * Regression guard: the demo world must be self-contained. Photographs ship
+ * as bundled assets (`demo:` paths) and avatars as inline SVG. If someone
+ * reintroduces a remote image host, the app silently depends on a third
+ * party again — and typecheck alone will not notice.
+ */
+describe("demo media is bundled, not remote", () => {
+  it("every post points at a bundled photograph", () => {
+    for (const post of DEMO_POSTS) {
+      if (post.media_type === "photo") {
+        expect(post.media_path.startsWith("demo:"), `${post.id} media_path`).toBe(true);
+      }
+      if (post.thumb_path) {
+        expect(post.thumb_path.startsWith("demo:"), `${post.id} thumb_path`).toBe(true);
+      }
+    }
+  });
+
+  it("every avatar is an inline image, never a remote URL", () => {
+    for (const profile of DEMO_PROFILES) {
+      if (profile.avatar_url) {
+        expect(profile.avatar_url.startsWith("data:"), `${profile.username} avatar`).toBe(true);
+      }
+    }
+  });
+
+  it("no fixture references an image host", () => {
+    const blob = JSON.stringify([DEMO_POSTS, DEMO_PROFILES]);
+    expect(blob).not.toContain("picsum.photos");
   });
 });

@@ -42,7 +42,7 @@ the browser approximation.
 
 | Layer | Choice |
 | --- | --- |
-| App | Expo SDK 57 · React Native 0.86 · TypeScript (strict) · iOS-first, browser-reviewable |
+| App | Expo SDK 54 · React Native 0.81 · TypeScript (strict) · iOS-first, browser-reviewable |
 | Navigation | expo-router (file-based: gate → tabs) |
 | Data | Supabase — Postgres, Auth, Storage, RLS |
 | Client data | @tanstack/react-query |

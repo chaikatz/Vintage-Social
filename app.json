@@ -34,7 +34,6 @@
     },
     "plugins": [
       "expo-router",
-      "expo-image",
       "expo-video",
       "expo-secure-store",
       [
