@@ -38,6 +38,27 @@ physics, the system photo picker. Go to the **+** tab, pick a photo from
 your camera roll and swipe the filter tray: that's the actual shader, not
 the browser approximation.
 
+### If something goes wrong
+
+**"Project is incompatible with this version of Expo Go"** — the project's
+SDK and the Expo Go app must match exactly. This project is on **SDK 54**.
+Check the SDK your Expo Go supports (shown in the app) and tell whoever
+maintains this repo; the project has to move to meet it, since Expo Go
+runs only one SDK version at a time.
+
+**`command not found: npm`** — Node isn't installed. Get the LTS installer
+from nodejs.org, run it, then reopen Terminal.
+
+**The QR code won't connect** — `npm run phone` uses a tunnel, which works
+across different networks. If it still fails, try `npx expo start --go` on
+the same Wi-Fi as your phone.
+
+**Nothing loads / stale screen** — press `r` in the terminal to reload, or
+force-close Expo Go and scan again.
+
+**Starting over** — press `Ctrl + C` in the terminal to stop the server,
+then `npm run phone` again.
+
 ## Stack
 
 | Layer | Choice |
