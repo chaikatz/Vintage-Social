@@ -34,7 +34,7 @@ export function PhotoGrid({ posts, onOpenPost, header, onRefresh, refreshing }: 
         return (
           <Pressable onPress={() => onOpenPost(item)} style={{ width: size, height: size }}>
             {url ? (
-              <Image source={{ uri: url }} style={styles.cell} contentFit="cover" transition={60} />
+              <Image source={url} style={styles.cell} contentFit="cover" transition={60} />
             ) : (
               <View style={[styles.cell, styles.empty]} />
             )}

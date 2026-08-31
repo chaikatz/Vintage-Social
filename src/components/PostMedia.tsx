@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { colors } from "@/theme";
-import { mediaUrl } from "@/api/media";
+import { mediaUrl, mediaUrlString } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { filterSupportsDateStamp, getFilter } from "@/filters";
 import { cssFilterFor } from "@/filters/cssFilter";
@@ -70,7 +70,7 @@ export function PostMedia({ post, onDoubleTap }: Props) {
     <Pressable onPress={handlePress} style={[styles.media, { aspectRatio: ratio }]}>
       {url ? (
         <Image
-          source={{ uri: url }}
+          source={url}
           style={[StyleSheet.absoluteFill, web ? ({ filter: web.filter } as object) : null]}
           contentFit="cover"
           transition={120}
@@ -94,7 +94,7 @@ export function PostMedia({ post, onDoubleTap }: Props) {
 }
 
 function VideoMedia({ path }: { path: string }) {
-  const url = mediaUrl("media", path) ?? "";
+  const url = mediaUrlString("media", path) ?? "";
   const player = useVideoPlayer(url, (p) => {
     p.loop = true;
     p.muted = true;

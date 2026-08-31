@@ -3,6 +3,8 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { File } from "expo-file-system";
 import { decode } from "base64-arraybuffer";
 import { supabase } from "@/lib/supabase";
+import { DEMO_PREFIX } from "@/demo/photos";
+import { PHOTOS } from "@/demo/photoAssets";
 
 /**
  * Media pipeline: optimize on-device, upload originals-free.
@@ -83,8 +85,17 @@ export async function uploadFile(
  * absolute URLs (https, blob:, data:); real uploads store bucket-relative
  * paths.
  */
-export function mediaUrl(bucket: Bucket, path: string | null): string | null {
+export function mediaUrl(bucket: Bucket, path: string | null): string | number | null {
   if (!path) return null;
+  // Demo-mode photographs are bundled with the app; Metro hands back a
+  // module id, which the image components accept directly.
+  if (path.startsWith(DEMO_PREFIX)) return PHOTOS[path.slice(DEMO_PREFIX.length)] ?? null;
   if (/^(https?:|blob:|data:|file:)/.test(path)) return path;
   return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+/** Same as mediaUrl, for the places that need a plain URL string (video). */
+export function mediaUrlString(bucket: Bucket, path: string | null): string | null {
+  const url = mediaUrl(bucket, path);
+  return typeof url === "string" ? url : null;
 }

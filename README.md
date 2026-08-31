@@ -8,6 +8,36 @@ chronological and contains only accounts you follow. There are no Reels,
 no Stories, no carousels, no suggested posts, no creator dashboards and no
 visible AI features — on purpose.
 
+## Try it on your iPhone (2 minutes)
+
+The fastest way to hold VINTAGE in your hand. No Apple Developer account,
+no build, no cost.
+
+1. Install **Expo Go** from the App Store on your iPhone.
+2. On your computer, in this folder:
+
+   ```bash
+   npm install
+   npm run phone
+   ```
+
+3. Point your iPhone's Camera at the QR code in the terminal and tap the
+   banner. VINTAGE opens in Expo Go.
+
+Sign in with any email and password — use one containing `admin`
+(e.g. `admin@vintage.club`) to get the admin dashboard. It runs against
+the bundled demo world: 13 fictional members, 31 photographs, working
+feed, likes, comments, follows, posting and moderation.
+
+`npm run phone` uses a tunnel, so your phone and computer don't need to be
+on the same Wi-Fi. On the same network, plain `npx expo start --go` is
+faster.
+
+This is the real native app — the GL filter pipeline, haptics, iOS scroll
+physics, the system photo picker. Go to the **+** tab, pick a photo from
+your camera roll and swipe the filter tray: that's the actual shader, not
+the browser approximation.
+
 ## Stack
 
 | Layer | Choice |
@@ -31,7 +61,7 @@ app/                    expo-router routes
   user/[username].tsx   member profiles
 src/
   api/                  supabase queries & rpc wrappers (demo-mode aware)
-  demo/                 in-memory demo backend for browser review builds
+  demo/                 in-memory demo backend + bundled demo photographs
   components/           reusable UI (PostCard, PhotoGrid, Avatar, …)
   filters/              the VINTAGE filter engine (see below)
   providers/            session/membership context

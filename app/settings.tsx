@@ -70,7 +70,7 @@ export default function Settings() {
     <Screen scroll>
       <Pressable style={styles.avatarPicker} onPress={pickAvatar}>
         {currentAvatar ? (
-          <Image source={{ uri: currentAvatar }} style={styles.avatar} />
+          <Image source={currentAvatar} style={styles.avatar} />
         ) : (
           <View style={[styles.avatar, styles.avatarEmpty]} />
         )}

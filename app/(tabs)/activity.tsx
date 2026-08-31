@@ -86,7 +86,7 @@ export default function Activity() {
                 </Text>
                 <Text style={styles.age}>{postAge(item.created_at)}</Text>
               </View>
-              {thumb ? <Image source={{ uri: thumb }} style={styles.thumb} /> : null}
+              {thumb ? <Image source={thumb} style={styles.thumb} /> : null}
             </Pressable>
           );
         }}

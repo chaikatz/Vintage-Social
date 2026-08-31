@@ -5,9 +5,9 @@ import path from "node:path";
 // Component/native behavior is exercised in the running app, not here.
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "src"),
-    },
+    alias: [
+      { find: "@", replacement: path.resolve(import.meta.dirname, "src") },
+    ],
   },
   test: {
     include: ["tests/**/*.test.ts"],
