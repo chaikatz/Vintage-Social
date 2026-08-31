@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { Screen } from "@/components/Screen";
@@ -38,13 +39,16 @@ export default function Activity() {
     enabled: Boolean(userId),
   });
 
+  // The pager keeps screens mounted, so clear the badge on each visit
+  // rather than once at mount — and never while the tab is only preloaded.
+  const isFocused = useIsFocused();
   useEffect(() => {
-    if (userId && activity.isFetched) {
+    if (isFocused && userId && activity.isFetched) {
       markActivityRead(userId).then(() =>
         queryClient.invalidateQueries({ queryKey: ["activity-unread"] }),
       );
     }
-  }, [userId, activity.isFetched, queryClient]);
+  }, [isFocused, userId, activity.isFetched, queryClient]);
 
   const open = (item: ActivityWithRefs) => {
     if (item.post) router.push(`/post/${item.post.id}`);

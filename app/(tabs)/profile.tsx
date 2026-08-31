@@ -1,6 +1,6 @@
 import React from "react";
 import { View } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { Pressable } from "react-native";
@@ -28,7 +28,6 @@ export default function OwnProfile() {
 
   return (
     <Screen padded={false}>
-      <Stack.Screen options={{ title: profile.username }} />
       <PhotoGrid
         posts={posts.data ?? []}
         onOpenPost={(p) => router.push(`/post/${p.id}`)}

@@ -1,6 +1,8 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
+import Feather from "@expo/vector-icons/Feather";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { colors, spacing, type } from "@/theme";
 import { postAge } from "@/utils/time";
 import { getFilter } from "@/filters";
@@ -41,21 +43,28 @@ export function PostCard({
             <Text style={styles.filterName}>{getFilter(post.filter_id).name}</Text>
           </View>
         </Pressable>
-        <Pressable hitSlop={10} onPress={() => onMore(post)}>
-          <Text style={styles.more}>···</Text>
+        <Pressable hitSlop={10} onPress={() => onMore(post)} accessibilityLabel="Post options">
+          <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
         </Pressable>
       </View>
 
       <PostMedia post={post} onDoubleTap={() => like(true)} />
 
       <View style={styles.actions}>
-        <Pressable hitSlop={8} onPress={() => like(!likedByMe)}>
-          <Text style={[styles.actionGlyph, likedByMe && styles.liked]}>
-            {likedByMe ? "♥" : "♡"}
-          </Text>
+        <Pressable
+          hitSlop={8}
+          onPress={() => like(!likedByMe)}
+          accessibilityLabel={likedByMe ? "Unlike" : "Like"}
+        >
+          {/* Feather has no solid heart, so the filled state borrows one. */}
+          {likedByMe ? (
+            <MaterialCommunityIcons name="heart" size={23} color={colors.like} />
+          ) : (
+            <Feather name="heart" size={23} color={colors.ink} />
+          )}
         </Pressable>
-        <Pressable hitSlop={8} onPress={() => onOpenComments(post)}>
-          <Text style={styles.actionGlyph}>◌</Text>
+        <Pressable hitSlop={8} onPress={() => onOpenComments(post)} accessibilityLabel="Comments">
+          <Feather name="message-circle" size={23} color={colors.ink} />
         </Pressable>
         <View style={styles.spacer} />
         <Text style={styles.age}>{postAge(post.created_at)}</Text>
@@ -96,7 +105,7 @@ const styles = StyleSheet.create({
   authorText: { marginLeft: spacing.sm + 2 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
   filterName: { fontSize: 11, color: colors.inkFaint, marginTop: 1 },
-  more: { fontSize: 18, color: colors.inkSoft, paddingHorizontal: spacing.xs },
+
   actions: {
     flexDirection: "row",
     alignItems: "center",
@@ -104,8 +113,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm + 2,
     gap: spacing.lg,
   },
-  actionGlyph: { fontSize: 24, color: colors.ink, lineHeight: 26 },
-  liked: { color: colors.like },
   spacer: { flex: 1 },
   age: { ...type.caption, color: colors.inkFaint },
   likes: {

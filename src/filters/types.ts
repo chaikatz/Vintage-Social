@@ -50,10 +50,10 @@ export interface FilterSpec {
   /** Fully desaturate before toning (Archive B&W). */
   monochrome?: boolean;
   /**
-   * Whether this filter offers the amber date stamp, and whether the toggle
-   * starts on. Filters without this never show the stamp option.
+   * Whether the amber date stamp starts switched on when this filter is
+   * chosen. Every filter can carry a stamp — this only sets the default.
    */
-  dateStamp?: { defaultOn: boolean };
+  dateStampDefault?: boolean;
 }
 
 export const NEUTRAL_ADJUSTMENTS: FilterAdjustments = {

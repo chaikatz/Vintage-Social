@@ -64,7 +64,7 @@ then `npm run phone` again.
 | Layer | Choice |
 | --- | --- |
 | App | Expo SDK 54 · React Native 0.81 · TypeScript (strict) · iOS-first, browser-reviewable |
-| Navigation | expo-router (file-based: gate → tabs) |
+| Navigation | expo-router (file-based: gate → tabs); the five tabs sit in a swipeable pager (`src/navigation/SwipeTabs.ts`) |
 | Data | Supabase — Postgres, Auth, Storage, RLS |
 | Client data | @tanstack/react-query |
 | Filters | Custom GL pipeline (`src/filters/`) — color matrix + film artifacts |
@@ -85,6 +85,7 @@ src/
   demo/                 in-memory demo backend + bundled demo photographs
   components/           reusable UI (PostCard, PhotoGrid, Avatar, …)
   filters/              the VINTAGE filter engine (see below)
+  navigation/           the swipeable bottom tab bar
   providers/            session/membership context
   theme/                design tokens (warm paper, hairline borders)
   types/db.ts           database types (mirrors supabase/migrations)
@@ -152,9 +153,10 @@ builds, and most only to demo mode:
   credentials sign in; invite codes only need the right shape; nothing
   persists across refresh.
 - **Filters:** the GL shader pipeline is replaced by a CSS approximation
-  (`src/filters/cssFilter.ts`) for previews and display — close, not
-  pixel-identical; grain is omitted on web. In demo mode filters are
-  applied at display time (the placeholder photos are unfiltered).
+  (`src/filters/cssFilter.ts`) for previews and the publish-time bake —
+  close, not pixel-identical; grain is omitted on web. The bundled demo
+  photographs ship unfiltered, so their `filter_id` is applied at display
+  time; anything published through the app is already baked.
 - **Publish bake:** on web the "baked" image comes from a canvas render of
   the CSS approximation, not the GL snapshot.
 - **Camera:** hidden on web (library picking works, including for the
@@ -290,33 +292,42 @@ Everything is enforced server-side: RLS only exposes social data to
 
 ## The filter engine
 
-Every post carries exactly one of 8 proprietary filters, defined as pure
+Every post carries exactly one of 14 proprietary filters, defined as pure
 data in `src/filters/presets.ts`:
 
-| id | Look |
-| --- | --- |
-| `archive-bw` | Silver-print black & white, deep grain |
-| `seventy` | Faded warm 1970s shoebox print |
-| `alpine` | Cool alpine film, blue shadows |
-| `riviera` | Sun-bleached Mediterranean |
-| `ninety-eight` | Grainy late-90s city night film |
-| `instant` | Polaroid-like soft exposure |
-| `chrome-64` | Muted Kodachrome-style slide film |
-| `neutral-aged` | Neutral aged film, barely there |
+| id | Name | Look |
+| --- | --- | --- |
+| `archive-bw` | Archive | Silver-print black & white, deep grain |
+| `seventy` | Seventy | Faded warm 1970s shoebox print |
+| `alpine` | Alpine | Cool alpine film, blue shadows |
+| `riviera` | Riviera | Sun-bleached Mediterranean |
+| `ninety-eight` | ’98 | Grainy late-90s city night film |
+| `instant` | Instant | Polaroid-like soft exposure |
+| `chrome-64` | Chrome 64 | Muted Kodachrome-style slide film |
+| `neutral-aged` | Plain | Neutral aged film, barely there |
+| `ember` | Ember | Last indoor light, shadows going orange |
+| `bleach` | Bleach | Colour pulled out, contrast pushed hard |
+| `cassette` | Cassette | Off-tracking VHS green |
+| `peach` | Peach | Soft pink highlights, kind to faces |
+| `midnight` | Midnight | Pushed film after dark, cold and grainy |
+| `postcard` | Postcard | Holiday colour, printed a little too bright |
 
 Architecture:
 
 - `types.ts` — a `FilterSpec` is adjustments (brightness/contrast/
   saturation/temperature/tint) + film artifacts (fade lift + paper color,
-  vignette, grain) + flags (monochrome, date-stamp support).
+  vignette, grain) + flags (monochrome, date-stamp default).
 - `colorMatrix.ts` — pure, unit-tested math composing a single 4×5 color
   matrix per filter.
-- `shader.ts` + `FilteredImage.tsx` — one GLSL program renders all eight
-  filters (matrix → fade → vignette → grain) for live previews **and** the
+- `shader.ts` + `FilteredImage.tsx` — one GLSL program renders every
+  filter (matrix → fade → vignette → grain) for live previews **and** the
   publish-time bake (`snapshot()`), so previews and results are identical.
-- Filters marked with `dateStamp` offer the amber point-and-shoot date
-  stamp, rendered bottom-right at display time (`DateStamp.tsx`) so it
-  stays crisp and re-stylable.
+  Photos are baked on every platform, including demo mode — the filter
+  ends up in the pixels, never only in the metadata.
+- The amber point-and-shoot date stamp is available on **every** filter;
+  `dateStampDefault` only decides whether the toggle starts on. It renders
+  bottom-right at display time (`DateStamp.tsx`) so it stays crisp and
+  re-stylable.
 
 Tuning a filter later = editing numbers in `presets.ts`. Published photos
 keep the look they were baked with; posts store the `filter_id` for

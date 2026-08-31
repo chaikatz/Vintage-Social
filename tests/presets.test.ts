@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FILTERS, filterSupportsDateStamp, getFilter } from "@/filters/presets";
+import { FILTERS, dateStampStartsOn, getFilter } from "@/filters/presets";
 import { applyMatrix, buildColorMatrix } from "@/filters/colorMatrix";
 
 describe("VINTAGE filter presets", () => {
-  it("ships exactly eight filters", () => {
-    expect(FILTERS).toHaveLength(8);
+  it("ships fourteen filters", () => {
+    expect(FILTERS).toHaveLength(14);
   });
 
   it("has unique, stable ids", () => {
@@ -20,6 +20,12 @@ describe("VINTAGE filter presets", () => {
       "instant",
       "chrome-64",
       "neutral-aged",
+      "ember",
+      "bleach",
+      "cassette",
+      "peach",
+      "midnight",
+      "postcard",
     ]);
   });
 
@@ -71,11 +77,22 @@ describe("VINTAGE filter presets", () => {
     expect(b).toBeGreaterThan(r);
   });
 
-  it("date stamps only exist on filters that declare them", () => {
-    expect(filterSupportsDateStamp("riviera")).toBe(true);
-    expect(filterSupportsDateStamp("ninety-eight")).toBe(true);
-    expect(filterSupportsDateStamp("instant")).toBe(false);
-    expect(filterSupportsDateStamp("alpine")).toBe(false);
+  it("only the declared filters start with the date stamp on", () => {
+    expect(dateStampStartsOn("riviera")).toBe(true);
+    expect(dateStampStartsOn("ninety-eight")).toBe(true);
+    expect(dateStampStartsOn("cassette")).toBe(true);
+    expect(dateStampStartsOn("midnight")).toBe(true);
+    expect(dateStampStartsOn("instant")).toBe(false);
+    expect(dateStampStartsOn("alpine")).toBe(false);
+  });
+
+  it("gives every filter a name and a description", () => {
+    for (const f of FILTERS) {
+      expect(f.name.length).toBeGreaterThan(0);
+      expect(f.description.length).toBeGreaterThan(0);
+    }
+    const names = FILTERS.map((f) => f.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 
   it("falls back to the neutral filter for unknown ids", () => {

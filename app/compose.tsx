@@ -18,7 +18,7 @@ import { Button } from "@/components/Button";
 import { TextField } from "@/components/TextField";
 import { DateStamp } from "@/components/DateStamp";
 import { colors, radii, spacing, type } from "@/theme";
-import { FILTERS, FilteredImage, getFilter } from "@/filters";
+import { FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters";
 import type { FilteredImageHandle } from "@/filters";
 import { prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
@@ -27,7 +27,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { MAX_CAPTION_LENGTH } from "@/utils/validation";
 
 /**
- * The darkroom: choose one of the eight VINTAGE filters, optionally the
+ * The darkroom: choose one of the VINTAGE filters, optionally the
  * amber date stamp, write a caption, publish. Photos are baked with the
  * filter on-device before upload.
  */
@@ -50,7 +50,7 @@ export default function Compose() {
 
   const [filterId, setFilterId] = useState(FILTERS[0].id);
   const filter = getFilter(filterId);
-  const [stampOn, setStampOn] = useState(Boolean(FILTERS[0].dateStamp?.defaultOn));
+  const [stampOn, setStampOn] = useState(dateStampStartsOn(FILTERS[0].id));
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -59,7 +59,7 @@ export default function Compose() {
 
   const selectFilter = (id: string) => {
     setFilterId(id);
-    setStampOn(Boolean(getFilter(id).dateStamp?.defaultOn));
+    setStampOn(dateStampStartsOn(id));
   };
 
   const previewRatio = width && height ? Math.min(Math.max(width / height, 4 / 5), 1.91) : 1;
@@ -75,30 +75,35 @@ export default function Compose() {
       let finalWidth = width;
       let finalHeight = height;
 
-      if (isDemoMode()) {
-        // Demo mode (browser review): nothing uploads. The original local
-        // uri is stored and, like every demo post, the chosen filter is
-        // applied at display time — so the new post matches the feed.
-        mediaPath = uri;
-      } else if (isVideo) {
-        const ext = uri.split(".").pop()?.toLowerCase() ?? "mp4";
-        mediaPath = await uploadFile("media", `${userId}/${postId}.${ext}`, uri, `video/${ext === "mov" ? "quicktime" : "mp4"}`);
-        try {
-          const poster = await VideoThumbnails.getThumbnailAsync(uri, { time: 500 });
-          const thumb = await prepareThumbnail(poster.uri);
-          thumbPath = await uploadFile("thumbnails", `${userId}/${postId}.jpg`, thumb.uri, "image/jpeg");
-        } catch {
-          thumbPath = null; // a missing poster frame shouldn't block publishing
+      if (isVideo) {
+        if (isDemoMode()) {
+          mediaPath = uri; // demo mode keeps the local recording, no upload
+        } else {
+          const ext = uri.split(".").pop()?.toLowerCase() ?? "mp4";
+          mediaPath = await uploadFile("media", `${userId}/${postId}.${ext}`, uri, `video/${ext === "mov" ? "quicktime" : "mp4"}`);
+          try {
+            const poster = await VideoThumbnails.getThumbnailAsync(uri, { time: 500 });
+            const thumb = await prepareThumbnail(poster.uri);
+            thumbPath = await uploadFile("thumbnails", `${userId}/${postId}.jpg`, thumb.uri, "image/jpeg");
+          } catch {
+            thumbPath = null; // a missing poster frame shouldn't block publishing
+          }
         }
       } else {
+        // Photos are always baked through the GL renderer, on every platform:
+        // the filter has to end up in the pixels, not just in the metadata.
         const baked = await filteredRef.current?.snapshot();
         if (!baked) throw new Error("The filter renderer isn’t ready yet — try again.");
         const feedImage = await prepareFeedImage(baked.uri);
-        const thumb = await prepareThumbnail(baked.uri);
         finalWidth = feedImage.width;
         finalHeight = feedImage.height;
-        mediaPath = await uploadFile("media", `${userId}/${postId}.jpg`, feedImage.uri, "image/jpeg");
-        thumbPath = await uploadFile("thumbnails", `${userId}/${postId}.jpg`, thumb.uri, "image/jpeg");
+        if (isDemoMode()) {
+          mediaPath = feedImage.uri; // keep the baked file locally, no upload
+        } else {
+          const thumb = await prepareThumbnail(baked.uri);
+          mediaPath = await uploadFile("media", `${userId}/${postId}.jpg`, feedImage.uri, "image/jpeg");
+          thumbPath = await uploadFile("thumbnails", `${userId}/${postId}.jpg`, thumb.uri, "image/jpeg");
+        }
       }
 
       await createPost({
@@ -111,7 +116,7 @@ export default function Compose() {
         height: finalHeight,
         duration_seconds: isVideo ? Number(params.duration) || null : null,
         filter_id: filterId,
-        show_date_stamp: Boolean(filter.dateStamp) && stampOn,
+        show_date_stamp: stampOn,
         caption: caption.trim(),
       });
 
@@ -134,7 +139,7 @@ export default function Compose() {
         ) : (
           <FilteredImage ref={filteredRef} uri={uri} filter={filter} style={StyleSheet.absoluteFill} />
         )}
-        {filter.dateStamp && stampOn ? <DateStamp iso={nowIso} /> : null}
+        {stampOn ? <DateStamp iso={nowIso} /> : null}
       </View>
 
       <ScrollView
@@ -166,17 +171,16 @@ export default function Compose() {
         </Text>
       ) : null}
 
-      {filter.dateStamp ? (
-        <View style={styles.stampRow}>
-          <Text style={styles.stampLabel}>Date stamp</Text>
-          <Switch
-            value={stampOn}
-            onValueChange={setStampOn}
-            trackColor={{ true: colors.accent, false: colors.borderStrong }}
-            thumbColor={colors.paperRaised}
-          />
-        </View>
-      ) : null}
+      {/* Available on every filter — the preset only decides the default. */}
+      <View style={styles.stampRow}>
+        <Text style={styles.stampLabel}>Date stamp</Text>
+        <Switch
+          value={stampOn}
+          onValueChange={setStampOn}
+          trackColor={{ true: colors.accent, false: colors.borderStrong }}
+          thumbColor={colors.paperRaised}
+        />
+      </View>
 
       <View style={styles.captionWrap}>
         <TextField

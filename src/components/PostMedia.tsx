@@ -1,22 +1,25 @@
 import React from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { colors } from "@/theme";
 import { mediaUrl, mediaUrlString } from "@/api/media";
-import { isDemoMode } from "@/lib/env";
-import { filterSupportsDateStamp, getFilter } from "@/filters";
+import { getFilter } from "@/filters";
 import { cssFilterFor } from "@/filters/cssFilter";
+import { DEMO_PREFIX } from "@/demo/photos";
 import { DateStamp } from "./DateStamp";
 import type { PostRow } from "@/types/db";
 
 /**
- * On iOS the filter is baked into the uploaded JPEG, so feeds show media
- * as stored. In browser demo mode the placeholder photos are unfiltered,
- * so the stored filter_id is applied at display time with the CSS
- * approximation — the feed reads the way it would with real baked media.
+ * Anything published through the app has its filter baked into the pixels
+ * at compose time, so the feed renders stored media untouched. The only
+ * exception is the bundled demo library: those photographs ship unfiltered,
+ * so the post's filter_id is approximated at display time to make the
+ * seeded world read the way a real one would.
  */
-const APPLY_DISPLAY_FILTER = Platform.OS === "web" && isDemoMode();
+function needsDisplayFilter(mediaPath: string): boolean {
+  return mediaPath.startsWith(DEMO_PREFIX);
+}
 
 interface Props {
   post: Pick<
@@ -48,10 +51,8 @@ export function PostMedia({ post, onDoubleTap }: Props) {
     lastTap.current = now;
   };
 
-  const stamp =
-    post.show_date_stamp && filterSupportsDateStamp(post.filter_id) ? (
-      <DateStamp iso={post.created_at} />
-    ) : null;
+  // Every filter can carry the stamp; the post alone decides.
+  const stamp = post.show_date_stamp ? <DateStamp iso={post.created_at} /> : null;
 
   const ratio = aspectRatio(post.width, post.height);
 
@@ -65,7 +66,7 @@ export function PostMedia({ post, onDoubleTap }: Props) {
   }
 
   const url = mediaUrl("media", post.media_path);
-  const web = APPLY_DISPLAY_FILTER ? cssFilterFor(getFilter(post.filter_id)) : null;
+  const web = needsDisplayFilter(post.media_path) ? cssFilterFor(getFilter(post.filter_id)) : null;
   return (
     <Pressable onPress={handlePress} style={[styles.media, { aspectRatio: ratio }]}>
       {url ? (
