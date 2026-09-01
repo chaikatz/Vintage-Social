@@ -35,6 +35,7 @@ export default function RootLayout() {
           <Stack.Screen name="compose" options={{ title: "New post" }} />
           <Stack.Screen name="post/[id]" options={{ title: "Photo" }} />
           <Stack.Screen name="gallery" options={{ title: "" }} />
+          <Stack.Screen name="comments" options={{ title: "Comments" }} />
           <Stack.Screen name="messages/index" options={{ title: "Messages" }} />
           <Stack.Screen name="messages/[id]" options={{ title: "" }} />
           <Stack.Screen name="share" options={{ presentation: "modal", title: "Send to" }} />

@@ -47,26 +47,32 @@ export function PostCard({
 
   return (
     <View style={styles.card}>
+      {/* Two lines beside the avatar: the name with the "…" on its own
+          line, then the place and the film stock ruled against each other
+          the way they'd be written on the back of a print. */}
       <View style={styles.header}>
-        <Pressable style={styles.author} onPress={() => onOpenProfile(post.author.username)}>
+        <Pressable onPress={() => onOpenProfile(post.author.username)}>
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
-          <View style={styles.authorText}>
-            <Text style={styles.username}>{post.author.username}</Text>
-            {post.location ? (
-              <Text style={styles.location} numberOfLines={1}>
-                {post.location}
+        </Pressable>
+        <View style={styles.headerText}>
+          <View style={styles.line}>
+            <Pressable style={styles.grow} onPress={() => onOpenProfile(post.author.username)}>
+              <Text style={styles.username} numberOfLines={1}>
+                {post.author.username}
               </Text>
-            ) : null}
+            </Pressable>
+            <Pressable hitSlop={10} onPress={() => onMore(post)} accessibilityLabel="Post options">
+              <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
+            </Pressable>
           </View>
-        </Pressable>
-        <Pressable hitSlop={10} onPress={() => onMore(post)} accessibilityLabel="Post options">
-          <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
-        </Pressable>
+          <View style={styles.line}>
+            <Text style={[styles.location, styles.grow]} numberOfLines={1}>
+              {post.location ?? ""}
+            </Text>
+            <Text style={styles.filterName}>{getFilter(post.filter_id).name}</Text>
+          </View>
+        </View>
       </View>
-
-      {/* The film stock, set flush right on its own line above the frame —
-          the way a stock is marked on a contact sheet. */}
-      <Text style={styles.filterName}>{getFilter(post.filter_id).name}</Text>
 
       <PostMedia post={post} onDoubleTap={() => like(true)} />
 
@@ -131,11 +137,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
+    gap: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,
   },
-  author: { flexDirection: "row", alignItems: "center", flex: 1 },
-  authorText: { marginLeft: spacing.sm + 2, flex: 1 },
+  headerText: { flex: 1 },
+  line: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  grow: { flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
   location: { fontSize: 11, color: colors.inkFaint, marginTop: 1 },
   filterName: {
@@ -144,9 +152,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     textTransform: "uppercase",
     color: colors.inkFaint,
-    textAlign: "right",
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xs + 2,
+    marginTop: 1,
   },
   actions: {
     flexDirection: "row",

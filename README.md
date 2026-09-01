@@ -375,6 +375,18 @@ attribution and future re-processing.
   file — burning it in means a server-side transcode VINTAGE doesn't do yet,
   and the original footage is kept intact meanwhile. Photographs are baked,
   so they carry their filter in the pixels.
+
+  **Live filtering cannot use the `filter` style prop on iOS.** React Native
+  implements only `brightness` and `opacity` of `filter` there; `saturate`,
+  `contrast`, `sepia` and `grayscale` are parsed and then silently dropped
+  (`RCTViewComponentView.mm`). Nothing errors — the video simply comes out
+  untouched. `src/components/FilterOverlay.tsx` rebuilds the look out of
+  `mixBlendMode` layers instead, which iOS does support: a grey plate in
+  `saturation` mode to drain colour, `soft-light` for the warm or cool cast,
+  `screen` for the fade, and an SVG radial gradient for the vignette.
+  Contrast has no honest blend-layer equivalent and is left to the GL bake
+  and to web. `FilterOverlay.web.tsx` keeps the CSS path, which is better
+  where it works.
 - `location` is free text the author types — a town, a street, a bar. It is
   shown under the username beside the filter name. VINTAGE never reads your
   GPS, never places a post on a map, and makes no place searchable.

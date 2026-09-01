@@ -26,7 +26,7 @@ export default function Home() {
   const posts = useMemo(() => (feed.data?.pages ?? []).flat(), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
 
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, commentsFor } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
     usePostActions(userId, postIds);
 
   return (
@@ -54,7 +54,7 @@ export default function Home() {
             post={{ ...item, like_count: likeCountFor(item) }}
             likedByMe={isLiked(item)}
             onToggleLike={toggleLike}
-            onOpenComments={(p) => router.push(`/post/${p.id}`)}
+            onOpenComments={onOpenComments}
             onOpenProfile={(username) => router.push(`/user/${username}`)}
             onShare={onShare}
             comments={commentsFor(item)}

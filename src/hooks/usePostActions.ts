@@ -35,6 +35,15 @@ export function usePostActions(userId: string, postIds: string[]) {
     [previewsQuery.data],
   );
 
+  // Comments open on their own screen. Pushing the post again would show
+  // the photograph you are already looking at and shove the conversation
+  // off the bottom.
+  const onOpenComments = useCallback(
+    (post: PostWithAuthor) =>
+      router.push({ pathname: "/comments", params: { postId: post.id } }),
+    [router],
+  );
+
   const onShare = useCallback(
     (post: PostWithAuthor) =>
       router.push({ pathname: "/share", params: { postId: post.id } }),
@@ -105,5 +114,5 @@ export function usePostActions(userId: string, postIds: string[]) {
     [userId, router, queryClient],
   );
 
-  return { isLiked, likeCountFor, toggleLike, onMore, onShare, commentsFor };
+  return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor };
 }

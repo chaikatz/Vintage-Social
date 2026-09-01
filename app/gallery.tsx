@@ -51,7 +51,7 @@ export default function Gallery() {
   }, [postsQ.data, authorQ.data]);
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, commentsFor } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
     usePostActions(userId, postIds);
 
   const listRef = useRef<FlatList<PostWithAuthor>>(null);
@@ -89,7 +89,7 @@ export default function Gallery() {
             post={{ ...item, like_count: likeCountFor(item) }}
             likedByMe={isLiked(item)}
             onToggleLike={toggleLike}
-            onOpenComments={(p) => router.push(`/post/${p.id}`)}
+            onOpenComments={onOpenComments}
             onOpenProfile={(username) => router.push(`/user/${username}`)}
             onShare={onShare}
             comments={commentsFor(item)}
