@@ -60,6 +60,8 @@ function member(
     full_name: fullName,
     bio,
     avatar_url: face(avatarSeed),
+    member_no: null, // filled in below, in join order
+    invited_by: null,
     is_private: false,
     city,
     social_handle: socialHandle,
@@ -75,27 +77,44 @@ function member(
   };
 }
 
-export const DEMO_PROFILES: ProfileRow[] = [
+/**
+ * Hand out membership numbers the way the database does: in the order
+ * members were let in, counting from 1, and only to members who are
+ * actually in. Applicants are waiting, so they have no number.
+ */
+function numbered(profiles: ProfileRow[]): ProfileRow[] {
+  profiles
+    .filter((p) => p.status === "approved" || p.status === "suspended")
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .forEach((p, i) => {
+      p.member_no = i + 1;
+    });
+  return profiles;
+}
+
+export const DEMO_PROFILES: ProfileRow[] = numbered([
   member(DEMO_IDS.admin, "vintage", "VINTAGE", "Keeper of the archive.", "New York", null, "vintage-admin", 400, {
     role: "admin",
     invite_quota: 99,
   }),
   // Private, so the demo account has a request queue to act on.
   member(DEMO_IDS.elena, "elena.marchetti", "Elena Marchetti", "Film first. 35mm, mostly Milan.", "Milan", "@elena.marchetti", "elena-face", 380, {
+    invited_by: DEMO_IDS.admin,
     is_private: true,
   }),
-  member(DEMO_IDS.tomas, "tomas.lindqvist", "Tomas Lindqvist", "North light. Quiet water.", "Stockholm", "@t.lindqvist", "tomas-face", 360),
-  member(DEMO_IDS.june, "june.nakamura", "June Nakamura", "Gardens, trains, breakfast.", "Kyoto", "@june.naka", "june-face", 340),
-  member(DEMO_IDS.arthur, "arthur.beaumont", "Arthur Beaumont", "Old cafés and older stone.", "Paris", "@a.beaumont", "arthur-face", 300),
-  member(DEMO_IDS.clara, "clara.reyes", "Clara Reyes", "Color, but gently.", "Mexico City", "@clara.rys", "clara-face", 260),
+  member(DEMO_IDS.tomas, "tomas.lindqvist", "Tomas Lindqvist", "North light. Quiet water.", "Stockholm", "@t.lindqvist", "tomas-face", 360, { invited_by: DEMO_IDS.elena }),
+  member(DEMO_IDS.june, "june.nakamura", "June Nakamura", "Gardens, trains, breakfast.", "Kyoto", "@june.naka", "june-face", 340, { invited_by: DEMO_IDS.elena }),
+  member(DEMO_IDS.arthur, "arthur.beaumont", "Arthur Beaumont", "Old cafés and older stone.", "Paris", "@a.beaumont", "arthur-face", 300, { invited_by: DEMO_IDS.tomas }),
+  member(DEMO_IDS.clara, "clara.reyes", "Clara Reyes", "Color, but gently.", "Mexico City", "@clara.rys", "clara-face", 260, { invited_by: DEMO_IDS.june }),
   // Private and unfollowed by Elena, so the locked profile is reachable.
   member(DEMO_IDS.otis, "otis.whitfield", "Otis Whitfield", "Brass bands and porch light.", "New Orleans", "@otis.w", "otis-face", 220, {
+    invited_by: DEMO_IDS.arthur,
     is_private: true,
   }),
-  member(DEMO_IDS.margot, "margot.dubois", "Margot Dubois", "Markets before eight.", "Lyon", "@margot.db", "margot-face", 180),
-  member(DEMO_IDS.sam, "sam.okafor", "Sam Okafor", "Streets, faces, weather.", "Lagos", "@sam.okf", "sam-face", 140),
-  member(DEMO_IDS.ines, "ines.almeida", "Inês Almeida", "Tiles and tide.", "Lisbon", "@ines.alm", "ines-face", 100),
-  member(DEMO_IDS.niko, "niko.papadakis", "Niko Papadakis", "Islands off-season.", "Athens", "@niko.pap", "niko-face", 60),
+  member(DEMO_IDS.margot, "margot.dubois", "Margot Dubois", "Markets before eight.", "Lyon", "@margot.db", "margot-face", 180, { invited_by: DEMO_IDS.clara }),
+  member(DEMO_IDS.sam, "sam.okafor", "Sam Okafor", "Streets, faces, weather.", "Lagos", "@sam.okf", "sam-face", 140, { invited_by: DEMO_IDS.june }),
+  member(DEMO_IDS.ines, "ines.almeida", "Inês Almeida", "Tiles and tide.", "Lisbon", "@ines.alm", "ines-face", 100, { invited_by: DEMO_IDS.margot }),
+  member(DEMO_IDS.niko, "niko.papadakis", "Niko Papadakis", "Islands off-season.", "Athens", "@niko.pap", "niko-face", 60, { invited_by: DEMO_IDS.ines }),
   member(DEMO_IDS.ruby, "ruby.calloway", "Ruby Calloway", "", "Portland", "@rubyshoots", "ruby-face", 3, {
     status: "applied",
     invite_quota: 0,
@@ -105,7 +124,7 @@ export const DEMO_PROFILES: ProfileRow[] = [
     invite_quota: 0,
     avatar_url: null,
   }),
-];
+]);
 
 /**
  * Where each photograph was taken, keyed by the prefix of its seed name.
@@ -367,6 +386,20 @@ export const DEMO_COMMENTS: CommentRow[] = [
   comment("demo-comment-11", "demo-post-23", DEMO_IDS.tomas, "The stillness in the rush — you found it again.", 2),
   comment("demo-comment-12", "demo-post-26", DEMO_IDS.june, "Blue and blue and blue. Lovely.", 18),
   comment("demo-comment-13", "demo-post-29", DEMO_IDS.ines, "Give the committee my regards.", 10),
+  comment("demo-comment-14", "demo-post-03", DEMO_IDS.tomas, "Half a second on a railing, I'd guess. Worth it.", 140),
+  comment("demo-comment-15", "demo-post-04", DEMO_IDS.june, "The stamp suits this one. Saturday written all over it.", 280),
+  comment("demo-comment-16", "demo-post-07", DEMO_IDS.arthur, "Opened for the season is the best three words in photography.", 210),
+  comment("demo-comment-17", "demo-post-09", DEMO_IDS.clara, "I have taken this train in my head about forty times.", 90),
+  comment("demo-comment-18", "demo-post-11", DEMO_IDS.elena, "Fifteen seconds and not one of them wasted.", 160),
+  comment("demo-comment-19", "demo-post-13", DEMO_IDS.margot, "Seven in the morning is the only honest hour in Paris.", 115),
+  comment("demo-comment-20", "demo-post-14", DEMO_IDS.niko, "It does that on purpose, I'm certain.", 330),
+  comment("demo-comment-21", "demo-post-16", DEMO_IDS.sam, "Marigolds. That's the whole photograph and it's enough.", 90),
+  comment("demo-comment-22", "demo-post-18", DEMO_IDS.june, "Porch light hour should be a filter.", 16),
+  comment("demo-comment-23", "demo-post-22", DEMO_IDS.ines, "Before the tours is the only way to see them.", 188),
+  comment("demo-comment-24", "demo-post-24", DEMO_IDS.otis, "First rain always looks like relief.", 116),
+  comment("demo-comment-25", "demo-post-27", DEMO_IDS.arthur, "Empty for once, and you were there for it.", 164),
+  comment("demo-comment-26", "demo-post-30", DEMO_IDS.clara, "Nowhere in particular is my favourite destination.", 140),
+  comment("demo-comment-27", "demo-post-31", DEMO_IDS.tomas, "October light is the honest one. Stealing that.", 428),
 ];
 
 export const DEMO_APPLICATIONS: ApplicationRow[] = [

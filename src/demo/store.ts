@@ -20,6 +20,7 @@ import type {
   ReportRow,
   ReportStatus,
 } from "@/types/db";
+import { FOUNDING_MEMBER_LIMIT } from "@/utils/membership";
 import {
   DEMO_APPLICATIONS,
   DEMO_COMMENTS,
@@ -508,6 +509,43 @@ export function demoMarkActivityRead(userId: string): void {
 // ---------------------------------------------------------------------------
 // membership: applications & invites
 // ---------------------------------------------------------------------------
+/**
+ * The demo mirror of `assign_member_no`: the next number in sequence, once,
+ * permanently. A member who already has one keeps it — that is what makes
+ * the number survive suspension and reinstatement.
+ */
+function assignMemberNo(userId: string): number {
+  const profile = state.profiles.find((p) => p.id === userId);
+  if (!profile) return 0;
+  if (profile.member_no !== null) return profile.member_no;
+  const highest = state.profiles.reduce((n, p) => Math.max(n, p.member_no ?? 0), 0);
+  profile.member_no = highest + 1;
+  return profile.member_no;
+}
+
+/** A moderation note in someone's activity, as the definer functions write. */
+function note(recipientId: string, message: string, actorId: string | null = null): void {
+  state.activity.push({
+    id: newId("demo-activity"),
+    recipient_id: recipientId,
+    actor_id: actorId,
+    type: "moderation",
+    post_id: null,
+    comment_id: null,
+    message,
+    created_at: new Date().toISOString(),
+    read_at: null,
+  });
+}
+
+/** The welcome note the database writes when someone is let in. */
+function welcomeMessage(memberNo: number): string {
+  const printed = `no. ${String(memberNo).padStart(5, "0")}`;
+  return memberNo <= FOUNDING_MEMBER_LIMIT
+    ? `Welcome to VINTAGE. You are founding member ${printed}.`
+    : `Welcome to VINTAGE. You are member ${printed}.`;
+}
+
 export function demoUsernameAvailable(username: string): boolean {
   return !state.profiles.some((p) => p.username === username.toLowerCase());
 }
@@ -533,6 +571,8 @@ export function demoSubmitApplication(input: {
     role: "member",
     status: "applied",
     invite_quota: 0,
+    member_no: null, // no number until an admin lets them in
+    invited_by: null,
     is_private: false,
     post_count: 0,
     follower_count: 0,
@@ -560,8 +600,22 @@ export function demoSubmitApplication(input: {
   emit();
 }
 
-/** Any well-formed code admits the demo visitor as a fresh approved member. */
-export function demoJoinWithInvite(input: { fullName: string; desiredUsername: string }): void {
+/**
+ * Redeem a nomination: the code is consumed, the member is let straight in,
+ * the number is issued, and who vouched for them is recorded permanently.
+ * Mirrors `redeem_invite`.
+ */
+export function demoJoinWithInvite(input: {
+  fullName: string;
+  desiredUsername: string;
+  code: string;
+}): void {
+  const invite = state.invites.find(
+    (i) => i.code === input.code.trim().toUpperCase() && !i.used_by,
+  );
+  if (!invite) {
+    throw new Error("That nomination code is invalid or has already been used.");
+  }
   const id = newId("demo-member");
   state.profiles.push({
     id,
@@ -574,6 +628,8 @@ export function demoJoinWithInvite(input: { fullName: string; desiredUsername: s
     role: "member",
     status: "approved",
     invite_quota: 3,
+    member_no: null, // issued just below, the way redeem_invite does
+    invited_by: invite.created_by,
     is_private: false,
     post_count: 0,
     follower_count: 0,
@@ -581,17 +637,23 @@ export function demoJoinWithInvite(input: { fullName: string; desiredUsername: s
     created_at: new Date().toISOString(),
     approved_at: new Date().toISOString(),
   });
+  invite.used_by = id;
+  invite.used_at = new Date().toISOString();
+
+  const memberNo = assignMemberNo(id);
+  note(id, welcomeMessage(memberNo));
+  // The member who nominated them sees that it was taken up.
+  note(invite.created_by, "Your nomination was accepted.", id);
+
   // New members start by following a few of the regulars so Home is alive.
-  for (const followee of [DEMO_IDS.elena, DEMO_IDS.june, DEMO_IDS.sam]) {
-    state.follows.push({
-      follower_id: id,
-      followee_id: followee,
-      status: "accepted",
-      created_at: new Date().toISOString(),
-    });
+  // Routed through demoFollow rather than written straight into the table,
+  // so a private member's account still waits on their approval instead of
+  // being handed an accepted follower.
+  state.currentUserId = id;
+  for (const followee of [DEMO_IDS.june, DEMO_IDS.sam, DEMO_IDS.tomas, DEMO_IDS.arthur]) {
+    demoFollow(id, followee);
   }
   recomputeCounts(state);
-  state.currentUserId = id;
   persistUser(id);
   emit();
 }
@@ -615,7 +677,7 @@ export function demoCreateInvite(): string {
   const me = state.profiles.find((p) => p.id === userId);
   const minted = state.invites.filter((i) => i.created_by === userId).length;
   if (!me || minted >= me.invite_quota) {
-    throw new Error("You have used all of your invitations");
+    throw new Error("You have used all of your nominations.");
   }
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const pick = () => alphabet[Math.floor(Math.random() * alphabet.length)];
@@ -665,8 +727,11 @@ export function demoDecideApplication(applicationId: string, decision: Exclude<A
     if (decision === "approved") {
       profile.approved_at = new Date().toISOString();
       profile.invite_quota = Math.max(profile.invite_quota, 3);
+      // Approval is the moment the number is issued, and it is permanent.
+      note(profile.id, welcomeMessage(assignMemberNo(profile.id)));
     }
   }
+  recomputeCounts(state);
   emit();
 }
 
@@ -677,13 +742,14 @@ export function demoFetchReports(status: ReportStatus) {
     .map((r) => ({ ...clone(r), reporter: authorRef(r.reporter_id) }));
 }
 
-export function demoResolveReport(reportId: string, status: Exclude<ReportStatus, "open">, note: string): void {
+export function demoResolveReport(reportId: string, status: Exclude<ReportStatus, "open">, resolution: string): void {
   const r = state.reports.find((x) => x.id === reportId);
   if (!r) return;
   r.status = status;
-  r.resolution_note = note;
+  r.resolution_note = resolution;
   r.resolved_by = state.currentUserId;
   r.resolved_at = new Date().toISOString();
+  emit();
 }
 
 function recordModeration(action: ModerationActionRow["action"], targetProfileId: string, note: string, refs: { post_id?: string; comment_id?: string } = {}) {

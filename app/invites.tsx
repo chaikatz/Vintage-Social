@@ -1,19 +1,23 @@
 import React from "react";
-import { FlatList, Share, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
-import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { colors, radii, spacing, type } from "@/theme";
 import { createInvite, fetchMyInvites } from "@/api/membership";
 import { useSession } from "@/providers/SessionProvider";
 
 /**
- * Approved members receive a small number of invitations. Each code admits
- * one person, immediately.
+ * Nominations.
+ *
+ * A member does not hand out a referral link; they put someone's name
+ * forward, and that person is admitted on their word. The count is small
+ * and it does not refill, which is the whole mechanism — so the screen
+ * says plainly how many are left and whose they became.
  */
-export default function Invites() {
+export default function Nominations() {
   const queryClient = useQueryClient();
   const { session, profile } = useSession();
   const userId = session?.user?.id ?? "";
@@ -28,55 +32,66 @@ export default function Invites() {
     mutationFn: createInvite,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["invites", userId] }),
     onError: (err) =>
-      showAlert("No invitations left", err instanceof Error ? err.message : String(err)),
+      showAlert("No nominations left", err instanceof Error ? err.message : String(err)),
   });
 
-  const used = (invites.data ?? []).filter((i) => i.used_by).length;
-  const minted = (invites.data ?? []).length;
-  const remaining = Math.max(0, (profile?.invite_quota ?? 0) - minted);
+  const all = invites.data ?? [];
+  const accepted = all.filter((i) => i.used_by).length;
+  const remaining = Math.max(0, (profile?.invite_quota ?? 0) - all.length);
 
   return (
     <Screen padded={false}>
       <View style={styles.header}>
+        <Text style={styles.eyebrow}>Nominations</Text>
         <Text style={styles.headline}>
-          {remaining} invitation{remaining === 1 ? "" : "s"} left
+          {remaining} left of {profile?.invite_quota ?? 0}
         </Text>
         <Text style={styles.sub}>
-          {minted} created · {used} used. Choose people who love photographs.
+          Putting someone forward admits them on your word — there is no queue and no review.
+          {accepted > 0 ? ` ${accepted} of yours ${accepted === 1 ? "has" : "have"} been taken up.` : ""}
         </Text>
-        <Button
-          title="Create an invitation code"
-          variant="secondary"
+        <Pressable
+          style={[styles.mint, remaining <= 0 && styles.mintOff]}
           onPress={() => mint.mutate()}
-          loading={mint.isPending}
-          disabled={remaining <= 0}
-          style={styles.mintButton}
-        />
+          disabled={remaining <= 0 || mint.isPending}
+        >
+          <Text style={styles.mintText}>
+            {remaining <= 0 ? "None left" : "Nominate a member"}
+          </Text>
+        </Pressable>
       </View>
+
       <FlatList
-        data={invites.data ?? []}
+        data={all}
         keyExtractor={(i) => i.id}
         ListEmptyComponent={
           invites.isFetched ? (
-            <EmptyState title="No codes yet" body="Create one and pass it along quietly." />
+            <EmptyState
+              title="No nominations yet"
+              body="Put someone forward and pass the code to them quietly."
+            />
           ) : null
         }
         renderItem={({ item }) => (
-          <View style={styles.inviteRow}>
+          <View style={styles.row}>
             <Text style={[styles.code, item.used_by && styles.codeUsed]}>{item.code}</Text>
             {item.used_by ? (
-              <Text style={styles.usedLabel}>used</Text>
+              <Text style={styles.acceptedLabel}>Accepted</Text>
             ) : (
-              <Button
-                title="Share"
-                variant="quiet"
-                small
+              <Pressable
+                hitSlop={8}
+                style={styles.share}
                 onPress={() =>
                   Share.share({
-                    message: `You’re invited to VINTAGE. Use code ${item.code} in the app.`,
+                    message:
+                      `You have been nominated for membership of VINTAGE.\n\n` +
+                      `Open the app, choose “I have a nomination”, and enter ${item.code}.`,
                   })
                 }
-              />
+              >
+                <Feather name="send" size={14} color={colors.accent} />
+                <Text style={styles.shareText}>Send</Text>
+              </Pressable>
             )}
           </View>
         )}
@@ -88,14 +103,36 @@ export default function Invites() {
 const styles = StyleSheet.create({
   header: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
     borderBottomWidth: 1,
     borderColor: colors.border,
   },
-  headline: { ...type.title },
-  sub: { ...type.caption, marginTop: spacing.xs },
-  mintButton: { marginTop: spacing.lg },
-  inviteRow: {
+  eyebrow: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 2.4,
+    textTransform: "uppercase",
+    color: colors.inkFaint,
+  },
+  headline: { ...type.title, marginTop: spacing.sm },
+  sub: { ...type.caption, marginTop: spacing.xs, lineHeight: 19 },
+  mint: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.shutter,
+    paddingVertical: 13,
+    alignItems: "center",
+    borderRadius: radii.sm,
+  },
+  mintOff: { backgroundColor: colors.borderStrong },
+  mintText: {
+    fontFamily: type.mono,
+    fontSize: 11,
+    letterSpacing: 2.2,
+    textTransform: "uppercase",
+    color: colors.onShutter,
+  },
+  row: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -115,5 +152,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   codeUsed: { color: colors.inkFaint, textDecorationLine: "line-through" },
-  usedLabel: { ...type.caption, color: colors.inkFaint },
+  acceptedLabel: { ...type.caption, color: colors.inkFaint },
+  share: { flexDirection: "row", alignItems: "center", gap: 6 },
+  shareText: { ...type.caption, color: colors.accent },
 });

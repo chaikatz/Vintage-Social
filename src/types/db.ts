@@ -54,6 +54,13 @@ export type ProfileRow = {
   role: "member" | "admin";
   status: MembershipStatus;
   invite_quota: number;
+  /**
+   * Permanent membership number, counting from 1, assigned by the database
+   * when the member is let in. Null until then. Never edited by a member.
+   */
+  member_no: number | null;
+  /** The member who nominated them, recorded at the moment of joining. */
+  invited_by: string | null;
   /** Private members approve each follower by hand. */
   is_private: boolean;
   post_count: number;

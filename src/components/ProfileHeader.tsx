@@ -2,6 +2,7 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
+import { membershipLine } from "@/utils/membership";
 import { Avatar } from "./Avatar";
 import type { ProfileRow } from "@/types/db";
 
@@ -33,6 +34,11 @@ export function ProfileHeader({ profile, action }: Props) {
       </View>
       {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
       {profile.city ? <Text style={styles.city}>{profile.city}</Text> : null}
+      {/* Issued by the database when the member was let in, and permanent.
+          Nothing in Settings can change it. */}
+      {membershipLine(profile.member_no) ? (
+        <Text style={styles.membership}>{membershipLine(profile.member_no)}</Text>
+      ) : null}
       {action ? <View style={styles.action}>{action}</View> : null}
     </View>
   );
@@ -79,5 +85,12 @@ const styles = StyleSheet.create({
   },
   bio: { ...type.body, fontSize: 14, marginTop: 2 },
   city: { ...type.caption, marginTop: 2, color: colors.inkFaint },
+  membership: {
+    fontFamily: type.mono,
+    fontSize: 9,
+    letterSpacing: 1.6,
+    color: colors.accent,
+    marginTop: spacing.sm,
+  },
   action: { marginTop: spacing.md },
 });

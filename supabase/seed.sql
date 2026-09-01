@@ -387,3 +387,31 @@ values
    'Promotional or engagement-bait content',
    'The caption feels like an ad for a tour company. Might be nothing.',
    now() - interval '20 hours');
+
+-- ---------------------------------------------------------------------------
+-- membership numbers and attribution
+--
+-- Numbers are normally issued by assign_member_no at the moment someone is
+-- approved. The seeded members were "let in" before the app existed, so they
+-- are numbered here in the order they joined, and the sequence is wound
+-- forward past them so the first real member gets the next number rather
+-- than colliding with one of these.
+-- ---------------------------------------------------------------------------
+with ordered as (
+  select id, row_number() over (order by created_at, username) as n
+  from public.profiles
+  where status in ('approved', 'suspended')
+)
+update public.profiles p
+set member_no = ordered.n
+from ordered
+where p.id = ordered.id and p.member_no is null;
+
+select setval('public.member_no_seq', coalesce((select max(member_no) from public.profiles), 0) + 1, false);
+
+-- Who nominated whom: everyone but the first was put forward by a member
+-- who was already inside.
+update public.profiles p
+set invited_by = i.created_by
+from public.invites i
+where i.used_by = p.id and p.invited_by is null;

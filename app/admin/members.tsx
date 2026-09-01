@@ -9,7 +9,16 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { colors, radii, spacing } from "@/theme";
 import { fetchMembers, setSuspension, warnMember } from "@/api/moderation";
+import { formatMemberNumber } from "@/utils/membership";
 import type { ProfileRow } from "@/types/db";
+
+/** Status, number and output — what a suspension decision is made against. */
+function memberSubtitle(member: ProfileRow): string {
+  const parts: string[] = [member.status];
+  if (member.member_no !== null) parts.push(formatMemberNumber(member.member_no));
+  parts.push(`${member.post_count} posts`);
+  return parts.join(" · ");
+}
 
 /**
  * Member moderation: warnings and suspensions, each an explicit admin
@@ -93,7 +102,7 @@ export default function AdminMembers() {
             username={item.username}
             avatarPath={item.avatar_url}
             title={item.full_name}
-            subtitle={`${item.status} · ${item.post_count} posts`}
+            subtitle={memberSubtitle(item)}
             onPress={() => router.push(`/user/${item.username}`)}
             right={
               <View style={styles.actions}>

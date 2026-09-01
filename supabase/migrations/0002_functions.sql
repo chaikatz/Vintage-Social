@@ -54,13 +54,13 @@ begin
     raise exception 'Not signed in';
   end if;
   if not public.is_active_member(v_user) then
-    raise exception 'Only approved members can create invitations';
+    raise exception 'Only approved members can nominate';
   end if;
 
   select invite_quota into v_quota from public.profiles where id = v_user;
   select count(*) into v_minted from public.invites where created_by = v_user;
   if v_minted >= v_quota then
-    raise exception 'You have used all of your invitations';
+    raise exception 'You have used all of your nominations';
   end if;
 
   loop

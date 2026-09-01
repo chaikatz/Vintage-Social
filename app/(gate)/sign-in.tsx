@@ -70,7 +70,7 @@ export default function SignIn() {
       <View style={styles.spacer} />
 
       <GateButton
-        title="I have an invitation"
+        title="I have a nomination"
         variant="quiet"
         onPress={() => router.replace("/(gate)/invite")}
       />

@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
+import { router } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
@@ -27,6 +28,24 @@ interface SessionState {
 }
 
 const SessionContext = createContext<SessionState | null>(null);
+
+/**
+ * Leave the app after signing out.
+ *
+ * Clearing the session is not enough on its own. The redirect that sends a
+ * signed-out visitor to the door lives in the tab layout, and Settings and
+ * the waitlist screen are *pushed on top of* that layout — so the landing
+ * would render underneath while the member went on looking at Settings,
+ * with no way back to sign in. Unwind the stack, then replace what's left.
+ */
+async function leaveToLanding(): Promise<void> {
+  try {
+    router.dismissAll();
+  } catch {
+    // Nothing pushed — already at the root of the stack.
+  }
+  router.replace("/(gate)/landing");
+}
 
 /** A minimal fake Session so route gates behave identically in demo mode. */
 function demoSession(profile: ProfileRow): Session {
@@ -53,7 +72,10 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
       isApprovedMember: profile?.status === "approved",
       isDemo: true,
       refreshProfile: async () => setProfile(demoCurrentProfile()),
-      signOut: async () => demoSignOut(),
+      signOut: async () => {
+        demoSignOut();
+        await leaveToLanding();
+      },
     }),
     [profile],
   );
@@ -97,6 +119,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    await leaveToLanding();
   }, []);
 
   const value = useMemo<SessionState>(

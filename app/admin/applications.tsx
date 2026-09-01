@@ -57,7 +57,7 @@ export default function AdminApplications() {
                   {item.city ? ` · ${item.city}` : ""} · {postAge(item.created_at)}
                 </Text>
                 {item.social_handle ? <Text style={styles.meta}>{item.social_handle}</Text> : null}
-                {item.inviter ? <Text style={styles.meta}>invited by {item.inviter}</Text> : null}
+                {item.inviter ? <Text style={styles.meta}>nominated by {item.inviter}</Text> : null}
               </View>
             </View>
             <Text style={styles.reason}>“{item.reason}”</Text>

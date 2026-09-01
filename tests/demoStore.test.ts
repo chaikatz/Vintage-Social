@@ -8,6 +8,7 @@ import {
   demoFetchFeedPage,
   demoFetchProfileByUsername,
   demoFollow,
+  demoFollowState,
   demoJoinWithInvite,
   demoLike,
   demoReset,
@@ -17,7 +18,7 @@ import {
   demoSubmitApplication,
   demoUnlike,
 } from "@/demo/store";
-import { DEMO_IDS, DEMO_POSTS, DEMO_PROFILES } from "@/demo/fixtures";
+import { DEMO_COMMENTS, DEMO_IDS, DEMO_POSTS, DEMO_PROFILES } from "@/demo/fixtures";
 
 /** The demo store backs the browser-review build; keep its behavior honest. */
 describe("demo store", () => {
@@ -92,11 +93,27 @@ describe("demo store", () => {
     expect(profile?.invite_quota).toBeGreaterThan(0);
   });
 
-  it("invite join admits immediately with a live feed", () => {
-    demoJoinWithInvite({ fullName: "New Member", desiredUsername: "new.member" });
+  it("a redeemed nomination admits immediately, numbers the member and records who vouched", () => {
+    demoJoinWithInvite({
+      fullName: "New Member",
+      desiredUsername: "new.member",
+      code: "QUET-R2OM", // Elena's unused nomination
+    });
     const me = demoCurrentProfile();
     expect(me?.status).toBe("approved");
+    expect(me?.member_no).toBeGreaterThan(0);
+    expect(me?.invited_by).toBe(DEMO_IDS.elena);
     expect(demoFetchFeedPage(me!.id, 0, 10).length).toBeGreaterThan(0);
+  });
+
+  it("refuses a nomination code that is unknown or already taken up", () => {
+    expect(() =>
+      demoJoinWithInvite({ fullName: "X", desiredUsername: "x.y", code: "ZZZZ-ZZZZ" }),
+    ).toThrow();
+    // ELNA-M4RC was redeemed by Niko in the seeded world.
+    expect(() =>
+      demoJoinWithInvite({ fullName: "X", desiredUsername: "x.y", code: "ELNA-M4RC" }),
+    ).toThrow();
   });
 
   it("derives seeded activity for members", () => {
@@ -161,5 +178,26 @@ describe("demo media is bundled, not remote", () => {
       // Photographs are taken before they are posted, never after.
       expect(new Date(p.taken_at!).getTime()).toBeLessThan(new Date(p.created_at).getTime());
     }
+  });
+
+  it("a new member's welcome-follows respect a private account", () => {
+    demoJoinWithInvite({
+      fullName: "Quiet Newcomer",
+      desiredUsername: "quiet.newcomer",
+      code: "QUET-R2OM",
+    });
+    const me = demoCurrentProfile()!;
+    // Elena is private and was not nominated into their follow list, so
+    // nothing may have handed them an accepted follow of her.
+    expect(demoFollowState(me.id, DEMO_IDS.elena)).not.toBe("accepted");
+    // The public regulars they do follow give them a live feed.
+    expect(demoFollowState(me.id, DEMO_IDS.june)).toBe("accepted");
+    expect(demoFetchFeedPage(me.id, 0, 10).length).toBeGreaterThan(0);
+  });
+
+  it("seeds enough conversation for the world to feel lived in", () => {
+    const withComments = new Set(DEMO_COMMENTS.map((c) => c.post_id));
+    // Comfortably more than half the photographs have someone talking on them.
+    expect(withComments.size).toBeGreaterThan(DEMO_POSTS.length / 2);
   });
 });

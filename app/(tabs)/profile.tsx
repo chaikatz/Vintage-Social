@@ -39,11 +39,16 @@ export default function OwnProfile() {
           <View>
             <View style={{ flexDirection: "row", justifyContent: "flex-end", paddingHorizontal: spacing.lg, paddingTop: spacing.sm }}>
               {isAdmin ? (
-                <Pressable hitSlop={8} onPress={() => router.push("/admin")} style={{ marginRight: spacing.lg }}>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => router.push("/admin")}
+                  accessibilityLabel="Admin"
+                  style={{ marginRight: spacing.lg }}
+                >
                   <Feather name="shield" size={20} color={colors.inkSoft} />
                 </Pressable>
               ) : null}
-              <Pressable hitSlop={8} onPress={() => router.push("/settings")}>
+              <Pressable hitSlop={8} onPress={() => router.push("/settings")} accessibilityLabel="Settings">
                 <Feather name="settings" size={20} color={colors.inkSoft} />
               </Pressable>
             </View>
@@ -59,7 +64,7 @@ export default function OwnProfile() {
                     style={{ flex: 1 }}
                   />
                   <Button
-                    title="Invitations"
+                    title="Nominations"
                     variant="secondary"
                     small
                     onPress={() => router.push("/invites")}

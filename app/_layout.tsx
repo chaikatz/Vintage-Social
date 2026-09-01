@@ -44,7 +44,7 @@ export default function RootLayout() {
           <Stack.Screen name="requests" options={{ title: "Requests" }} />
           <Stack.Screen name="user/[username]" options={{ title: "" }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
-          <Stack.Screen name="invites" options={{ title: "Invitations" }} />
+          <Stack.Screen name="invites" options={{ title: "Nominations" }} />
           <Stack.Screen name="report" options={{ presentation: "modal", title: "Report" }} />
           <Stack.Screen name="admin/index" options={{ title: "Admin" }} />
           <Stack.Screen name="admin/applications" options={{ title: "Applications" }} />

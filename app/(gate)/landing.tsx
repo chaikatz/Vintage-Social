@@ -59,7 +59,7 @@ export default function Landing() {
             onPress={() => router.push("/(gate)/apply")}
           />
           <GateButton
-            title="I have an invitation"
+            title="I have a nomination"
             onPress={() => router.push("/(gate)/invite")}
             style={styles.gap}
           />

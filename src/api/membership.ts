@@ -97,6 +97,7 @@ export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
     demo.demoJoinWithInvite({
       fullName: input.fullName.trim(),
       desiredUsername: normalizeUsername(input.desiredUsername),
+      code: input.code,
     });
     return;
   }
@@ -104,7 +105,7 @@ export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
   await signUp(input.email, input.password, input.desiredUsername, input.fullName);
   const { data, error } = await supabase.rpc("redeem_invite", { p_code: input.code });
   if (error) throw error;
-  if (!data) throw new Error("That invite code is invalid or already used.");
+  if (!data) throw new Error("That nomination code is invalid or has already been used.");
 }
 
 export async function fetchMyApplication(userId: string): Promise<ApplicationRow | null> {

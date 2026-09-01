@@ -316,6 +316,28 @@ ruled field, and the struck/ruled buttons — so the five screens cannot
 drift apart. `EngravedCard` draws the mitred double rule on the invitation
 (a border-radius rounds a corner; this one needs it cut).
 
+## Membership numbers
+
+Every member is given a number when they are let in, counting from 1, and
+keeps it. Numbers are issued by the database (`assign_member_no`) at the
+two moments someone can enter — an admin approving an application, and a
+nomination being redeemed — and by nothing else. They are never reused,
+never edited and never reassigned: suspending an account does not free its
+number, and reinstating it does not issue a new one.
+
+The first **10,000** are founding members, permanently. The cut-off is on
+the number rather than a date or a flag, so it cannot drift — member 9,999
+is founding whether they joined on the first day or the last. Profiles show
+`FOUNDING MEMBER · NO. 00027`.
+
+The column is system-controlled. The `profiles: update own` policy pins
+`member_no` and `invited_by` to their stored values alongside `role`,
+`status` and `invite_quota`, so a member cannot set their own number by
+writing to their profile.
+
+`invited_by` records who nominated them, permanently, at the moment of
+joining — even if that member later leaves.
+
 ## Membership model
 
 New users never land in the app directly:
@@ -449,6 +471,16 @@ see, newest first. No ranking, no "for you", no engagement signal of any
 kind — the only reason a picture is near the top is that it was taken
 recently. Your own posts are left out, because explore is for finding other
 people.
+
+## Nominations
+
+A member does not hand out a referral link. They put someone's name
+forward, and that person is admitted on their word — no queue, no review —
+with the app recording permanently who vouched for them. The count is
+small and does not refill; that is the whole mechanism.
+
+The tables are still called `invites` for schema stability; everything a
+member sees is framed as nomination.
 
 ## Moderation
 

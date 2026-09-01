@@ -1,6 +1,6 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { GateLayout } from "@/components/gate/GateLayout";
 import { GateButton } from "@/components/gate/GateButton";
@@ -36,6 +36,12 @@ export default function Pending() {
     queryFn: () => fetchMyApplication(session!.user.id),
     enabled: Boolean(session?.user?.id),
   });
+
+  // Signing out from here has to actually leave. Without this the waitlist
+  // screen stays on top of the stack with no session behind it, and the
+  // applicant is stranded on "Application received" with no way back to the
+  // door — the tab layout's guard never runs, because this is not a tab.
+  if (session === null) return <Redirect href="/(gate)/landing" />;
 
   const status = profile?.status ?? "applied";
   const copy = COPY[status] ?? COPY.applied;
