@@ -99,7 +99,13 @@ export function FilterOverlay({ filter }: { filter: FilterSpec }) {
   // 4. Vignette — a genuine radial falloff rather than an inset shadow.
   if (vignette > 0.01) {
     layers.push(
-      <Svg key="vignette" pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg
+        key="vignette"
+        width="100%"
+        height="100%"
+        pointerEvents="none"
+        style={StyleSheet.absoluteFill}
+      >
         <Defs>
           <RadialGradient id="v" cx="50%" cy="50%" r="75%">
             <Stop offset="0.45" stopColor="#140F0A" stopOpacity={0} />

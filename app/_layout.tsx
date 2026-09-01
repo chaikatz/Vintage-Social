@@ -25,11 +25,13 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="index" options={{ headerShown: false }} />
+          {/* The whole signed-out world is a printed object, not a form in
+              a frame: no navigation header on any of it. Each screen carries
+              its own back mark. */}
           <Stack.Screen name="(gate)/landing" options={{ headerShown: false }} />
-          <Stack.Screen name="(gate)/apply" options={{ title: "Apply" }} />
-          {/* The invitation is a printed card, not a form in a frame. */}
+          <Stack.Screen name="(gate)/apply" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/invite" options={{ headerShown: false }} />
-          <Stack.Screen name="(gate)/sign-in" options={{ title: "Sign in" }} />
+          <Stack.Screen name="(gate)/sign-in" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/pending" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="compose" options={{ title: "New post" }} />

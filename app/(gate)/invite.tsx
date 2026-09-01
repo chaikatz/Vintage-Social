@@ -6,14 +6,16 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import Feather from "@expo/vector-icons/Feather";
 import { EngravedCard } from "@/components/EngravedCard";
+import { GateField } from "@/components/gate/GateField";
+import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import {
   normalizeInviteCode,
@@ -104,7 +106,7 @@ export default function Invite() {
                 no queue, no review.
               </Text>
 
-              <CardField
+              <GateField
                 label="Invitation code"
                 value={code}
                 onChangeText={(t) => setCode(normalizeInviteCode(t))}
@@ -114,14 +116,14 @@ export default function Invite() {
                 placeholder="ABCD-1234"
                 mono
               />
-              <CardField
+              <GateField
                 label="Name"
                 value={fullName}
                 onChangeText={setFullName}
                 error={errors.fullName}
                 autoCapitalize="words"
               />
-              <CardField
+              <GateField
                 label="Username"
                 value={username}
                 onChangeText={setUsername}
@@ -129,7 +131,7 @@ export default function Invite() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <CardField
+              <GateField
                 label="Email"
                 value={email}
                 onChangeText={setEmail}
@@ -137,7 +139,7 @@ export default function Invite() {
                 autoCapitalize="none"
                 keyboardType="email-address"
               />
-              <CardField
+              <GateField
                 label="Password"
                 value={password}
                 onChangeText={setPassword}
@@ -145,13 +147,7 @@ export default function Invite() {
                 secureTextEntry
               />
 
-              <Pressable
-                style={[styles.submit, busy && styles.submitBusy]}
-                onPress={submit}
-                disabled={busy}
-              >
-                <Text style={styles.submitText}>{busy ? "Opening…" : "Accept the invitation"}</Text>
-              </Pressable>
+              <GateButton title="Accept the invitation" onPress={submit} loading={busy} />
 
               <View style={styles.footRule} />
               <Text style={styles.foot}>Members only · Est. 2026</Text>
@@ -159,32 +155,14 @@ export default function Invite() {
           </EngravedCard>
         </ScrollView>
       </KeyboardAvoidingView>
-    </View>
-  );
-}
-
-/** A field ruled onto the card: a hairline underline, gold ink, no box. */
-function CardField({
-  label,
-  error,
-  mono,
-  ...inputProps
-}: React.ComponentProps<typeof TextInput> & {
-  label: string;
-  error?: string | null;
-  mono?: boolean;
-}) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        {...inputProps}
-        placeholderTextColor="rgba(214, 190, 148, 0.35)"
-        selectionColor={colors.gold}
-        style={[styles.input, mono && styles.inputMono]}
-      />
-      <View style={[styles.fieldRule, error ? styles.fieldRuleError : null]} />
-      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      <Pressable
+        style={[styles.back, { top: insets.top + spacing.sm }]}
+        hitSlop={14}
+        onPress={() => router.back()}
+        accessibilityLabel="Back"
+      >
+        <Feather name="chevron-left" size={22} color={colors.goldSoft} />
+      </Pressable>
     </View>
   );
 }
@@ -195,6 +173,7 @@ const styles = StyleSheet.create({
   // instead of floating in the top half of it.
   scroll: { flexGrow: 1, paddingHorizontal: spacing.md },
   card: { flex: 1 },
+  back: { position: "absolute", left: spacing.md + spacing.sm },
   cardInner: { paddingHorizontal: spacing.xl + spacing.sm, paddingVertical: spacing.xxl },
 
   eyebrow: {
@@ -229,41 +208,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: spacing.lg,
     marginBottom: spacing.xl,
-  },
-
-  field: { marginBottom: spacing.lg },
-  fieldLabel: {
-    fontFamily: type.mono,
-    fontSize: 9,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: colors.goldSoft,
-    marginBottom: spacing.xs,
-  },
-  input: {
-    fontSize: 16,
-    color: colors.gold,
-    paddingVertical: 6,
-  },
-  inputMono: { fontFamily: type.mono, letterSpacing: 3 },
-  fieldRule: { height: 1, backgroundColor: colors.goldSoft, opacity: 0.4 },
-  fieldRuleError: { backgroundColor: colors.stamp, opacity: 0.9 },
-  fieldError: { fontSize: 11, color: colors.stamp, marginTop: spacing.xs },
-
-  submit: {
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.gold,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  submitBusy: { opacity: 0.5 },
-  submitText: {
-    fontFamily: type.mono,
-    fontSize: 11,
-    letterSpacing: 3,
-    textTransform: "uppercase",
-    color: colors.gold,
   },
 
   footRule: {

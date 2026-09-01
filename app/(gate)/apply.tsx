@@ -4,17 +4,21 @@ import { showAlert } from "@/utils/alert";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { Screen } from "@/components/Screen";
-import { TextField } from "@/components/TextField";
-import { Button } from "@/components/Button";
-import { colors, radii, spacing, type } from "@/theme";
-import {
-  validateEmail,
-  validatePassword,
-  validateUsername,
-} from "@/utils/validation";
+import Feather from "@expo/vector-icons/Feather";
+import { GateLayout, GateHeading } from "@/components/gate/GateLayout";
+import { GateField } from "@/components/gate/GateField";
+import { GateButton } from "@/components/gate/GateButton";
+import { colors, spacing, type } from "@/theme";
+import { validateEmail, validatePassword, validateUsername } from "@/utils/validation";
 import { checkUsernameAvailable, submitApplication } from "@/api/membership";
 
+/**
+ * The application.
+ *
+ * Written as a letter to a person, because that is what it is — an admin
+ * reads every one of these by hand. The last field is the one that decides
+ * it, so it is given room rather than squeezed in at the bottom.
+ */
 export default function Apply() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -77,25 +81,36 @@ export default function Apply() {
   };
 
   return (
-    <Screen scroll>
-      <Text style={styles.intro}>
-        VINTAGE is members-only. Tell us a little about yourself and an admin
-        will review your application.
-      </Text>
+    <GateLayout>
+      <GateHeading
+        eyebrow="Apply"
+        title="Vintage"
+        script
+        blurb="Tell us who you are and what you photograph. A member reads every application."
+      />
 
-      <Pressable style={styles.avatarPicker} onPress={pickAvatar}>
+      <Pressable style={styles.portrait} onPress={pickAvatar}>
         {avatarUri ? (
-          <Image source={{ uri: avatarUri }} style={styles.avatar} />
+          <Image source={{ uri: avatarUri }} style={styles.portraitImage} contentFit="cover" />
         ) : (
-          <View style={[styles.avatar, styles.avatarEmpty]}>
-            <Text style={styles.avatarHint}>Add{"\n"}photo</Text>
+          <View style={styles.portraitEmpty}>
+            <Feather name="user" size={22} color={colors.goldSoft} />
           </View>
         )}
-        <Text style={styles.avatarLabel}>Profile photograph</Text>
+        <Text style={styles.portraitLabel}>
+          {avatarUri ? "Change portrait" : "Add a portrait"}
+        </Text>
       </Pressable>
 
-      <TextField label="Name" value={fullName} onChangeText={setFullName} error={errors.fullName} autoComplete="name" />
-      <TextField
+      <GateField
+        label="Name"
+        value={fullName}
+        onChangeText={setFullName}
+        error={errors.fullName}
+        autoCapitalize="words"
+        autoComplete="name"
+      />
+      <GateField
         label="Desired username"
         value={username}
         onChangeText={setUsername}
@@ -103,64 +118,96 @@ export default function Apply() {
         autoCapitalize="none"
         autoCorrect={false}
       />
-      <TextField
+      <GateField
         label="Email"
         value={email}
         onChangeText={setEmail}
         error={errors.email}
         autoCapitalize="none"
+        autoCorrect={false}
         keyboardType="email-address"
         autoComplete="email"
       />
-      <TextField
+      <GateField
         label="Password"
         value={password}
         onChangeText={setPassword}
         error={errors.password}
         secureTextEntry
       />
-      <TextField
-        label="Instagram or social handle"
+      <GateField
+        label="Where your photographs live"
         value={socialHandle}
         onChangeText={setSocialHandle}
         autoCapitalize="none"
-        hint="So we can see your photographs."
+        autoCorrect={false}
+        placeholder="@handle, or a link"
+        hint="So we can see your work."
       />
-      <TextField label="City" value={city} onChangeText={setCity} />
-      <TextField
-        label="Who invited you? (optional)"
+      <GateField label="City" value={city} onChangeText={setCity} autoCapitalize="words" />
+      <GateField
+        label="Who sent you"
         value={inviter}
         onChangeText={setInviter}
         autoCapitalize="none"
+        placeholder="Optional"
       />
-      <TextField
+
+      <View style={styles.divider} />
+
+      <GateField
         label="Why do you want to join VINTAGE?"
         value={reason}
         onChangeText={setReason}
         error={errors.reason}
         multiline
+        placeholder="A sentence or two, in your own words."
       />
 
-      <Button title="Submit application" onPress={submit} loading={busy} />
+      <GateButton title="Submit application" variant="solid" onPress={submit} loading={busy} />
+
       <Text style={styles.footnote}>
-        Applications are reviewed by people, not machines.
+        Applications are read by people, not machines. Nothing here is scored, ranked, or decided
+        automatically.
       </Text>
-    </Screen>
+    </GateLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  intro: { ...type.body, marginTop: spacing.lg, marginBottom: spacing.xl, color: colors.inkSoft },
-  avatarPicker: { alignItems: "center", marginBottom: spacing.xl },
-  avatar: { width: 84, height: 84, borderRadius: radii.round, backgroundColor: colors.paperSunken },
-  avatarEmpty: {
+  portrait: { alignItems: "center", marginBottom: spacing.xl },
+  portraitImage: { width: 82, height: 82, borderRadius: 41 },
+  portraitEmpty: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderStyle: "dashed",
+    borderColor: colors.goldSoft,
+    opacity: 0.85,
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarHint: { ...type.caption, textAlign: "center", color: colors.inkFaint },
-  avatarLabel: { ...type.label, marginTop: spacing.sm },
-  footnote: { ...type.caption, textAlign: "center", marginTop: spacing.lg, color: colors.inkFaint },
+  portraitLabel: {
+    fontFamily: type.mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    color: colors.goldSoft,
+    marginTop: spacing.sm + 2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.goldSoft,
+    opacity: 0.22,
+    marginBottom: spacing.xl,
+  },
+  footnote: {
+    fontFamily: type.serif,
+    fontSize: 12,
+    lineHeight: 19,
+    color: colors.goldSoft,
+    opacity: 0.7,
+    textAlign: "center",
+    marginTop: spacing.lg,
+  },
 });

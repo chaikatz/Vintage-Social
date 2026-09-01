@@ -1,15 +1,16 @@
 import React, { useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Screen } from "@/components/Screen";
-import { TextField } from "@/components/TextField";
-import { Button } from "@/components/Button";
+import { GateLayout, GateHeading } from "@/components/gate/GateLayout";
+import { GateField } from "@/components/gate/GateField";
+import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import { demoSignIn } from "@/demo/store";
 import { showAlert } from "@/utils/alert";
 
+/** Coming back to a place you already belong to. Two lines and a key. */
 export default function SignIn() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -37,35 +38,60 @@ export default function SignIn() {
   };
 
   return (
-    <Screen scroll>
-      <Text style={styles.intro}>Welcome back.</Text>
+    <GateLayout>
+      <GateHeading eyebrow="Members" title="Vintage" script blurb="Welcome back." />
+
       {isDemoMode() ? (
         <Text style={styles.demoHint}>
-          Browser review build — any email and password work. Use an email
-          containing “admin” to see the admin dashboard.
+          Review build — any email and password work. Use one containing “admin” for the admin
+          dashboard.
         </Text>
       ) : null}
-      <TextField
+
+      <GateField
         label="Email"
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
+        autoCorrect={false}
         keyboardType="email-address"
         autoComplete="email"
       />
-      <TextField
+      <GateField
         label="Password"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
         autoComplete="password"
       />
-      <Button title="Sign in" onPress={submit} loading={busy} />
-    </Screen>
+
+      <GateButton title="Sign in" variant="solid" onPress={submit} loading={busy} />
+
+      <View style={styles.spacer} />
+
+      <GateButton
+        title="I have an invitation"
+        variant="quiet"
+        onPress={() => router.replace("/(gate)/invite")}
+      />
+      <GateButton
+        title="Apply for membership"
+        variant="quiet"
+        onPress={() => router.replace("/(gate)/apply")}
+      />
+    </GateLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  intro: { ...type.title, marginTop: spacing.lg, marginBottom: spacing.xl, color: colors.ink },
-  demoHint: { ...type.caption, marginBottom: spacing.lg, color: colors.accent },
+  spacer: { flex: 1, minHeight: spacing.xl },
+  demoHint: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    lineHeight: 17,
+    letterSpacing: 0.6,
+    color: colors.goldSoft,
+    opacity: 0.75,
+    marginBottom: spacing.xl,
+  },
 });

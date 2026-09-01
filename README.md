@@ -294,6 +294,28 @@ npm run typecheck   # tsc --noEmit (strict)
 npm test            # vitest — filter math, presets, validation, time
 ```
 
+## The gate
+
+Everything you see before you are a member — landing, apply, invitation,
+sign in, waitlist — is one piece, and it is deliberately unlike the app
+behind it. Inside, the chrome recedes so the photographs carry the screen.
+Out here there are no photographs of yours yet, so VINTAGE introduces
+itself as a printed object instead: dark stock, gold ink, letterspaced
+capitals, a copperplate wordmark (Snell Roundhand on iOS, an italic serif
+elsewhere). The navigation header is hidden on all five; each carries its
+own back mark.
+
+The landing is one photograph sunk almost to nothing under a brown wash and
+a radial vignette — texture in the paper rather than a picture on a poster.
+There are no app screenshots, no feature list and no member count: the
+point of VINTAGE is that not everyone is inside, so the front door should
+read as a closed one.
+
+`src/components/gate/` holds the three shared pieces — the dark layout, the
+ruled field, and the struck/ruled buttons — so the five screens cannot
+drift apart. `EngravedCard` draws the mitred double rule on the invitation
+(a border-radius rounds a corner; this one needs it cut).
+
 ## Membership model
 
 New users never land in the app directly:

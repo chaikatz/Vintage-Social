@@ -1,9 +1,9 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/Button";
+import { GateLayout } from "@/components/gate/GateLayout";
+import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { fetchMyApplication } from "@/api/membership";
@@ -46,29 +46,43 @@ export default function Pending() {
   };
 
   return (
-    <SafeAreaView style={styles.root}>
+    <GateLayout back={false} scroll={false}>
       <View style={styles.center}>
-        <Text style={type.wordmark}>VINTAGE</Text>
+        <Text style={styles.wordmark}>Vintage</Text>
         <View style={styles.rule} />
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.body}>{copy.body}</Text>
       </View>
       <View style={styles.actions}>
         {status === "applied" || status === "waitlisted" ? (
-          <Button title="Check status" variant="secondary" onPress={checkAgain} />
+          <GateButton title="Check status" onPress={checkAgain} />
         ) : null}
-        <Button title="Sign out" variant="quiet" onPress={signOut} style={styles.gap} />
+        <GateButton title="Sign out" variant="quiet" onPress={signOut} style={styles.gap} />
       </View>
-    </SafeAreaView>
+    </GateLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper, paddingHorizontal: spacing.xl },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  rule: { width: 56, height: 1, backgroundColor: colors.borderStrong, marginVertical: spacing.lg },
-  title: { fontFamily: type.serif, fontSize: 18, color: colors.ink },
-  body: { ...type.caption, textAlign: "center", marginTop: spacing.md, maxWidth: 280, lineHeight: 20 },
-  actions: { paddingBottom: spacing.xl },
+  wordmark: { fontFamily: type.script, fontSize: 52, lineHeight: 74, color: colors.gold },
+  rule: {
+    width: 48,
+    height: 1,
+    backgroundColor: colors.goldSoft,
+    opacity: 0.55,
+    marginVertical: spacing.lg,
+  },
+  title: { fontFamily: type.serif, fontSize: 19, color: colors.gold },
+  body: {
+    fontFamily: type.serif,
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.goldSoft,
+    textAlign: "center",
+    marginTop: spacing.md,
+    maxWidth: 290,
+  },
+  actions: { paddingBottom: spacing.md },
   gap: { marginTop: spacing.sm },
 });
