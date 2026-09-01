@@ -28,15 +28,21 @@ declare
   v_username constant text := 'your.username';
   -- ▲▲▲ exactly the username you typed in the app ▲▲▲
 
-  v_user     uuid;
-  v_seq_last bigint;
-  v_seq_used boolean;
-  v_numbered integer;
-  v_apps     integer;
-  v_no       integer;
+  v_user       uuid;
+  v_member_no  integer;
+  v_role       text;
+  v_status     text;
+  v_app_count  integer;
+  v_app_status text;
+  v_seq_last   bigint;
+  v_seq_used   boolean;
+  v_numbered   integer;
+  v_apps       integer;
+  v_no         integer;
 begin
   -- 1. Find the profile the app created. Never create one here.
-  select id into v_user
+  select id, member_no, role, status
+    into v_user, v_member_no, v_role, v_status
   from public.profiles
   where username = lower(trim(v_username));
 
@@ -62,7 +68,41 @@ begin
       case when v_seq_used then v_seq_last + 1 else v_seq_last end;
   end if;
 
-  -- 4. Promote. 50 nominations for the founding cohort; everyone approved
+  -- 4. Require the account to be exactly what the app leaves behind: a
+  --    fresh applicant with one application still waiting on a decision.
+  --    All of this is checked before the first write and before the number
+  --    is drawn, so a surprise here costs nothing.
+  if v_member_no is not null then
+    raise exception
+      'Profile "%" already holds membership number %. Nothing to bootstrap.',
+      v_username, v_member_no;
+  end if;
+
+  if v_role = 'admin' or v_status = 'approved' then
+    raise exception
+      'Profile "%" is already role=% status=%. Expected a fresh applicant; refusing to bootstrap over it.',
+      v_username, v_role, v_status;
+  end if;
+
+  select count(*) into v_app_count
+  from public.applications where user_id = v_user;
+
+  if v_app_count <> 1 then
+    raise exception
+      'Expected exactly one application for "%", found %. Sort that out before bootstrapping the founder.',
+      v_username, v_app_count;
+  end if;
+
+  select status into v_app_status
+  from public.applications where user_id = v_user;
+
+  if v_app_status <> 'pending' then
+    raise exception
+      'The application for "%" is "%", not "pending". Expected one still waiting on a decision.',
+      v_username, v_app_status;
+  end if;
+
+  -- 5. Promote. 50 nominations for the founding cohort; everyone approved
   --    after this gets default_invite_quota(), which is 3.
   update public.profiles
   set role         = 'admin',
@@ -71,7 +111,7 @@ begin
       invite_quota = 50
   where id = v_user;
 
-  -- 5. Settle the application so the admin queue cannot still show the
+  -- 6. Settle the application so the admin queue cannot still show the
   --    founder waiting. Every row for this user, not only the newest.
   update public.applications
   set status     = 'approved',
@@ -80,12 +120,12 @@ begin
   where user_id = v_user and status <> 'approved';
   get diagnostics v_apps = row_count;
 
-  -- 6. Issue the number through the protected function — the same one
+  -- 7. Issue the number through the protected function — the same one
   --    decide_application and redeem_invite call. Nothing here touches the
   --    sequence directly, and no grant is changed.
   v_no := public.assign_member_no(v_user);
 
-  -- 7. The assertion. Anything but 1 rolls the entire block back.
+  -- 8. The assertion. Anything but 1 rolls the entire block back.
   if v_no <> 1 then
     raise exception
       'Issued number was %, not 1. Everything has been rolled back — but the counter has advanced, so tell someone before retrying.',
