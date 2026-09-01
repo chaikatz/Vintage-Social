@@ -28,8 +28,11 @@ export function isDemoMode(): boolean {
 export function requireEnv(): { supabaseUrl: string; supabaseAnonKey: string } {
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      "Missing Supabase configuration. Copy .env.example to .env and set " +
-        "EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.",
+      "Missing Supabase configuration. This build has demo mode switched off " +
+        "(EXPO_PUBLIC_DEMO_MODE=0) but no backend to talk to.\n\n" +
+        "Production builds read EXPO_PUBLIC_SUPABASE_URL and " +
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY from the EAS \"production\" environment; " +
+        "locally they come from .env. See supabase/production/README.md.",
     );
   }
   return { supabaseUrl, supabaseAnonKey };
