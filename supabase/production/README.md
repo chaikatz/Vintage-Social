@@ -106,6 +106,27 @@ trigger is created, not each time it fires.
 The advisors still report the functions that were deliberately kept
 reachable. That is expected — each one guards itself, or a policy needs it.
 
+## The founder
+
+`04_bootstrap_founder.sql` turns the application submitted through the app
+into member no. 1. Run it once, after submitting, editing only the username
+on the marked line.
+
+It creates nothing — the account and profile already exist, made by the
+app's sign-up and the `on_auth_user_created` trigger. It promotes the
+profile to admin, settles the application so the queue does not still show
+the founder pending, sets the founding quota, and issues the number through
+`assign_member_no`, the same protected function the two approval paths use.
+
+Its preconditions are checked *before* the number is drawn, and that
+ordering is the point. A sequence is deliberately not transactional:
+`nextval()` sticks even when the surrounding transaction rolls back,
+because two sessions must never receive the same number. A block that drew
+a number and then failed an assertion would roll back the profile write and
+leave the counter advanced — number 1 gone, a retry issuing 2. So the block
+verifies that nothing is numbered and the counter is untouched first, and
+the closing assertion is a second line of defence that should never fire.
+
 ## Auth settings
 
 In the dashboard, **Authentication → Providers → Email**:
