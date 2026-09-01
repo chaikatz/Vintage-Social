@@ -21,6 +21,14 @@ no build, no cost.
    npm run phone
    ```
 
+   Run `npm install` again after every `git pull`. A pull updates
+   `package.json`, but installing what it asks for is a separate step, and
+   Metro refuses to start when the two disagree:
+
+   ```bash
+   git pull && npm install && npm run phone
+   ```
+
 3. Point your iPhone's Camera at the QR code in the terminal and tap the
    banner. VINTAGE opens in Expo Go.
 
@@ -50,6 +58,10 @@ runs only one SDK version at a time.
 
 **`command not found: npm`** — Node isn't installed. Get the LTS installer
 from nodejs.org, run it, then reopen Terminal.
+
+**`"<package>" is added as a dependency in your project's package.json but
+it doesn't seem to be installed`** — a pull brought in a new library. Run
+`npm install`, then start again.
 
 **The QR code won't connect** — check the phone and the computer are on the
 same Wi-Fi. If they can't be, use `npm run phone:tunnel`; if *that* fails
