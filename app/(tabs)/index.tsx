@@ -26,7 +26,8 @@ export default function Home() {
   const posts = useMemo(() => (feed.data?.pages ?? []).flat(), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
 
-  const { isLiked, likeCountFor, toggleLike, onMore } = usePostActions(userId, postIds);
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, commentsFor } =
+    usePostActions(userId, postIds);
 
   return (
     <Screen padded={false}>
@@ -55,6 +56,8 @@ export default function Home() {
             onToggleLike={toggleLike}
             onOpenComments={(p) => router.push(`/post/${p.id}`)}
             onOpenProfile={(username) => router.push(`/user/${username}`)}
+            onShare={onShare}
+            comments={commentsFor(item)}
             onMore={(p) => onMore(p)}
           />
         )}

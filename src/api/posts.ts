@@ -75,6 +75,23 @@ export interface NewPost {
   location: string | null;
 }
 
+/** Photographs from across VINTAGE — the one surface showing work you don't follow. */
+export async function fetchExplore(viewerId: string, limit = 60): Promise<PostRow[]> {
+  if (isDemoMode()) return demo.demoFetchExplore(viewerId, limit);
+
+  // RLS already hides private members' posts from anyone who doesn't follow
+  // them, so this needs no privacy filter of its own.
+  const { data, error } = await supabase
+    .from("posts")
+    .select("*")
+    .is("removed_at", null)
+    .neq("author_id", viewerId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as PostRow[];
+}
+
 export async function createPost(post: NewPost): Promise<void> {
   if (isDemoMode()) {
     demo.demoCreatePost(post);
@@ -140,6 +157,34 @@ export async function fetchComments(postId: string): Promise<CommentWithAuthor[]
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as CommentWithAuthor[];
+}
+
+/**
+ * The newest comments on each of these posts, for the previews under a
+ * photograph in the feed. One query for the whole page rather than one per
+ * card — a feed of twenty posts shouldn't cost twenty round trips.
+ */
+export async function fetchCommentPreviews(
+  postIds: string[],
+  perPost: number,
+): Promise<Record<string, CommentWithAuthor[]>> {
+  if (postIds.length === 0) return {};
+  if (isDemoMode()) return demo.demoCommentPreviews(postIds, perPost);
+
+  const { data, error } = await supabase
+    .from("comments")
+    .select("*, author:profiles!comments_author_id_fkey(id, username, avatar_url)")
+    .in("post_id", postIds)
+    .is("removed_at", null)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  const out: Record<string, CommentWithAuthor[]> = {};
+  for (const c of (data ?? []) as unknown as CommentWithAuthor[]) {
+    (out[c.post_id] ??= []).push(c);
+  }
+  for (const id of Object.keys(out)) out[id] = out[id].slice(-perPost);
+  return out;
 }
 
 export async function addComment(userId: string, postId: string, body: string): Promise<void> {

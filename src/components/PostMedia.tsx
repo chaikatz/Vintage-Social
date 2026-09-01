@@ -8,17 +8,20 @@ import { getFilter } from "@/filters";
 import { cssFilterFor } from "@/filters/cssFilter";
 import { DEMO_PREFIX } from "@/demo/photos";
 import { DateStamp } from "./DateStamp";
+import { FilterOverlay } from "./FilterOverlay";
 import type { PostRow } from "@/types/db";
 
 /**
- * Anything published through the app has its filter baked into the pixels
- * at compose time, so the feed renders stored media untouched. The only
- * exception is the bundled demo library: those photographs ship unfiltered,
- * so the post's filter_id is approximated at display time to make the
- * seeded world read the way a real one would.
+ * Which media still needs its filter applied at display time.
+ *
+ * A photograph published through the app is baked at compose time, so it
+ * arrives already filtered. Two kinds aren't: the bundled demo library,
+ * which ships as plain photographs, and video — burning a filter into
+ * footage needs a transcode VINTAGE doesn't do yet, so a video's filter is
+ * applied live on every play.
  */
-function needsDisplayFilter(mediaPath: string): boolean {
-  return mediaPath.startsWith(DEMO_PREFIX);
+function needsDisplayFilter(post: Pick<PostRow, "media_type" | "media_path">): boolean {
+  return post.media_type === "video" || post.media_path.startsWith(DEMO_PREFIX);
 }
 
 interface Props {
@@ -67,46 +70,37 @@ export function PostMedia({ post, onDoubleTap }: Props) {
   ) : null;
 
   const ratio = aspectRatio(post.width, post.height);
+  const filter = getFilter(post.filter_id);
+  const live = needsDisplayFilter(post) ? cssFilterFor(filter) : null;
 
   if (post.media_type === "video") {
     return (
       <View style={[styles.media, { aspectRatio: ratio }]}>
-        <VideoMedia path={post.media_path} />
+        <VideoMedia path={post.media_path} cssFilter={live?.filter ?? null} />
+        {live ? <FilterOverlay filter={filter} /> : null}
         {stamp}
       </View>
     );
   }
 
   const url = mediaUrl("media", post.media_path);
-  const web = needsDisplayFilter(post.media_path) ? cssFilterFor(getFilter(post.filter_id)) : null;
   return (
     <Pressable onPress={handlePress} style={[styles.media, { aspectRatio: ratio }]}>
       {url ? (
         <Image
           source={url}
-          style={[StyleSheet.absoluteFill, web ? ({ filter: web.filter } as object) : null]}
+          style={[StyleSheet.absoluteFill, live ? ({ filter: live.filter } as object) : null]}
           contentFit="cover"
           transition={120}
         />
       ) : null}
-      {web?.fadeOverlay ? (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: web.fadeOverlay }]} />
-      ) : null}
-      {web?.tintOverlay ? (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: web.tintOverlay }]} />
-      ) : null}
-      {web?.vignetteBoxShadow ? (
-        <View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { boxShadow: web.vignetteBoxShadow } as object]}
-        />
-      ) : null}
+      {live ? <FilterOverlay filter={filter} /> : null}
       {stamp}
     </Pressable>
   );
 }
 
-function VideoMedia({ path }: { path: string }) {
+function VideoMedia({ path, cssFilter }: { path: string; cssFilter: string | null }) {
   const url = mediaUrlString("media", path) ?? "";
   const player = useVideoPlayer(url, (p) => {
     p.loop = true;
@@ -118,7 +112,12 @@ function VideoMedia({ path }: { path: string }) {
   };
   return (
     <Pressable onPress={toggleMute} style={StyleSheet.absoluteFill}>
-      <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
+      <VideoView
+        player={player}
+        style={[StyleSheet.absoluteFill, cssFilter ? ({ filter: cssFilter } as object) : null]}
+        contentFit="cover"
+        nativeControls={false}
+      />
     </Pressable>
   );
 }

@@ -28,6 +28,13 @@ export const colors = {
   danger: "#A03B2E",
   success: "#5C7048",
 
+  // The invitation card: a dark, printed object rather than a screen. Used
+  // only where VINTAGE presents itself — the invitation, and the gate.
+  card: "#3A322A", // deep printed brown
+  cardDeep: "#2F2821", // the same, one shade down
+  gold: "#D6BE94", // the ink the rule and the wordmark are struck in
+  goldSoft: "#B9A47E", // the same, receded
+
   // Photographic details
   stamp: "#FFB03A", // date-stamp amber
   stampGlow: "rgba(255, 150, 40, 0.55)",
@@ -53,12 +60,20 @@ export const radii = {
 
 const serif = Platform.select({ ios: "Georgia", default: "serif" });
 const mono = Platform.select({ ios: "Courier New", default: "monospace" });
+/**
+ * The engraved script of an invitation. Snell Roundhand ships with iOS;
+ * everywhere else this degrades to an italic serif, which is the right
+ * shape even if it isn't the right hand.
+ */
+const script = Platform.select({ ios: "Snell Roundhand", default: "serif" });
 
 export const type = {
   /** The wordmark and section headers — quiet serif. */
   serif,
   /** Date stamps and counters — typewriter mono. */
   mono,
+  /** Invitations only — copperplate script. */
+  script,
   title: {
     fontFamily: serif,
     fontSize: 22,

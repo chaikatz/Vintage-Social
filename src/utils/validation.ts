@@ -49,6 +49,8 @@ export const MAX_CAPTION_LENGTH = 500;
 
 /** Free text, not a coordinate — a place name fits in a line. */
 export const MAX_LOCATION_LENGTH = 80;
+
+export const MAX_MESSAGE_LENGTH = 1000;
 export const MAX_BIO_LENGTH = 160;
 export const MAX_COMMENT_LENGTH = 500;
 export const MAX_VIDEO_SECONDS = 60;

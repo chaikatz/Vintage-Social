@@ -22,6 +22,10 @@ function line(item: ActivityWithRefs): string {
       return "commented on your photograph.";
     case "follow":
       return "started following you.";
+    case "follow_request":
+      return "asked to follow you.";
+    case "message":
+      return "sent you a message.";
     case "moderation":
       return item.message ?? "A note from the admins.";
   }

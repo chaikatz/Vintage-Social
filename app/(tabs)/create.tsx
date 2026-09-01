@@ -5,13 +5,17 @@ import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
-import { colors, radii, spacing, type } from "@/theme";
+import { colors, spacing, type } from "@/theme";
 import { captureDateFrom } from "@/utils/exif";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 
 /**
  * One photograph per post. Short videos are allowed but live in the same
  * feed and grid as everything else — there is no separate video surface.
+ *
+ * Laid out like the back of a camera: a wide shutter for the thing you do
+ * most, two quieter plates beside it, and a line of type explaining what
+ * happens next. Nothing here is a card in a rounded box.
  */
 export default function Create() {
   const router = useRouter();
@@ -72,55 +76,106 @@ export default function Create() {
   };
 
   return (
-    <Screen>
-      <Text style={styles.heading}>Share a photograph</Text>
-      <Text style={styles.sub}>One image per post. Choose a filter before you publish.</Text>
+    <Screen padded={false}>
+      <View style={styles.body}>
+        <Text style={styles.eyebrow}>New post</Text>
+        <Text style={styles.heading}>Share a photograph</Text>
+        <Text style={styles.sub}>
+          One image per post. You'll choose the film and the date stamp before it goes out.
+        </Text>
 
-      <Pressable style={styles.option} onPress={() => pick("photo")}>
-        <Feather name="image" size={22} color={colors.ink} />
-        <View style={styles.optionText}>
-          <Text style={styles.optionTitle}>From your library</Text>
-          <Text style={styles.optionSub}>Pick a photograph</Text>
-        </View>
-      </Pressable>
+        <Pressable style={styles.shutter} onPress={() => pick("photo")}>
+          <View style={styles.shutterRing}>
+            <Feather name="image" size={26} color={colors.onShutter} />
+          </View>
+          <View style={styles.shutterText}>
+            <Text style={styles.shutterTitle}>From your library</Text>
+            <Text style={styles.shutterSub}>Pick a photograph you've already taken</Text>
+          </View>
+          <Feather name="chevron-right" size={18} color="rgba(242, 235, 221, 0.5)" />
+        </Pressable>
 
-      {/* The camera is a native affordance; browser review uses the library picker. */}
-      {Platform.OS !== "web" ? (
-      <Pressable style={styles.option} onPress={takePhoto}>
-        <Feather name="camera" size={22} color={colors.ink} />
-        <View style={styles.optionText}>
-          <Text style={styles.optionTitle}>Camera</Text>
-          <Text style={styles.optionSub}>Take one now</Text>
+        <View style={styles.plates}>
+          {/* The camera is a native affordance; browser review uses the library picker. */}
+          {Platform.OS !== "web" ? (
+            <Pressable style={styles.plate} onPress={takePhoto}>
+              <Feather name="camera" size={20} color={colors.ink} />
+              <Text style={styles.plateTitle}>Camera</Text>
+              <Text style={styles.plateSub}>Take one now</Text>
+            </Pressable>
+          ) : null}
+          <Pressable style={styles.plate} onPress={() => pick("video")}>
+            <Feather name="film" size={20} color={colors.ink} />
+            <Text style={styles.plateTitle}>Short video</Text>
+            <Text style={styles.plateSub}>Up to {MAX_VIDEO_SECONDS}s</Text>
+          </Pressable>
         </View>
-      </Pressable>
-      ) : null}
 
-      <Pressable style={styles.option} onPress={() => pick("video")}>
-        <Feather name="film" size={22} color={colors.ink} />
-        <View style={styles.optionText}>
-          <Text style={styles.optionTitle}>Short video</Text>
-          <Text style={styles.optionSub}>Up to {MAX_VIDEO_SECONDS} seconds, lives in the same feed</Text>
+        <View style={styles.spacer} />
+
+        <View style={styles.note}>
+          <View style={styles.noteRule} />
+          <Text style={styles.noteText}>
+            Videos sit in the same feed and the same grid as photographs. There is no separate
+            place for them, and nothing here is ranked.
+          </Text>
         </View>
-      </Pressable>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  heading: { ...type.title, marginTop: spacing.xl },
-  sub: { ...type.caption, marginTop: spacing.xs, marginBottom: spacing.xl },
-  option: {
+  body: { flex: 1, paddingHorizontal: spacing.lg },
+
+  eyebrow: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 2.4,
+    textTransform: "uppercase",
+    color: colors.inkFaint,
+    marginTop: spacing.xl,
+  },
+  heading: { ...type.title, marginTop: spacing.sm },
+  sub: { ...type.caption, marginTop: spacing.xs, lineHeight: 19, marginBottom: spacing.xl },
+
+  shutter: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.paperRaised,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: radii.md,
+    gap: spacing.lg,
+    backgroundColor: colors.shutter,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
-    marginBottom: spacing.md,
   },
-  optionText: { marginLeft: spacing.md },
-  optionTitle: { fontSize: 15, fontWeight: "600", color: colors.ink },
-  optionSub: { fontSize: 12, color: colors.inkFaint, marginTop: 2 },
+  shutterRing: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(242, 235, 221, 0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shutterText: { flex: 1 },
+  shutterTitle: { fontSize: 15, fontWeight: "600", color: colors.onShutter },
+  shutterSub: { fontSize: 12, color: "rgba(242, 235, 221, 0.6)", marginTop: 3 },
+
+  plates: { flexDirection: "row", gap: 1, marginTop: 1 },
+  plate: {
+    flex: 1,
+    backgroundColor: colors.paperRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    gap: spacing.xs,
+  },
+  plateTitle: { fontSize: 14, fontWeight: "600", color: colors.ink, marginTop: spacing.xs },
+  plateSub: { fontSize: 11, color: colors.inkFaint },
+
+  spacer: { flex: 1 },
+
+  note: { paddingBottom: spacing.xl },
+  noteRule: { height: 1, width: 28, backgroundColor: colors.borderStrong, marginBottom: spacing.md },
+  noteText: { ...type.caption, fontSize: 12, lineHeight: 19, color: colors.inkFaint },
 });

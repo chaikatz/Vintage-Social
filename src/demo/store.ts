@@ -5,7 +5,12 @@ import type {
   ApplicationStatus,
   CommentRow,
   CommentWithAuthor,
+  ConversationRow,
+  ConversationWithPeer,
   FollowRow,
+  FollowStatus,
+  MessageRow,
+  MessageWithPost,
   InviteRow,
   LikeRow,
   ModerationActionRow,
@@ -18,7 +23,9 @@ import type {
 import {
   DEMO_APPLICATIONS,
   DEMO_COMMENTS,
+  DEMO_CONVERSATIONS,
   DEMO_FOLLOWS,
+  DEMO_MESSAGES,
   DEMO_IDS,
   DEMO_INVITES,
   DEMO_LIKES,
@@ -46,6 +53,8 @@ interface DemoState {
   invites: InviteRow[];
   reports: ReportRow[];
   moderationActions: ModerationActionRow[];
+  conversations: ConversationRow[];
+  messages: MessageRow[];
   currentUserId: string | null;
 }
 
@@ -66,6 +75,8 @@ function initialState(): DemoState {
     invites: clone(DEMO_INVITES),
     reports: clone(DEMO_REPORTS),
     moderationActions: [],
+    conversations: clone(DEMO_CONVERSATIONS),
+    messages: clone(DEMO_MESSAGES),
     currentUserId: null,
   };
   // Derive activity from the seeded likes/comments/follows so every
@@ -124,8 +135,12 @@ function recomputeCounts(state: DemoState) {
     profile.post_count = state.posts.filter(
       (p) => p.author_id === profile.id && !p.removed_at,
     ).length;
-    profile.follower_count = state.follows.filter((f) => f.followee_id === profile.id).length;
-    profile.following_count = state.follows.filter((f) => f.follower_id === profile.id).length;
+    profile.follower_count = state.follows.filter(
+      (f) => f.followee_id === profile.id && f.status === "accepted",
+    ).length;
+    profile.following_count = state.follows.filter(
+      (f) => f.follower_id === profile.id && f.status === "accepted",
+    ).length;
   }
   for (const post of state.posts) {
     post.like_count = state.likes.filter((l) => l.post_id === post.id).length;
@@ -224,7 +239,9 @@ const withAuthor = (post: PostRow): PostWithAuthor => ({ ...clone(post), author:
 // ---------------------------------------------------------------------------
 export function demoFetchFeedPage(userId: string, page: number, pageSize: number): PostWithAuthor[] {
   const followees = new Set(
-    state.follows.filter((f) => f.follower_id === userId).map((f) => f.followee_id),
+    state.follows
+      .filter((f) => f.follower_id === userId && f.status === "accepted")
+      .map((f) => f.followee_id),
   );
   followees.add(userId);
   const feed = state.posts
@@ -289,6 +306,23 @@ export function demoFetchComments(postId: string): CommentWithAuthor[] {
     .map((c) => ({ ...clone(c), author: authorRef(c.author_id) }));
 }
 
+export function demoCommentPreviews(
+  postIds: string[],
+  perPost: number,
+): Record<string, CommentWithAuthor[]> {
+  const wanted = new Set(postIds);
+  const out: Record<string, CommentWithAuthor[]> = {};
+  for (const c of state.comments) {
+    if (!wanted.has(c.post_id) || c.removed_at) continue;
+    (out[c.post_id] ??= []).push({ ...clone(c), author: authorRef(c.author_id) });
+  }
+  for (const id of Object.keys(out)) {
+    out[id].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    out[id] = out[id].slice(-perPost);
+  }
+  return out;
+}
+
 export function demoAddComment(userId: string, postId: string, body: string): void {
   state.comments.push({
     id: newId("demo-comment"),
@@ -339,18 +373,96 @@ export function demoUpdateProfile(userId: string, edits: Partial<ProfileRow>): v
   emit();
 }
 
-export function demoIsFollowing(followerId: string, followeeId: string): boolean {
-  return state.follows.some((f) => f.follower_id === followerId && f.followee_id === followeeId);
+export function demoFollowState(followerId: string, followeeId: string): FollowStatus | null {
+  const f = state.follows.find(
+    (x) => x.follower_id === followerId && x.followee_id === followeeId,
+  );
+  return f?.status ?? null;
 }
 
-export function demoFollow(followerId: string, followeeId: string): void {
-  if (demoIsFollowing(followerId, followeeId) || followerId === followeeId) return;
+export function demoIsFollowing(followerId: string, followeeId: string): boolean {
+  return demoFollowState(followerId, followeeId) === "accepted";
+}
+
+/** Returns the resulting state: 'pending' for a private member, else 'accepted'. */
+export function demoFollow(followerId: string, followeeId: string): FollowStatus {
+  const existing = demoFollowState(followerId, followeeId);
+  if (existing) return existing;
+  if (followerId === followeeId) return "accepted";
+  const followee = state.profiles.find((p) => p.id === followeeId);
+  const status: FollowStatus = followee?.is_private ? "pending" : "accepted";
   state.follows.push({
     follower_id: followerId,
     followee_id: followeeId,
+    status,
     created_at: new Date().toISOString(),
   });
+  state.activity.push({
+    id: newId("demo-activity"),
+    recipient_id: followeeId,
+    actor_id: followerId,
+    type: status === "pending" ? "follow_request" : "follow",
+    post_id: null,
+    comment_id: null,
+    message: null,
+    created_at: new Date().toISOString(),
+    read_at: null,
+  });
   recomputeCounts(state);
+  emit();
+  return status;
+}
+
+/** A private member accepting or declining a waiting request. */
+export function demoDecideFollowRequest(
+  followerId: string,
+  followeeId: string,
+  accept: boolean,
+): void {
+  const f = state.follows.find(
+    (x) => x.follower_id === followerId && x.followee_id === followeeId,
+  );
+  if (!f || f.status !== "pending") return;
+  if (accept) {
+    f.status = "accepted";
+  } else {
+    state.follows = state.follows.filter((x) => x !== f);
+  }
+  state.activity = state.activity.filter(
+    (a) =>
+      !(a.type === "follow_request" && a.actor_id === followerId && a.recipient_id === followeeId),
+  );
+  recomputeCounts(state);
+  emit();
+}
+
+export function demoFetchFollowing(userId: string): ProfileRow[] {
+  return state.follows
+    .filter((f) => f.follower_id === userId && f.status === "accepted")
+    .map((f) => state.profiles.find((p) => p.id === f.followee_id))
+    .filter((p): p is ProfileRow => Boolean(p))
+    .sort((a, b) => a.username.localeCompare(b.username))
+    .map(clone);
+}
+
+export function demoPendingRequests(followeeId: string): ProfileRow[] {
+  return state.follows
+    .filter((f) => f.followee_id === followeeId && f.status === "pending")
+    .map((f) => state.profiles.find((p) => p.id === f.follower_id))
+    .filter((p): p is ProfileRow => Boolean(p))
+    .map(clone);
+}
+
+/**
+ * Whether `viewerId` may see `authorId`'s photographs. Public members are
+ * open to every approved member; a private member is visible to themselves
+ * and to accepted followers only.
+ */
+export function demoCanViewPosts(viewerId: string, authorId: string): boolean {
+  if (viewerId === authorId) return true;
+  const author = state.profiles.find((p) => p.id === authorId);
+  if (!author?.is_private) return true;
+  return demoIsFollowing(viewerId, authorId);
 }
 
 export function demoUnfollow(followerId: string, followeeId: string): void {
@@ -358,6 +470,7 @@ export function demoUnfollow(followerId: string, followeeId: string): void {
     (f) => !(f.follower_id === followerId && f.followee_id === followeeId),
   );
   recomputeCounts(state);
+  emit();
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +533,7 @@ export function demoSubmitApplication(input: {
     role: "member",
     status: "applied",
     invite_quota: 0,
+    is_private: false,
     post_count: 0,
     follower_count: 0,
     following_count: 0,
@@ -460,6 +574,7 @@ export function demoJoinWithInvite(input: { fullName: string; desiredUsername: s
     role: "member",
     status: "approved",
     invite_quota: 3,
+    is_private: false,
     post_count: 0,
     follower_count: 0,
     following_count: 0,
@@ -468,7 +583,12 @@ export function demoJoinWithInvite(input: { fullName: string; desiredUsername: s
   });
   // New members start by following a few of the regulars so Home is alive.
   for (const followee of [DEMO_IDS.elena, DEMO_IDS.june, DEMO_IDS.sam]) {
-    state.follows.push({ follower_id: id, followee_id: followee, created_at: new Date().toISOString() });
+    state.follows.push({
+      follower_id: id,
+      followee_id: followee,
+      status: "accepted",
+      created_at: new Date().toISOString(),
+    });
   }
   recomputeCounts(state);
   state.currentUserId = id;
@@ -642,4 +762,133 @@ export function demoFetchMembers(q: string): ProfileRow[] {
 export function demoReset(): void {
   state = initialState();
   emit();
+}
+
+// ---------------------------------------------------------------------------
+// explore
+// ---------------------------------------------------------------------------
+/**
+ * Photographs from across VINTAGE, newest first — the one place you see work
+ * by members you don't follow. Private members are excluded unless the viewer
+ * already follows them, and your own posts are left out: explore is for
+ * finding other people.
+ */
+export function demoFetchExplore(viewerId: string, limit: number): PostRow[] {
+  return state.posts
+    .filter(
+      (p) =>
+        !p.removed_at &&
+        p.author_id !== viewerId &&
+        demoCanViewPosts(viewerId, p.author_id),
+    )
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, limit)
+    .map(clone);
+}
+
+// ---------------------------------------------------------------------------
+// direct messages
+// ---------------------------------------------------------------------------
+/** The pair, in the fixed order the conversations table stores them. */
+function pairKey(a: string, b: string): [string, string] {
+  return a < b ? [a, b] : [b, a];
+}
+
+export function demoFetchConversations(userId: string): ConversationWithPeer[] {
+  return state.conversations
+    .filter((c) => c.user_a === userId || c.user_b === userId)
+    .map((c) => {
+      const peerId = c.user_a === userId ? c.user_b : c.user_a;
+      const peer = state.profiles.find((p) => p.id === peerId);
+      const messages = state.messages
+        .filter((m) => m.conversation_id === c.id)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+      return {
+        ...clone(c),
+        peer: peer
+          ? {
+              id: peer.id,
+              username: peer.username,
+              full_name: peer.full_name,
+              avatar_url: peer.avatar_url,
+            }
+          : { id: peerId, username: "someone", full_name: null, avatar_url: null },
+        last_message: messages.length ? clone(messages[messages.length - 1]) : null,
+        unread_count: messages.filter((m) => m.sender_id !== userId && !m.read_at).length,
+      };
+    })
+    .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
+}
+
+export function demoUnreadMessageCount(userId: string): number {
+  return demoFetchConversations(userId).reduce((n, c) => n + c.unread_count, 0);
+}
+
+/** Find the thread with this member, opening one if they've never spoken. */
+export function demoOpenConversation(userId: string, peerId: string): string {
+  const [a, b] = pairKey(userId, peerId);
+  const existing = state.conversations.find((c) => c.user_a === a && c.user_b === b);
+  if (existing) return existing.id;
+  const now = new Date().toISOString();
+  const conversation: ConversationRow = {
+    id: newId("demo-convo"),
+    user_a: a,
+    user_b: b,
+    created_at: now,
+    last_message_at: now,
+  };
+  state.conversations.push(conversation);
+  emit();
+  return conversation.id;
+}
+
+export function demoFetchMessages(conversationId: string): MessageWithPost[] {
+  return state.messages
+    .filter((m) => m.conversation_id === conversationId)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .map((m) => ({
+      ...clone(m),
+      post: m.post_id ? demoFetchPost(m.post_id) : null,
+    }));
+}
+
+export function demoSendMessage(
+  conversationId: string,
+  senderId: string,
+  body: string,
+  postId: string | null,
+): void {
+  if (!body.trim() && !postId) return;
+  const now = new Date().toISOString();
+  state.messages.push({
+    id: newId("demo-message"),
+    conversation_id: conversationId,
+    sender_id: senderId,
+    body: body.trim(),
+    post_id: postId,
+    created_at: now,
+    read_at: null,
+  });
+  const conversation = state.conversations.find((c) => c.id === conversationId);
+  if (conversation) conversation.last_message_at = now;
+  emit();
+}
+
+export function demoMarkConversationRead(conversationId: string, userId: string): void {
+  const now = new Date().toISOString();
+  let changed = false;
+  for (const m of state.messages) {
+    if (m.conversation_id === conversationId && m.sender_id !== userId && !m.read_at) {
+      m.read_at = now;
+      changed = true;
+    }
+  }
+  if (changed) emit();
+}
+
+export function demoConversationPeer(conversationId: string, userId: string): ProfileRow | null {
+  const c = state.conversations.find((x) => x.id === conversationId);
+  if (!c) return null;
+  const peerId = c.user_a === userId ? c.user_b : c.user_a;
+  return clone(state.profiles.find((p) => p.id === peerId) ?? null);
 }

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -19,7 +19,9 @@ import { TextField } from "@/components/TextField";
 import { DateStamp } from "@/components/DateStamp";
 import { colors, radii, spacing, type } from "@/theme";
 import { FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters";
-import type { FilteredImageHandle } from "@/filters";
+import type { FilteredImageHandle, FilterSpec } from "@/filters";
+import { FilterOverlay } from "@/components/FilterOverlay";
+import { cssFilterFor } from "@/filters/cssFilter";
 import { prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { createPost } from "@/api/posts";
@@ -58,6 +60,20 @@ export default function Compose() {
   const [busy, setBusy] = useState(false);
 
   const filteredRef = useRef<FilteredImageHandle>(null);
+  // A video's poster frame, pulled once: it makes the filter tray show real
+  // frames instead of grey boxes, and it's the thumbnail the grid will use.
+  const [poster, setPoster] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isVideo || !uri) return;
+    let live = true;
+    VideoThumbnails.getThumbnailAsync(uri, { time: 500 })
+      .then((p) => live && setPoster(p.uri))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [isVideo, uri]);
+
   const nowIso = useMemo(() => new Date().toISOString(), []);
   // What the stamp says: when the shutter fired, falling back to now for
   // files that carry no capture date.
@@ -83,18 +99,25 @@ export default function Compose() {
       let finalHeight = height;
 
       if (isVideo) {
+        // The poster frame is what the profile grid draws — a grid square
+        // can't play a movie — so it is made either way, uploaded or not.
+        let posterUri: string | null = null;
+        try {
+          const poster = await VideoThumbnails.getThumbnailAsync(uri, { time: 500 });
+          posterUri = (await prepareThumbnail(poster.uri)).uri;
+        } catch {
+          posterUri = null; // a missing poster frame shouldn't block publishing
+        }
+
         if (isDemoMode()) {
           mediaPath = uri; // demo mode keeps the local recording, no upload
+          thumbPath = posterUri;
         } else {
           const ext = uri.split(".").pop()?.toLowerCase() ?? "mp4";
           mediaPath = await uploadFile("media", `${userId}/${postId}.${ext}`, uri, `video/${ext === "mov" ? "quicktime" : "mp4"}`);
-          try {
-            const poster = await VideoThumbnails.getThumbnailAsync(uri, { time: 500 });
-            const thumb = await prepareThumbnail(poster.uri);
-            thumbPath = await uploadFile("thumbnails", `${userId}/${postId}.jpg`, thumb.uri, "image/jpeg");
-          } catch {
-            thumbPath = null; // a missing poster frame shouldn't block publishing
-          }
+          thumbPath = posterUri
+            ? await uploadFile("thumbnails", `${userId}/${postId}.jpg`, posterUri, "image/jpeg")
+            : null;
         }
       } else {
         // Photos are always baked through the GL renderer, on every platform:
@@ -144,7 +167,7 @@ export default function Compose() {
     <Screen scroll padded={false}>
       <View style={[styles.preview, { aspectRatio: previewRatio }]}>
         {isVideo ? (
-          <VideoPreview uri={uri} />
+          <VideoPreview uri={uri} filter={filter} />
         ) : (
           <FilteredImage ref={filteredRef} uri={uri} filter={filter} style={StyleSheet.absoluteFill} />
         )}
@@ -160,8 +183,8 @@ export default function Compose() {
         {FILTERS.map((f) => (
           <Pressable key={f.id} style={styles.swatchWrap} onPress={() => selectFilter(f.id)}>
             <View style={[styles.swatch, f.id === filterId && styles.swatchSelected]}>
-              {!isVideo ? (
-                <FilteredImage uri={uri} filter={f} style={styles.swatchImage} />
+              {!isVideo || poster ? (
+                <FilteredImage uri={poster ?? uri} filter={f} style={styles.swatchImage} />
               ) : (
                 <View style={[styles.swatchImage, styles.swatchVideo]} />
               )}
@@ -175,8 +198,8 @@ export default function Compose() {
       <Text style={styles.filterDescription}>{filter.description}</Text>
       {isVideo ? (
         <Text style={styles.videoNote}>
-          Filters are recorded with the post; video rendering keeps the original footage in this
-          version.
+          The filter is applied to video as it plays rather than burned into the file, so the
+          original footage is kept intact.
         </Text>
       ) : null}
 
@@ -212,13 +235,24 @@ export default function Compose() {
   );
 }
 
-function VideoPreview({ uri }: { uri: string }) {
+function VideoPreview({ uri, filter }: { uri: string; filter: FilterSpec }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.muted = true;
     p.play();
   });
-  return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />;
+  const css = cssFilterFor(filter);
+  return (
+    <>
+      <VideoView
+        player={player}
+        style={[StyleSheet.absoluteFill, { filter: css.filter } as object]}
+        contentFit="cover"
+        nativeControls={false}
+      />
+      <FilterOverlay filter={filter} />
+    </>
+  );
 }
 
 const styles = StyleSheet.create({

@@ -1,10 +1,19 @@
 import React, { useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { showAlert } from "@/utils/alert";
 import { useRouter } from "expo-router";
-import { Screen } from "@/components/Screen";
-import { TextField } from "@/components/TextField";
-import { Button } from "@/components/Button";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { EngravedCard } from "@/components/EngravedCard";
 import { colors, spacing, type } from "@/theme";
 import {
   normalizeInviteCode,
@@ -16,8 +25,18 @@ import {
 import { checkUsernameAvailable, joinWithInvite } from "@/api/membership";
 import { useSession } from "@/providers/SessionProvider";
 
+/**
+ * The invitation.
+ *
+ * Everywhere else in VINTAGE the chrome recedes and the photographs carry
+ * the screen. Here there is no photograph yet — only the card someone sent
+ * you — so this one screen is allowed to be the object itself: printed
+ * brown stock, a struck gold rule with mitred corners, a script hand. It
+ * should feel like something that arrived, not a form that loaded.
+ */
 export default function Invite() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { refreshProfile } = useSession();
   const [code, setCode] = useState("");
   const [fullName, setFullName] = useState("");
@@ -62,48 +81,207 @@ export default function Invite() {
   };
 
   return (
-    <Screen scroll>
-      <Text style={styles.intro}>
-        An invitation from a member admits you straight away.
-      </Text>
-      <TextField
-        label="Invitation code"
-        value={code}
-        onChangeText={(t) => setCode(normalizeInviteCode(t))}
-        error={errors.code}
-        autoCapitalize="characters"
-        autoCorrect={false}
-        placeholder="ABCD-1234"
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xxl },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <EngravedCard style={styles.card}>
+            <View style={styles.cardInner}>
+              <Text style={styles.eyebrow}>By invitation</Text>
+              <Text style={styles.wordmark}>Vintage</Text>
+              <View style={styles.rule} />
+              <Text style={styles.blurb}>
+                A member has vouched for you. Enter the code they sent and the door is open —
+                no queue, no review.
+              </Text>
+
+              <CardField
+                label="Invitation code"
+                value={code}
+                onChangeText={(t) => setCode(normalizeInviteCode(t))}
+                error={errors.code}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                placeholder="ABCD-1234"
+                mono
+              />
+              <CardField
+                label="Name"
+                value={fullName}
+                onChangeText={setFullName}
+                error={errors.fullName}
+                autoCapitalize="words"
+              />
+              <CardField
+                label="Username"
+                value={username}
+                onChangeText={setUsername}
+                error={errors.username}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <CardField
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                error={errors.email}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+              <CardField
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                error={errors.password}
+                secureTextEntry
+              />
+
+              <Pressable
+                style={[styles.submit, busy && styles.submitBusy]}
+                onPress={submit}
+                disabled={busy}
+              >
+                <Text style={styles.submitText}>{busy ? "Opening…" : "Accept the invitation"}</Text>
+              </Pressable>
+
+              <View style={styles.footRule} />
+              <Text style={styles.foot}>Members only · Est. 2026</Text>
+            </View>
+          </EngravedCard>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+/** A field ruled onto the card: a hairline underline, gold ink, no box. */
+function CardField({
+  label,
+  error,
+  mono,
+  ...inputProps
+}: React.ComponentProps<typeof TextInput> & {
+  label: string;
+  error?: string | null;
+  mono?: boolean;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        {...inputProps}
+        placeholderTextColor="rgba(214, 190, 148, 0.35)"
+        selectionColor={colors.gold}
+        style={[styles.input, mono && styles.inputMono]}
       />
-      <TextField label="Name" value={fullName} onChangeText={setFullName} error={errors.fullName} />
-      <TextField
-        label="Username"
-        value={username}
-        onChangeText={setUsername}
-        error={errors.username}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <TextField
-        label="Email"
-        value={email}
-        onChangeText={setEmail}
-        error={errors.email}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
-      <TextField
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        error={errors.password}
-        secureTextEntry
-      />
-      <Button title="Join VINTAGE" onPress={submit} loading={busy} />
-    </Screen>
+      <View style={[styles.fieldRule, error ? styles.fieldRuleError : null]} />
+      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  intro: { ...type.body, marginTop: spacing.lg, marginBottom: spacing.xl, color: colors.inkSoft },
+  root: { flex: 1, backgroundColor: colors.cardDeep },
+  // flexGrow lets the card stretch to the full height of a short screen
+  // instead of floating in the top half of it.
+  scroll: { flexGrow: 1, paddingHorizontal: spacing.md },
+  card: { flex: 1 },
+  cardInner: { paddingHorizontal: spacing.xl + spacing.sm, paddingVertical: spacing.xxl },
+
+  eyebrow: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 3,
+    textTransform: "uppercase",
+    color: colors.goldSoft,
+    textAlign: "center",
+  },
+  wordmark: {
+    fontFamily: type.script,
+    fontSize: 58,
+    lineHeight: 82,
+    color: colors.gold,
+    textAlign: "center",
+    marginTop: spacing.xs,
+  },
+  rule: {
+    height: 1,
+    width: 54,
+    alignSelf: "center",
+    backgroundColor: colors.goldSoft,
+    opacity: 0.6,
+    marginTop: spacing.xs,
+  },
+  blurb: {
+    fontFamily: type.serif,
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.goldSoft,
+    textAlign: "center",
+    marginTop: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+
+  field: { marginBottom: spacing.lg },
+  fieldLabel: {
+    fontFamily: type.mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    color: colors.goldSoft,
+    marginBottom: spacing.xs,
+  },
+  input: {
+    fontSize: 16,
+    color: colors.gold,
+    paddingVertical: 6,
+  },
+  inputMono: { fontFamily: type.mono, letterSpacing: 3 },
+  fieldRule: { height: 1, backgroundColor: colors.goldSoft, opacity: 0.4 },
+  fieldRuleError: { backgroundColor: colors.stamp, opacity: 0.9 },
+  fieldError: { fontSize: 11, color: colors.stamp, marginTop: spacing.xs },
+
+  submit: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  submitBusy: { opacity: 0.5 },
+  submitText: {
+    fontFamily: type.mono,
+    fontSize: 11,
+    letterSpacing: 3,
+    textTransform: "uppercase",
+    color: colors.gold,
+  },
+
+  footRule: {
+    height: 1,
+    width: 34,
+    alignSelf: "center",
+    backgroundColor: colors.goldSoft,
+    opacity: 0.4,
+    marginTop: spacing.xxl,
+  },
+  foot: {
+    fontFamily: type.mono,
+    fontSize: 9,
+    letterSpacing: 2.5,
+    textTransform: "uppercase",
+    color: colors.goldSoft,
+    opacity: 0.8,
+    textAlign: "center",
+    marginTop: spacing.md,
+  },
 });

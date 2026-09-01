@@ -2,7 +2,10 @@ import type {
   ActivityRow,
   ApplicationRow,
   CommentRow,
+  ConversationRow,
   FollowRow,
+  FollowStatus,
+  MessageRow,
   InviteRow,
   LikeRow,
   PostRow,
@@ -57,6 +60,7 @@ function member(
     full_name: fullName,
     bio,
     avatar_url: face(avatarSeed),
+    is_private: false,
     city,
     social_handle: socialHandle,
     role: "member",
@@ -76,12 +80,18 @@ export const DEMO_PROFILES: ProfileRow[] = [
     role: "admin",
     invite_quota: 99,
   }),
-  member(DEMO_IDS.elena, "elena.marchetti", "Elena Marchetti", "Film first. 35mm, mostly Milan.", "Milan", "@elena.marchetti", "elena-face", 380),
+  // Private, so the demo account has a request queue to act on.
+  member(DEMO_IDS.elena, "elena.marchetti", "Elena Marchetti", "Film first. 35mm, mostly Milan.", "Milan", "@elena.marchetti", "elena-face", 380, {
+    is_private: true,
+  }),
   member(DEMO_IDS.tomas, "tomas.lindqvist", "Tomas Lindqvist", "North light. Quiet water.", "Stockholm", "@t.lindqvist", "tomas-face", 360),
   member(DEMO_IDS.june, "june.nakamura", "June Nakamura", "Gardens, trains, breakfast.", "Kyoto", "@june.naka", "june-face", 340),
   member(DEMO_IDS.arthur, "arthur.beaumont", "Arthur Beaumont", "Old cafés and older stone.", "Paris", "@a.beaumont", "arthur-face", 300),
   member(DEMO_IDS.clara, "clara.reyes", "Clara Reyes", "Color, but gently.", "Mexico City", "@clara.rys", "clara-face", 260),
-  member(DEMO_IDS.otis, "otis.whitfield", "Otis Whitfield", "Brass bands and porch light.", "New Orleans", "@otis.w", "otis-face", 220),
+  // Private and unfollowed by Elena, so the locked profile is reachable.
+  member(DEMO_IDS.otis, "otis.whitfield", "Otis Whitfield", "Brass bands and porch light.", "New Orleans", "@otis.w", "otis-face", 220, {
+    is_private: true,
+  }),
   member(DEMO_IDS.margot, "margot.dubois", "Margot Dubois", "Markets before eight.", "Lyon", "@margot.db", "margot-face", 180),
   member(DEMO_IDS.sam, "sam.okafor", "Sam Okafor", "Streets, faces, weather.", "Lagos", "@sam.okf", "sam-face", 140),
   member(DEMO_IDS.ines, "ines.almeida", "Inês Almeida", "Tiles and tide.", "Lisbon", "@ines.alm", "ines-face", 100),
@@ -196,9 +206,15 @@ export const DEMO_POSTS: PostRow[] = [
   post("demo-post-31", DEMO_IDS.niko, "athens-october", 1200, 1500, "instant", "October light is the honest one.", 432, { show_date_stamp: true }),
 ];
 
-const follow = (follower: string, followee: string, d: number): FollowRow => ({
+const follow = (
+  follower: string,
+  followee: string,
+  d: number,
+  status: FollowStatus = "accepted",
+): FollowRow => ({
   follower_id: follower,
   followee_id: followee,
+  status,
   created_at: daysAgo(d),
 });
 
@@ -241,6 +257,61 @@ export const DEMO_FOLLOWS: FollowRow[] = [
   follow(DEMO_IDS.niko, DEMO_IDS.elena, 18),
   follow(DEMO_IDS.niko, DEMO_IDS.ines, 16),
   follow(DEMO_IDS.niko, DEMO_IDS.arthur, 14),
+  // Waiting on Elena, who is private.
+  follow(DEMO_IDS.sam, DEMO_IDS.elena, 2, "pending"),
+  follow(DEMO_IDS.otis, DEMO_IDS.elena, 1, "pending"),
+];
+
+// ---------------------------------------------------------------------------
+// direct messages
+// ---------------------------------------------------------------------------
+const convo = (id: string, a: string, b: string, lastHours: number): ConversationRow => {
+  const [ua, ub] = a < b ? [a, b] : [b, a];
+  return {
+    id,
+    user_a: ua,
+    user_b: ub,
+    created_at: daysAgo(30),
+    last_message_at: hoursAgo(lastHours),
+  };
+};
+
+export const DEMO_CONVERSATIONS: ConversationRow[] = [
+  convo("demo-convo-01", DEMO_IDS.elena, DEMO_IDS.tomas, 3),
+  convo("demo-convo-02", DEMO_IDS.elena, DEMO_IDS.june, 20),
+  convo("demo-convo-03", DEMO_IDS.elena, DEMO_IDS.arthur, 72),
+];
+
+const message = (
+  id: string,
+  conversationId: string,
+  senderId: string,
+  body: string,
+  hours: number,
+  postId: string | null = null,
+  read = true,
+): MessageRow => ({
+  id,
+  conversation_id: conversationId,
+  sender_id: senderId,
+  body,
+  post_id: postId,
+  created_at: hoursAgo(hours),
+  read_at: read ? hoursAgo(hours - 0.5) : null,
+});
+
+export const DEMO_MESSAGES: MessageRow[] = [
+  message("demo-msg-01", "demo-convo-01", DEMO_IDS.tomas, "That fog one. How long was the exposure?", 26),
+  message("demo-msg-02", "demo-convo-01", DEMO_IDS.elena, "Half a second, braced on a railing. Half of them were unusable.", 25),
+  message("demo-msg-03", "demo-convo-01", DEMO_IDS.tomas, "Worth it.", 24),
+  message("demo-msg-04", "demo-convo-01", DEMO_IDS.tomas, "", 3, "demo-post-06", false),
+  message("demo-msg-05", "demo-convo-01", DEMO_IDS.tomas, "The bay did this today.", 3, null, false),
+  message("demo-msg-06", "demo-convo-02", DEMO_IDS.june, "Are you shooting anything in October?", 22),
+  message("demo-msg-07", "demo-convo-02", DEMO_IDS.elena, "Two rolls of Portra and no plan.", 21),
+  message("demo-msg-08", "demo-convo-02", DEMO_IDS.june, "The correct amount of plan.", 20),
+  message("demo-msg-09", "demo-convo-03", DEMO_IDS.arthur, "", 73, "demo-post-13"),
+  message("demo-msg-10", "demo-convo-03", DEMO_IDS.arthur, "Rue des Barres, before the crowds. You'd like it at that hour.", 73),
+  message("demo-msg-11", "demo-convo-03", DEMO_IDS.elena, "I would. Next time I'm over.", 72),
 ];
 
 const like = (postId: string, userId: string, h: number): LikeRow => ({

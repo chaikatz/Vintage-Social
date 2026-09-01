@@ -2,8 +2,9 @@ import { useCallback, useState } from "react";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
-import { deleteOwnPost, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
-import type { PostWithAuthor } from "@/types/db";
+import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
+import { INLINE_COMMENTS } from "@/components/PostCard";
+import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 
 /**
  * Liking and the "…" menu, shared by every surface that shows a post card:
@@ -22,6 +23,23 @@ export function usePostActions(userId: string, postIds: string[]) {
     queryFn: () => fetchMyLikes(userId, postIds),
     enabled: Boolean(userId) && postIds.length > 0,
   });
+
+  const previewsQuery = useQuery({
+    queryKey: ["comment-previews", postIds.join(",")],
+    queryFn: () => fetchCommentPreviews(postIds, INLINE_COMMENTS),
+    enabled: postIds.length > 0,
+  });
+
+  const commentsFor = useCallback(
+    (post: { id: string }): CommentWithAuthor[] => previewsQuery.data?.[post.id] ?? [],
+    [previewsQuery.data],
+  );
+
+  const onShare = useCallback(
+    (post: PostWithAuthor) =>
+      router.push({ pathname: "/share", params: { postId: post.id } }),
+    [router],
+  );
 
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
   const [deltas, setDeltas] = useState<Record<string, number>>({});
@@ -87,5 +105,5 @@ export function usePostActions(userId: string, postIds: string[]) {
     [userId, router, queryClient],
   );
 
-  return { isLiked, likeCountFor, toggleLike, onMore };
+  return { isLiked, likeCountFor, toggleLike, onMore, onShare, commentsFor };
 }

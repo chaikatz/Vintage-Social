@@ -82,6 +82,9 @@ app/                    expo-router routes
   admin/                dashboard · applications · reports · members
   compose.tsx           filter · location · caption · publish
   gallery.tsx           one member's photographs, full size and scrollable
+  messages/             the inbox and a one-to-one thread
+  share.tsx             send a photograph to members you follow
+  requests.tsx          follow requests waiting on a private account
   post/[id].tsx         a single photograph + its comments
   user/[username].tsx   member profiles
 src/
@@ -98,6 +101,7 @@ src/
 supabase/
   migrations/           0001 schema · 0002 RPCs · 0003 RLS · 0004 storage
                         0005 capture date + location
+                        0006 direct messages + private accounts
   seed.sql              fictional members, posts, follows, likes, comments
   config.toml           local dev config (email confirmations off)
 ```
@@ -349,18 +353,56 @@ attribution and future re-processing.
   — a stamp reading today's date on a photograph from last summer is simply
   wrong. Files with no usable EXIF date (screenshots, most videos, anything
   re-saved by an editor) fall back to the posting time.
-- Videos (≤60s) upload as recorded with a poster-frame thumbnail. They live
-  in the normal feed and grid — there is no video-specific surface. Picking
-  one opens the system trimmer on iOS, so a long clip is cut to length in
-  the picker instead of being chosen and then refused. In this first pass
-  the selected filter is stored as metadata but not burned into the video
-  (a server-side transcode is the follow-up; see below).
+- Videos (≤60s) upload as recorded with a poster-frame thumbnail — the
+  poster is made whether or not it is uploaded, because a grid square can't
+  play a movie. They live in the normal feed and grid; there is no
+  video-specific surface. Picking one opens the system trimmer on iOS, so a
+  long clip is cut to length in the picker instead of being chosen and then
+  refused.
+- A video's filter is applied live on every play rather than burned into the
+  file — burning it in means a server-side transcode VINTAGE doesn't do yet,
+  and the original footage is kept intact meanwhile. Photographs are baked,
+  so they carry their filter in the pixels.
 - `location` is free text the author types — a town, a street, a bar. It is
   shown under the username beside the filter name. VINTAGE never reads your
   GPS, never places a post on a map, and makes no place searchable.
 - Storage policies only allow writes inside your own `{user_id}/` folder —
   no member can modify another member's files or rows (see
   `0003_rls.sql` / `0004_storage.sql`).
+
+## Messages
+
+One-to-one only. No groups, no broadcasts, no requests folder: a member you
+can see is a member you can write to. A message carries words, a shared
+photograph, or both — the send icon on a post opens a list of the members
+you follow and drops the photograph into their thread.
+
+Row-level security gives the two people in a conversation the only read
+access there is. **No policy lets a third member read a thread, admins
+included** — moderation acts on reports, not on private correspondence.
+
+## Private accounts
+
+A member can make their account private (Settings → Private account). From
+then on:
+
+- Following them becomes a request they approve by hand, one at a time.
+  The follow button reads "Requested" until they do.
+- Their photographs are visible to themselves and to accepted followers.
+  This is enforced in the `posts` select policy, not just in the UI, so it
+  holds for explore, profiles, the feed and any direct query alike.
+- Follower counts only count accepted follows.
+
+Declining a request deletes the row rather than recording a rejection — a
+request that was turned down can simply be made again.
+
+## Explore
+
+A second surface under Search: every photograph the viewer is allowed to
+see, newest first. No ranking, no "for you", no engagement signal of any
+kind — the only reason a picture is near the top is that it was taken
+recently. Your own posts are left out, because explore is for finding other
+people.
 
 ## Moderation
 

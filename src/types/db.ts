@@ -21,7 +21,16 @@ export type ApplicationStatus = "pending" | "approved" | "waitlisted" | "rejecte
 
 export type MediaType = "photo" | "video";
 
-export type ActivityType = "like" | "comment" | "follow" | "moderation";
+export type ActivityType =
+  | "like"
+  | "comment"
+  | "follow"
+  | "follow_request"
+  | "moderation"
+  | "message";
+
+/** A follow of a private member waits for that member to accept it. */
+export type FollowStatus = "pending" | "accepted";
 
 export type ReportTargetType = "post" | "comment" | "profile";
 
@@ -45,6 +54,8 @@ export type ProfileRow = {
   role: "member" | "admin";
   status: MembershipStatus;
   invite_quota: number;
+  /** Private members approve each follower by hand. */
+  is_private: boolean;
   post_count: number;
   follower_count: number;
   following_count: number;
@@ -80,6 +91,7 @@ export type InviteRow = {
 export type FollowRow = {
   follower_id: string;
   followee_id: string;
+  status: FollowStatus;
   created_at: string;
 }
 
@@ -161,6 +173,27 @@ export type ModerationActionRow = {
   created_at: string;
 }
 
+/** A one-to-one thread. The pair is stored in a fixed order, so two people
+ *  can only ever have a single conversation between them. */
+export type ConversationRow = {
+  id: string;
+  user_a: string;
+  user_b: string;
+  created_at: string;
+  last_message_at: string;
+}
+
+/** Words, a shared photograph, or both — never neither. */
+export type MessageRow = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  body: string;
+  post_id: string | null;
+  created_at: string;
+  read_at: string | null;
+}
+
 type Table<Row> = {
   Row: Row;
   Insert: Partial<Row>;
@@ -181,6 +214,8 @@ export type Database = {
       activity: Table<ActivityRow>;
       reports: Table<ReportRow>;
       moderation_actions: Table<ModerationActionRow>;
+      conversations: Table<ConversationRow>;
+      messages: Table<MessageRow>;
     };
     Views: Record<string, never>;
     Functions: {
@@ -234,6 +269,18 @@ export type PostWithAuthor = PostRow & {
 /** A comment joined with its author profile. */
 export type CommentWithAuthor = CommentRow & {
   author: Pick<ProfileRow, "id" | "username" | "avatar_url">;
+};
+
+/** An inbox row: the thread, the other member, and its latest message. */
+export type ConversationWithPeer = ConversationRow & {
+  peer: Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">;
+  last_message: MessageRow | null;
+  unread_count: number;
+};
+
+/** A message joined with the photograph it shares, when it shares one. */
+export type MessageWithPost = MessageRow & {
+  post: PostWithAuthor | null;
 };
 
 /** An activity item joined with actor and post preview. */

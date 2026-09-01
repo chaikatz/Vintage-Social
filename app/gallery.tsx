@@ -51,7 +51,8 @@ export default function Gallery() {
   }, [postsQ.data, authorQ.data]);
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
-  const { isLiked, likeCountFor, toggleLike, onMore } = usePostActions(userId, postIds);
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, commentsFor } =
+    usePostActions(userId, postIds);
 
   const listRef = useRef<FlatList<PostWithAuthor>>(null);
   const startIndex = postId ? posts.findIndex((p) => p.id === postId) : 0;
@@ -90,6 +91,8 @@ export default function Gallery() {
             onToggleLike={toggleLike}
             onOpenComments={(p) => router.push(`/post/${p.id}`)}
             onOpenProfile={(username) => router.push(`/user/${username}`)}
+            onShare={onShare}
+            comments={commentsFor(item)}
             onMore={(p) => onMore(p, () => router.back())}
           />
         )}

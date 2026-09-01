@@ -8,7 +8,10 @@ import { postAge } from "@/utils/time";
 import { getFilter } from "@/filters";
 import { Avatar } from "./Avatar";
 import { PostMedia } from "./PostMedia";
-import type { PostWithAuthor } from "@/types/db";
+import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
+
+/** How many comments read under the photograph before "View all". */
+export const INLINE_COMMENTS = 2;
 
 interface Props {
   post: PostWithAuthor;
@@ -18,6 +21,10 @@ interface Props {
   onOpenProfile: (username: string) => void;
   /** "…" affordance — report / delete, decided by the parent. */
   onMore: (post: PostWithAuthor) => void;
+  /** Send this photograph to a member. Omitted where sharing makes no sense. */
+  onShare?: (post: PostWithAuthor) => void;
+  /** The newest comments, shown under the caption. */
+  comments?: CommentWithAuthor[];
 }
 
 export function PostCard({
@@ -27,11 +34,16 @@ export function PostCard({
   onOpenComments,
   onOpenProfile,
   onMore,
+  onShare,
+  comments,
 }: Props) {
   const like = (next: boolean) => {
     if (next && !likedByMe) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (next !== likedByMe) onToggleLike(post, next);
   };
+
+  const preview = (comments ?? []).slice(-INLINE_COMMENTS);
+  const hidden = post.comment_count - preview.length;
 
   return (
     <View style={styles.card}>
@@ -40,19 +52,21 @@ export function PostCard({
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
           <View style={styles.authorText}>
             <Text style={styles.username}>{post.author.username}</Text>
-            {/* Place and film, the way they'd be written on the back of a
-                print. The place leads when there is one. */}
-            <Text style={styles.byline} numberOfLines={1}>
-              {post.location
-                ? `${post.location} · ${getFilter(post.filter_id).name}`
-                : getFilter(post.filter_id).name}
-            </Text>
+            {post.location ? (
+              <Text style={styles.location} numberOfLines={1}>
+                {post.location}
+              </Text>
+            ) : null}
           </View>
         </Pressable>
         <Pressable hitSlop={10} onPress={() => onMore(post)} accessibilityLabel="Post options">
           <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
         </Pressable>
       </View>
+
+      {/* The film stock, set flush right on its own line above the frame —
+          the way a stock is marked on a contact sheet. */}
+      <Text style={styles.filterName}>{getFilter(post.filter_id).name}</Text>
 
       <PostMedia post={post} onDoubleTap={() => like(true)} />
 
@@ -72,6 +86,11 @@ export function PostCard({
         <Pressable hitSlop={8} onPress={() => onOpenComments(post)} accessibilityLabel="Comments">
           <Feather name="message-circle" size={23} color={colors.ink} />
         </Pressable>
+        {onShare ? (
+          <Pressable hitSlop={8} onPress={() => onShare(post)} accessibilityLabel="Send to">
+            <Feather name="send" size={21} color={colors.ink} />
+          </Pressable>
+        ) : null}
         <View style={styles.spacer} />
         <Text style={styles.age}>{postAge(post.created_at)}</Text>
       </View>
@@ -88,13 +107,21 @@ export function PostCard({
         </Text>
       ) : null}
 
-      {post.comment_count > 0 ? (
+      {hidden > 0 ? (
         <Pressable onPress={() => onOpenComments(post)}>
           <Text style={styles.commentsLink}>
-            View {post.comment_count === 1 ? "1 comment" : `all ${post.comment_count} comments`}
+            View {hidden === 1 && preview.length === 0 ? "1 comment" : `all ${post.comment_count} comments`}
           </Text>
         </Pressable>
       ) : null}
+
+      {preview.map((c) => (
+        <Pressable key={c.id} onPress={() => onOpenComments(post)}>
+          <Text style={styles.comment} numberOfLines={2}>
+            <Text style={styles.captionAuthor}>{c.author.username}</Text> {c.body}
+          </Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -108,10 +135,19 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 2,
   },
   author: { flexDirection: "row", alignItems: "center", flex: 1 },
-  authorText: { marginLeft: spacing.sm + 2 },
+  authorText: { marginLeft: spacing.sm + 2, flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  byline: { fontSize: 11, color: colors.inkFaint, marginTop: 1 },
-
+  location: { fontSize: 11, color: colors.inkFaint, marginTop: 1 },
+  filterName: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    color: colors.inkFaint,
+    textAlign: "right",
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xs + 2,
+  },
   actions: {
     flexDirection: "row",
     alignItems: "center",
@@ -135,6 +171,13 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs + 2,
   },
   captionAuthor: { fontWeight: "600" },
+  comment: {
+    ...type.body,
+    fontSize: 14,
+    color: colors.inkSoft,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs + 2,
+  },
   commentsLink: {
     ...type.caption,
     paddingHorizontal: spacing.lg,

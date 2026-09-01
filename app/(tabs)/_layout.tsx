@@ -1,8 +1,10 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { Redirect, useSegments } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Redirect, useRouter, useSegments } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQuery } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
+import { fetchUnreadMessageCount } from "@/api/messages";
 import { SwipeTabs } from "@/navigation/SwipeTabs";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
@@ -25,7 +27,7 @@ export default function TabsLayout() {
 
   return (
     <View style={styles.root}>
-      <TabHeader username={profile?.username} />
+      <TabHeader username={profile?.username} userId={session?.user?.id ?? ""} />
       <SwipeTabs
         tabBarPosition="bottom"
         // Screens mount as they are first reached; neighbours preload so a
@@ -96,13 +98,22 @@ const TITLES: Record<string, string> = {
  * The pager has no header of its own, so the tabs share one. Home flies the
  * wordmark; the profile flies the member's username.
  */
-function TabHeader({ username }: { username?: string }) {
+function TabHeader({ username, userId }: { username?: string; userId: string }) {
+  const router = useRouter();
   // Typed loosely on purpose: the tab is whatever segment follows "(tabs)".
   const segments = useSegments() as string[];
   const tab = segments[1] ?? "index";
   const insets = useSafeAreaInsets();
 
   const title = tab === "profile" ? username ?? "Profile" : TITLES[tab] ?? null;
+
+  // Messages hang off the feed, the way a letter tray sits beside a desk —
+  // not a tab of their own, since they aren't a place you browse.
+  const unread = useQuery({
+    queryKey: ["unread-messages", userId],
+    queryFn: () => fetchUnreadMessageCount(userId),
+    enabled: Boolean(userId),
+  });
 
   return (
     <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
@@ -111,6 +122,17 @@ function TabHeader({ username }: { username?: string }) {
       ) : (
         <Text style={styles.headerTitle}>{title}</Text>
       )}
+      {tab === "index" ? (
+        <Pressable
+          style={styles.headerAction}
+          hitSlop={10}
+          onPress={() => router.push("/messages")}
+          accessibilityLabel="Messages"
+        >
+          <Feather name="send" size={20} color={colors.ink} />
+          {(unread.data ?? 0) > 0 ? <View style={styles.badge} /> : null}
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -124,6 +146,16 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   wordmark: { ...type.wordmark, fontSize: 20, letterSpacing: 4 },
+  headerAction: { position: "absolute", right: spacing.lg, bottom: spacing.sm },
+  badge: {
+    position: "absolute",
+    top: -1,
+    right: -2,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.accent,
+  },
   headerTitle: { fontFamily: type.serif, fontSize: 17, color: colors.ink },
   bar: {
     backgroundColor: colors.paper,
