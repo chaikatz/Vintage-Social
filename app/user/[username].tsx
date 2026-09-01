@@ -78,7 +78,9 @@ export default function UserProfile() {
       <Stack.Screen options={{ title: profile.username }} />
       <PhotoGrid
         posts={postsQ.data ?? []}
-        onOpenPost={(p) => router.push(`/post/${p.id}`)}
+        onOpenPost={(p) =>
+          router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id } })
+        }
         refreshing={postsQ.isRefetching}
         onRefresh={() => postsQ.refetch()}
         header={

@@ -153,4 +153,13 @@ describe("demo media is bundled, not remote", () => {
     const blob = JSON.stringify([DEMO_POSTS, DEMO_PROFILES]);
     expect(blob).not.toContain("picsum.photos");
   });
+
+  it("every seeded photograph carries a place and a capture date", () => {
+    for (const p of DEMO_POSTS) {
+      expect(p.location, `post ${p.id} has no location`).toBeTruthy();
+      expect(p.taken_at, `post ${p.id} has no taken_at`).toBeTruthy();
+      // Photographs are taken before they are posted, never after.
+      expect(new Date(p.taken_at!).getTime()).toBeLessThan(new Date(p.created_at).getTime());
+    }
+  });
 });

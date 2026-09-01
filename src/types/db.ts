@@ -95,6 +95,10 @@ export type PostRow = {
   filter_id: string;
   show_date_stamp: boolean;
   caption: string;
+  /** Capture date from the source file's EXIF; null when it carried none. */
+  taken_at: string | null;
+  /** Free text the author typed, not a coordinate. */
+  location: string | null;
   like_count: number;
   comment_count: number;
   created_at: string;

@@ -30,7 +30,9 @@ export default function OwnProfile() {
     <Screen padded={false}>
       <PhotoGrid
         posts={posts.data ?? []}
-        onOpenPost={(p) => router.push(`/post/${p.id}`)}
+        onOpenPost={(p) =>
+          router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id } })
+        }
         refreshing={posts.isRefetching}
         onRefresh={() => posts.refetch()}
         header={

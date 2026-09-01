@@ -24,12 +24,13 @@ import { prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { createPost } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
-import { MAX_CAPTION_LENGTH } from "@/utils/validation";
+import { MAX_CAPTION_LENGTH, MAX_LOCATION_LENGTH } from "@/utils/validation";
 
 /**
- * The darkroom: choose one of the VINTAGE filters, optionally the
- * amber date stamp, write a caption, publish. Photos are baked with the
- * filter on-device before upload.
+ * The darkroom: choose a VINTAGE filter, optionally the amber date stamp,
+ * name the place, write a caption, publish. Photos are baked with the
+ * filter on-device before upload, and the stamp shows when the shutter
+ * fired rather than when the post was made.
  */
 export default function Compose() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export default function Compose() {
     width: string;
     height: string;
     duration: string;
+    takenAt: string;
   }>();
 
   const uri = params.uri ?? "";
@@ -52,10 +54,15 @@ export default function Compose() {
   const filter = getFilter(filterId);
   const [stampOn, setStampOn] = useState(dateStampStartsOn(FILTERS[0].id));
   const [caption, setCaption] = useState("");
+  const [location, setLocation] = useState("");
   const [busy, setBusy] = useState(false);
 
   const filteredRef = useRef<FilteredImageHandle>(null);
   const nowIso = useMemo(() => new Date().toISOString(), []);
+  // What the stamp says: when the shutter fired, falling back to now for
+  // files that carry no capture date.
+  const takenAt = params.takenAt || null;
+  const stampIso = takenAt ?? nowIso;
 
   const selectFilter = (id: string) => {
     setFilterId(id);
@@ -118,6 +125,8 @@ export default function Compose() {
         filter_id: filterId,
         show_date_stamp: stampOn,
         caption: caption.trim(),
+        taken_at: takenAt,
+        location: location.trim() || null,
       });
 
       queryClient.invalidateQueries({ queryKey: ["feed"] });
@@ -139,7 +148,7 @@ export default function Compose() {
         ) : (
           <FilteredImage ref={filteredRef} uri={uri} filter={filter} style={StyleSheet.absoluteFill} />
         )}
-        {stampOn ? <DateStamp iso={nowIso} /> : null}
+        {stampOn ? <DateStamp iso={stampIso} /> : null}
       </View>
 
       <ScrollView
@@ -183,6 +192,13 @@ export default function Compose() {
       </View>
 
       <View style={styles.captionWrap}>
+        <TextField
+          label="Location"
+          value={location}
+          onChangeText={(t) => setLocation(t.slice(0, MAX_LOCATION_LENGTH))}
+          placeholder="Optional — a town, a street, a bar."
+          autoCapitalize="words"
+        />
         <TextField
           label="Caption"
           value={caption}

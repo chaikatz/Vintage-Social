@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,6 +11,8 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { showAlert } from "@/utils/alert";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -17,21 +20,36 @@ import { PostCard } from "@/components/PostCard";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { colors, spacing, type } from "@/theme";
-import {
-  addComment,
-  deleteOwnComment,
-  deleteOwnPost,
-  fetchComments,
-  fetchMyLikes,
-  fetchPost,
-  likePost,
-  unlikePost,
-} from "@/api/posts";
+import { addComment, deleteOwnComment, fetchComments, fetchPost } from "@/api/posts";
 import { removeComment } from "@/api/moderation";
+import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
 import { MAX_COMMENT_LENGTH } from "@/utils/validation";
 import type { CommentWithAuthor } from "@/types/db";
+
+/**
+ * Keeps the composer clear of the keyboard, and of the home indicator when
+ * the keyboard is down. Without the second half the "Add a comment" row
+ * sits half under the indicator on every modern iPhone.
+ */
+function useKeyboardShown(): boolean {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const ios = Platform.OS === "ios";
+    const show = Keyboard.addListener(ios ? "keyboardWillShow" : "keyboardDidShow", () =>
+      setShown(true),
+    );
+    const hide = Keyboard.addListener(ios ? "keyboardWillHide" : "keyboardDidHide", () =>
+      setShown(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  return shown;
+}
 
 export default function PostDetail() {
   const router = useRouter();
@@ -40,6 +58,9 @@ export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId = session?.user?.id ?? "";
   const [draft, setDraft] = useState("");
+  const headerHeight = useHeaderHeight();
+  const insets = useSafeAreaInsets();
+  const keyboardShown = useKeyboardShown();
 
   const postQ = useQuery({
     queryKey: ["post", id],
@@ -51,17 +72,9 @@ export default function PostDetail() {
     queryFn: () => fetchComments(id ?? ""),
     enabled: Boolean(id),
   });
-  const likedQ = useQuery({
-    queryKey: ["my-likes", userId, id],
-    queryFn: () => fetchMyLikes(userId, [id ?? ""]),
-    enabled: Boolean(userId && id),
-  });
-
-  const [likeOverride, setLikeOverride] = useState<boolean | null>(null);
-  const [likeDelta, setLikeDelta] = useState(0);
-
   const post = postQ.data;
-  const liked = likeOverride ?? likedQ.data?.has(id ?? "") ?? false;
+  const postIds = useMemo(() => (id ? [id] : []), [id]);
+  const { isLiked, likeCountFor, toggleLike, onMore } = usePostActions(userId, postIds);
 
   const send = useMutation({
     mutationFn: () => addComment(userId, id ?? "", draft),
@@ -76,46 +89,6 @@ export default function PostDetail() {
   if (!post) {
     return <Screen>{postQ.isFetched ? <EmptyState title="This photograph is gone" /> : null}</Screen>;
   }
-
-  const toggleLike = async (_p: unknown, next: boolean) => {
-    setLikeOverride(next);
-    setLikeDelta((d) => d + (next ? 1 : -1));
-    try {
-      if (next) await likePost(userId, post.id);
-      else await unlikePost(userId, post.id);
-    } catch {
-      setLikeOverride(!next);
-      setLikeDelta((d) => d + (next ? -1 : 1));
-    }
-  };
-
-  const onMore = () => {
-    if (post.author_id === userId) {
-      showAlert("Your post", undefined, [
-        {
-          text: "Delete post",
-          style: "destructive",
-          onPress: async () => {
-            await deleteOwnPost(post.id);
-            queryClient.invalidateQueries({ queryKey: ["feed"] });
-            queryClient.invalidateQueries({ queryKey: ["user-posts"] });
-            router.back();
-          },
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    } else {
-      showAlert(post.author.username, undefined, [
-        {
-          text: "Report post",
-          style: "destructive",
-          onPress: () =>
-            router.push({ pathname: "/report", params: { targetType: "post", postId: post.id } }),
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    }
-  };
 
   const onCommentLongPress = (comment: CommentWithAuthor) => {
     const own = comment.author_id === userId;
@@ -152,19 +125,21 @@ export default function PostDetail() {
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={90}
+      keyboardVerticalOffset={headerHeight}
     >
       <FlatList
         data={commentsQ.data ?? []}
         keyExtractor={(c) => c.id}
+        contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <PostCard
-            post={{ ...post, like_count: Math.max(0, post.like_count + likeDelta) }}
-            likedByMe={liked}
+            post={{ ...post, like_count: likeCountFor(post) }}
+            likedByMe={isLiked(post)}
             onToggleLike={toggleLike}
             onOpenComments={() => undefined}
             onOpenProfile={(username) => router.push(`/user/${username}`)}
-            onMore={onMore}
+            onMore={(p) => onMore(p, () => router.back())}
           />
         }
         renderItem={({ item }) => (
@@ -179,7 +154,12 @@ export default function PostDetail() {
           </Pressable>
         )}
       />
-      <View style={styles.composer}>
+      <View
+        style={[
+          styles.composer,
+          { paddingBottom: spacing.sm + (keyboardShown ? 0 : insets.bottom) },
+        ]}
+      >
         <TextInput
           value={draft}
           onChangeText={(t) => setDraft(t.slice(0, MAX_COMMENT_LENGTH))}
@@ -204,6 +184,7 @@ export default function PostDetail() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  listContent: { paddingBottom: spacing.md },
   comment: {
     flexDirection: "row",
     paddingHorizontal: spacing.lg,

@@ -80,21 +80,24 @@ app/                    expo-router routes
   (gate)/               landing · apply · invite · sign-in · pending
   (tabs)/               home · search · create · activity · profile
   admin/                dashboard · applications · reports · members
-  compose.tsx           filter selection + caption + publish
-  post/[id].tsx         post detail + comments
+  compose.tsx           filter · location · caption · publish
+  gallery.tsx           one member's photographs, full size and scrollable
+  post/[id].tsx         a single photograph + its comments
   user/[username].tsx   member profiles
 src/
   api/                  supabase queries & rpc wrappers (demo-mode aware)
   demo/                 in-memory demo backend + bundled demo photographs
   components/           reusable UI (PostCard, PhotoGrid, Avatar, …)
   filters/              the VINTAGE filter engine (see below)
+  hooks/                shared post actions (liking, the "…" menu)
   navigation/           the swipeable bottom tab bar
   providers/            session/membership context
   theme/                design tokens (warm paper, hairline borders)
   types/db.ts           database types (mirrors supabase/migrations)
-  utils/                validation, time formatting
+  utils/                validation, time formatting, EXIF capture dates
 supabase/
   migrations/           0001 schema · 0002 RPCs · 0003 RLS · 0004 storage
+                        0005 capture date + location
   seed.sql              fictional members, posts, follows, likes, comments
   config.toml           local dev config (email confirmations off)
 ```
@@ -341,10 +344,20 @@ attribution and future re-processing.
 - Photos are baked with their filter on-device (GL snapshot), resized to
   ≤1440px JPEG, plus a ≤480px thumbnail for grids — both uploaded to
   Storage under `{user_id}/{post_id}.jpg`.
+- The capture date is read from the file's EXIF at pick time and stored as
+  `taken_at`. The amber date stamp shows *that*, not when the post was made
+  — a stamp reading today's date on a photograph from last summer is simply
+  wrong. Files with no usable EXIF date (screenshots, most videos, anything
+  re-saved by an editor) fall back to the posting time.
 - Videos (≤60s) upload as recorded with a poster-frame thumbnail. They live
-  in the normal feed and grid — there is no video-specific surface. In this
-  first pass the selected filter is stored as metadata but not burned into
-  the video (a server-side transcode is the follow-up; see below).
+  in the normal feed and grid — there is no video-specific surface. Picking
+  one opens the system trimmer on iOS, so a long clip is cut to length in
+  the picker instead of being chosen and then refused. In this first pass
+  the selected filter is stored as metadata but not burned into the video
+  (a server-side transcode is the follow-up; see below).
+- `location` is free text the author types — a town, a street, a bar. It is
+  shown under the username beside the filter name. VINTAGE never reads your
+  GPS, never places a post on a map, and makes no place searchable.
 - Storage policies only allow writes inside your own `{user_id}/` folder —
   no member can modify another member's files or rows (see
   `0003_rls.sql` / `0004_storage.sql`).

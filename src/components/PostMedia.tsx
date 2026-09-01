@@ -24,7 +24,15 @@ function needsDisplayFilter(mediaPath: string): boolean {
 interface Props {
   post: Pick<
     PostRow,
-    "media_type" | "media_path" | "thumb_path" | "width" | "height" | "filter_id" | "show_date_stamp" | "created_at"
+    | "media_type"
+    | "media_path"
+    | "thumb_path"
+    | "width"
+    | "height"
+    | "filter_id"
+    | "show_date_stamp"
+    | "taken_at"
+    | "created_at"
   >;
   onDoubleTap?: () => void;
 }
@@ -51,8 +59,12 @@ export function PostMedia({ post, onDoubleTap }: Props) {
     lastTap.current = now;
   };
 
-  // Every filter can carry the stamp; the post alone decides.
-  const stamp = post.show_date_stamp ? <DateStamp iso={post.created_at} /> : null;
+  // Every filter can carry the stamp; the post alone decides. It reads the
+  // capture date, falling back to the posting time for files that carried
+  // no EXIF.
+  const stamp = post.show_date_stamp ? (
+    <DateStamp iso={post.taken_at ?? post.created_at} />
+  ) : null;
 
   const ratio = aspectRatio(post.width, post.height);
 

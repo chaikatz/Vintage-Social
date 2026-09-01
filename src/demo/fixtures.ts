@@ -97,6 +97,27 @@ export const DEMO_PROFILES: ProfileRow[] = [
   }),
 ];
 
+/**
+ * Where each photograph was taken, keyed by the prefix of its seed name.
+ * Free text, exactly as a member would type it — VINTAGE stores no
+ * coordinates and makes no place searchable.
+ */
+const PLACES: Record<string, string> = {
+  milan: "Milan",
+  sthlm: "Stockholm",
+  kyoto: "Kyoto",
+  paris: "Paris",
+  cdmx: "Mexico City",
+  nola: "New Orleans",
+  lyon: "Lyon",
+  lagos: "Lagos",
+  lisboa: "Lisbon",
+  athens: "Athens",
+};
+
+/** Photographs are taken before they are posted — about a day, here. */
+const SHOT_BEFORE_POSTING_HOURS = 26;
+
 function post(
   id: string,
   authorId: string,
@@ -120,6 +141,8 @@ function post(
     filter_id: filterId,
     show_date_stamp: false,
     caption,
+    taken_at: hoursAgo(createdHoursAgo + SHOT_BEFORE_POSTING_HOURS),
+    location: PLACES[seed.split("-")[0]] ?? null,
     like_count: 0, // recomputed by the store
     comment_count: 0,
     created_at: hoursAgo(createdHoursAgo),

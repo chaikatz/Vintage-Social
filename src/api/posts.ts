@@ -71,6 +71,8 @@ export interface NewPost {
   filter_id: string;
   show_date_stamp: boolean;
   caption: string;
+  taken_at: string | null;
+  location: string | null;
 }
 
 export async function createPost(post: NewPost): Promise<void> {

@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { colors, radii, spacing, type } from "@/theme";
+import { captureDateFrom } from "@/utils/exif";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 
 /**
@@ -24,22 +25,34 @@ export default function Create() {
         width: String(asset.width ?? 0),
         height: String(asset.height ?? 0),
         duration: String(asset.duration != null ? Math.round(asset.duration / 1000) : 0),
+        // When the shutter actually fired, for the date stamp. Empty when the
+        // file carried no capture date.
+        takenAt: captureDateFrom(asset.exif) ?? "",
       },
     });
   };
 
   const pick = async (mediaType: "photo" | "video") => {
+    const isVideo = mediaType === "video";
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: mediaType === "photo" ? ["images"] : ["videos"],
-      allowsEditing: mediaType === "photo",
+      mediaTypes: isVideo ? ["videos"] : ["images"],
+      // Videos open the system trimmer so a long clip can be cut down to
+      // length here, instead of being picked and then refused. iOS only —
+      // on Android and web the editor handles images alone.
+      allowsEditing: !isVideo || Platform.OS === "ios",
       aspect: [4, 5],
       quality: 1,
+      // Only honoured alongside allowsEditing; it caps the trimmer.
       videoMaxDuration: MAX_VIDEO_SECONDS,
+      exif: !isVideo,
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    if (mediaType === "video" && asset.duration != null && asset.duration > (MAX_VIDEO_SECONDS + 1) * 1000) {
-      showAlert("Too long", `Videos on VINTAGE are at most ${MAX_VIDEO_SECONDS} seconds.`);
+    if (isVideo && asset.duration != null && asset.duration > (MAX_VIDEO_SECONDS + 1) * 1000) {
+      showAlert(
+        "Too long",
+        `Videos on VINTAGE are at most ${MAX_VIDEO_SECONDS} seconds. Trim this one and try again.`,
+      );
       return;
     }
     openCompose(asset, mediaType);
@@ -53,6 +66,7 @@ export default function Create() {
       allowsEditing: true,
       aspect: [4, 5],
       quality: 1,
+      exif: true,
     });
     if (!result.canceled && result.assets[0]) openCompose(result.assets[0], "photo");
   };

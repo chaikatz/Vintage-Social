@@ -29,6 +29,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="compose" options={{ title: "New post" }} />
           <Stack.Screen name="post/[id]" options={{ title: "Photo" }} />
+          <Stack.Screen name="gallery" options={{ title: "" }} />
           <Stack.Screen name="user/[username]" options={{ title: "" }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
           <Stack.Screen name="invites" options={{ title: "Invitations" }} />

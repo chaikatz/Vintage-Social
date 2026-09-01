@@ -40,7 +40,13 @@ export function PostCard({
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
           <View style={styles.authorText}>
             <Text style={styles.username}>{post.author.username}</Text>
-            <Text style={styles.filterName}>{getFilter(post.filter_id).name}</Text>
+            {/* Place and film, the way they'd be written on the back of a
+                print. The place leads when there is one. */}
+            <Text style={styles.byline} numberOfLines={1}>
+              {post.location
+                ? `${post.location} · ${getFilter(post.filter_id).name}`
+                : getFilter(post.filter_id).name}
+            </Text>
           </View>
         </Pressable>
         <Pressable hitSlop={10} onPress={() => onMore(post)} accessibilityLabel="Post options">
@@ -104,7 +110,7 @@ const styles = StyleSheet.create({
   author: { flexDirection: "row", alignItems: "center", flex: 1 },
   authorText: { marginLeft: spacing.sm + 2 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  filterName: { fontSize: 11, color: colors.inkFaint, marginTop: 1 },
+  byline: { fontSize: 11, color: colors.inkFaint, marginTop: 1 },
 
   actions: {
     flexDirection: "row",
