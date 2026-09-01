@@ -49,6 +49,7 @@ supabase/migrations/0004_storage.sql
 supabase/migrations/0005_post_details.sql
 supabase/migrations/0006_messages_and_privacy.sql
 supabase/migrations/0007_member_numbers.sql
+supabase/migrations/0008_function_grants.sql
 ```
 
 Order is not negotiable: `0003` writes policies against tables `0001` creates,
@@ -73,6 +74,37 @@ If that says anything other than `1`, a number has already been issued.
 Do not create the founder's account until it says `1`.
 
 ---
+
+## The RPC surface
+
+`0008` exists because of something the Supabase security advisors caught on
+the live project, and it is worth understanding rather than just running.
+
+PostgREST publishes every function in `public` at `/rest/v1/rpc/<name>`, and
+PostgreSQL grants `EXECUTE` to `PUBLIC` by default. Between them, every
+internal helper was reachable by anyone holding the anon key. Most were
+harmless — the trigger functions error if called directly, and every
+`admin_*` function raises `Admins only` before doing anything.
+
+One was not. `assign_member_no(uuid)` is `SECURITY DEFINER` with no guard of
+its own, because it was only ever meant to be called from inside
+`decide_application` and `redeem_invite`. Exposed, it let any caller burn
+membership numbers, or hand one to an account nobody had approved.
+
+`0008` revokes execute across the schema and grants back only what the
+client calls. Two grants must stay or the app breaks:
+
+- `is_admin` and `is_active_member` are called from inside RLS policies.
+  Policy expressions evaluate as the querying role and a function call in
+  one needs `EXECUTE` — revoke these and every policy using them fails with
+  "permission denied for function".
+- `username_available` is called before sign-up, while the caller is anon.
+
+Trigger functions need no grant at all: `EXECUTE` is checked when the
+trigger is created, not each time it fires.
+
+The advisors still report the functions that were deliberately kept
+reachable. That is expected — each one guards itself, or a policy needs it.
 
 ## Auth settings
 
