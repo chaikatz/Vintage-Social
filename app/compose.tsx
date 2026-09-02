@@ -22,11 +22,12 @@ import { FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters"
 import type { FilteredImageHandle, FilterSpec } from "@/filters";
 import { FilterOverlay } from "@/components/FilterOverlay";
 import { cssFilterFor } from "@/filters/cssFilter";
-import { prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
+import { ownedPath, prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { createPost } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_CAPTION_LENGTH, MAX_LOCATION_LENGTH } from "@/utils/validation";
+import { describePublishFailure, publishStep } from "@/utils/publishError";
 
 /**
  * The darkroom: choose a VINTAGE filter, optionally the amber date stamp,
@@ -114,50 +115,68 @@ export default function Compose() {
           thumbPath = posterUri;
         } else {
           const ext = uri.split(".").pop()?.toLowerCase() ?? "mp4";
-          mediaPath = await uploadFile("media", `${userId}/${postId}.${ext}`, uri, `video/${ext === "mov" ? "quicktime" : "mp4"}`);
+          mediaPath = await publishStep("media-upload", () =>
+            uploadFile(
+              "media",
+              ownedPath(userId, `${postId}.${ext}`),
+              uri,
+              `video/${ext === "mov" ? "quicktime" : "mp4"}`,
+            ),
+          );
           thumbPath = posterUri
-            ? await uploadFile("thumbnails", `${userId}/${postId}.jpg`, posterUri, "image/jpeg")
+            ? await publishStep("thumbnail-upload", () =>
+                uploadFile("thumbnails", ownedPath(userId, `${postId}.jpg`), posterUri!, "image/jpeg"),
+              )
             : null;
         }
       } else {
         // Photos are always baked through the GL renderer, on every platform:
         // the filter has to end up in the pixels, not just in the metadata.
-        const baked = await filteredRef.current?.snapshot();
-        if (!baked) throw new Error("The filter renderer isn’t ready yet — try again.");
-        const feedImage = await prepareFeedImage(baked.uri);
+        const baked = await publishStep("render", async () => {
+          const shot = await filteredRef.current?.snapshot();
+          if (!shot) throw new Error("The filter renderer isn’t ready yet — try again.");
+          return shot;
+        });
+        const feedImage = await publishStep("resize", () => prepareFeedImage(baked.uri));
         finalWidth = feedImage.width;
         finalHeight = feedImage.height;
         if (isDemoMode()) {
           mediaPath = feedImage.uri; // keep the baked file locally, no upload
         } else {
-          const thumb = await prepareThumbnail(baked.uri);
-          mediaPath = await uploadFile("media", `${userId}/${postId}.jpg`, feedImage.uri, "image/jpeg");
-          thumbPath = await uploadFile("thumbnails", `${userId}/${postId}.jpg`, thumb.uri, "image/jpeg");
+          const thumb = await publishStep("resize", () => prepareThumbnail(baked.uri));
+          mediaPath = await publishStep("media-upload", () =>
+            uploadFile("media", ownedPath(userId, `${postId}.jpg`), feedImage.uri, "image/jpeg"),
+          );
+          thumbPath = await publishStep("thumbnail-upload", () =>
+            uploadFile("thumbnails", ownedPath(userId, `${postId}.jpg`), thumb.uri, "image/jpeg"),
+          );
         }
       }
 
-      await createPost({
-        id: postId,
-        author_id: userId,
-        media_type: isVideo ? "video" : "photo",
-        media_path: mediaPath,
-        thumb_path: thumbPath,
-        width: finalWidth,
-        height: finalHeight,
-        duration_seconds: isVideo ? Number(params.duration) || null : null,
-        filter_id: filterId,
-        show_date_stamp: stampOn,
-        caption: caption.trim(),
-        taken_at: takenAt,
-        location: location.trim() || null,
-      });
+      await publishStep("post-insert", () =>
+        createPost({
+          id: postId,
+          author_id: userId,
+          media_type: isVideo ? "video" : "photo",
+          media_path: mediaPath,
+          thumb_path: thumbPath,
+          width: finalWidth,
+          height: finalHeight,
+          duration_seconds: isVideo ? Number(params.duration) || null : null,
+          filter_id: filterId,
+          show_date_stamp: stampOn,
+          caption: caption.trim(),
+          taken_at: takenAt,
+          location: location.trim() || null,
+        }),
+      );
 
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["user-posts"] });
       router.dismissAll();
       router.replace("/(tabs)");
     } catch (err) {
-      showAlert("Couldn’t publish", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t publish", describePublishFailure(err));
     } finally {
       setBusy(false);
     }

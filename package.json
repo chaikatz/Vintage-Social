@@ -13,7 +13,8 @@
     "phone": "expo start --go",
     "phone:tunnel": "expo start --go --tunnel",
     "build:web": "expo export --platform web",
-    "test:e2e": "node e2e/run.mjs"
+    "test:e2e": "node e2e/run.mjs",
+    "test:rls": "node supabase/tests/run.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

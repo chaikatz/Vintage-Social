@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { DEMO_PREFIX } from "@/demo/photos";
 import { PHOTOS } from "@/demo/photoAssets";
 
+export { ownedPath } from "@/utils/storagePath";
+
 /**
  * Media pipeline: optimize on-device, upload originals-free.
  *
@@ -58,11 +60,26 @@ export function prepareAvatar(uri: string): Promise<PreparedImage> {
 
 export type Bucket = "avatars" | "media" | "thumbnails";
 
+/**
+ * Upload one file to a bucket.
+ *
+ * `upsert` defaults to false and should stay that way for anything keyed by
+ * a fresh id. Post media is written to {uid}/{postId}.jpg, so a collision
+ * would mean a uuid clash and ought to fail loudly rather than quietly
+ * overwrite a photograph. Avatars are the one genuine overwrite: they live
+ * at the fixed path {uid}/avatar.jpg and replace the previous picture.
+ *
+ * Note that an upsert also costs more than it looks: the storage API turns
+ * it into `insert ... on conflict do update`, which makes PostgreSQL apply
+ * the SELECT policy on storage.objects as well as the insert one. Migration
+ * 0009 adds that policy; without it every upsert is refused.
+ */
 export async function uploadFile(
   bucket: Bucket,
   path: string,
   localUri: string,
   contentType: string,
+  { upsert = false }: { upsert?: boolean } = {},
 ): Promise<string> {
   let body: ArrayBuffer;
   if (Platform.OS === "web") {
@@ -75,10 +92,12 @@ export async function uploadFile(
   }
   const { error } = await supabase.storage
     .from(bucket)
-    .upload(path, body, { contentType, upsert: true });
+    .upload(path, body, { contentType, upsert });
   if (error) throw error;
   return path;
 }
+
+
 
 /**
  * Resolve a stored media path to a display URL. Seed/demo data uses

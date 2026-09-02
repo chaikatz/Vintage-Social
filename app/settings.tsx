@@ -57,7 +57,9 @@ export default function Settings() {
         avatarPath = newAvatarUri; // demo mode: keep the local uri, no upload
       } else if (newAvatarUri) {
         const prepared = await prepareAvatar(newAvatarUri);
-        avatarPath = await uploadFile("avatars", `${userId}/avatar.jpg`, prepared.uri, "image/jpeg");
+        avatarPath = await uploadFile("avatars", `${userId}/avatar.jpg`, prepared.uri, "image/jpeg", {
+          upsert: true,
+        });
       }
       await updateOwnProfile(userId, {
         full_name: fullName.trim(),

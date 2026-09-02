@@ -181,6 +181,60 @@ set and therefore stays in demo mode. Leave it that way: it is a public URL.
 
 ---
 
+## Fixing publishing (migration 0009)
+
+**Symptom.** An approved member publishes a photograph and gets
+`Couldn't publish — new row violates row-level security policy`.
+
+**Cause.** The client uploads with `upsert`, and the storage API turns that
+into `insert ... on conflict (bucket_id, name) do update`. PostgreSQL applies
+the **SELECT** policy to that statement, because it has to be able to look at
+the row it might conflict with. `storage.objects` had no SELECT policy at
+all, so the statement was refused — before any conflict could even occur, so
+even the first upload of a brand-new key failed. The write policies in
+`0004_storage.sql` were correct all along, which is why this looked like a
+policy-expression bug rather than a missing policy.
+
+The post insert was never the problem. Only the two storage uploads were.
+
+**Apply it.**
+
+1. Run `supabase/production/05_fix_publish_rls.sql` in the SQL Editor. It is
+   the contents of `supabase/migrations/0009_storage_read_own.sql`, and it
+   only *adds* two read policies — nothing is revoked, no existing policy is
+   relaxed, no data is touched. It is safe to re-run.
+
+2. Run `supabase/production/06_verify_publish.sql`, having replaced the uuid
+   at the top with your own (`select id, username from public.profiles;`).
+   Everything it does is rolled back, so it creates no post and stores no
+   object. It should report:
+
+   ```
+   media upload: OK; thumbnail upload: OK; post insert: OK;
+   another member's folder: correctly denied;
+   ```
+
+   Before the fix, the two uploads say `FAILED` and the post insert says
+   `OK` — which is the same split the app shows.
+
+3. Publish a real photograph from the app.
+
+**What the new policies allow.** A signed-in member may read the
+`storage.objects` rows for files in their own folder — their own uploads,
+nothing else. Not another member's folder, not a listing of a bucket, and
+nothing for a signed-out visitor. Media and thumbnail reads additionally
+require active membership, so a suspended member cannot overwrite their own
+media either. Downloads are unaffected in both directions: the buckets are
+public-read and served without consulting this table.
+
+**Regression cover.** `npm run test:rls` applies every migration to a
+throwaway PostgreSQL and asserts 25 publish-policy behaviours — who may
+publish, who may upload where, and both the plain-insert and upsert shapes.
+Removing `0009` from `supabase/migrations/` makes it fail, which is how the
+fix was confirmed to be the thing doing the work.
+
+---
+
 ## After the founder exists
 
 Once member no. 1 is created and confirmed, consider turning the Supabase

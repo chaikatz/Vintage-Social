@@ -66,7 +66,9 @@ export async function submitApplication(input: ApplicationInput): Promise<void> 
   let avatarPath: string | null = null;
   if (input.avatarUri) {
     const avatar = await prepareAvatar(input.avatarUri);
-    avatarPath = await uploadFile("avatars", `${user.id}/avatar.jpg`, avatar.uri, "image/jpeg");
+    avatarPath = await uploadFile("avatars", `${user.id}/avatar.jpg`, avatar.uri, "image/jpeg", {
+      upsert: true,
+    });
     await supabase.from("profiles").update({ avatar_url: avatarPath }).eq("id", user.id);
   }
 
