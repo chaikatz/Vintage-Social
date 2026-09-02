@@ -10,14 +10,14 @@ import { createInvite, fetchMyInvites } from "@/api/membership";
 import { useSession } from "@/providers/SessionProvider";
 
 /**
- * Nominations.
+ * Invitations.
  *
- * A member does not hand out a referral link; they put someone's name
- * forward, and that person is admitted on their word. The count is small
- * and it does not refill, which is the whole mechanism — so the screen
- * says plainly how many are left and whose they became.
+ * A member does not hand out a referral link; they invite one person by
+ * name, and that person is admitted on their word. The count is small and
+ * it does not refill, which is the whole mechanism — so the screen says
+ * plainly how many are left and whose they became.
  */
-export default function Nominations() {
+export default function Invitations() {
   const queryClient = useQueryClient();
   const { session, profile } = useSession();
   const userId = session?.user?.id ?? "";
@@ -32,7 +32,7 @@ export default function Nominations() {
     mutationFn: createInvite,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["invites", userId] }),
     onError: (err) =>
-      showAlert("No nominations left", err instanceof Error ? err.message : String(err)),
+      showAlert("No invitations left", err instanceof Error ? err.message : String(err)),
   });
 
   const all = invites.data ?? [];
@@ -42,12 +42,12 @@ export default function Nominations() {
   return (
     <Screen padded={false}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Nominations</Text>
+        <Text style={styles.eyebrow}>Invitations</Text>
         <Text style={styles.headline}>
           {remaining} left of {profile?.invite_quota ?? 0}
         </Text>
         <Text style={styles.sub}>
-          Putting someone forward admits them on your word — there is no queue and no review.
+          Inviting someone admits them on your word — there is no queue and no review.
           {accepted > 0 ? ` ${accepted} of yours ${accepted === 1 ? "has" : "have"} been taken up.` : ""}
         </Text>
         <Pressable
@@ -56,7 +56,7 @@ export default function Nominations() {
           disabled={remaining <= 0 || mint.isPending}
         >
           <Text style={styles.mintText}>
-            {remaining <= 0 ? "None left" : "Nominate a member"}
+            {remaining <= 0 ? "None left" : "Invite a member"}
           </Text>
         </Pressable>
       </View>
@@ -67,8 +67,8 @@ export default function Nominations() {
         ListEmptyComponent={
           invites.isFetched ? (
             <EmptyState
-              title="No nominations yet"
-              body="Put someone forward and pass the code to them quietly."
+              title="No invitations yet"
+              body="Invite someone and pass the code to them quietly."
             />
           ) : null
         }
@@ -84,8 +84,8 @@ export default function Nominations() {
                 onPress={() =>
                   Share.share({
                     message:
-                      `You have been nominated for membership of VINTAGE.\n\n` +
-                      `Open the app, choose “I have a nomination”, and enter ${item.code}.`,
+                      `You have been invited to join VINTAGE.\n\n` +
+                      `Open the app, choose “I have an invitation”, and enter ${item.code}.`,
                   })
                 }
               >

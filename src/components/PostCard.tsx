@@ -25,6 +25,8 @@ interface Props {
   onShare?: (post: PostWithAuthor) => void;
   /** The newest comments, shown under the caption. */
   comments?: CommentWithAuthor[];
+  /** Whether this card is the one on screen; gates video playback. */
+  active?: boolean;
 }
 
 export function PostCard({
@@ -36,6 +38,7 @@ export function PostCard({
   onMore,
   onShare,
   comments,
+  active = true,
 }: Props) {
   const like = (next: boolean) => {
     if (next && !likedByMe) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -74,7 +77,7 @@ export function PostCard({
         </View>
       </View>
 
-      <PostMedia post={post} onDoubleTap={() => like(true)} />
+      <PostMedia post={post} onDoubleTap={() => like(true)} active={active} />
 
       <View style={styles.actions}>
         <Pressable
@@ -180,7 +183,7 @@ const styles = StyleSheet.create({
   comment: {
     ...type.body,
     fontSize: 14,
-    color: colors.inkSoft,
+    color: colors.ink,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xs + 2,
   },

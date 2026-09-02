@@ -6,7 +6,7 @@ import { useRouter } from "expo-router";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { colors, spacing, type } from "@/theme";
-import { captureDateFrom } from "@/utils/exif";
+import { captureDateForAsset } from "@/utils/captureDate";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 
 /**
@@ -20,7 +20,10 @@ import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 export default function Create() {
   const router = useRouter();
 
-  const openCompose = (asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video") => {
+  const openCompose = async (asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video") => {
+    // EXIF first, then the photo library — video carries no EXIF at all, so
+    // the library is the only place its real date exists.
+    const takenAt = await captureDateForAsset(asset);
     router.push({
       pathname: "/compose",
       params: {
@@ -29,9 +32,9 @@ export default function Create() {
         width: String(asset.width ?? 0),
         height: String(asset.height ?? 0),
         duration: String(asset.duration != null ? Math.round(asset.duration / 1000) : 0),
-        // When the shutter actually fired, for the date stamp. Empty when the
-        // file carried no capture date.
-        takenAt: captureDateFrom(asset.exif) ?? "",
+        // When the shutter actually fired, for the date stamp. Empty when
+        // neither the file nor the library knew.
+        takenAt: takenAt ?? "",
       },
     });
   };
@@ -48,7 +51,7 @@ export default function Create() {
       quality: 1,
       // Only honoured alongside allowsEditing; it caps the trimmer.
       videoMaxDuration: MAX_VIDEO_SECONDS,
-      exif: !isVideo,
+      exif: true,
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
@@ -59,7 +62,7 @@ export default function Create() {
       );
       return;
     }
-    openCompose(asset, mediaType);
+    await openCompose(asset, mediaType);
   };
 
   const takePhoto = async () => {
@@ -72,7 +75,7 @@ export default function Create() {
       quality: 1,
       exif: true,
     });
-    if (!result.canceled && result.assets[0]) openCompose(result.assets[0], "photo");
+    if (!result.canceled && result.assets[0]) await openCompose(result.assets[0], "photo");
   };
 
   return (

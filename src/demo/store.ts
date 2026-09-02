@@ -601,7 +601,7 @@ export function demoSubmitApplication(input: {
 }
 
 /**
- * Redeem a nomination: the code is consumed, the member is let straight in,
+ * Redeem an invitation: the code is consumed, the member is let straight in,
  * the number is issued, and who vouched for them is recorded permanently.
  * Mirrors `redeem_invite`.
  */
@@ -614,7 +614,7 @@ export function demoJoinWithInvite(input: {
     (i) => i.code === input.code.trim().toUpperCase() && !i.used_by,
   );
   if (!invite) {
-    throw new Error("That nomination code is invalid or has already been used.");
+    throw new Error("That invitation code is invalid or has already been used.");
   }
   const id = newId("demo-member");
   state.profiles.push({
@@ -643,7 +643,7 @@ export function demoJoinWithInvite(input: {
   const memberNo = assignMemberNo(id);
   note(id, welcomeMessage(memberNo));
   // The member who nominated them sees that it was taken up.
-  note(invite.created_by, "Your nomination was accepted.", id);
+  note(invite.created_by, "Your invitation was accepted.", id);
 
   // New members start by following a few of the regulars so Home is alive.
   // Routed through demoFollow rather than written straight into the table,
@@ -677,7 +677,7 @@ export function demoCreateInvite(): string {
   const me = state.profiles.find((p) => p.id === userId);
   const minted = state.invites.filter((i) => i.created_by === userId).length;
   if (!me || minted >= me.invite_quota) {
-    throw new Error("You have used all of your nominations.");
+    throw new Error("You have used all of your invitations.");
   }
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const pick = () => alphabet[Math.floor(Math.random() * alphabet.length)];

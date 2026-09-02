@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
 import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
 import { INLINE_COMMENTS } from "@/components/PostCard";
+import { useSession } from "@/providers/SessionProvider";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 
 /**
@@ -17,6 +18,7 @@ import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 export function usePostActions(userId: string, postIds: string[]) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { refreshProfile } = useSession();
 
   const likesQuery = useQuery({
     queryKey: ["my-likes", userId, postIds.join(",")],
@@ -94,6 +96,8 @@ export function usePostActions(userId: string, postIds: string[]) {
               await deleteOwnPost(post.id);
               queryClient.invalidateQueries({ queryKey: ["feed"] });
               queryClient.invalidateQueries({ queryKey: ["user-posts"] });
+              queryClient.invalidateQueries({ queryKey: ["explore"] });
+              await refreshProfile();
               afterDelete?.();
             },
           },
@@ -111,7 +115,7 @@ export function usePostActions(userId: string, postIds: string[]) {
         ]);
       }
     },
-    [userId, router, queryClient],
+    [userId, router, queryClient, refreshProfile],
   );
 
   return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor };

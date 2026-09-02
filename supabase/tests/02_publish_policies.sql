@@ -223,6 +223,41 @@ end
 $check$;
 
 -- ---------------------------------------------------------------------------
+-- the RPC surface stays locked down
+--
+-- 0008 revoked execute on everything in `public` and granted back a short
+-- list. 0010 rewrites two of those functions, and `create or replace` keeps
+-- an existing ACL — but that is exactly the kind of thing worth asserting
+-- rather than remembering.
+-- ---------------------------------------------------------------------------
+do $grants$
+declare
+  r text := '';
+begin
+  insert into tests.results (name, expected, actual) values
+    ('assign_member_no unreachable by members', 'NO',
+     case when has_function_privilege('authenticated', 'public.assign_member_no(uuid)', 'EXECUTE')
+          then 'YES' else 'NO' end),
+    ('assign_member_no unreachable by anon', 'NO',
+     case when has_function_privilege('anon', 'public.assign_member_no(uuid)', 'EXECUTE')
+          then 'YES' else 'NO' end),
+    ('create_invite callable by members', 'YES',
+     case when has_function_privilege('authenticated', 'public.create_invite()', 'EXECUTE')
+          then 'YES' else 'NO' end),
+    ('create_invite not callable by anon', 'NO',
+     case when has_function_privilege('anon', 'public.create_invite()', 'EXECUTE')
+          then 'YES' else 'NO' end),
+    ('redeem_invite callable by members', 'YES',
+     case when has_function_privilege('authenticated', 'public.redeem_invite(text)', 'EXECUTE')
+          then 'YES' else 'NO' end),
+    ('policy helper is_active_member callable', 'YES',
+     case when has_function_privilege('authenticated', 'public.is_active_member(uuid)', 'EXECUTE')
+          then 'YES' else 'NO' end);
+  r := r;
+end
+$grants$;
+
+-- ---------------------------------------------------------------------------
 -- report
 -- ---------------------------------------------------------------------------
 \o

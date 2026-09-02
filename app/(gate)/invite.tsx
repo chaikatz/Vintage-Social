@@ -98,7 +98,7 @@ export default function Invite() {
         >
           <EngravedCard style={styles.card}>
             <View style={styles.cardInner}>
-              <Text style={styles.eyebrow}>By nomination</Text>
+              <Text style={styles.eyebrow}>By invitation</Text>
               <Text style={styles.wordmark}>Vintage</Text>
               <View style={styles.rule} />
               <Text style={styles.blurb}>
@@ -107,7 +107,7 @@ export default function Invite() {
               </Text>
 
               <GateField
-                label="Nomination code"
+                label="Invitation code"
                 value={code}
                 onChangeText={(t) => setCode(normalizeInviteCode(t))}
                 error={errors.code}
@@ -147,7 +147,7 @@ export default function Invite() {
                 secureTextEntry
               />
 
-              <GateButton title="Accept the nomination" onPress={submit} loading={busy} />
+              <GateButton title="Accept the invitation" onPress={submit} loading={busy} />
 
               <View style={styles.footRule} />
               <Text style={styles.foot}>Members only · Est. 2026</Text>

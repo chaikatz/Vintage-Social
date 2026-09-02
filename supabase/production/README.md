@@ -235,6 +235,24 @@ fix was confirmed to be the thing doing the work.
 
 ---
 
+## Invitation wording (migration 0010)
+
+Cosmetic, and safe to leave until convenient. The app now says
+"Invitations" throughout, but three strings live in the database rather than
+the client and still said "nomination" — two errors from `create_invite`,
+and the note written into an inviter's Activity feed when their invitation
+is taken up, which is the one members actually see.
+
+Run `supabase/production/07_invitation_wording.sql`. It is the definitions
+currently in production, character for character, with only those three
+strings changed: same signatures, same `SECURITY DEFINER`, same
+`search_path`, same logic. `create or replace` keeps the grants made in
+0008, and `npm run test:rls` asserts that — `assign_member_no` stays
+unreachable, `create_invite` and `redeem_invite` stay callable by members
+and not by `anon`.
+
+---
+
 ## After the founder exists
 
 Once member no. 1 is created and confirmed, consider turning the Supabase

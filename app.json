@@ -43,7 +43,16 @@
         }
       ],
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-audio",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "VINTAGE reads the date a photograph or video was taken, so the date stamp says when the shutter fired rather than when you posted it.",
+          "savePhotosPermission": "VINTAGE does not save anything to your library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false

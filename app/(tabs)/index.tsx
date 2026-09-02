@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { FlatList, StyleSheet } from "react-native";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import { FlatList, StyleSheet, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -29,6 +29,36 @@ export default function Home() {
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
     usePostActions(userId, postIds);
 
+  // Only the card actually on screen plays its video — see PostMedia for why
+  // letting them all autoplay leaves some of them stuck on a black frame.
+  const [visibleId, setVisibleId] = useState<string | null>(null);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    // The most-covered item wins; FlatList reports them top to bottom.
+    const first = viewableItems.find((v) => v.isViewable);
+    setVisibleId((first?.item as { id: string } | undefined)?.id ?? null);
+  }).current;
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 60,
+    minimumViewTime: 120,
+  }).current;
+
+  const renderItem = useCallback(
+    ({ item }: { item: (typeof posts)[number] }) => (
+      <PostCard
+        post={{ ...item, like_count: likeCountFor(item) }}
+        likedByMe={isLiked(item)}
+        onToggleLike={toggleLike}
+        onOpenComments={onOpenComments}
+        onOpenProfile={(username) => router.push(`/user/${username}`)}
+        onShare={onShare}
+        comments={commentsFor(item)}
+        onMore={(p) => onMore(p)}
+        active={item.id === visibleId}
+      />
+    ),
+    [likeCountFor, isLiked, toggleLike, onOpenComments, onShare, commentsFor, onMore, router, visibleId],
+  );
+
   return (
     <Screen padded={false}>
       <FlatList
@@ -49,18 +79,9 @@ export default function Home() {
             />
           )
         }
-        renderItem={({ item }) => (
-          <PostCard
-            post={{ ...item, like_count: likeCountFor(item) }}
-            likedByMe={isLiked(item)}
-            onToggleLike={toggleLike}
-            onOpenComments={onOpenComments}
-            onOpenProfile={(username) => router.push(`/user/${username}`)}
-            onShare={onShare}
-            comments={commentsFor(item)}
-            onMore={(p) => onMore(p)}
-          />
-        )}
+        renderItem={renderItem}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
       />
     </Screen>
   );

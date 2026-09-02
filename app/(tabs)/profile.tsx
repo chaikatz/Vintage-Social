@@ -64,7 +64,7 @@ export default function OwnProfile() {
                     style={{ flex: 1 }}
                   />
                   <Button
-                    title="Nominations"
+                    title="Invitations"
                     variant="secondary"
                     small
                     onPress={() => router.push("/invites")}

@@ -34,7 +34,16 @@ export default function RootLayout() {
           <Stack.Screen name="(gate)/sign-in" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/pending" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="compose" options={{ title: "New post" }} />
+          {/* Composing is the one screen a stray swipe must not throw away:
+              the back gesture is off here, so leaving is a deliberate tap. */}
+          <Stack.Screen
+            name="compose"
+            options={{
+              title: "New post",
+              gestureEnabled: false,
+              fullScreenGestureEnabled: false,
+            }}
+          />
           <Stack.Screen name="post/[id]" options={{ title: "Photo" }} />
           <Stack.Screen name="gallery" options={{ title: "" }} />
           <Stack.Screen name="comments" options={{ title: "Comments" }} />
@@ -44,7 +53,7 @@ export default function RootLayout() {
           <Stack.Screen name="requests" options={{ title: "Requests" }} />
           <Stack.Screen name="user/[username]" options={{ title: "" }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
-          <Stack.Screen name="invites" options={{ title: "Nominations" }} />
+          <Stack.Screen name="invites" options={{ title: "Invitations" }} />
           <Stack.Screen name="report" options={{ presentation: "modal", title: "Report" }} />
           <Stack.Screen name="admin/index" options={{ title: "Admin" }} />
           <Stack.Screen name="admin/applications" options={{ title: "Applications" }} />

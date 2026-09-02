@@ -56,10 +56,30 @@ export function parseExifDate(value: unknown): string | null {
   ) {
     return null;
   }
-  // A camera with a dead battery-backup clock writes 1970 or 2000-01-01;
-  // a wrong future date is just as suspect. Neither is worth stamping.
-  if (Number(year) < 1900 || date.getTime() > Date.now() + 86_400_000) return null;
+  return plausibleCaptureDate(date);
+}
+
+/**
+ * A capture date worth stamping, or null.
+ *
+ * A camera with a dead battery-backup clock writes 1970 or 2000-01-01, and a
+ * date in the future is just as suspect. Neither is worth printing in amber
+ * across the corner of someone's photograph, so both fall back to the
+ * posting time.
+ */
+export function plausibleCaptureDate(date: Date): string | null {
+  const time = date.getTime();
+  if (Number.isNaN(time)) return null;
+  if (date.getFullYear() < 1900) return null;
+  if (time > Date.now() + 86_400_000) return null;
   return date.toISOString();
+}
+
+/** The same check, for a millisecond timestamp — what the photo library
+ * reports for a file that carries no EXIF, video especially. */
+export function captureDateFromEpoch(ms: unknown): string | null {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return null;
+  return plausibleCaptureDate(new Date(ms));
 }
 
 /**
