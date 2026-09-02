@@ -27,6 +27,7 @@
       }
     },
     "production": {
+      "distribution": "store",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_DEMO_MODE": "0"
