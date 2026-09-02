@@ -183,10 +183,70 @@ function captureDate(em) {
 // --clean re-applies the photograph test to an existing photos.json without
 // going back to Commons. The rules get sharper as junk turns up, and a full
 // re-query takes half an hour.
+/**
+ * Contemporary photography, as a second source.
+ *
+ * Public-domain material skews archival — most of what is old enough to be
+ * out of copyright was shot before 1930 — which is atmospheric but does not
+ * look like a feed of people posting this year. Lorem Picsum publishes a
+ * catalogue of about a thousand Unsplash photographs with stable ids; the
+ * Unsplash licence permits commercial use with no attribution required, the
+ * same freedom the public-domain material gives, and the pictures are
+ * modern and in colour.
+ *
+ * There is no subject metadata, so these carry no location: better to say
+ * nothing about where a photograph was taken than to guess.
+ */
+async function picsum() {
+  const out = [];
+  for (let page = 1; page <= 10; page++) {
+    const res = await fetch(`https://picsum.photos/v2/list?page=${page}&limit=100`, {
+      headers: { "User-Agent": UA },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) break;
+    const batch = await res.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    for (const item of batch) {
+      // Crop to a feed-friendly shape rather than shipping a panorama.
+      const ratio = Math.min(Math.max(item.width / item.height, 0.8), 1.5);
+      const w = 1200;
+      const h = Math.round(w / ratio);
+      out.push({
+        file: `Picsum ${item.id} by ${item.author}`,
+        theme: "modern",
+        place: null,
+        url: `https://picsum.photos/id/${item.id}/${w}/${h}`,
+        thumb: `https://picsum.photos/id/${item.id}/480/${Math.round(480 / ratio)}`,
+        width: w,
+        height: h,
+        licence: "Unsplash Licence",
+        author: item.author ?? null,
+        takenAt: null,
+        descriptionUrl: item.url ?? null,
+      });
+    }
+  }
+  return out;
+}
+
+if (process.argv.includes("--picsum")) {
+  const file = join(here, "photos.json");
+  const existing = JSON.parse(readFileSync(file, "utf8"));
+  const modern = await picsum();
+  const kept = existing.photos.filter((p) => p.theme !== "modern");
+  const merged = { ...existing, photos: [...kept, ...modern] };
+  writeFileSync(file, JSON.stringify(merged, null, 2));
+  console.log(`${modern.length} contemporary photographs added (${merged.photos.length} in total)`);
+  process.exit(0);
+}
+
 if (process.argv.includes("--clean")) {
   const file = join(here, "photos.json");
   const before = JSON.parse(readFileSync(file, "utf8"));
-  const kept = before.photos.filter((p) => isLikelyPhotograph(p.file, ""));
+  const kept = before.photos
+    .filter((p) => isLikelyPhotograph(p.file, ""))
+    .map((p) => ({ ...p, url: p.url.split("?")[0], thumb: p.thumb.split("?")[0] }));
   writeFileSync(file, JSON.stringify({ ...before, photos: kept }, null, 2));
   const dropped = before.photos.length - kept.length;
   console.log(`${kept.length} kept, ${dropped} dropped as artwork or scans`);
@@ -226,12 +286,13 @@ for (const theme of THEMES) {
 
       seen.add(page.title);
 
+      const clean = (u) => (u ?? "").split("?")[0];
       photos.push({
         file: page.title,
         theme: theme.key,
         place: theme.place,
-        url: info.thumburl ?? info.url,
-        thumb: (info.thumburl ?? info.url).replace("/1400px-", "/480px-"),
+        url: clean(info.thumburl ?? info.url),
+        thumb: clean(info.thumburl ?? info.url).replace("/1400px-", "/480px-"),
         width: info.thumbwidth ?? info.width,
         height: info.thumbheight ?? info.height,
         licence,

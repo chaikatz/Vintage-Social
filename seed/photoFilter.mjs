@@ -43,11 +43,23 @@ const SCAN =
 /** Archival scans are overwhelmingly TIFF; photographs are not. */
 const SCAN_FORMAT = /\.(tiff?|djvu|pdf)$/i;
 
+/**
+ * Not every public-domain photograph belongs in a feed like this one.
+ * Searching "vintage car street" returned, among the cars, a news picture
+ * of a protester being struck by one. Government and news archives are a
+ * large share of what is public domain, so this is not a rare accident —
+ * and a photograph of someone's worst day, posted under an invented name
+ * as though a member had taken it, is exactly the wrong thing.
+ */
+const NOT_FOR_A_FEED =
+  /(protest|riot|police|arrest|shooting|shot dead|struck by|crash|collision|wreck|accident|casualt|wounded|injur|corpse|body of|funeral|grave|cemeter|war|battle|combat|troops|soldier|military|army|navy|marine corps|air force|weapon|rifle|missile|bomb|explosion|disaster|earthquake|flood|wildfire|hurricane|famine|refugee|hospital|autopsy|morgue|execution|slavery|lynch|nazi|holocaust|prison|inmate)/i;
+
 export function isLikelyPhotograph(file, objectName = "") {
   const named = `${file} ${objectName}`;
   if (ARTWORK.test(named)) return false;
   if (MUSEUM_TITLE.test(file)) return false;
   if (SCAN.test(named)) return false;
   if (SCAN_FORMAT.test(file)) return false;
+  if (NOT_FOR_A_FEED.test(named)) return false;
   return true;
 }

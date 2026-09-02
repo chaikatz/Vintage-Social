@@ -93,6 +93,15 @@ const CAPTIONS = {
   cars: ["Runs, mostly.","Parked in the same spot for years.","Somebody loves this thing.","Original paint.","Started first time."],
   food: ["Everything at the market was better.","Ate standing up.","Second breakfast.","Whatever they had.","Worth the detour."],
   still: ["On the table all week.","Morning light does this once.","Not moving it.","Still here.","Same corner, better hour."],
+  // The contemporary set carries no subject metadata, so nothing here
+  // claims to know what is in the frame.
+  modern: [
+    "Finally got round to posting this.","Sunday.","No notes.","One of six that worked.",
+    "Been sitting on this roll for months.","Worth the walk.","Late light.","Straight out of the camera.",
+    "Third attempt.","Kept this one.","Morning.","Not sure about this one, posting it anyway.",
+    "The last frame.","Somewhere better than here.","Quiet week.","Been meaning to share this.",
+    "Found this on an old card.","Nothing else from that day came out.","Good hour for it.","Still my favourite.",
+  ],
 };
 const COMMENTS = [
   "This is the one.","Beautiful light.","Where is this?","Perfect.","The grain on this.","Stunning.",
@@ -132,13 +141,19 @@ const remaining = () => Object.keys(byTheme).filter((t) => byTheme[t].length > 0
 
 /** A theme chosen in proportion to how much of it is left, so the big pools
  * carry the bulk and the small ones are not worn out. */
+// The contemporary photographs should carry most of the club: a feed made
+// entirely of 1920s archive material is handsome but reads as a museum,
+// not as people posting this year. The archival themes stay in as a
+// minority, which suits an app called VINTAGE.
+const WEIGHT = { modern: 9 };
 function weightedTheme() {
   const live = remaining();
   if (live.length === 0) return null;
-  const total = live.reduce((n, t) => n + byTheme[t].length, 0);
+  const weigh = (t) => byTheme[t].length * (WEIGHT[t] ?? 1);
+  const total = live.reduce((n, t) => n + weigh(t), 0);
   let r = rand() * total;
   for (const t of live) {
-    r -= byTheme[t].length;
+    r -= weigh(t);
     if (r <= 0) return t;
   }
   return live[live.length - 1];
