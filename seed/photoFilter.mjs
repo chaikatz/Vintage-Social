@@ -51,8 +51,25 @@ const SCAN_FORMAT = /\.(tiff?|djvu|pdf)$/i;
  * and a photograph of someone's worst day, posted under an invented name
  * as though a member had taken it, is exactly the wrong thing.
  */
-const NOT_FOR_A_FEED =
-  /(protest|riot|police|arrest|shooting|shot dead|struck by|crash|collision|wreck|accident|casualt|wounded|injur|corpse|body of|funeral|grave|cemeter|war|battle|combat|troops|soldier|military|army|navy|marine corps|air force|weapon|rifle|missile|bomb|explosion|disaster|earthquake|flood|wildfire|hurricane|famine|refugee|hospital|autopsy|morgue|execution|slavery|lynch|nazi|holocaust|prison|inmate)/i;
+const NOT_FOR_A_FEED = new RegExp(
+  [
+    // news and harm
+    "protest|riot|police|arrest|shooting|shot dead|struck by|crash|collision|wreck",
+    "accident|casualt|wounded|injur|corpse|body of|funeral|grave|cemeter|memorial",
+    "disaster|earthquake|flood|wildfire|hurricane|famine|refugee|hospital|autopsy",
+    "morgue|execution|slavery|lynch|nazi|holocaust|prison|inmate",
+    // armed forces. US government works are a large share of the public
+    // domain, and a carrier deck is not what this feed is for. Matched on
+    // whole words where the word has innocent uses — "marine life" and a
+    // "marina" are fine, the Marine Corps is not.
+    "\\bwar\\b|warship|battle|combat|troops|soldier|military|militia",
+    "\\bnavy\\b|\\bnaval\\b|\\bUSS\\b|\\bUSNS\\b|\\bHMS\\b|sailors?\\b",
+    "\\barmy\\b|\\bmarine corps\\b|air force|\\bairmen?\\b|squadron|regiment",
+    "battalion|platoon|brigade|barracks|veterans?\\b|aircraft carrier|submarine",
+    "weapon|rifle|missile|\\bbomb|artillery|tank division",
+  ].join("|"),
+  "i",
+);
 
 export function isLikelyPhotograph(file, objectName = "") {
   const named = `${file} ${objectName}`;

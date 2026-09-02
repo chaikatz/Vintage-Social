@@ -318,6 +318,20 @@ delete above is the whole rollback.
 
 ---
 
+## Trying the house accounts without touching production
+
+There is a second Supabase project for exactly this: see
+`supabase/staging/README.md`. It holds the 150 house accounts and their
+photographs, and `npm run use:staging` / `npm run use:production` points the
+local app at one or the other, printing which every time.
+
+Seed staging first, look at it on a phone, and decide whether you want the
+house accounts in production at all. Nothing about staging touches this
+project — separate database, separate keys, and the switch only rewrites
+your local `.env`.
+
+---
+
 ## After the founder exists
 
 Once member no. 1 is created and confirmed, consider turning the Supabase

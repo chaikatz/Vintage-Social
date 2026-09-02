@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env
 .env*.local
+# Production configuration stays out of the repository. .env.staging is
+# committed deliberately — see the note at the top of it.
+.env.production
 
 # EAS / Apple credentials — never commit these
 credentials.json

@@ -16,7 +16,10 @@
     "test:e2e": "node e2e/run.mjs",
     "test:rls": "node supabase/tests/run.mjs",
     "seed:curate": "node seed/curate.mjs",
-    "seed:build": "node seed/build.mjs"
+    "seed:build": "node seed/build.mjs",
+    "use:staging": "node scripts/use-env.mjs staging",
+    "use:production": "node scripts/use-env.mjs production",
+    "env": "node scripts/use-env.mjs status"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

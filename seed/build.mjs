@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isLikelyPhotograph } from "./photoFilter.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback) => {
@@ -115,7 +116,13 @@ const FILTERS = [
 ];
 
 // ---------------------------------------------------------------------------
-const { photos } = JSON.parse(readFileSync(join(here, "photos.json"), "utf8"));
+const { photos: allPhotos } = JSON.parse(readFileSync(join(here, "photos.json"), "utf8"));
+// photos.json may have been curated by an older, looser rule set. Re-apply
+// the current one here so the seed can never be worse than the filter.
+const photos = allPhotos.filter((p) => isLikelyPhotograph(p.file, ""));
+if (photos.length < allPhotos.length) {
+  console.log(`${allPhotos.length - photos.length} photographs rejected by the current rules`);
+}
 if (photos.length < MEMBERS * POSTS_EACH) {
   console.warn(
     `! only ${photos.length} photographs for ${MEMBERS * POSTS_EACH} posts — some will repeat`,

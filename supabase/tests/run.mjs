@@ -12,7 +12,7 @@
  * safe to run anywhere; set VINTAGE_RLS_REQUIRED=1 to make that a failure.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, chmodSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, chmodSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -143,6 +143,43 @@ try {
       } else {
         const note = (seeded.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
         if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+      }
+    }
+  }
+  // The staging runbook is SQL a person pastes by hand into the Supabase
+  // editor. Run it here too, so a typo in it is found by `npm run test:rls`
+  // rather than by someone at a keyboard at midnight.
+  const stagingDir = join(here, "..", "staging");
+  if (existsSync(stagingDir) && process.exitCode !== 1) {
+    console.log("");
+    const founder = readFileSync(join(stagingDir, "01_bootstrap_founder.sql"), "utf8")
+      .replace("'your.username'", "'founder'");
+    const tmp = join(dir, "bootstrap.sql");
+    writeFileSync(tmp, founder);
+    for (const [label, file] of [
+      ["01_bootstrap_founder.sql", tmp],
+      ["02_videos.sql", join(stagingDir, "02_videos.sql")],
+      ["03_verify.sql", join(stagingDir, "03_verify.sql")],
+    ]) {
+      process.stdout.write(`· supabase/staging/${label} … `);
+      const verify = label.startsWith("03");
+      const r = psql(["-U", "vintage_owner", ...(verify ? [] : ["-q"]), "-f", file], {
+        allowFail: true,
+        stdio: ["ignore", verify ? "pipe" : "ignore", "pipe"],
+      });
+      if (r.status !== 0) {
+        console.log("FAILED");
+        process.stderr.write(r.stderr ?? "");
+        process.exitCode = 1;
+        break;
+      }
+      console.log("ok");
+      // The verification script is a report; show it.
+      if (verify) {
+        process.stdout.write(r.stdout ?? "");
+        for (const line of (r.stderr ?? "").split("\n")) {
+          if (line.startsWith("NOTICE:")) console.log(line.replace(/^NOTICE:\s{2}/, "  "));
+        }
       }
     }
   }
