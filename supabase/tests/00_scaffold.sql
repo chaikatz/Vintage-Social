@@ -22,11 +22,23 @@ grant usage on schema auth, storage, public to anon, authenticated, service_role
 -- ---------------------------------------------------------------------------
 -- auth
 -- ---------------------------------------------------------------------------
+-- The columns the app and the seed actually write. Supabase's real table is
+-- much wider, but everything else on it is nullable or defaulted, so an
+-- insert that works here works there.
 create table auth.users (
   id                  uuid primary key default gen_random_uuid(),
+  instance_id         uuid,
+  aud                 text,
+  role                text,
   email               text unique,
+  encrypted_password  text,
+  email_confirmed_at  timestamptz,
+  raw_app_meta_data   jsonb not null default '{}'::jsonb,
   raw_user_meta_data  jsonb not null default '{}'::jsonb,
-  created_at          timestamptz not null default now()
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  is_sso_user         boolean not null default false,
+  is_anonymous        boolean not null default false
 );
 
 -- The real thing, verbatim in behaviour: the subject claim of the request's

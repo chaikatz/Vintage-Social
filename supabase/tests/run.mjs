@@ -116,6 +116,36 @@ try {
     const notice = (res.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
     if (notice) console.log(notice.replace(/^NOTICE:\s*/, "✓ "));
   }
+  // If the house-account seed has been generated, apply it here too: a
+  // bad seed is much cheaper to find in a throwaway database than in the
+  // members' one.
+  const seedSql = join(here, "..", "production", "08_house_accounts.sql");
+  if (existsSync(seedSql) && res.status === 0) {
+    console.log("");
+    process.stdout.write("· applying supabase/production/08_house_accounts.sql … ");
+    const applied = psql(["-U", "vintage_owner", "-q", "-f", seedSql], {
+      allowFail: true,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    if (applied.status !== 0) {
+      console.log("FAILED");
+      process.stderr.write(applied.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log("ok");
+      const seeded = psql(["-U", "vintage_owner", "-f", join(here, "03_house_seed.sql")], {
+        allowFail: true,
+      });
+      process.stdout.write(seeded.stdout ?? "");
+      if (seeded.status !== 0) {
+        process.stderr.write(seeded.stderr ?? "");
+        process.exitCode = 1;
+      } else {
+        const note = (seeded.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+        if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+      }
+    }
+  }
 } catch (err) {
   console.error(String(err && err.message ? err.message : err));
   process.exitCode = 1;

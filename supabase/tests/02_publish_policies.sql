@@ -223,6 +223,61 @@ end
 $check$;
 
 -- ---------------------------------------------------------------------------
+-- house accounts never take a membership number
+--
+-- The one thing that cannot be undone. nextval() is not transactional, so a
+-- number drawn for a house account is spent even if everything around it
+-- rolls back, and every real member after it is numbered one too high
+-- forever.
+-- ---------------------------------------------------------------------------
+do $house$
+declare
+  v_before  bigint;
+  v_after   bigint;
+  v_no      integer;
+  v_real_no integer;
+begin
+  update public.profiles set is_house = true
+    where id = '22222222-2222-2222-2222-222222222222';
+
+  select last_value into v_before from public.member_no_seq;
+  v_no := public.assign_member_no('22222222-2222-2222-2222-222222222222');
+  select last_value into v_after from public.member_no_seq;
+
+  insert into tests.results (name, expected, actual) values
+    ('house account gets no member number', 'NULL',
+     coalesce(v_no::text, 'NULL')),
+    ('house account does not burn a number', 'UNMOVED',
+     case when v_before = v_after then 'UNMOVED' else 'SPENT' end),
+    ('house account row has no member_no', 'NULL',
+     coalesce((select member_no::text from public.profiles
+               where id = '22222222-2222-2222-2222-222222222222'), 'NULL'));
+
+  -- A real member still gets the next number, and gets it twice the same.
+  v_real_no := public.assign_member_no('11111111-1111-1111-1111-111111111111');
+  insert into tests.results (name, expected, actual) values
+    ('real member is numbered from 1', '1', coalesce(v_real_no::text, 'NULL')),
+    ('numbering is idempotent', '1',
+     coalesce(public.assign_member_no('11111111-1111-1111-1111-111111111111')::text, 'NULL'));
+
+  update public.profiles set is_house = false
+    where id = '22222222-2222-2222-2222-222222222222';
+end
+$house$;
+
+-- A member must not be able to flag their own row as house, which would
+-- quietly opt them out of everything the flag governs.
+select tests.run('member cannot make themselves a house account', :'second', 'DENIED', $q$
+  update public.profiles set is_house = true
+  where id = '22222222-2222-2222-2222-222222222222'
+$q$);
+
+select tests.run('member can still edit their own bio', :'second', 'OK', $q$
+  update public.profiles set bio = 'Photographs, mostly at dusk.'
+  where id = '22222222-2222-2222-2222-222222222222'
+$q$);
+
+-- ---------------------------------------------------------------------------
 -- the RPC surface stays locked down
 --
 -- 0008 revoked execute on everything in `public` and granted back a short

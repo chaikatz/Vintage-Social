@@ -8,24 +8,11 @@ import { colors, radii, spacing } from "@/theme";
 import { mediaUrl, mediaUrlString } from "@/api/media";
 import { getFilter } from "@/filters";
 import { cssFilterFor } from "@/filters/cssFilter";
-import { DEMO_PREFIX } from "@/demo/photos";
+import { needsDisplayFilter } from "@/utils/displayFilter";
 import { useVideoMuted, toggleVideoMuted } from "@/utils/videoSound";
 import { DateStamp } from "./DateStamp";
 import { FilterOverlay } from "./FilterOverlay";
 import type { PostRow } from "@/types/db";
-
-/**
- * Which media still needs its filter applied at display time.
- *
- * A photograph published through the app is baked at compose time, so it
- * arrives already filtered. Two kinds aren't: the bundled demo library,
- * which ships as plain photographs, and video — burning a filter into
- * footage needs a transcode VINTAGE doesn't do yet, so a video's filter is
- * applied live on every play.
- */
-function needsDisplayFilter(post: Pick<PostRow, "media_type" | "media_path">): boolean {
-  return post.media_type === "video" || post.media_path.startsWith(DEMO_PREFIX);
-}
 
 interface Props {
   post: Pick<

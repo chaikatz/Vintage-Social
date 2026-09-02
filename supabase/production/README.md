@@ -253,6 +253,71 @@ and not by `anon`.
 
 ---
 
+## House accounts (migrations 0011, and 08_house_accounts.sql)
+
+An empty Explore tab is a bad first impression for a club whose whole
+appeal is the work in it. VINTAGE ships with a body of photography of its
+own: ~150 accounts with ~900 photographs between them, following each
+other, liking and occasionally commenting.
+
+**They are not people, and the schema says so.** Every one carries
+`is_house = true`, and none of them can sign in — the auth rows are created
+with no password and no identity, so there is nothing to authenticate
+against. They can be followed, searched and viewed like anyone else, and
+they will never answer a message.
+
+**They never take a membership number.** This is the part that cannot be
+undone, so it is enforced in the database rather than in the generator:
+migration `0011` makes `assign_member_no` return null for a house account
+*before* it calls `nextval`. Sequences are not transactional — a number
+drawn and rolled back is still spent — so the guard has to come first.
+Your first real invitation is still `FOUNDING MEMBER · NO. 00002`.
+`npm run test:rls` asserts exactly this, including that the sequence does
+not move.
+
+**The photographs are public domain or CC0.** They are curated from
+Wikimedia Commons by `seed/curate.mjs`, which keeps only licences carrying
+no attribution condition and no share-alike obligation — the latter matters
+because VINTAGE applies a filter to what it shows, which makes every frame
+a derivative work. `seed/CREDITS.md` lists every source file anyway, so
+provenance is traceable. Photographs are referenced by their original url
+rather than copied into your storage, so this costs you no storage and no
+egress.
+
+### Applying
+
+1. Run `supabase/migrations/0011_house_accounts.sql` in the SQL Editor.
+2. Run `supabase/production/08_house_accounts.sql`. It refuses to run if
+   0011 has not been applied, runs in one transaction, and prints a summary
+   row at the end. Check `should_be_zero` is `0` and `member_no_seq` is
+   still `1`.
+
+### Regenerating or removing
+
+```bash
+npm run seed:curate     # re-query Commons  -> seed/photos.json
+npm run seed:build      # rebuild the SQL   -> supabase/production/08_house_accounts.sql
+npm run test:rls        # applies the seed to a throwaway database and checks it
+```
+
+To remove every house account and everything they posted, in one line:
+
+```sql
+delete from auth.users where id in (select id from public.profiles where is_house);
+```
+
+Real members are untouched by that — it is scoped to the flag — and the
+membership sequence is unaffected either way, because it was never used.
+
+### Worth deciding before you invite people
+
+Seeded accounts make the club look inhabited, and they are also a claim
+that it is. Members will follow them and comment at them, and nothing will
+answer. If that trade stops being worth it once there are real members, the
+delete above is the whole rollback.
+
+---
+
 ## After the founder exists
 
 Once member no. 1 is created and confirmed, consider turning the Supabase
