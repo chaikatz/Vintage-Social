@@ -31,20 +31,36 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-async function lookup(slug: string): Promise<{ inviter: string | null; open: boolean }> {
+/**
+ * An unknown link and a spent one look identical on purpose — the page
+ * must not be usable to test whether a suffix exists. But a database this
+ * page cannot reach is a different thing entirely, and collapsing the two
+ * would mean a misconfigured deployment quietly answered 404 to every real
+ * invitation. So the two are distinguished here and in the status code.
+ */
+type Lookup =
+  | { state: "ok"; inviter: string | null; open: boolean }
+  | { state: "unavailable" };
+
+async function lookup(slug: string): Promise<Lookup> {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return { inviter: null, open: false };
+  if (!url || !key) return { state: "unavailable" };
 
-  const res = await fetch(`${url}/rest/v1/rpc/invite_link_owner`, {
-    method: "POST",
-    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ p_slug: slug }),
-  });
-  if (!res.ok) return { inviter: null, open: false };
-  const rows = await res.json();
-  const row = Array.isArray(rows) ? rows[0] : rows;
-  return { inviter: row?.inviter ?? null, open: Boolean(row?.open) };
+  try {
+    const res = await fetch(`${url}/rest/v1/rpc/invite_link_owner`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_slug: slug }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return { state: "unavailable" };
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    return { state: "ok", inviter: row?.inviter ?? null, open: Boolean(row?.open) };
+  } catch {
+    return { state: "unavailable" };
+  }
 }
 
 function page({
@@ -53,12 +69,14 @@ function page({
   open,
   install,
   origin,
+  unavailable = false,
 }: {
   slug: string;
   inviter: string | null;
   open: boolean;
   install: string | null;
   origin: string;
+  unavailable?: boolean;
 }): string {
   const known = Boolean(inviter);
   const title = known ? `${inviter} invited you to VINTAGE` : "You're invited to VINTAGE";
@@ -68,11 +86,13 @@ function page({
       : "Every invitation they were given has since been taken up."
     : "A members' club for photographs, by invitation only.";
 
-  const heading = known
-    ? open
-      ? `${escapeHtml(inviter!)} invited you to VINTAGE.`
-      : `${escapeHtml(inviter!)} invited you — but every invitation they were given has since been taken up.`
-    : "This invitation is no longer open.";
+  const heading = unavailable
+    ? "This invitation cannot be checked just now. Try again in a moment."
+    : known
+      ? open
+        ? `${escapeHtml(inviter!)} invited you to VINTAGE.`
+        : `${escapeHtml(inviter!)} invited you — but every invitation they were given has since been taken up.`
+      : "This invitation is no longer open.";
 
   // The app's own scheme, so someone who already has VINTAGE lands straight
   // on the card with the suffix filled in rather than retyping it.
@@ -177,7 +197,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const raw = String(req.query.slug ?? "").trim().toLowerCase();
   const slug = SLUG.test(raw) ? raw : "";
 
-  const { inviter, open } = slug ? await lookup(slug) : { inviter: null, open: false };
+  const found: Lookup = slug ? await lookup(slug) : { state: "ok", inviter: null, open: false };
+  const unavailable = found.state === "unavailable";
+  const inviter = found.state === "ok" ? found.inviter : null;
+  const open = found.state === "ok" && found.open;
   const install = process.env.VINTAGE_INSTALL_URL ?? null;
 
   // Vercel sets x-forwarded-host to the host the visitor actually asked
@@ -190,6 +213,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   // Short cache: an invitation can close at any moment, and a crawler
   // holding a stale "open" for a day is worse than a slightly slower page.
-  res.setHeader("Cache-Control", "public, max-age=0, s-maxage=60");
-  res.status(inviter ? 200 : 404).send(page({ slug, inviter, open, install, origin }));
+  // Never cache a failure — the deployment may be minutes from being fixed.
+  res.setHeader("Cache-Control", unavailable ? "no-store" : "public, max-age=0, s-maxage=60");
+
+  // 503, not 404: the link may well be real and we simply could not ask.
+  const status = unavailable ? 503 : inviter ? 200 : 404;
+  res.status(status).send(page({ slug, inviter, open, install, origin, unavailable }));
 }

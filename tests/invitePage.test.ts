@@ -117,6 +117,37 @@ describe("the invitation page", () => {
     expect(body).toContain("&lt;script&gt;");
   });
 
+  // A misconfigured deployment must not masquerade as "no such link" —
+  // that would answer 404 to every real invitation and look like working
+  // software. It is also still not a way to probe for slugs: every input
+  // gets the same answer when the database is unreachable.
+  it("says 503, not 404, when it cannot reach the database", async () => {
+    delete process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    const { status, body, headers } = await get("chai");
+    expect(status).toBe(503);
+    expect(body).toContain("cannot be checked just now");
+    expect(headers["Cache-Control"]).toBe("no-store");
+  });
+
+  it("says the same thing for every slug when the database is unreachable", async () => {
+    delete process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const real = await get("chai");
+    const fake = await get("no-such-link");
+    expect(real.status).toBe(503);
+    expect(fake.status).toBe(503);
+    expect(real.body).toBe(fake.body.replace("no-such-link", "chai"));
+  });
+
+  it("treats a Supabase error or timeout as unavailable, not as absent", async () => {
+    vi.stubGlobal("fetch", async () => {
+      throw new Error("network");
+    });
+    expect((await get("chai")).status).toBe(503);
+
+    vi.stubGlobal("fetch", async () => ({ ok: false, json: async () => ({}) }) as unknown as Response);
+    expect((await get("chai")).status).toBe(503);
+  });
+
   it("lets a crawler cache only briefly, and never indexes the page", async () => {
     const { body, headers } = await get("chai");
     expect(headers["Cache-Control"]).toContain("s-maxage=60");
