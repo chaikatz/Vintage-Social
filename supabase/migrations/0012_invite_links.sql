@@ -22,9 +22,11 @@
 -- ---------------------------------------------------------------------------
 create table public.invite_links (
   owner_id   uuid primary key references public.profiles (id) on delete cascade,
-  -- 8-64 characters, lowercase letters, digits and hyphens, never starting
-  -- or ending with a hyphen. Enforced here as well as in the setter, since
-  -- a check constraint is the only guard that cannot be forgotten.
+  -- 3-64 characters, lowercase letters, digits and hyphens, never starting
+  -- or ending with a hyphen. Three matches what a username may be, so a
+  -- member called "chai" gets /i/chai. Enforced here as well as in the
+  -- setter, since a check constraint is the only guard that cannot be
+  -- forgotten.
   slug       text not null unique check (slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

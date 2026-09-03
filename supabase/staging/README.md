@@ -47,10 +47,35 @@ missing rather than silently leaving you on staging.
 
 ---
 
-## Filling staging (once)
+## Filling staging
 
-Staging already has all eleven migrations applied. Three things remain, all
-run from the Supabase SQL Editor **with the staging project selected** —
+**Done.** Staging now holds all thirteen migrations, the 150 house accounts,
+their 908 photographs, and the follow/like/comment graph — applied directly,
+so there is nothing to paste. What landed:
+
+| | |
+| --- | --- |
+| House accounts | 150 |
+| Photographs | 908 |
+| Follows / likes / comments | 1,778 / 11,138 / 4,182 |
+| Private accounts | 7 |
+| House accounts holding a member number | 0 |
+| Membership sequence | still at 1 |
+| House accounts that can sign in | 0 — no passwords, no identities |
+
+The last three rows are the ones that matter: house accounts are excluded
+from the numbering, so your first real invitation is still no. 00002, and
+none of them is an account anybody could log into.
+
+Your own account is the one thing left: point the app at staging and sign up
+through it, then run `supabase/staging/01_bootstrap_founder.sql` to approve
+yourself as admin there. That touches staging only — your production account
+is untouched.
+
+<details>
+<summary>The original three-paste instructions, kept for reference</summary>
+
+Run from the Supabase SQL Editor **with the staging project selected** —
 check the ref in the URL is `omvezsrkjizxdfeogccw` before each one.
 
 **1. The house accounts.** Paste `supabase/production/08_house_accounts.sql`
@@ -72,6 +97,8 @@ private test environment, not something to ship to members.
 Then run `03_verify.sql`. It reads everything the way the app does — as an
 ordinary approved member, through row-level security, not as the owner —
 and reports what your phone should be able to see.
+
+</details>
 
 ## What a good verification looks like
 
