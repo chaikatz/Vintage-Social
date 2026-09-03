@@ -29,17 +29,17 @@ mode is off and there is no backend configured — so a build without these
 installs fine and dies the moment you open it.
 
 ```bash
-eas env:list --environment production          # check first
+eas env:list production          # check first
 
-eas env:create --environment production \
-  --name EXPO_PUBLIC_SUPABASE_URL \
-  --value "https://scfwowqsqrnzpknzurmm.supabase.co"
+eas env:set production --name EXPO_PUBLIC_SUPABASE_URL \
+  --value "https://scfwowqsqrnzpknzurmm.supabase.co" --visibility plaintext
 
-eas env:create --environment production \
-  --name EXPO_PUBLIC_SUPABASE_ANON_KEY \
-  --value "<anon key from Supabase → Vintage-Production → Project Settings → API>" \
+eas env:set production --name EXPO_PUBLIC_SUPABASE_ANON_KEY \
+  --value "<anon key: Supabase → Vintage-Production → Project Settings → API>" \
   --visibility sensitive
 ```
+
+(`eas env:create` still works but is deprecated in favour of `env:set`.)
 
 That URL is production, deliberately — **not** the staging project
 (`omvezsrkjizxdfeogccw`). Your local `.env` has no bearing on this: it is
