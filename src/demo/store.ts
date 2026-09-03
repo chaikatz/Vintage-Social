@@ -605,16 +605,108 @@ export function demoSubmitApplication(input: {
  * the number is issued, and who vouched for them is recorded permanently.
  * Mirrors `redeem_invite`.
  */
+/**
+ * Invitation links, in demo mode.
+ *
+ * One per member, held in the same in-memory store as everything else, so
+ * the browser build behaves like the real thing: a slug you can change, an
+ * allowance that is only spent when somebody joins, and a rotate that
+ * retires the old address.
+ */
+const inviteLinks = new Map<string, string>();
+
+function defaultSlug(username: string): string {
+  const derived = username.replace(/\./g, "-");
+  return derived.length >= 8 ? derived : `${derived}-invitation`;
+}
+
+function slugFor(userId: string): string {
+  const existing = inviteLinks.get(userId);
+  if (existing) return existing;
+  const me = state.profiles.find((p) => p.id === userId);
+  const slug = defaultSlug(me?.username ?? "member");
+  inviteLinks.set(userId, slug);
+  return slug;
+}
+
+/**
+ * Whose link is this? Explicit ones first, then the default a member would
+ * be given on first use — so every seeded member's link resolves without
+ * the store having to walk the whole cast at startup, which is how the
+ * database behaves too.
+ */
+function ownerOfSlug(slug: string): string | null {
+  const wanted = slug.trim().toLowerCase();
+  for (const [owner, taken] of inviteLinks) {
+    if (taken === wanted) return owner;
+  }
+  const derived = state.profiles.find(
+    (p) => !inviteLinks.has(p.id) && defaultSlug(p.username) === wanted,
+  );
+  return derived?.id ?? null;
+}
+
+function usedBy(userId: string): number {
+  return state.profiles.filter((p) => p.invited_by === userId).length;
+}
+
+export function demoInviteLink(): { slug: string; allowance: number; used: number } {
+  const userId = requireUser();
+  const me = state.profiles.find((p) => p.id === userId);
+  return {
+    slug: slugFor(userId),
+    allowance: me?.invite_quota ?? 0,
+    used: usedBy(userId),
+  };
+}
+
+export function demoSetInviteSlug(slug: string): string {
+  const userId = requireUser();
+  const next = slug.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{6,62}[a-z0-9]$/.test(next)) {
+    throw new Error(
+      "A suffix is 8 to 64 letters, numbers or hyphens, and cannot begin or end with a hyphen.",
+    );
+  }
+  const owner = ownerOfSlug(next);
+  if (owner && owner !== userId) throw new Error("That suffix is already in use.");
+  inviteLinks.set(userId, next);
+  return next;
+}
+
+export function demoRotateInviteLink(): string {
+  const userId = requireUser();
+  const alphabet = "abcdefghijkmnpqrstuvwxyz23456789";
+  let slug = "";
+  for (let i = 0; i < 12; i++) slug += alphabet[Math.floor(Math.random() * alphabet.length)];
+  inviteLinks.set(userId, slug);
+  return slug;
+}
+
+export function demoInviteOwner(slug: string): { inviter: string | null; open: boolean } {
+  const owner = ownerOfSlug(slug);
+  const me = owner ? state.profiles.find((p) => p.id === owner) : undefined;
+  if (!owner || !me || me.status !== "approved") return { inviter: null, open: false };
+  return {
+    inviter: me.full_name || me.username,
+    open: usedBy(owner) < me.invite_quota,
+  };
+}
+
 export function demoJoinWithInvite(input: {
   fullName: string;
   desiredUsername: string;
   code: string;
 }): void {
-  const invite = state.invites.find(
-    (i) => i.code === input.code.trim().toUpperCase() && !i.used_by,
-  );
-  if (!invite) {
-    throw new Error("That invitation code is invalid or has already been used.");
+  // `code` is now the link's suffix. Find whose it is, and check they still
+  // have room — the allowance is spent on joining, not on sending.
+  const inviter = ownerOfSlug(input.code);
+  const host = inviter ? state.profiles.find((p) => p.id === inviter) : undefined;
+  if (!inviter || !host || host.status !== "approved" || usedBy(inviter) >= host.invite_quota) {
+    throw new Error(
+      "That invitation is no longer open. The member who sent it may have used all of theirs, " +
+        "or replaced the link.",
+    );
   }
   const id = newId("demo-member");
   state.profiles.push({
@@ -629,7 +721,7 @@ export function demoJoinWithInvite(input: {
     status: "approved",
     invite_quota: 3,
     member_no: null, // issued just below, the way redeem_invite does
-    invited_by: invite.created_by,
+    invited_by: inviter,
     is_private: false,
     post_count: 0,
     follower_count: 0,
@@ -637,13 +729,10 @@ export function demoJoinWithInvite(input: {
     created_at: new Date().toISOString(),
     approved_at: new Date().toISOString(),
   });
-  invite.used_by = id;
-  invite.used_at = new Date().toISOString();
-
   const memberNo = assignMemberNo(id);
   note(id, welcomeMessage(memberNo));
-  // The member who nominated them sees that it was taken up.
-  note(invite.created_by, "Your invitation was accepted.", id);
+  // The member whose link it was sees that somebody came through it.
+  note(inviter, "Someone joined VINTAGE on your invitation.", id);
 
   // New members start by following a few of the regulars so Home is alive.
   // Routed through demoFollow rather than written straight into the table,
@@ -665,33 +754,6 @@ export function demoFetchMyApplication(userId: string): ApplicationRow | null {
   return app ? clone(app) : null;
 }
 
-export function demoFetchMyInvites(userId: string): InviteRow[] {
-  return state.invites
-    .filter((i) => i.created_by === userId)
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .map(clone);
-}
-
-export function demoCreateInvite(): string {
-  const userId = requireUser();
-  const me = state.profiles.find((p) => p.id === userId);
-  const minted = state.invites.filter((i) => i.created_by === userId).length;
-  if (!me || minted >= me.invite_quota) {
-    throw new Error("You have used all of your invitations.");
-  }
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const pick = () => alphabet[Math.floor(Math.random() * alphabet.length)];
-  const code = `${pick()}${pick()}${pick()}${pick()}-${pick()}${pick()}${pick()}${pick()}`;
-  state.invites.push({
-    id: newId("demo-invite"),
-    code,
-    created_by: userId,
-    used_by: null,
-    created_at: new Date().toISOString(),
-    used_at: null,
-  });
-  return code;
-}
 
 // ---------------------------------------------------------------------------
 // moderation

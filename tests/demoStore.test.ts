@@ -20,6 +20,9 @@ import {
 } from "@/demo/store";
 import { DEMO_COMMENTS, DEMO_IDS, DEMO_POSTS, DEMO_PROFILES } from "@/demo/fixtures";
 
+/** Every member's link defaults to their username with dots as hyphens. */
+const ELENA_LINK = "elena-marchetti";
+
 /** The demo store backs the browser-review build; keep its behavior honest. */
 describe("demo store", () => {
   beforeEach(() => demoReset());
@@ -93,11 +96,11 @@ describe("demo store", () => {
     expect(profile?.invite_quota).toBeGreaterThan(0);
   });
 
-  it("a redeemed nomination admits immediately, numbers the member and records who vouched", () => {
+  it("joining on a member's link admits immediately, numbers them and records who invited them", () => {
     demoJoinWithInvite({
       fullName: "New Member",
       desiredUsername: "new.member",
-      code: "QUET-R2OM", // Elena's unused nomination
+      code: ELENA_LINK,
     });
     const me = demoCurrentProfile();
     expect(me?.status).toBe("approved");
@@ -106,14 +109,30 @@ describe("demo store", () => {
     expect(demoFetchFeedPage(me!.id, 0, 10).length).toBeGreaterThan(0);
   });
 
-  it("refuses a nomination code that is unknown or already taken up", () => {
+  it("refuses a link that belongs to nobody", () => {
     expect(() =>
-      demoJoinWithInvite({ fullName: "X", desiredUsername: "x.y", code: "ZZZZ-ZZZZ" }),
+      demoJoinWithInvite({ fullName: "X", desiredUsername: "x.y", code: "no-such-invitation" }),
     ).toThrow();
-    // ELNA-M4RC was redeemed by Niko in the seeded world.
+  });
+
+  it("refuses a link whose allowance is spent", () => {
+    // Fill what is left of Elena's allowance, then try once more. She has
+    // already invited people in the seeded world, so this starts partway
+    // through — which is the realistic case anyway.
+    const elena = DEMO_PROFILES.find((p) => p.id === DEMO_IDS.elena)!;
+    const alreadyUsed = DEMO_PROFILES.filter((p) => p.invited_by === DEMO_IDS.elena).length;
+    const remaining = elena.invite_quota - alreadyUsed;
+    expect(remaining).toBeGreaterThan(0);
+    for (let i = 0; i < remaining; i++) {
+      demoJoinWithInvite({
+        fullName: `Guest ${i}`,
+        desiredUsername: `guest.number${i}`,
+        code: ELENA_LINK,
+      });
+    }
     expect(() =>
-      demoJoinWithInvite({ fullName: "X", desiredUsername: "x.y", code: "ELNA-M4RC" }),
-    ).toThrow();
+      demoJoinWithInvite({ fullName: "One Too Many", desiredUsername: "one.too.many", code: ELENA_LINK }),
+    ).toThrow(/no longer open/);
   });
 
   it("derives seeded activity for members", () => {
@@ -184,7 +203,7 @@ describe("demo media is bundled, not remote", () => {
     demoJoinWithInvite({
       fullName: "Quiet Newcomer",
       desiredUsername: "quiet.newcomer",
-      code: "QUET-R2OM",
+      code: ELENA_LINK,
     });
     const me = demoCurrentProfile()!;
     // Elena is private and was not nominated into their follow list, so

@@ -31,6 +31,8 @@ export default function RootLayout() {
           <Stack.Screen name="(gate)/landing" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/apply" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/invite" options={{ headerShown: false }} />
+          {/* Carries a tapped invitation's suffix through to the card. */}
+          <Stack.Screen name="invite/[slug]" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/sign-in" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/pending" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

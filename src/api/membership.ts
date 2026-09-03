@@ -3,7 +3,7 @@ import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import { prepareAvatar, uploadFile } from "./media";
 import { normalizeUsername } from "@/utils/validation";
-import type { ApplicationRow, InviteRow } from "@/types/db";
+import type { ApplicationRow } from "@/types/db";
 
 /**
  * Membership flows. New accounts are created in `applied` status by a
@@ -93,7 +93,7 @@ export interface InviteSignupInput {
   code: string;
 }
 
-/** Create an account and redeem an invite in one flow → instant approval. */
+/** Create an account and take up an invitation in one flow → instant approval. */
 export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
   if (isDemoMode()) {
     demo.demoJoinWithInvite({
@@ -105,9 +105,73 @@ export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
   }
 
   await signUp(input.email, input.password, input.desiredUsername, input.fullName);
-  const { data, error } = await supabase.rpc("redeem_invite", { p_code: input.code });
+  const { data, error } = await supabase.rpc("join_with_invite", { p_slug: input.code });
   if (error) throw error;
-  if (!data) throw new Error("That invitation code is invalid or has already been used.");
+  if (!data) {
+    throw new Error(
+      "That invitation is no longer open. The member who sent it may have used all of theirs, " +
+        "or replaced the link.",
+    );
+  }
+}
+
+/**
+ * Who is behind an invitation, asked before the recipient has an account.
+ *
+ * Answers for anon, and deliberately says almost nothing: a display name
+ * and whether the door is open. An unknown link and a spent one look the
+ * same from here.
+ */
+export interface InviteOwner {
+  inviter: string | null;
+  open: boolean;
+}
+
+export async function fetchInviteOwner(slug: string): Promise<InviteOwner> {
+  if (isDemoMode()) return demo.demoInviteOwner(slug);
+
+  const { data, error } = await supabase.rpc("invite_link_owner", { p_slug: slug });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return { inviter: row?.inviter ?? null, open: Boolean(row?.open) };
+}
+
+/** A member's own invitation link, made on first use. */
+export interface InviteLink {
+  slug: string;
+  allowance: number;
+  used: number;
+}
+
+export async function fetchInviteLink(): Promise<InviteLink> {
+  if (isDemoMode()) return demo.demoInviteLink();
+
+  const { data, error } = await supabase.rpc("ensure_invite_link", {});
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    slug: String(row?.slug ?? ""),
+    allowance: Number(row?.allowance ?? 0),
+    used: Number(row?.used ?? 0),
+  };
+}
+
+/** Give the link a suffix of the member's choosing. */
+export async function setInviteSlug(slug: string): Promise<string> {
+  if (isDemoMode()) return demo.demoSetInviteSlug(slug);
+
+  const { data, error } = await supabase.rpc("set_invite_slug", { p_slug: slug });
+  if (error) throw error;
+  return String(data);
+}
+
+/** Retire the current address and issue a new one. */
+export async function rotateInviteLink(): Promise<string> {
+  if (isDemoMode()) return demo.demoRotateInviteLink();
+
+  const { data, error } = await supabase.rpc("rotate_invite_link", {});
+  if (error) throw error;
+  return String(data);
 }
 
 export async function fetchMyApplication(userId: string): Promise<ApplicationRow | null> {
@@ -124,23 +188,4 @@ export async function fetchMyApplication(userId: string): Promise<ApplicationRow
   return (data as ApplicationRow | null) ?? null;
 }
 
-export async function fetchMyInvites(userId: string): Promise<InviteRow[]> {
-  if (isDemoMode()) return demo.demoFetchMyInvites(userId);
 
-  const { data, error } = await supabase
-    .from("invites")
-    .select("*")
-    .eq("created_by", userId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as InviteRow[];
-}
-
-/** Mint a new invite code, limited server-side by the member's quota. */
-export async function createInvite(): Promise<string> {
-  if (isDemoMode()) return demo.demoCreateInvite();
-
-  const { data, error } = await supabase.rpc("create_invite", {});
-  if (error) throw error;
-  return data as string;
-}

@@ -119,6 +119,25 @@ try {
   // If the house-account seed has been generated, apply it here too: a
   // bad seed is much cheaper to find in a throwaway database than in the
   // members' one.
+  // Invitation links, before the seed: they only need the fixtures.
+  if (res.status === 0) {
+    console.log("");
+    process.stdout.write("· supabase/tests/04_invite_links.sql … ");
+    const links = psql(["-U", "vintage_owner", "-f", join(here, "04_invite_links.sql")], {
+      allowFail: true,
+    });
+    if (links.status !== 0) {
+      console.log("FAILED");
+      process.stdout.write(links.stdout ?? "");
+      process.stderr.write(links.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log("ok");
+      const note = (links.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+      if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+    }
+  }
+
   const seedSql = join(here, "..", "production", "08_house_accounts.sql");
   if (existsSync(seedSql) && res.status === 0) {
     console.log("");

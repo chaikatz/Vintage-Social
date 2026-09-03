@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { showAlert } from "@/utils/alert";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import Feather from "@expo/vector-icons/Feather";
@@ -18,13 +18,12 @@ import { GateField } from "@/components/gate/GateField";
 import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import {
-  normalizeInviteCode,
   validateEmail,
-  validateInviteCode,
   validatePassword,
   validateUsername,
 } from "@/utils/validation";
-import { checkUsernameAvailable, joinWithInvite } from "@/api/membership";
+import { checkUsernameAvailable, fetchInviteOwner, joinWithInvite } from "@/api/membership";
+import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
 import { useSession } from "@/providers/SessionProvider";
 
 /**
@@ -40,7 +39,13 @@ export default function Invite() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { refreshProfile } = useSession();
-  const [code, setCode] = useState("");
+  // A tapped invitation arrives with its suffix already in the route, so
+  // the field is filled in and the card can say who sent it before anyone
+  // types anything. Pasted or typed by hand still works.
+  const params = useLocalSearchParams<{ slug?: string }>();
+  const [code, setCode] = useState(params.slug ?? "");
+  const [inviter, setInviter] = useState<string | null>(null);
+  const [closed, setClosed] = useState(false);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -48,9 +53,32 @@ export default function Invite() {
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
 
+  // Ask who is behind the link as soon as there is one worth asking about.
+  // This is the whole emotional payload of an invitation, and it should not
+  // wait until after the form is filled in.
+  useEffect(() => {
+    const slug = slugFromInput(code);
+    if (describeSlugProblem(slug)) {
+      setInviter(null);
+      setClosed(false);
+      return;
+    }
+    let live = true;
+    fetchInviteOwner(slug)
+      .then((owner) => {
+        if (!live) return;
+        setInviter(owner.inviter);
+        setClosed(Boolean(owner.inviter) && !owner.open);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [code]);
+
   const submit = async () => {
     const next: Record<string, string | null> = {
-      code: validateInviteCode(code),
+      code: describeSlugProblem(slugFromInput(code)) ?? (code.trim() ? null : "Enter your invitation."),
       username: validateUsername(username),
       email: validateEmail(email),
       password: validatePassword(password),
@@ -71,7 +99,7 @@ export default function Invite() {
         password,
         fullName,
         desiredUsername: username,
-        code: normalizeInviteCode(code),
+        code: slugFromInput(code),
       });
       await refreshProfile();
       router.replace("/");
@@ -102,18 +130,21 @@ export default function Invite() {
               <Text style={styles.wordmark}>Vintage</Text>
               <View style={styles.rule} />
               <Text style={styles.blurb}>
-                A member has put your name forward. Enter the code they sent and you are in —
-                no queue, no review.
+                {inviter
+                  ? closed
+                    ? `${inviter} invited you, but every invitation they were given has since been taken up.`
+                    : `${inviter} invited you to VINTAGE. Fill this in and you are a member — no queue, no review.`
+                  : "A member has put your name forward. Enter the invitation they sent and you are in — no queue, no review."}
               </Text>
 
               <GateField
-                label="Invitation code"
+                label="Invitation"
                 value={code}
-                onChangeText={(t) => setCode(normalizeInviteCode(t))}
+                onChangeText={setCode}
                 error={errors.code}
-                autoCapitalize="characters"
+                autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="ABCD-1234"
+                placeholder="the link or its ending"
                 mono
               />
               <GateField

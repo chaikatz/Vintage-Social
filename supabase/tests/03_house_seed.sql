@@ -32,7 +32,12 @@ begin
   insert into tests.results (name, expected, actual) values
     ('seed created house accounts', 'MANY', case when v_accounts >= 50 then 'MANY' else 'FEW' end),
     ('no house account holds a number', '0', v_numbered::text),
-    ('seed did not advance the sequence past the real member', '1', v_seq::text),
+    -- The real invariant, and one that does not care how many members have
+    -- joined by the time this runs: every number the sequence handed out is
+    -- on a real member's profile. A house account burning one would show up
+    -- here as a gap, whatever the absolute value happens to be.
+    ('every number drawn is on a real member', 'true',
+     (v_seq = (select count(*) from public.profiles where member_no is not null))::text),
     ('seed created photographs', 'MANY', case when v_posts >= 300 then 'MANY' else 'FEW' end),
     ('every house photograph is a url', '0', v_relative::text);
 

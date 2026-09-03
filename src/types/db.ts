@@ -226,11 +226,33 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      // Legacy, from the one-shot code era. Left declared because the
+      // functions still exist in the database; nothing calls them.
       redeem_invite: {
         Args: { p_code: string };
         Returns: boolean;
       };
       create_invite: {
+        Args: Record<string, never>;
+        Returns: string;
+      };
+      join_with_invite: {
+        Args: { p_slug: string };
+        Returns: boolean;
+      };
+      invite_link_owner: {
+        Args: { p_slug: string };
+        Returns: { inviter: string | null; open: boolean }[];
+      };
+      ensure_invite_link: {
+        Args: Record<string, never>;
+        Returns: { slug: string; allowance: number; used: number }[];
+      };
+      set_invite_slug: {
+        Args: { p_slug: string };
+        Returns: string;
+      };
+      rotate_invite_link: {
         Args: Record<string, never>;
         Returns: string;
       };
