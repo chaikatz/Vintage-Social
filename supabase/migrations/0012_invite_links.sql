@@ -25,7 +25,7 @@ create table public.invite_links (
   -- 8-64 characters, lowercase letters, digits and hyphens, never starting
   -- or ending with a hyphen. Enforced here as well as in the setter, since
   -- a check constraint is the only guard that cannot be forgotten.
-  slug       text not null unique check (slug ~ '^[a-z0-9][a-z0-9-]{6,62}[a-z0-9]$'),
+  slug       text not null unique check (slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -72,7 +72,7 @@ as $$
 declare
   v_slug text := lower(trim(coalesce(p_slug, '')));
 begin
-  if v_slug !~ '^[a-z0-9][a-z0-9-]{6,62}[a-z0-9]$' then
+  if v_slug !~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$' then
     return 'format';
   end if;
   -- A reserved word is out on its own, but also as the whole of a suffix
@@ -93,6 +93,17 @@ $$;
 -- ---------------------------------------------------------------------------
 -- minting and rotating
 -- ---------------------------------------------------------------------------
+/**
+ * The token used when a member's name will not do.
+ *
+ * Twelve characters from a 32-letter alphabet is about 60 bits — not
+ * guessable. A chosen suffix may be as short as three, because the whole
+ * point is that it reads as the member's own name; the cost is that a
+ * short one is guessable, and a guessed link spends one of that member's
+ * invitations on a stranger. The quota is what bounds that: nobody can
+ * admit more people than they were given, guessed or not, and the member
+ * sees who joined on their invitation.
+ */
 create or replace function public.random_invite_slug()
 returns text
 language plpgsql volatile set search_path = public
@@ -137,8 +148,9 @@ begin
   select l.slug into v_slug from public.invite_links l where l.owner_id = v_user;
 
   if v_slug is null then
-    -- Try the username first: "chai.katz" reads as "chai-katz".
-    select replace(p.username, '.', '-') into v_from from public.profiles p where p.id = v_user;
+    -- Try the username first: "chai.katz" reads as "chai-katz". A link that
+    -- carries the member's own name is the point; a token is the fallback.
+    select translate(p.username, '._', '--') into v_from from public.profiles p where p.id = v_user;
     if public.invite_slug_status(v_from) = 'ok' then
       v_slug := v_from;
     else

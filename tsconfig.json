@@ -6,6 +6,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["app", "src", "tests", "expo-env.d.ts"],
+  "include": ["app", "api", "src", "tests", "expo-env.d.ts"],
   "exclude": ["node_modules"]
 }

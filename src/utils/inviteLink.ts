@@ -41,7 +41,7 @@ export function slugFromInput(input: string): string {
 }
 
 /** The rules the database enforces, mirrored so the field can say why. */
-export const SLUG_MIN = 8;
+export const SLUG_MIN = 3;
 export const SLUG_MAX = 64;
 
 export function describeSlugProblem(slug: string): string | null {

@@ -663,7 +663,7 @@ export function demoInviteLink(): { slug: string; allowance: number; used: numbe
 export function demoSetInviteSlug(slug: string): string {
   const userId = requireUser();
   const next = slug.trim().toLowerCase();
-  if (!/^[a-z0-9][a-z0-9-]{6,62}[a-z0-9]$/.test(next)) {
+  if (!/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(next)) {
     throw new Error(
       "A suffix is 8 to 64 letters, numbers or hyphens, and cannot begin or end with a hyphen.",
     );

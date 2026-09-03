@@ -4,7 +4,14 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": null,
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "rewrites": [
+    { "source": "/i/:slug", "destination": "/api/invite?slug=:slug" },
+    {
+      "source": "/.well-known/apple-app-site-association",
+      "destination": "/api/aasa"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/_expo/static/(.*)",

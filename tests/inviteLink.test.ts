@@ -21,8 +21,15 @@ describe("what a suffix may be", () => {
     expect(describeSlugProblem("")).toBeNull();
   });
 
+  // Three, matching what a username may be: a member called "chai" should
+  // get /i/chai rather than a random token.
+  it("accepts a name as short as a username may be", () => {
+    expect(describeSlugProblem("chai")).toBeNull();
+    expect(describeSlugProblem("cak")).toBeNull();
+  });
+
   it("refuses one that is too short", () => {
-    expect(describeSlugProblem("chai")).toMatch(/8/);
+    expect(describeSlugProblem("ck")).toMatch(/3/);
   });
 
   it("refuses one that is too long", () => {

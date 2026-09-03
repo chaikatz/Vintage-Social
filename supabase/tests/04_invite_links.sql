@@ -32,8 +32,8 @@ select tests.run('signed-out visitor cannot mint a link', null, 'DENIED',
 -- ---------------------------------------------------------------------------
 select tests.run('a good suffix is accepted', :'founder', 'OK',
   $q$ select public.set_invite_slug('chai-katz-photographs') $q$);
-select tests.run('too short is refused', :'founder', 'ERROR:P0001',
-  $q$ select public.set_invite_slug('chai') $q$);
+select tests.run('two characters is refused', :'founder', 'ERROR:P0001',
+  $q$ select public.set_invite_slug('ck') $q$);
 select tests.run('leading hyphen is refused', :'founder', 'ERROR:P0001',
   $q$ select public.set_invite_slug('-chai-katz') $q$);
 select tests.run('symbols are refused', :'founder', 'ERROR:P0001',
@@ -42,6 +42,13 @@ select tests.run('a reserved word is refused', :'founder', 'ERROR:P0001',
   $q$ select public.set_invite_slug('membership') $q$);
 select tests.run('another member''s suffix is refused', :'second', 'ERROR:P0001',
   $q$ select public.set_invite_slug('chai-katz-photographs') $q$);
+-- Three characters is the floor, matching what a username may be. The
+-- point of the link is that it carries the member's own name, and most
+-- good names are short — a member called "chai" should get /i/chai, not a
+-- random token. Ordered after the uniqueness check above, which needs the
+-- founder to still hold the long suffix.
+select tests.run('a short name is accepted', :'founder', 'OK',
+  $q$ select public.set_invite_slug('chai') $q$);
 select tests.run('a member may keep their own suffix', :'founder', 'OK',
   $q$ select public.set_invite_slug('chai-katz-photographs') $q$);
 select tests.run('signed-out visitor cannot set a suffix', null, 'DENIED',
