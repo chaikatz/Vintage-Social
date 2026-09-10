@@ -8,6 +8,7 @@ import { postAge } from "@/utils/time";
 import { getFilter } from "@/filters";
 import { Avatar } from "./Avatar";
 import { PostMedia } from "./PostMedia";
+import { Signature } from "./Signature";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 
 /** How many comments read under the photograph before "View all". */
@@ -51,8 +52,9 @@ export function PostCard({
   return (
     <View style={styles.card}>
       {/* Two lines beside the avatar: the name with the "…" on its own
-          line, then the place and the film stock ruled against each other
-          the way they'd be written on the back of a print. */}
+          line, then the signature — when the shutter fired, and where —
+          ruled against the film stock the way they'd be written on the
+          back of a print. */}
       <View style={styles.header}>
         <Pressable onPress={() => onOpenProfile(post.author.username)}>
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
@@ -69,9 +71,7 @@ export function PostCard({
             </Pressable>
           </View>
           <View style={styles.line}>
-            <Text style={[styles.location, styles.grow]} numberOfLines={1}>
-              {post.location ?? ""}
-            </Text>
+            <Signature post={post} style={styles.signature} />
             <Text style={styles.filterName}>{getFilter(post.filter_id).name}</Text>
           </View>
         </View>
@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   line: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   grow: { flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  location: { fontSize: 11, color: colors.inkFaint, marginTop: 1 },
+  signature: { flex: 1, marginTop: 1 },
   filterName: {
     fontFamily: type.mono,
     fontSize: 10,

@@ -446,6 +446,15 @@ export function demoFetchFollowing(userId: string): ProfileRow[] {
     .map(clone);
 }
 
+export function demoFetchFollowers(userId: string): ProfileRow[] {
+  return state.follows
+    .filter((f) => f.followee_id === userId && f.status === "accepted")
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .map((f) => state.profiles.find((p) => p.id === f.follower_id))
+    .filter((p): p is ProfileRow => Boolean(p))
+    .map(clone);
+}
+
 export function demoPendingRequests(followeeId: string): ProfileRow[] {
   return state.follows
     .filter((f) => f.followee_id === followeeId && f.status === "pending")

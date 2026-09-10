@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
+import { forgetFollowingIds } from "./posts";
 import type { FollowStatus, ProfileRow } from "@/types/db";
 
 export async function fetchProfileByUsername(username: string): Promise<ProfileRow | null> {
@@ -99,6 +100,7 @@ export async function follow(followerId: string, followeeId: string): Promise<Fo
     .from("follows")
     .insert({ follower_id: followerId, followee_id: followeeId, status });
   if (error && error.code !== "23505") throw error;
+  forgetFollowingIds(followerId);
   return status;
 }
 
@@ -133,6 +135,20 @@ export async function fetchPendingRequests(followeeId: string): Promise<ProfileR
     .select("follower:profiles!follows_follower_id_fkey(*)")
     .eq("followee_id", followeeId)
     .eq("status", "pending");
+  if (error) throw error;
+  return ((data ?? []) as unknown as { follower: ProfileRow }[]).map((r) => r.follower);
+}
+
+/** The members who follow this one. Accepted follows only; requests are not followers yet. */
+export async function fetchFollowers(userId: string): Promise<ProfileRow[]> {
+  if (isDemoMode()) return demo.demoFetchFollowers(userId);
+
+  const { data, error } = await supabase
+    .from("follows")
+    .select("follower:profiles!follows_follower_id_fkey(*)")
+    .eq("followee_id", userId)
+    .eq("status", "accepted")
+    .order("created_at", { ascending: false });
   if (error) throw error;
   return ((data ?? []) as unknown as { follower: ProfileRow }[]).map((r) => r.follower);
 }
@@ -179,4 +195,5 @@ export async function unfollow(followerId: string, followeeId: string): Promise<
     .eq("follower_id", followerId)
     .eq("followee_id", followeeId);
   if (error) throw error;
+  forgetFollowingIds(followerId);
 }

@@ -70,3 +70,18 @@ describe("invite codes", () => {
     expect(validateInviteCode("ABC")).not.toBeNull();
   });
 });
+
+describe("signature line", () => {
+  it("writes the capture date the way a lab would", async () => {
+    const { signatureDate, signatureLine } = await import("@/utils/time");
+    expect(signatureDate("2019-08-14T18:32:10")).toBe("August 14, 2019");
+    expect(
+      signatureLine({ taken_at: "2019-08-14T18:32:10", created_at: "2026-01-01T00:00:00", location: "Los Angeles" }),
+    ).toBe("August 14, 2019 · Los Angeles");
+  });
+  it("falls back to the posting date only when the file carried none", async () => {
+    const { signatureLine } = await import("@/utils/time");
+    expect(signatureLine({ taken_at: null, created_at: "2026-01-05T00:00:00", location: null })).toBe("January 5, 2026");
+    expect(signatureLine({ taken_at: null, created_at: "2026-01-05T00:00:00", location: "  " })).toBe("January 5, 2026");
+  });
+});

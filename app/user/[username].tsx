@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
@@ -9,10 +9,13 @@ import { ProfileHeader } from "@/components/ProfileHeader";
 import { PhotoGrid } from "@/components/PhotoGrid";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
+import { GridSortToggle, type GridSort } from "@/components/GridSortToggle";
 import { colors, spacing, type } from "@/theme";
 import { fetchProfileByUsername, follow, followState, unfollow } from "@/api/profiles";
 import { fetchUserPosts } from "@/api/posts";
 import { openConversation } from "@/api/messages";
+import { sortByTaken } from "@/utils/memories";
 import { useSession } from "@/providers/SessionProvider";
 
 export default function UserProfile() {
@@ -21,6 +24,7 @@ export default function UserProfile() {
   const { session } = useSession();
   const { username } = useLocalSearchParams<{ username: string }>();
   const myId = session?.user?.id ?? "";
+  const [sort, setSort] = useState<GridSort>("posted");
 
   const profileQ = useQuery({
     queryKey: ["profile", username],
@@ -45,6 +49,10 @@ export default function UserProfile() {
     queryFn: () => fetchUserPosts(profile!.id),
     enabled: Boolean(profile?.id) && !locked,
   });
+  const rows = useMemo(
+    () => (sort === "taken" ? sortByTaken(postsQ.data ?? []) : postsQ.data ?? []),
+    [postsQ.data, sort],
+  );
 
   const toggleFollow = useMutation({
     mutationFn: async (next: boolean) => {
@@ -54,6 +62,7 @@ export default function UserProfile() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["follow-state", myId, profile?.id] });
       queryClient.invalidateQueries({ queryKey: ["profile", username] });
+      queryClient.invalidateQueries({ queryKey: ["following", myId] });
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["explore"] });
     },
@@ -67,9 +76,16 @@ export default function UserProfile() {
 
   if (!profile) {
     return (
-      <Screen>
+      <Screen padded={false}>
         <Stack.Screen options={{ title: username ?? "" }} />
-        {profileQ.isFetched ? <EmptyState title="Member not found" /> : null}
+        {profileQ.isFetched ? (
+          <EmptyState title="Member not found" />
+        ) : (
+          <>
+            <ProfileSkeleton />
+            <GridSkeleton />
+          </>
+        )}
       </Screen>
     );
   }
@@ -93,6 +109,16 @@ export default function UserProfile() {
     <>
       <ProfileHeader
         profile={profile}
+        // A private member's lists are theirs too, until they let you in.
+        onPressStat={
+          locked
+            ? undefined
+            : (kind) =>
+                router.push({
+                  pathname: "/follows",
+                  params: { userId: profile.id, kind, username: profile.username },
+                })
+        }
         action={
           isMe ? undefined : (
             <View style={styles.actions}>
@@ -123,8 +149,8 @@ export default function UserProfile() {
               : `Ask to follow ${profile.username} to see their photographs.`}
           </Text>
         </View>
-      ) : (postsQ.data ?? []).length === 0 && postsQ.isFetched ? (
-        <EmptyState title="No photographs yet" />
+      ) : (postsQ.data ?? []).length > 1 ? (
+        <GridSortToggle value={sort} onChange={setSort} />
       ) : null}
     </>
   );
@@ -133,13 +159,20 @@ export default function UserProfile() {
     <Screen padded={false}>
       <Stack.Screen options={{ title: profile.username }} />
       <PhotoGrid
-        posts={locked ? [] : postsQ.data ?? []}
+        posts={locked ? [] : rows}
         onOpenPost={(p) =>
-          router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id } })
+          router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } })
         }
         refreshing={postsQ.isRefetching}
         onRefresh={() => postsQ.refetch()}
         header={header}
+        empty={
+          locked ? null : postsQ.isFetched ? (
+            <EmptyState title="No photographs yet" />
+          ) : (
+            <GridSkeleton />
+          )
+        }
       />
     </Screen>
   );

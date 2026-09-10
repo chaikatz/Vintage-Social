@@ -60,3 +60,40 @@ describe("feed video sound", () => {
     expect(setAudioModeAsync).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("unmute ordering", () => {
+  it("tells the players only after the session has been claimed", async () => {
+    resetVideoSound();
+    setAudioModeAsync.mockClear();
+    let resolveSession: () => void = () => undefined;
+    setAudioModeAsync.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (resolveSession = resolve)),
+    );
+    const { useVideoMuted } = await import("@/utils/videoSound");
+    void useVideoMuted;
+    const seen: boolean[] = [];
+    // Subscribe the way a component does, through the store's listener set.
+    const store = await import("@/utils/videoSound");
+    const unsubscribe = subscribeForTest(store, () => seen.push(store.useVideoMuted === undefined));
+    setVideoMuted(false);
+    await flush();
+    // The session is still being claimed: nobody has been told to unmute yet.
+    expect(seen).toHaveLength(0);
+    resolveSession();
+    await flush();
+    await flush();
+    expect(seen).toHaveLength(1);
+    unsubscribe();
+  });
+});
+
+/** Reach the listener set through the public hook's store contract. */
+function subscribeForTest(
+  store: typeof import("@/utils/videoSound"),
+  listener: () => void,
+): () => void {
+  // useSyncExternalStore(subscribe, …) — the subscribe function is the
+  // module's own; calling the hook outside React is not possible, so the
+  // test drives the same listener set via a tiny shim.
+  return store.__subscribeForTest(listener);
+}

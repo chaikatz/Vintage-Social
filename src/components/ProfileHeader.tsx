@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
 import { membershipLine } from "@/utils/membership";
@@ -10,17 +10,27 @@ interface Props {
   profile: ProfileRow;
   /** Follow / Edit profile button area. */
   action?: React.ReactElement;
+  /** Opens the list behind a count. Absent where the lists are not yours to see. */
+  onPressStat?: (kind: "followers" | "following") => void;
 }
 
-export function ProfileHeader({ profile, action }: Props) {
+export function ProfileHeader({ profile, action, onPressStat }: Props) {
   return (
     <View style={styles.wrap}>
       <View style={styles.topRow}>
         <Avatar path={profile.avatar_url} username={profile.username} size={80} />
         <View style={styles.stats}>
           <Stat label="posts" value={profile.post_count} />
-          <Stat label="followers" value={profile.follower_count} />
-          <Stat label="following" value={profile.following_count} />
+          <Stat
+            label="followers"
+            value={profile.follower_count}
+            onPress={onPressStat ? () => onPressStat("followers") : undefined}
+          />
+          <Stat
+            label="following"
+            value={profile.following_count}
+            onPress={onPressStat ? () => onPressStat("following") : undefined}
+          />
         </View>
       </View>
       <View style={styles.nameRow}>
@@ -44,12 +54,19 @@ export function ProfileHeader({ profile, action }: Props) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, onPress }: { label: string; value: number; onPress?: () => void }) {
   return (
-    <View style={styles.stat}>
+    <Pressable
+      style={({ pressed }) => [styles.stat, pressed && onPress ? styles.statPressed : null]}
+      onPress={onPress}
+      disabled={!onPress}
+      hitSlop={8}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={`${value} ${label}`}
+    >
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -65,7 +82,8 @@ const styles = StyleSheet.create({
   },
   topRow: { flexDirection: "row", alignItems: "center" },
   stats: { flex: 1, flexDirection: "row", justifyContent: "space-evenly", marginLeft: spacing.lg },
-  stat: { alignItems: "center" },
+  stat: { alignItems: "center", paddingHorizontal: spacing.xs },
+  statPressed: { opacity: 0.5 },
   statValue: { fontSize: 16, fontWeight: "600", color: colors.ink },
   statLabel: { fontSize: 12, color: colors.inkSoft, marginTop: 1 },
   nameRow: {

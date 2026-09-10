@@ -40,16 +40,35 @@ export function usePostActions(userId: string, postIds: string[]) {
   // Comments open on their own screen. Pushing the post again would show
   // the photograph you are already looking at and shove the conversation
   // off the bottom.
+  // The next screen asks for this same post by id. Handing it the row we
+  // already hold means it draws at once and only re-reads in the background.
+  const seed = useCallback(
+    (post: PostWithAuthor) => queryClient.setQueryData(["post", post.id], post),
+    [queryClient],
+  );
+
   const onOpenComments = useCallback(
-    (post: PostWithAuthor) =>
-      router.push({ pathname: "/comments", params: { postId: post.id } }),
-    [router],
+    (post: PostWithAuthor) => {
+      seed(post);
+      router.push({ pathname: "/comments", params: { postId: post.id } });
+    },
+    [router, seed],
   );
 
   const onShare = useCallback(
-    (post: PostWithAuthor) =>
-      router.push({ pathname: "/share", params: { postId: post.id } }),
-    [router],
+    (post: PostWithAuthor) => {
+      seed(post);
+      router.push({ pathname: "/share", params: { postId: post.id } });
+    },
+    [router, seed],
+  );
+
+  const onOpenPost = useCallback(
+    (post: PostWithAuthor) => {
+      seed(post);
+      router.push(`/post/${post.id}`);
+    },
+    [router, seed],
   );
 
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
@@ -118,5 +137,5 @@ export function usePostActions(userId: string, postIds: string[]) {
     [userId, router, queryClient, refreshProfile],
   );
 
-  return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor };
+  return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenPost, commentsFor };
 }

@@ -8,19 +8,42 @@ export const FEED_PAGE_SIZE = 12;
 const POST_WITH_AUTHOR = "*, author:profiles!posts_author_id_fkey(id, username, full_name, avatar_url)";
 
 /**
+ * Who the member follows, remembered for a minute.
+ *
+ * Every feed page used to cost two round trips in a row — the follow list,
+ * then the posts — and the first of them is the same answer every time.
+ * Keeping it briefly means the second page, and a pull-to-refresh, wait on
+ * one query instead of two. Following or unfollowing forgets it at once.
+ */
+const FOLLOWING_TTL_MS = 60_000;
+const followingCache = new Map<string, { ids: string[]; at: number }>();
+
+export function forgetFollowingIds(userId: string): void {
+  followingCache.delete(userId);
+}
+
+async function followingIds(userId: string): Promise<string[]> {
+  const cached = followingCache.get(userId);
+  if (cached && Date.now() - cached.at < FOLLOWING_TTL_MS) return cached.ids;
+  const { data, error } = await supabase
+    .from("follows")
+    .select("followee_id")
+    .eq("follower_id", userId)
+    .eq("status", "accepted");
+  if (error) throw error;
+  const ids = (data ?? []).map((f) => f.followee_id as string);
+  followingCache.set(userId, { ids, at: Date.now() });
+  return ids;
+}
+
+/**
  * The home feed: strictly chronological, only accounts the member follows
  * (plus their own posts). No ranking, no suggestions.
  */
 export async function fetchFeedPage(userId: string, page: number): Promise<PostWithAuthor[]> {
   if (isDemoMode()) return demo.demoFetchFeedPage(userId, page, FEED_PAGE_SIZE);
 
-  const { data: follows, error: followErr } = await supabase
-    .from("follows")
-    .select("followee_id")
-    .eq("follower_id", userId);
-  if (followErr) throw followErr;
-
-  const authorIds = [userId, ...(follows ?? []).map((f) => f.followee_id as string)];
+  const authorIds = [userId, ...(await followingIds(userId))];
   const from = page * FEED_PAGE_SIZE;
 
   const { data, error } = await supabase

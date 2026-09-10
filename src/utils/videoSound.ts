@@ -15,6 +15,11 @@ import { setAudioModeAsync } from "expo-audio";
  * a deliberate unmute actually make sound. It is requested on the first
  * unmute rather than at launch, so VINTAGE does not claim the audio session
  * of someone who never turns the sound on.
+ *
+ * Order matters: the session is claimed *before* any player is told to
+ * unmute. Flipping the player first and fixing the session afterwards races
+ * AVPlayer against the ringer switch, and on a phone that is switched to
+ * silent the first second of sound simply never arrives.
  */
 
 let muted = true;
@@ -28,6 +33,10 @@ function snapshot(): boolean {
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+function notify(): void {
+  for (const listener of listeners) listener();
 }
 
 async function ensureAudioSession(): Promise<void> {
@@ -51,8 +60,14 @@ async function ensureAudioSession(): Promise<void> {
 export function setVideoMuted(next: boolean): void {
   if (muted === next) return;
   muted = next;
-  if (!next) void ensureAudioSession();
-  for (const listener of listeners) listener();
+  if (next) {
+    notify();
+    return;
+  }
+  // Session first, then the players. If the claim fails the players are
+  // still told — expo-video makes its own attempt at the session when a
+  // playing player unmutes, which is the second chance.
+  void ensureAudioSession().finally(notify);
 }
 
 export function toggleVideoMuted(): void {
@@ -64,9 +79,14 @@ export function useVideoMuted(): boolean {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
+/** Test seam: listen the way a component does, without rendering one. */
+export function __subscribeForTest(listener: () => void): () => void {
+  return subscribe(listener);
+}
+
 /** Test seam: forget the session and go back to muted. */
 export function resetVideoSound(): void {
   muted = true;
   sessionReady = false;
-  for (const listener of listeners) listener();
+  notify();
 }

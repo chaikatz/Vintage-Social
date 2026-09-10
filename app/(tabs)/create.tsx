@@ -1,5 +1,5 @@
-import React from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useState } from "react";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
@@ -7,6 +7,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { colors, spacing, type } from "@/theme";
 import { captureDateForAsset } from "@/utils/captureDate";
+import { composeParamsFor, libraryGranted, randomOldPhoto } from "@/utils/library";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 
 /**
@@ -19,6 +20,32 @@ import { MAX_VIDEO_SECONDS } from "@/utils/validation";
  */
 export default function Create() {
   const router = useRouter();
+  const [finding, setFinding] = useState(false);
+
+  // One photograph from further back than you were going to look. It is
+  // the same darkroom as any other post; only the choosing is different.
+  const findSomething = async () => {
+    if (finding) return;
+    setFinding(true);
+    try {
+      if (!(await libraryGranted(true))) {
+        showAlert(
+          "Nothing to look through",
+          "VINTAGE needs to see your photo library to find something in it. You can allow this in Settings.",
+        );
+        return;
+      }
+      const photo = await randomOldPhoto();
+      const params = photo ? await composeParamsFor(photo) : null;
+      if (!params) {
+        showAlert("Nothing older to find", "Everything in your library is from the last few months.");
+        return;
+      }
+      router.push({ pathname: "/compose", params });
+    } finally {
+      setFinding(false);
+    }
+  };
 
   const openCompose = async (asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video") => {
     // EXIF first, then the photo library — video carries no EXIF at all, so
@@ -114,6 +141,33 @@ export default function Create() {
           </Pressable>
         </View>
 
+        {/* The back of the drawer: the library read for what is already in it. */}
+        {Platform.OS !== "web" ? (
+          <View style={styles.archive}>
+            <Pressable style={styles.archiveRow} onPress={findSomething} disabled={finding}>
+              {finding ? (
+                <ActivityIndicator size="small" color={colors.inkSoft} />
+              ) : (
+                <Feather name="shuffle" size={16} color={colors.ink} />
+              )}
+              <View style={styles.archiveText}>
+                <Text style={styles.archiveTitle}>Find me something</Text>
+                <Text style={styles.archiveSub}>One photograph, at random, from a while ago</Text>
+              </View>
+              <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+            </Pressable>
+            <View style={styles.archiveRule} />
+            <Pressable style={styles.archiveRow} onPress={() => router.push("/memories")}>
+              <Feather name="sun" size={16} color={colors.ink} />
+              <View style={styles.archiveText}>
+                <Text style={styles.archiveTitle}>On this day</Text>
+                <Text style={styles.archiveSub}>What you shot on this date in other years</Text>
+              </View>
+              <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={styles.spacer} />
 
         <View style={styles.note}>
@@ -177,6 +231,13 @@ const styles = StyleSheet.create({
   plateSub: { fontSize: 11, color: colors.inkFaint },
 
   spacer: { flex: 1 },
+
+  archive: { marginTop: spacing.xl },
+  archiveRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md },
+  archiveText: { flex: 1 },
+  archiveTitle: { fontSize: 14, fontWeight: "600", color: colors.ink },
+  archiveSub: { fontSize: 12, color: colors.inkFaint, marginTop: 2 },
+  archiveRule: { height: 1, backgroundColor: colors.border },
 
   note: { paddingBottom: spacing.xl },
   noteRule: { height: 1, width: 28, backgroundColor: colors.borderStrong, marginBottom: spacing.md },

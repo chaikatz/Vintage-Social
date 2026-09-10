@@ -17,6 +17,12 @@ export default function RootLayout() {
             headerTintColor: colors.ink,
             headerTitleStyle: { fontFamily: type.serif, fontSize: 17 },
             headerShadowVisible: false,
+            // The chevron alone. iOS labels a back button with the previous
+            // screen's title, and the previous screen is usually the tab
+            // pager — whose route is literally "(tabs)". Nobody wants to
+            // read that, and a bare chevron is what the photographs deserve.
+            headerBackButtonDisplayMode: "minimal",
+            headerBackTitle: "Back",
             contentStyle: { backgroundColor: colors.paper },
             // Drag anywhere to go back, not just from the left edge — the
             // photographs fill the screen, so the edge is a small target.
@@ -35,7 +41,7 @@ export default function RootLayout() {
           <Stack.Screen name="invite/[slug]" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/sign-in" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/pending" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Home" }} />
           {/* Composing is the one screen a stray swipe must not throw away:
               the back gesture is off here, so leaving is a deliberate tap. */}
           <Stack.Screen
@@ -46,7 +52,10 @@ export default function RootLayout() {
               fullScreenGestureEnabled: false,
             }}
           />
-          <Stack.Screen name="post/[id]" options={{ title: "Photo" }} />
+          <Stack.Screen name="post/[id]" options={{ title: "" }} />
+          <Stack.Screen name="follows" options={{ title: "" }} />
+          <Stack.Screen name="memories" options={{ title: "On this day" }} />
+          <Stack.Screen name="library-picker" options={{ title: "" }} />
           <Stack.Screen name="gallery" options={{ title: "" }} />
           <Stack.Screen name="comments" options={{ title: "Comments" }} />
           <Stack.Screen name="messages/index" options={{ title: "Messages" }} />

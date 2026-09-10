@@ -33,3 +33,34 @@ export function dateStampText(iso: string): string {
   const year = String(d.getFullYear() % 100).padStart(2, "0");
   return `${d.getMonth() + 1} ${d.getDate()} ’${year}`;
 }
+
+const MONTHS_LONG = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/**
+ * The date as it is written on the back of a print: `August 14, 2019`.
+ * Rendered in upper-case tracked mono where it appears, so the casing
+ * here is the readable one.
+ */
+export function signatureDate(iso: string): string {
+  const d = new Date(iso);
+  return `${MONTHS_LONG[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+/**
+ * `August 14, 2019 · Los Angeles` — the signature detail of a photograph on
+ * VINTAGE. The date is the capture date wherever the file carried one;
+ * only a photograph with no capture date falls back to the day it was
+ * posted, which is then the best anyone knows.
+ */
+export function signatureLine(post: {
+  taken_at: string | null;
+  created_at: string;
+  location: string | null;
+}): string {
+  const date = signatureDate(post.taken_at ?? post.created_at);
+  const place = post.location?.trim();
+  return place ? `${date} · ${place}` : date;
+}

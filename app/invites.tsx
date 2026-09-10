@@ -20,6 +20,7 @@ import { colors, radii, spacing, type } from "@/theme";
 import { fetchInviteLink, rotateInviteLink, setInviteSlug } from "@/api/membership";
 import {
   SLUG_MAX,
+  SLUG_MIN,
   describeSlugProblem,
   inviteLinkIsWeb,
   inviteUrl,
@@ -44,6 +45,9 @@ export default function Invitations() {
 
   const [suffix, setSuffix] = useState("");
   const [copied, setCopied] = useState(false);
+  // Most members never change the address. The editor stays folded so the
+  // screen is the card, the button and the count — nothing to read first.
+  const [editing, setEditing] = useState(false);
 
   // The field starts as whatever the link currently is, so editing it reads
   // as changing something rather than filling something in.
@@ -55,7 +59,14 @@ export default function Invitations() {
   const fail = (err: unknown) =>
     showAlert("That didn't work", err instanceof Error ? err.message : String(err));
 
-  const rename = useMutation({ mutationFn: setInviteSlug, onSuccess: refresh, onError: fail });
+  const rename = useMutation({
+    mutationFn: setInviteSlug,
+    onSuccess: () => {
+      refresh();
+      setEditing(false);
+    },
+    onError: fail,
+  });
   const rotate = useMutation({ mutationFn: rotateInviteLink, onSuccess: refresh, onError: fail });
 
   if (link.isLoading || !link.data) {
@@ -79,9 +90,12 @@ export default function Invitations() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // The share sheet is the invitation. The line is short enough to survive
+  // being read off a lock screen, and the link goes last so a preview card
+  // — where the recipient's phone draws one — sits under the words.
   const send = () =>
     Share.share({
-      message: `You're invited to VINTAGE.\n\n${url}`,
+      message: `You're invited to VINTAGE — a members' club for photographs.\n\n${url}`,
     });
 
   const confirmRotate = () =>
@@ -109,24 +123,27 @@ export default function Invitations() {
         </EngravedCard>
 
         <View style={styles.actions}>
-          <Pressable style={styles.primary} onPress={copy}>
-            <Feather name={copied ? "check" : "copy"} size={14} color={colors.onShutter} />
-            <Text style={styles.primaryText}>{copied ? "Copied" : "Copy link"}</Text>
+          <Pressable style={styles.primary} onPress={send}>
+            <Feather name="send" size={14} color={colors.onShutter} />
+            <Text style={styles.primaryText}>Send invitation</Text>
           </Pressable>
-          <Pressable style={styles.secondary} onPress={send}>
-            <Feather name="send" size={14} color={colors.ink} />
-            <Text style={styles.secondaryText}>Send</Text>
+          <Pressable style={styles.secondary} onPress={copy} accessibilityLabel="Copy link">
+            <Feather name={copied ? "check" : "copy"} size={14} color={colors.ink} />
+            <Text style={styles.secondaryText}>{copied ? "Copied" : "Copy"}</Text>
           </Pressable>
         </View>
 
         {/* The count, said the way it actually behaves. */}
-        <Text style={styles.allowance}>
-          {used} of {allowance} used
-        </Text>
+        <View style={styles.allowanceRow}>
+          <Text style={styles.allowance}>{left}</Text>
+          <Text style={styles.allowanceOf}>
+            {left === 1 ? "invitation" : "invitations"} left · {used} of {allowance} taken up
+          </Text>
+        </View>
         <Text style={styles.allowanceNote}>
           {left > 0
-            ? "An invitation is spent when someone joins, not when you send it. Share the same link with as many people as you like."
-            : "Every invitation you were given has been taken up."}
+            ? "One is spent when someone joins through your link, not when you send it. Share the same link with as many people as you like."
+            : "Every invitation you were given has been taken up. Your link still opens VINTAGE, but no one else can join through it."}
         </Text>
 
         {!inviteLinkIsWeb() ? (
@@ -138,27 +155,51 @@ export default function Invitations() {
 
         <View style={styles.rule} />
 
-        <Text style={styles.sectionLabel}>The address</Text>
-        <TextInput
-          value={suffix}
-          onChangeText={(t) => setSuffix(t.replace(/[^A-Za-z0-9-]/g, "").toLowerCase().slice(0, SLUG_MAX))}
-          style={styles.input}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="your-name-here"
-          placeholderTextColor={colors.inkFaint}
-        />
-        <Text style={[styles.hint, problem && styles.hintBad]}>
-          {problem ??
-            "8 to 64 letters, numbers or hyphens. Changing it replaces the address you have given out; everyone who already joined stays yours."}
-        </Text>
-        <Pressable
-          style={[styles.update, (Boolean(problem) || unchanged) && styles.updateOff]}
-          disabled={Boolean(problem) || unchanged || rename.isPending}
-          onPress={() => rename.mutate(suffix.trim().toLowerCase())}
-        >
-          <Text style={styles.updateText}>Update address</Text>
-        </Pressable>
+        {editing ? (
+          <>
+            <Text style={styles.sectionLabel}>The address</Text>
+            <TextInput
+              value={suffix}
+              onChangeText={(t) => setSuffix(t.replace(/[^A-Za-z0-9-]/g, "").toLowerCase().slice(0, SLUG_MAX))}
+              style={styles.input}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+              placeholder="your-name-here"
+              placeholderTextColor={colors.inkFaint}
+            />
+            <Text style={[styles.hint, problem && styles.hintBad]}>
+              {problem ??
+                `${SLUG_MIN} to ${SLUG_MAX} letters, numbers or hyphens. Changing it replaces the address you have given out; everyone who already joined stays yours.`}
+            </Text>
+            <View style={styles.editorActions}>
+              <Pressable
+                style={[styles.update, (Boolean(problem) || unchanged) && styles.updateOff]}
+                disabled={Boolean(problem) || unchanged || rename.isPending}
+                onPress={() => rename.mutate(suffix.trim().toLowerCase())}
+              >
+                <Text style={styles.updateText}>Update address</Text>
+              </Pressable>
+              <Pressable
+                style={styles.cancel}
+                onPress={() => {
+                  setSuffix(slug);
+                  setEditing(false);
+                }}
+              >
+                <Text style={styles.cancelText}>Keep it</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <Pressable style={styles.fold} onPress={() => setEditing(true)}>
+            <View style={styles.foldText}>
+              <Text style={styles.foldTitle}>Change the address</Text>
+              <Text style={styles.foldBody}>{inviteUrlLabel(slug)}</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+          </Pressable>
+        )}
 
         <Pressable style={styles.revoke} onPress={confirmRotate} disabled={rotate.isPending}>
           <Text style={styles.revokeText}>Replace with a new link</Text>
@@ -242,7 +283,9 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
 
-  allowance: { ...type.title, fontSize: 19, marginTop: spacing.xl },
+  allowanceRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, marginTop: spacing.xl },
+  allowance: { ...type.title, fontSize: 28 },
+  allowanceOf: { ...type.caption, color: colors.inkSoft },
   allowanceNote: { ...type.caption, marginTop: spacing.xs, lineHeight: 19 },
   note: { ...type.caption, color: colors.inkFaint, marginTop: spacing.md, lineHeight: 18 },
 
@@ -270,7 +313,7 @@ const styles = StyleSheet.create({
   hint: { ...type.caption, fontSize: 12, color: colors.inkFaint, marginTop: spacing.sm, lineHeight: 17 },
   hintBad: { color: colors.danger },
   update: {
-    marginTop: spacing.md,
+    flex: 1,
     paddingVertical: 11,
     alignItems: "center",
     borderRadius: radii.sm,
@@ -285,6 +328,18 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: colors.ink,
   },
+  editorActions: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.md },
+  cancel: { paddingVertical: 11 },
+  cancelText: { ...type.caption, color: colors.inkSoft },
+  fold: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  foldText: { flex: 1 },
+  foldTitle: { fontSize: 14, fontWeight: "600", color: colors.ink },
+  foldBody: { fontFamily: type.mono, fontSize: 11, color: colors.inkFaint, marginTop: 2 },
   revoke: { marginTop: spacing.xl, alignItems: "center" },
   revokeText: { ...type.caption, color: colors.danger },
 });
