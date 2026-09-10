@@ -30,7 +30,7 @@ struct BakeOptions: Record {
 /// was, and the file is written with its index at the front so playback
 /// starts before the whole thing has downloaded.
 public class VintageVideoModule: Module {
-  private static let cubeDimension = 32
+  fileprivate static let cubeDimension = 32
   private static let queue = DispatchQueue(label: "club.vintage.video.bake", qos: .userInitiated)
 
   public func definition() -> ModuleDefinition {
