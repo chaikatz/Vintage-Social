@@ -7,8 +7,9 @@ import { DEMO_PREFIX } from "@/demo/photos";
  * filter ends up in the pixels — so applying it again on screen would
  * double it. Three kinds are not baked:
  *
- *   * video, because burning a filter into footage needs a transcode
- *     VINTAGE doesn't do yet, so it is applied live on every play;
+ *   * video that was not baked — every clip posted before the phone could
+ *     bake one, and any posted from a build that cannot. `filter_baked`
+ *     is the record of which it was;
  *   * the bundled demo library, which ships as plain photographs;
  *   * the house photographs, which are public-domain images referenced by
  *     their original https url rather than uploaded through the pipeline.
@@ -25,8 +26,9 @@ import { DEMO_PREFIX } from "@/demo/photos";
 export function needsDisplayFilter(post: {
   media_type: string;
   media_path: string;
+  filter_baked?: boolean;
 }): boolean {
-  if (post.media_type === "video") return true;
+  if (post.media_type === "video") return !post.filter_baked;
   if (post.media_path.startsWith(DEMO_PREFIX)) return true;
   return /^https?:/i.test(post.media_path);
 }

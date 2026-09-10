@@ -6,7 +6,7 @@ import { colors } from "@/theme";
 import { mediaUrl } from "@/api/media";
 import { getFilter } from "@/filters";
 import { cssFilterFor } from "@/filters/cssFilter";
-import { DEMO_PREFIX } from "@/demo/photos";
+import { needsDisplayFilter } from "@/utils/displayFilter";
 import type { PostRow } from "@/types/db";
 
 interface Props {
@@ -46,10 +46,7 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
           : mediaUrl("thumbnails", item.thumb_path) ?? mediaUrl("media", item.media_path);
         // Same rule as the feed: only unbaked media needs the filter applied
         // here, so a square matches the photograph it opens.
-        const live =
-          isVideo || item.media_path.startsWith(DEMO_PREFIX)
-            ? cssFilterFor(getFilter(item.filter_id)).filter
-            : null;
+        const live = needsDisplayFilter(item) ? cssFilterFor(getFilter(item.filter_id)).filter : null;
         return (
           <Pressable onPress={() => onOpenPost(item)} style={{ width: size, height: size }}>
             {url ? (

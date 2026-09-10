@@ -17,10 +17,18 @@ describe("which media still needs filtering on screen", () => {
     ).toBe(false);
   });
 
-  it("filters video, which is never baked", () => {
+  it("filters video that was uploaded as recorded", () => {
     expect(
-      needsDisplayFilter({ media_type: "video", media_path: "uid/clip.mp4" }),
+      needsDisplayFilter({ media_type: "video", media_path: "uid/clip.mp4", filter_baked: false }),
     ).toBe(true);
+    // Every clip from before the column existed reads as unbaked.
+    expect(needsDisplayFilter({ media_type: "video", media_path: "uid/clip.mov" })).toBe(true);
+  });
+
+  it("plays a baked video as it is — the film is already in the file", () => {
+    expect(
+      needsDisplayFilter({ media_type: "video", media_path: "uid/clip.mp4", filter_baked: true }),
+    ).toBe(false);
   });
 
   it("filters the bundled demo library", () => {

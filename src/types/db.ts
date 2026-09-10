@@ -112,6 +112,12 @@ export type PostRow = {
   height: number | null;
   duration_seconds: number | null;
   filter_id: string;
+  /**
+   * Whether the filter is already in the file's pixels. Always true for a
+   * photograph published through the app; true for a video only where the
+   * phone could bake it. False means the filter is applied at play time.
+   */
+  filter_baked: boolean;
   show_date_stamp: boolean;
   caption: string;
   /** Capture date from the source file's EXIF; null when it carried none. */

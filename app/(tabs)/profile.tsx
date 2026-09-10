@@ -9,7 +9,8 @@ import { PhotoGrid } from "@/components/PhotoGrid";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
-import { GridSortToggle, type GridSort } from "@/components/GridSortToggle";
+import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
+import { Timeline } from "@/components/Timeline";
 import { colors, spacing } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
 import { sortByTaken } from "@/utils/memories";
@@ -19,7 +20,9 @@ export default function OwnProfile() {
   const router = useRouter();
   const { session, profile, isAdmin } = useSession();
   const userId = session?.user?.id ?? "";
-  const [sort, setSort] = useState<GridSort>("posted");
+  const [view, setView] = useState<ProfileView>("posted");
+  // The two grids share a sort; the timeline is its own way of reading.
+  const sort = view === "taken" ? "taken" : "posted";
 
   const posts = useQuery({
     queryKey: ["user-posts", userId],
@@ -30,6 +33,8 @@ export default function OwnProfile() {
     () => (sort === "taken" ? sortByTaken(posts.data ?? []) : posts.data ?? []),
     [posts.data, sort],
   );
+  const surface = view === "timeline" ? Timeline : PhotoGrid;
+  const Surface = surface;
 
   if (!profile) {
     return (
@@ -42,10 +47,12 @@ export default function OwnProfile() {
 
   return (
     <Screen padded={false}>
-      <PhotoGrid
+      <Surface
         posts={rows}
         onOpenPost={(p) =>
-          router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } })
+          view === "timeline"
+            ? router.push(`/post/${p.id}`)
+            : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } })
         }
         refreshing={posts.isRefetching}
         onRefresh={() => posts.refetch()}
@@ -97,7 +104,7 @@ export default function OwnProfile() {
                 </View>
               }
             />
-            {(posts.data ?? []).length > 1 ? <GridSortToggle value={sort} onChange={setSort} /> : null}
+            {(posts.data ?? []).length > 1 ? <GridSortToggle value={view} onChange={setView} /> : null}
           </View>
         }
       />

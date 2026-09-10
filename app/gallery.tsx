@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, type ViewToken } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { sortByTaken } from "@/utils/memories";
+import { startAt } from "@/utils/gallery";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import type { PostWithAuthor } from "@/types/db";
@@ -19,8 +20,12 @@ import type { PostWithAuthor } from "@/types/db";
  * Tapping a square in a profile grid opens this at that photograph, and you
  * can keep scrolling through the rest of their work from there — the grid is
  * an index, not a dead end. Comments live one screen deeper, on the single
- * post, so this stays a viewing surface. It reads in whatever order the
- * grid was in, so the photograph after this one is the one that was next.
+ * post, so this stays a viewing surface.
+ *
+ * The tapped photograph is the first row, always. The list is rotated to
+ * start there (see `startAt`) rather than scrolled to an index, because
+ * cards have no fixed height and an index scroll kept landing one card
+ * too far. The ones that came before it in the grid follow at the end.
  */
 export default function Gallery() {
   const router = useRouter();
@@ -55,27 +60,16 @@ export default function Gallery() {
       avatar_url: author.avatar_url,
     };
     const rows = postsQ.data ?? [];
-    return (sort === "taken" ? sortByTaken(rows) : rows).map((p) => ({ ...p, author: attached }));
-  }, [postsQ.data, authorQ.data, sort]);
+    const ordered = sort === "taken" ? sortByTaken(rows) : rows;
+    return startAt(ordered, postId).map((p) => ({ ...p, author: attached }));
+  }, [postsQ.data, authorQ.data, sort, postId]);
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
     usePostActions(userId, postIds);
 
-  const listRef = useRef<FlatList<PostWithAuthor>>(null);
-  const startIndex = postId ? posts.findIndex((p) => p.id === postId) : 0;
-
-  // Post cards have no fixed height — the media aspect ratio and caption
-  // length both vary — so there is no honest getItemLayout to give. Jump
-  // once the rows exist instead, and let onScrollToIndexFailed cover the
-  // case where they don't yet.
-  useEffect(() => {
-    if (startIndex > 0) {
-      listRef.current?.scrollToIndex({ index: startIndex, animated: false });
-    }
-  }, [startIndex]);
-
-  // Only the card on screen plays its video — see PostMedia for why.
+  // Only the card on screen plays its video — see PostMedia for why. The
+  // first row is the tapped one, so it starts as the active card.
   const [visibleId, setVisibleId] = useState<string | null>(postId ?? null);
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((v) => v.isViewable);
@@ -89,14 +83,9 @@ export default function Gallery() {
     <Screen padded={false}>
       <Stack.Screen options={{ title: authorQ.data?.username ?? "" }} />
       <FlatList
-        ref={listRef}
         data={posts}
         keyExtractor={(p) => p.id}
         contentContainerStyle={styles.list}
-        initialNumToRender={Math.max(1, startIndex + 1)}
-        onScrollToIndexFailed={({ index }) => {
-          setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false }), 60);
-        }}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         ListEmptyComponent={

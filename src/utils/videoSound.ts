@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from "react";
-import { setAudioModeAsync } from "expo-audio";
 
 /**
  * Whether feed video is muted, shared by every card on screen.
@@ -9,21 +8,17 @@ import { setAudioModeAsync } from "expo-audio";
  * feed, not of one card. Unmute one photograph and the next one you scroll
  * to keeps the sound, which is what every feed does and what people expect.
  *
- * Unmuting also has to reconfigure the audio session. By default iOS honours
- * the ringer switch, so a muted phone plays nothing and the button looks
- * broken. Asking for the `playback` category (playsInSilentMode) is what lets
- * a deliberate unmute actually make sound. It is requested on the first
- * unmute rather than at launch, so VINTAGE does not claim the audio session
- * of someone who never turns the sound on.
- *
- * Order matters: the session is claimed *before* any player is told to
- * unmute. Flipping the player first and fixing the session afterwards races
- * AVPlayer against the ringer switch, and on a phone that is switched to
- * silent the first second of sound simply never arrives.
+ * This is deliberately nothing more than a switch. The audio session is
+ * expo-video's to manage: every player it owns reports its state to one
+ * native manager, which puts the session in the `playback` category — the
+ * one that plays through the ringer switch — and activates it the moment a
+ * playing player is unmuted. An earlier version asked expo-audio to set the
+ * session as well, which meant two managers with opinions about the same
+ * session and a toggle that waited on a promise before it took effect. One
+ * owner, and a switch that flips the instant it is tapped.
  */
 
 let muted = true;
-let sessionReady = false;
 const listeners = new Set<() => void>();
 
 function snapshot(): boolean {
@@ -39,39 +34,18 @@ function notify(): void {
   for (const listener of listeners) listener();
 }
 
-async function ensureAudioSession(): Promise<void> {
-  if (sessionReady) return;
-  sessionReady = true;
-  try {
-    await setAudioModeAsync({
-      playsInSilentMode: true,
-      // Someone else's music should duck, not stop dead: a short clip is
-      // not a reason to kill what they were listening to.
-      interruptionMode: "duckOthers",
-      shouldPlayInBackground: false,
-    });
-  } catch {
-    // An audio session we could not claim just means the ringer switch
-    // still wins. Playing quietly is better than failing loudly.
-    sessionReady = false;
-  }
-}
-
 export function setVideoMuted(next: boolean): void {
   if (muted === next) return;
   muted = next;
-  if (next) {
-    notify();
-    return;
-  }
-  // Session first, then the players. If the claim fails the players are
-  // still told — expo-video makes its own attempt at the session when a
-  // playing player unmutes, which is the second chance.
-  void ensureAudioSession().finally(notify);
+  notify();
 }
 
 export function toggleVideoMuted(): void {
   setVideoMuted(!muted);
+}
+
+export function isVideoMuted(): boolean {
+  return muted;
 }
 
 /** Subscribe a component to the shared mute state. */
@@ -84,9 +58,8 @@ export function __subscribeForTest(listener: () => void): () => void {
   return subscribe(listener);
 }
 
-/** Test seam: forget the session and go back to muted. */
+/** Test seam: back to muted. */
 export function resetVideoSound(): void {
   muted = true;
-  sessionReady = false;
   notify();
 }

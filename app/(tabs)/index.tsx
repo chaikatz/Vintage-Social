@@ -1,18 +1,20 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { FlatList, Platform, StyleSheet, type ViewToken } from "react-native";
+import { FlatList, StyleSheet, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
 import { EmptyState } from "@/components/EmptyState";
 import { PostSkeleton } from "@/components/Skeleton";
-import { MemoryStrip } from "@/components/MemoryStrip";
-import { FEED_PAGE_SIZE, fetchFeedPage, fetchUserPosts } from "@/api/posts";
-import { onThisDay } from "@/utils/memories";
-import { libraryGranted, photosOnThisDay } from "@/utils/library";
+import { FEED_PAGE_SIZE, fetchFeedPage } from "@/api/posts";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 
+/**
+ * The home feed: the members you follow, newest first, and nothing else on
+ * top of it. On This Day lives on the Create tab and the Memories screen,
+ * where looking back is the point; the feed is for what is new.
+ */
 export default function Home() {
   const router = useRouter();
   const { session } = useSession();
@@ -32,41 +34,6 @@ export default function Home() {
 
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
     usePostActions(userId, postIds);
-
-  // On this day: the member's own photographs first, then — only if the
-  // library has already been allowed — whatever the phone has from this
-  // date. The strip stays silent unless one of them has something.
-  const mine = useQuery({
-    queryKey: ["user-posts", userId],
-    queryFn: () => fetchUserPosts(userId),
-    enabled: Boolean(userId),
-  });
-  const dayKey = new Date().toDateString();
-  const library = useQuery({
-    queryKey: ["library-on-this-day", dayKey],
-    queryFn: async () => ((await libraryGranted(false)) ? photosOnThisDay() : []),
-    enabled: Platform.OS !== "web",
-    staleTime: 60 * 60_000,
-  });
-  const memories = useMemo(() => onThisDay(mine.data ?? []), [mine.data]);
-  const libraryCount = useMemo(
-    () => (library.data ?? []).reduce((n, day) => n + day.photos.length, 0),
-    [library.data],
-  );
-  const strip =
-    memories.length > 0 || libraryCount > 0 ? (
-      <MemoryStrip
-        memory={memories[0] ?? null}
-        extra={
-          libraryCount > 0
-            ? memories.length > 0
-              ? `and ${libraryCount} more in your library`
-              : `${libraryCount} ${libraryCount === 1 ? "photograph" : "photographs"} in your library from this day.`
-            : null
-        }
-        onPress={() => router.push("/memories")}
-      />
-    ) : null;
 
   // Only the card actually on screen plays its video — see PostMedia for why
   // letting them all autoplay leaves some of them stuck on a black frame.
@@ -110,7 +77,6 @@ export default function Home() {
           if (feed.hasNextPage && !feed.isFetchingNextPage) feed.fetchNextPage();
         }}
         onEndReachedThreshold={0.6}
-        ListHeaderComponent={strip}
         ListEmptyComponent={
           feed.isLoading ? (
             <>

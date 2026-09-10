@@ -24,6 +24,9 @@ interface Props {
   filter: FilterSpec;
   style?: StyleProp<ViewStyle>;
   onReady?: () => void;
+  /** The photograph could not be read into the renderer — a format the
+   * decoder does not know, or a file that is not there. */
+  onError?: (error: Error) => void;
 }
 
 interface GLState {
@@ -37,7 +40,7 @@ interface GLState {
  * tray. Not used in feeds — feeds show the baked JPEG.
  */
 export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
-  function FilteredImage({ uri, filter, style, onReady }, ref) {
+  function FilteredImage({ uri, filter, style, onReady, onError }, ref) {
     const glViewRef = useRef<GLView>(null);
     const stateRef = useRef<GLState | null>(null);
     const filterRef = useRef(filter);
@@ -81,7 +84,7 @@ export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
       if (stateRef.current) draw(stateRef.current);
     }, [filter, draw]);
 
-    const onContextCreate = useCallback(
+    const setUp = useCallback(
       async (gl: ExpoWebGLRenderingContext) => {
         const compile = (type: number, source: string): WebGLShader => {
           const shader = gl.createShader(type);
@@ -116,9 +119,13 @@ export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
         gl.enableVertexAttribArray(aPosition);
         gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
 
-        // Source photo as a texture. expo-gl accepts a downloaded Asset.
+        // Source photo as a texture. expo-gl accepts a downloaded Asset —
+        // as a JPEG or PNG on a local path; it has no HEIC decoder and no
+        // idea of EXIF orientation, which is why library originals are
+        // re-encoded before they get here (see prepareForDarkroom).
         const asset = Asset.fromURI(uri);
         await asset.downloadAsync();
+        if (!asset.localUri) throw new Error("The photograph could not be read");
         const texture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -140,6 +147,17 @@ export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
         onReady?.();
       },
       [uri, draw, onReady],
+    );
+
+    const onContextCreate = useCallback(
+      async (gl: ExpoWebGLRenderingContext) => {
+        try {
+          await setUp(gl);
+        } catch (err) {
+          onError?.(err instanceof Error ? err : new Error(String(err)));
+        }
+      },
+      [setUp, onError],
     );
 
     useImperativeHandle(ref, () => ({

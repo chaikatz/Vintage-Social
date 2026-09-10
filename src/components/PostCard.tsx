@@ -4,11 +4,9 @@ import * as Haptics from "expo-haptics";
 import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { colors, spacing, type } from "@/theme";
-import { postAge } from "@/utils/time";
-import { getFilter } from "@/filters";
+import { signatureDate } from "@/utils/time";
 import { Avatar } from "./Avatar";
 import { PostMedia } from "./PostMedia";
-import { Signature } from "./Signature";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 
 /** How many comments read under the photograph before "View all". */
@@ -51,30 +49,25 @@ export function PostCard({
 
   return (
     <View style={styles.card}>
-      {/* Two lines beside the avatar: the name with the "…" on its own
-          line, then the signature — when the shutter fired, and where —
-          ruled against the film stock the way they'd be written on the
-          back of a print. */}
+      {/* Who and where on the left, when on the right: the name with the
+          place under it, and across from them the day the shutter fired,
+          set in tracked mono like a date written on the back of a print.
+          Nothing else — the film stock is in the picture. */}
       <View style={styles.header}>
         <Pressable onPress={() => onOpenProfile(post.author.username)}>
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
         </Pressable>
-        <View style={styles.headerText}>
-          <View style={styles.line}>
-            <Pressable style={styles.grow} onPress={() => onOpenProfile(post.author.username)}>
-              <Text style={styles.username} numberOfLines={1}>
-                {post.author.username}
-              </Text>
-            </Pressable>
-            <Pressable hitSlop={10} onPress={() => onMore(post)} accessibilityLabel="Post options">
-              <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
-            </Pressable>
-          </View>
-          <View style={styles.line}>
-            <Signature post={post} style={styles.signature} />
-            <Text style={styles.filterName}>{getFilter(post.filter_id).name}</Text>
-          </View>
-        </View>
+        <Pressable style={styles.headerText} onPress={() => onOpenProfile(post.author.username)}>
+          <Text style={styles.username} numberOfLines={1}>
+            {post.author.username}
+          </Text>
+          {post.location ? (
+            <Text style={styles.location} numberOfLines={1}>
+              {post.location}
+            </Text>
+          ) : null}
+        </Pressable>
+        <Text style={styles.date}>{signatureDate(post.taken_at ?? post.created_at)}</Text>
       </View>
 
       <PostMedia post={post} onDoubleTap={() => like(true)} active={active} />
@@ -101,7 +94,9 @@ export function PostCard({
           </Pressable>
         ) : null}
         <View style={styles.spacer} />
-        <Text style={styles.age}>{postAge(post.created_at)}</Text>
+        <Pressable hitSlop={10} onPress={() => onMore(post)} accessibilityLabel="Post options">
+          <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
+        </Pressable>
       </View>
 
       {post.like_count > 0 ? (
@@ -145,17 +140,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 2,
   },
   headerText: { flex: 1 },
-  line: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  grow: { flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  signature: { flex: 1, marginTop: 1 },
-  filterName: {
+  location: { fontSize: 12, color: colors.inkSoft, marginTop: 1 },
+  date: {
     fontFamily: type.mono,
     fontSize: 10,
-    letterSpacing: 1.4,
+    letterSpacing: 1.2,
     textTransform: "uppercase",
     color: colors.inkFaint,
-    marginTop: 1,
+    marginLeft: spacing.sm,
   },
   actions: {
     flexDirection: "row",
@@ -165,7 +158,6 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   spacer: { flex: 1 },
-  age: { ...type.caption, color: colors.inkFaint },
   likes: {
     fontSize: 13,
     fontWeight: "600",

@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { colors, spacing, type } from "@/theme";
+import { prepareForDarkroom } from "@/api/media";
 import { captureDateForAsset } from "@/utils/captureDate";
 import { composeParamsFor, libraryGranted, randomOldPhoto } from "@/utils/library";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
@@ -51,13 +52,26 @@ export default function Create() {
     // EXIF first, then the photo library — video carries no EXIF at all, so
     // the library is the only place its real date exists.
     const takenAt = await captureDateForAsset(asset);
+    // The editor hands over a JPEG. Anything else — a HEIC that skipped the
+    // editor, say — is decoded properly first, or the renderer shows black.
+    let { uri, width, height } = asset;
+    if (mediaType === "photo" && !/\.(jpe?g|png)$/i.test(uri.split("?")[0])) {
+      try {
+        const ready = await prepareForDarkroom(uri);
+        uri = ready.uri;
+        width = ready.width;
+        height = ready.height;
+      } catch {
+        // Fall through with the original; the darkroom reports what it can't read.
+      }
+    }
     router.push({
       pathname: "/compose",
       params: {
-        uri: asset.uri,
+        uri,
         mediaType,
-        width: String(asset.width ?? 0),
-        height: String(asset.height ?? 0),
+        width: String(width ?? 0),
+        height: String(height ?? 0),
         duration: String(asset.duration != null ? Math.round(asset.duration / 1000) : 0),
         // When the shutter actually fired, for the date stamp. Empty when
         // neither the file nor the library knew.

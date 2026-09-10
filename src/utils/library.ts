@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as MediaLibrary from "expo-media-library";
+import { prepareForDarkroom } from "@/api/media";
 import { captureDateFromEpoch } from "./exif";
 import { sameNightWindow } from "./memories";
 
@@ -160,13 +161,17 @@ export async function composeParamsFor(photo: LibraryPhoto): Promise<{
 } | null> {
   try {
     const info = await MediaLibrary.getAssetInfoAsync(photo.id);
-    const uri = info.localUri ?? info.uri;
-    if (!uri) return null;
+    const original = info.localUri ?? info.uri;
+    if (!original) return null;
+    // The library hands back the original file — HEIC, on its side — which
+    // the filter renderer cannot read. Decode it properly first; the size
+    // that comes back is the upright one.
+    const ready = await prepareForDarkroom(original);
     return {
-      uri,
+      uri: ready.uri,
       mediaType: "photo",
-      width: String(info.width || photo.width || 0),
-      height: String(info.height || photo.height || 0),
+      width: String(ready.width),
+      height: String(ready.height),
       duration: "0",
       takenAt: captureDateFromEpoch(info.creationTime ?? photo.creationTime) ?? "",
     };

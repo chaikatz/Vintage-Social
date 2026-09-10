@@ -58,6 +58,30 @@ export function prepareAvatar(uri: string): Promise<PreparedImage> {
   return resizeJpeg(uri, 512, 0.85);
 }
 
+/** Longest side of a photograph handed to the darkroom. Well above what the
+ * bake writes out, and within every iPhone's texture limit. */
+export const DARKROOM_MAX = 2048;
+
+/**
+ * Make a photograph the filter renderer can read.
+ *
+ * The GL renderer loads its texture with a plain image decoder: no HEIC,
+ * and no notion of EXIF orientation. The system picker hides this by
+ * handing over an edited JPEG, but a file read straight out of the photo
+ * library — On This Day, the roulette, the rest of a night's roll — is the
+ * original: usually HEIC, usually shot with the phone held upright and
+ * stored on its side. Fed to the renderer as-is that came out black, or
+ * rotated and stretched into a portrait frame.
+ *
+ * So the library path goes through the same decoder the rest of iOS uses
+ * first: orientation applied, HEIC read, longest side capped, saved as
+ * JPEG. The dimensions returned are the upright ones, which is what the
+ * preview frame and the post need.
+ */
+export function prepareForDarkroom(uri: string): Promise<PreparedImage> {
+  return resizeJpeg(uri, DARKROOM_MAX, 0.95);
+}
+
 export type Bucket = "avatars" | "media" | "thumbnails";
 
 /**

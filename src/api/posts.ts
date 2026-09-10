@@ -92,6 +92,7 @@ export interface NewPost {
   height: number | null;
   duration_seconds: number | null;
   filter_id: string;
+  filter_baked: boolean;
   show_date_stamp: boolean;
   caption: string;
   taken_at: string | null;

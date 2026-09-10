@@ -23,6 +23,7 @@ interface Props {
     | "width"
     | "height"
     | "filter_id"
+    | "filter_baked"
     | "show_date_stamp"
     | "taken_at"
     | "created_at"
@@ -206,6 +207,10 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
  * Sound: the player is created muted and follows the feed-wide switch. It
  * asks to duck other audio rather than stop it, and while muted it mixes,
  * so scrolling past a silent clip never interrupts someone's music.
+ *
+ * A clip baked on the phone plays as it is. Only footage posted before
+ * baking existed (or from a build that cannot bake) still carries the
+ * overlay, and `needsDisplayFilter` is the one place that decides.
  */
 function VideoMedia({
   path,
@@ -229,9 +234,17 @@ function VideoMedia({
     p.staysActiveInBackground = false;
   });
 
+  // Unmuting is the one moment the audio session is actually claimed —
+  // expo-video does that itself when a *playing* player becomes unmuted —
+  // so a card that is on screen is nudged to play in the same breath, and
+  // the volume is stated rather than assumed.
   React.useEffect(() => {
     player.muted = muted;
-  }, [player, muted]);
+    if (!muted) {
+      player.volume = 1;
+      if (active) player.play();
+    }
+  }, [player, muted, active]);
 
   React.useEffect(() => {
     if (active) player.play();

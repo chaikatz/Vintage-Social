@@ -168,6 +168,7 @@ function post(
     height: h,
     duration_seconds: null,
     filter_id: filterId,
+    filter_baked: false,
     show_date_stamp: false,
     caption,
     taken_at: hoursAgo(createdHoursAgo + SHOT_BEFORE_POSTING_HOURS),

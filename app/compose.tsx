@@ -16,6 +16,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { Image } from "expo-image";
+import Feather from "@expo/vector-icons/Feather";
 import { Button } from "@/components/Button";
 import { TextField } from "@/components/TextField";
 import { DateStamp } from "@/components/DateStamp";
@@ -24,6 +26,7 @@ import { FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters"
 import type { FilteredImageHandle, FilterSpec } from "@/filters";
 import { FilterOverlay } from "@/components/FilterOverlay";
 import { cssFilterFor } from "@/filters/cssFilter";
+import { bakeVideo, canBakeVideo } from "@/filters/bakeVideo";
 import { ownedPath, prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { createPost } from "@/api/posts";
@@ -35,8 +38,9 @@ import { describePublishFailure, publishStep } from "@/utils/publishError";
 /**
  * The darkroom: choose a VINTAGE filter, optionally the amber date stamp,
  * name the place, write a caption, publish. Photos are baked with the
- * filter on-device before upload, and the stamp shows when the shutter
- * fired rather than when the post was made.
+ * filter on-device before upload — and so is video, where the build can
+ * (see `bakeVideo`) — and the stamp shows when the shutter fired rather
+ * than when the post was made.
  */
 export default function Compose() {
   const router = useRouter();
@@ -65,6 +69,14 @@ export default function Compose() {
   const [busy, setBusy] = useState(false);
 
   const filteredRef = useRef<FilteredImageHandle>(null);
+  // The renderer could not read the file. Rare now that library originals
+  // are re-encoded first, but a black frame must never be what gets posted.
+  const [renderFailed, setRenderFailed] = useState(false);
+  // Video: the still frame shows the film exactly; "motion" plays the clip
+  // with the play-time approximation, muted unless asked.
+  const [motion, setMotion] = useState(false);
+  const [previewMuted, setPreviewMuted] = useState(true);
+  const bakes = isVideo && canBakeVideo();
   // A video's poster frame, pulled once: it makes the filter tray show real
   // frames instead of grey boxes, and it's the thumbnail the grid will use.
   const [poster, setPoster] = useState<string | null>(null);
@@ -118,13 +130,34 @@ export default function Compose() {
       let thumbPath: string | null = null;
       let finalWidth = width;
       let finalHeight = height;
+      // Photographs always leave here with the filter in their pixels.
+      let baked = !isVideo;
 
       if (isVideo) {
+        // The film goes into the clip first, where the build can do it, so
+        // the file that is uploaded already wears it and every surface
+        // simply plays it. If the bake fails the footage goes up as
+        // recorded and the look is applied at play time, as it always was.
+        let source = uri;
+        if (bakes && !isDemoMode()) {
+          try {
+            const out = await publishStep("render", () => bakeVideo(uri, filter));
+            source = out.uri;
+            finalWidth = out.width;
+            finalHeight = out.height;
+            baked = true;
+          } catch {
+            source = uri;
+            baked = false;
+          }
+        }
+
         // The poster frame is what the profile grid draws — a grid square
         // can't play a movie — so it is made either way, uploaded or not.
+        // Cut from the finished clip, so the square matches what plays.
         let posterUri: string | null = null;
         try {
-          const poster = await VideoThumbnails.getThumbnailAsync(uri, { time: 500 });
+          const poster = await VideoThumbnails.getThumbnailAsync(source, { time: 500 });
           posterUri = (await prepareThumbnail(poster.uri)).uri;
         } catch {
           posterUri = null; // a missing poster frame shouldn't block publishing
@@ -134,12 +167,12 @@ export default function Compose() {
           mediaPath = uri; // demo mode keeps the local recording, no upload
           thumbPath = posterUri;
         } else {
-          const ext = uri.split(".").pop()?.toLowerCase() ?? "mp4";
+          const ext = source.split("?")[0].split(".").pop()?.toLowerCase() ?? "mp4";
           mediaPath = await publishStep("media-upload", () =>
             uploadFile(
               "media",
               ownedPath(userId, `${postId}.${ext}`),
-              uri,
+              source,
               `video/${ext === "mov" ? "quicktime" : "mp4"}`,
             ),
           );
@@ -150,20 +183,23 @@ export default function Compose() {
             : null;
         }
       } else {
+        if (renderFailed) {
+          throw new Error("This photograph couldn’t be read. Try choosing it again from your library.");
+        }
         // Photos are always baked through the GL renderer, on every platform:
         // the filter has to end up in the pixels, not just in the metadata.
-        const baked = await publishStep("render", async () => {
-          const shot = await filteredRef.current?.snapshot();
-          if (!shot) throw new Error("The filter renderer isn’t ready yet — try again.");
-          return shot;
+        const shot = await publishStep("render", async () => {
+          const rendered = await filteredRef.current?.snapshot();
+          if (!rendered) throw new Error("The filter renderer isn’t ready yet — try again.");
+          return rendered;
         });
-        const feedImage = await publishStep("resize", () => prepareFeedImage(baked.uri));
+        const feedImage = await publishStep("resize", () => prepareFeedImage(shot.uri));
         finalWidth = feedImage.width;
         finalHeight = feedImage.height;
         if (isDemoMode()) {
           mediaPath = feedImage.uri; // keep the baked file locally, no upload
         } else {
-          const thumb = await publishStep("resize", () => prepareThumbnail(baked.uri));
+          const thumb = await publishStep("resize", () => prepareThumbnail(shot.uri));
           mediaPath = await publishStep("media-upload", () =>
             uploadFile("media", ownedPath(userId, `${postId}.jpg`), feedImage.uri, "image/jpeg"),
           );
@@ -184,6 +220,7 @@ export default function Compose() {
           height: finalHeight,
           duration_seconds: isVideo ? Number(params.duration) || null : null,
           filter_id: filterId,
+          filter_baked: baked,
           show_date_stamp: stampOn,
           caption: caption.trim(),
           taken_at: takenAt,
@@ -223,14 +260,50 @@ export default function Compose() {
             bottom-left the way a lab writes it on the sleeve. */}
         <View style={[styles.preview, { aspectRatio: previewRatio }]}>
           {isVideo ? (
-            <VideoPreview uri={uri} filter={filter} />
+            bakes && poster && !motion ? (
+              // One frame through the same renderer that bakes photographs:
+              // exactly the look the clip will be posted with.
+              <FilteredImage uri={poster} filter={filter} style={StyleSheet.absoluteFill} />
+            ) : (
+              <VideoPreview uri={uri} filter={filter} muted={previewMuted} />
+            )
+          ) : renderFailed ? (
+            <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" />
           ) : (
-            <FilteredImage ref={filteredRef} uri={uri} filter={filter} style={StyleSheet.absoluteFill} />
+            <FilteredImage
+              ref={filteredRef}
+              uri={uri}
+              filter={filter}
+              style={StyleSheet.absoluteFill}
+              onError={() => setRenderFailed(true)}
+            />
           )}
           {stampOn ? <DateStamp iso={stampIso} /> : null}
           <View pointerEvents="none" style={styles.previewFilm}>
             <Text style={styles.previewFilmText}>{filter.name}</Text>
           </View>
+          {isVideo ? (
+            <View style={styles.previewControls}>
+              {bakes && poster ? (
+                <Pressable
+                  style={styles.previewControl}
+                  onPress={() => setMotion((m) => !m)}
+                  accessibilityLabel={motion ? "Show the still" : "Play the clip"}
+                >
+                  <Feather name={motion ? "pause" : "play"} size={14} color={colors.onShutter} />
+                </Pressable>
+              ) : null}
+              {!bakes || !poster || motion ? (
+                <Pressable
+                  style={styles.previewControl}
+                  onPress={() => setPreviewMuted((m) => !m)}
+                  accessibilityLabel={previewMuted ? "Turn sound on" : "Turn sound off"}
+                >
+                  <Feather name={previewMuted ? "volume-x" : "volume-2"} size={14} color={colors.onShutter} />
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         <SectionLabel>Film</SectionLabel>
@@ -263,8 +336,14 @@ export default function Compose() {
         <Text style={styles.filterDescription}>{filter.description}</Text>
         {isVideo ? (
           <Text style={styles.videoNote}>
-            On video the filter is applied as it plays rather than burned into the file, so your
-            original footage is kept intact.
+            {bakes
+              ? "The film goes onto the whole clip when you post. The still shows it exactly; play shows the clip with a close approximation."
+              : "On video the filter is applied as it plays rather than burned into the file, so your original footage is kept intact."}
+          </Text>
+        ) : renderFailed ? (
+          <Text style={styles.videoNote}>
+            This photograph couldn’t be read by the filter renderer. Go back and choose it again — if it
+            keeps happening, pick it from the library instead.
           </Text>
         ) : null}
 
@@ -325,12 +404,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function VideoPreview({ uri, filter }: { uri: string; filter: FilterSpec }) {
+function VideoPreview({ uri, filter, muted }: { uri: string; filter: FilterSpec; muted: boolean }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.muted = true;
+    p.audioMixingMode = "duckOthers";
     p.play();
   });
+  useEffect(() => {
+    player.muted = muted;
+    if (!muted) player.volume = 1;
+  }, [player, muted]);
   const css = cssFilterFor(filter);
   return (
     <>
@@ -356,6 +440,21 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   previewFilm: { position: "absolute", left: spacing.lg, bottom: spacing.md },
+  previewControls: {
+    position: "absolute",
+    right: spacing.md,
+    bottom: spacing.md,
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  previewControl: {
+    width: 30,
+    height: 30,
+    borderRadius: radii.round,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(28, 25, 21, 0.6)",
+  },
   previewFilmText: {
     fontFamily: type.mono,
     fontSize: 10,

@@ -8,14 +8,12 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { PostMedia } from "@/components/PostMedia";
-import { Signature } from "@/components/Signature";
 import { EmptyState } from "@/components/EmptyState";
 import { PostSkeleton } from "@/components/Skeleton";
 import { INLINE_COMMENTS } from "@/components/PostCard";
 import { colors, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
-import { getFilter } from "@/filters";
-import { postAge } from "@/utils/time";
+import { signatureDate } from "@/utils/time";
 import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
@@ -24,10 +22,11 @@ import { useSession } from "@/providers/SessionProvider";
  * One photograph on its own.
  *
  * Where a link lands — a notification, a message, a memory — and the one
- * screen on VINTAGE that belongs entirely to a single picture. So the
- * picture comes first, full bleed and without a rule, and everything
- * written about it sits underneath in the order a print is read: who,
- * when and where, then what people said.
+ * screen on VINTAGE that belongs entirely to a single picture. It is laid
+ * out exactly like a card in the feed, because that is what it is: the
+ * picture first and full-bleed, the name and place on the left with the
+ * capture date across from them, and the quiet row of actions under it.
+ * Nothing boxed, nothing ruled off, no chrome a feed card doesn't have.
  */
 export default function PostDetail() {
   const router = useRouter();
@@ -83,24 +82,42 @@ export default function PostDetail() {
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Stack.Screen options={{ title: post.author.username }} />
+      <Stack.Screen options={{ title: "" }} />
 
       <PostMedia post={post} onDoubleTap={() => like(true)} bare priority="high" />
 
-      <View style={styles.byline}>
-        <Pressable onPress={openProfile} style={styles.author}>
-          <Avatar path={post.author.avatar_url} username={post.author.username} size={30} />
-          <View style={styles.authorText}>
-            <Text style={styles.username} numberOfLines={1}>
-              {post.author.username}
-            </Text>
-            {post.author.full_name ? (
-              <Text style={styles.fullName} numberOfLines={1}>
-                {post.author.full_name}
-              </Text>
-            ) : null}
-          </View>
+      <View style={styles.header}>
+        <Pressable onPress={openProfile}>
+          <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
         </Pressable>
+        <Pressable style={styles.headerText} onPress={openProfile}>
+          <Text style={styles.username} numberOfLines={1}>
+            {post.author.username}
+          </Text>
+          {post.location ? (
+            <Text style={styles.location} numberOfLines={1}>
+              {post.location}
+            </Text>
+          ) : null}
+        </Pressable>
+        <Text style={styles.date}>{signatureDate(post.taken_at ?? post.created_at)}</Text>
+      </View>
+
+      <View style={styles.actions}>
+        <Pressable hitSlop={8} onPress={() => like(!liked)} accessibilityLabel={liked ? "Unlike" : "Like"}>
+          {liked ? (
+            <MaterialCommunityIcons name="heart" size={23} color={colors.like} />
+          ) : (
+            <Feather name="heart" size={23} color={colors.ink} />
+          )}
+        </Pressable>
+        <Pressable hitSlop={8} onPress={() => onOpenComments(post)} accessibilityLabel="Comments">
+          <Feather name="message-circle" size={23} color={colors.ink} />
+        </Pressable>
+        <Pressable hitSlop={8} onPress={() => onShare(post)} accessibilityLabel="Send to">
+          <Feather name="send" size={21} color={colors.ink} />
+        </Pressable>
+        <View style={styles.spacer} />
         <Pressable
           hitSlop={10}
           onPress={() => onMore(post, () => router.back())}
@@ -108,32 +125,6 @@ export default function PostDetail() {
         >
           <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
         </Pressable>
-      </View>
-
-      {/* The signature: when the shutter fired, where, and on what film.
-          Set apart with a short rule, the way a lab writes on the sleeve. */}
-      <View style={styles.signature}>
-        <View style={styles.rule} />
-        <Signature post={post} size="large" numberOfLines={2} style={styles.signatureText} />
-        <Text style={styles.film}>{getFilter(post.filter_id).name}</Text>
-      </View>
-
-      <View style={styles.actions}>
-        <Pressable hitSlop={8} onPress={() => like(!liked)} accessibilityLabel={liked ? "Unlike" : "Like"}>
-          {liked ? (
-            <MaterialCommunityIcons name="heart" size={24} color={colors.like} />
-          ) : (
-            <Feather name="heart" size={24} color={colors.ink} />
-          )}
-        </Pressable>
-        <Pressable hitSlop={8} onPress={() => onOpenComments(post)} accessibilityLabel="Comments">
-          <Feather name="message-circle" size={24} color={colors.ink} />
-        </Pressable>
-        <Pressable hitSlop={8} onPress={() => onShare(post)} accessibilityLabel="Send to">
-          <Feather name="send" size={22} color={colors.ink} />
-        </Pressable>
-        <View style={styles.spacer} />
-        <Text style={styles.age}>{postAge(post.created_at)}</Text>
       </View>
 
       {likes > 0 ? (
@@ -185,41 +176,35 @@ export default function PostDetail() {
   );
 }
 
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingBottom: spacing.xxl },
-  byline: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
+    gap: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    gap: spacing.md,
   },
-  author: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.sm + 2 },
-  authorText: { flex: 1 },
+  headerText: { flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  fullName: { fontSize: 12, color: colors.inkFaint, marginTop: 1 },
-  signature: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
-  rule: { width: 28, height: 1, backgroundColor: colors.borderStrong, marginBottom: spacing.sm + 2 },
-  signatureText: { color: colors.ink },
-  film: {
+  location: { fontSize: 12, color: colors.inkSoft, marginTop: 1 },
+  date: {
     fontFamily: type.mono,
-    fontSize: 9,
-    letterSpacing: 1.8,
+    fontSize: 10,
+    letterSpacing: 1.2,
     textTransform: "uppercase",
     color: colors.inkFaint,
-    marginTop: spacing.xs,
+    marginLeft: spacing.sm,
   },
   actions: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.md,
     gap: spacing.lg,
   },
   spacer: { flex: 1 },
-  age: { ...type.caption, color: colors.inkFaint },
   likes: { fontSize: 13, fontWeight: "600", color: colors.ink, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   caption: { ...type.body, fontSize: 14, paddingHorizontal: spacing.lg, paddingTop: spacing.xs + 2 },
   captionAuthor: { fontWeight: "600" },

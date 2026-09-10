@@ -10,7 +10,8 @@ import { PhotoGrid } from "@/components/PhotoGrid";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
-import { GridSortToggle, type GridSort } from "@/components/GridSortToggle";
+import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
+import { Timeline } from "@/components/Timeline";
 import { colors, spacing, type } from "@/theme";
 import { fetchProfileByUsername, follow, followState, unfollow } from "@/api/profiles";
 import { fetchUserPosts } from "@/api/posts";
@@ -24,7 +25,8 @@ export default function UserProfile() {
   const { session } = useSession();
   const { username } = useLocalSearchParams<{ username: string }>();
   const myId = session?.user?.id ?? "";
-  const [sort, setSort] = useState<GridSort>("posted");
+  const [view, setView] = useState<ProfileView>("posted");
+  const sort = view === "taken" ? "taken" : "posted";
 
   const profileQ = useQuery({
     queryKey: ["profile", username],
@@ -150,18 +152,22 @@ export default function UserProfile() {
           </Text>
         </View>
       ) : (postsQ.data ?? []).length > 1 ? (
-        <GridSortToggle value={sort} onChange={setSort} />
+        <GridSortToggle value={view} onChange={setView} />
       ) : null}
     </>
   );
 
+  const Surface = view === "timeline" && !locked ? Timeline : PhotoGrid;
+
   return (
     <Screen padded={false}>
       <Stack.Screen options={{ title: profile.username }} />
-      <PhotoGrid
+      <Surface
         posts={locked ? [] : rows}
         onOpenPost={(p) =>
-          router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } })
+          view === "timeline"
+            ? router.push(`/post/${p.id}`)
+            : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } })
         }
         refreshing={postsQ.isRefetching}
         onRefresh={() => postsQ.refetch()}
