@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -20,8 +19,9 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { Image } from "expo-image";
 import Feather from "@expo/vector-icons/Feather";
 import { Button } from "@/components/Button";
+import { TextField } from "@/components/TextField";
 import { DateStamp } from "@/components/DateStamp";
-import { colors, spacing, type } from "@/theme";
+import { colors, hairline, radii, spacing, type } from "@/theme";
 import { FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters";
 import type { FilteredImageHandle, FilterSpec } from "@/filters";
 import { FilterOverlay } from "@/components/FilterOverlay";
@@ -31,13 +31,7 @@ import { TagPicker, type Taggable } from "@/components/TagPicker";
 import { Avatar } from "@/components/Avatar";
 import { tagMembers } from "@/api/tags";
 import { geocodePlace } from "@/utils/geocode";
-import {
-  mediaUrlString,
-  ownedPath,
-  prepareFeedImage,
-  prepareThumbnail,
-  uploadFile,
-} from "@/api/media";
+import { mediaUrlString, ownedPath, prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { createPost } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
@@ -51,10 +45,6 @@ import { describePublishFailure, publishStep } from "@/utils/publishError";
  * filter on-device before upload — and so is video, where the build can
  * (see `bakeVideo`) — and the stamp shows when the shutter fired rather
  * than when the post was made.
- *
- * Laid out like a print being finished: the photograph full-bleed at the
- * top, a contact sheet of the films under it, then the two lines that go
- * on the back. Nothing here is boxed; the rules are hairlines.
  */
 export default function Compose() {
   const router = useRouter();
@@ -84,27 +74,11 @@ export default function Compose() {
   // What publishing is doing right now, said under the button. A bake and
   // an upload can take a few seconds each; a spinner alone reads as stuck.
   const [stage, setStage] = useState<string | null>(null);
-
-  const filteredRef = useRef<FilteredImageHandle>(null);
-  // The plain photograph sits under the renderer and shows at once; the
-  // filtered frame fades in over it when the GPU has the picture. Nobody
-  // waits on a black rectangle.
-  const [rendererReady, setRendererReady] = useState(false);
-  // Belt and braces: if the renderer's "ready" never arrives, the filtered
-  // frame is shown regardless after a moment. The plain picture underneath
-  // is only ever a placeholder — never what the member is choosing from.
-  const [rendererShown, setRendererShown] = useState(false);
-  useEffect(() => {
-    if (rendererReady) {
-      setRendererShown(true);
-      return;
-    }
-    const t = setTimeout(() => setRendererShown(true), 1200);
-    return () => clearTimeout(t);
-  }, [rendererReady]);
   // Who was there. Sent with the post; each of them decides.
   const [tags, setTags] = useState<Taggable[]>([]);
   const [picking, setPicking] = useState(false);
+
+  const filteredRef = useRef<FilteredImageHandle>(null);
   // The renderer could not read the file. Rare now that library originals
   // are re-encoded first, but a black frame must never be what gets posted.
   const [renderFailed, setRenderFailed] = useState(false);
@@ -192,11 +166,10 @@ export default function Compose() {
         // The poster frame is what the profile grid draws — a grid square
         // can't play a movie — so it is made either way, uploaded or not.
         // Cut from the finished clip, so the square matches what plays.
-        setStage("Cutting the poster frame…");
         let posterUri: string | null = null;
         try {
-          const frame = await VideoThumbnails.getThumbnailAsync(source, { time: 500 });
-          posterUri = (await prepareThumbnail(frame.uri)).uri;
+          const poster = await VideoThumbnails.getThumbnailAsync(source, { time: 500 });
+          posterUri = (await prepareThumbnail(poster.uri)).uri;
         } catch {
           posterUri = null; // a missing poster frame shouldn't block publishing
         }
@@ -319,9 +292,6 @@ export default function Compose() {
   };
 
   const stampLabel = dateStampText(stampIso);
-  // What the contact sheet and the still are drawn from.
-  const still = isVideo ? poster : { uri, width: width ?? 0, height: height ?? 0 };
-  const showStill = isVideo ? bakes && Boolean(poster) && !motion : !renderFailed;
 
   return (
     <KeyboardAvoidingView
@@ -332,33 +302,37 @@ export default function Compose() {
         style={styles.root}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
       >
-        {/* The frame, full bleed. The plain picture underneath appears at
-            once; the filtered render fades over it when the GPU is ready. */}
+        {/* The frame, full bleed, with the film stock struck across the
+            bottom-left the way a lab writes it on the sleeve. */}
         <View style={[styles.preview, { aspectRatio: previewRatio }]}>
-          {still?.uri ? (
-            <Image source={still.uri} style={StyleSheet.absoluteFill} contentFit="cover" />
-          ) : null}
-          {isVideo && !showStill ? (
-            <VideoPreview uri={uri} filter={filter} muted={previewMuted} />
-          ) : null}
-          {showStill && still?.uri ? (
-            <View style={[StyleSheet.absoluteFill, { opacity: rendererShown ? 1 : 0 }]}>
+          {isVideo ? (
+            bakes && poster && !motion ? (
+              // One frame through the same renderer that bakes photographs:
+              // exactly the look the clip will be posted with.
               <FilteredImage
-                ref={isVideo ? undefined : filteredRef}
-                uri={still.uri}
-                width={still.width}
-                height={still.height}
+                uri={poster.uri}
+                width={poster.width}
+                height={poster.height}
                 filter={filter}
                 style={StyleSheet.absoluteFill}
-                onReady={() => setRendererReady(true)}
-                onError={() => {
-                  if (!isVideo) setRenderFailed(true);
-                }}
               />
-            </View>
-          ) : null}
+            ) : (
+              <VideoPreview uri={uri} filter={filter} muted={previewMuted} />
+            )
+          ) : renderFailed ? (
+            <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" />
+          ) : (
+            <FilteredImage
+              ref={filteredRef}
+              uri={uri}
+              width={width}
+              height={height}
+              filter={filter}
+              style={StyleSheet.absoluteFill}
+              onError={() => setRenderFailed(true)}
+            />
+          )}
           {stampOn ? <DateStamp iso={stampIso} /> : null}
           <View pointerEvents="none" style={styles.previewFilm}>
             <Text style={styles.previewFilmText}>{filter.name}</Text>
@@ -368,18 +342,13 @@ export default function Compose() {
               {bakes && poster ? (
                 <Pressable
                   style={styles.previewControl}
-                  onPress={() => {
-                    // Coming back to the still, the renderer starts over;
-                    // let it fade in again rather than flash a blank frame.
-                    setRendererReady(false);
-                    setMotion((m) => !m);
-                  }}
+                  onPress={() => setMotion((m) => !m)}
                   accessibilityLabel={motion ? "Show the still" : "Play the clip"}
                 >
                   <Feather name={motion ? "pause" : "play"} size={14} color={colors.onShutter} />
                 </Pressable>
               ) : null}
-              {!showStill ? (
+              {!bakes || !poster || motion ? (
                 <Pressable
                   style={styles.previewControl}
                   onPress={() => setPreviewMuted((m) => !m)}
@@ -392,12 +361,7 @@ export default function Compose() {
           ) : null}
         </View>
 
-        {/* The contact sheet: every film on the same frame, the chosen one
-            underscored in amber. No boxes — a strip of small prints. */}
-        <View style={styles.sheetHead}>
-          <Text style={styles.eyebrow}>Film</Text>
-          <Text style={styles.sheetName}>{filter.name}</Text>
-        </View>
+        <SectionLabel>Film</SectionLabel>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -406,28 +370,22 @@ export default function Compose() {
           {FILTERS.map((f) => {
             const selected = f.id === filterId;
             return (
-              <Pressable
-                key={f.id}
-                style={styles.swatchWrap}
-                onPress={() => selectFilter(f.id)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-              >
-                {/* One GL context on this screen — the big frame. The small
-                    prints use the play-time approximation, which is close
-                    enough to choose by and costs nothing. */}
-                <View style={styles.swatch}>
-                  {still?.uri ? (
-                    <>
-                      <Image
-                        source={still.uri}
-                        style={[StyleSheet.absoluteFill, { filter: cssFilterFor(f).filter } as object]}
-                        contentFit="cover"
-                      />
-                      <FilterOverlay filter={f} />
-                    </>
-                  ) : null}
+              <Pressable key={f.id} style={styles.swatchWrap} onPress={() => selectFilter(f.id)}>
+                <View style={[styles.swatch, selected && styles.swatchSelected]}>
+                  {!isVideo || poster ? (
+                    <FilteredImage
+                      uri={poster?.uri ?? uri}
+                      width={poster?.width ?? width}
+                      height={poster?.height ?? height}
+                      filter={f}
+                      style={styles.swatchImage}
+                    />
+                  ) : (
+                    <View style={[styles.swatchImage, styles.swatchVideo]} />
+                  )}
                 </View>
+                {/* The selected stock is underscored in amber rather than
+                    boxed in — a mark on the contact sheet, not a button. */}
                 <View style={[styles.swatchRule, selected && styles.swatchRuleOn]} />
                 <Text style={[styles.swatchName, selected && styles.swatchNameSelected]} numberOfLines={1}>
                   {f.name}
@@ -438,25 +396,24 @@ export default function Compose() {
         </ScrollView>
         <Text style={styles.filterDescription}>{filter.description}</Text>
         {isVideo ? (
-          <Text style={styles.note}>
+          <Text style={styles.videoNote}>
             {bakes
               ? "The film goes onto the whole clip when you post. The still shows it exactly; play shows the clip with a close approximation."
               : "On video the filter is applied as it plays rather than burned into the file, so your original footage is kept intact."}
           </Text>
         ) : renderFailed ? (
-          <Text style={styles.note}>
+          <Text style={styles.videoNote}>
             This photograph couldn’t be read by the filter renderer. Go back and choose it again — if it
             keeps happening, pick it from the library instead.
           </Text>
         ) : null}
 
-        {/* The back of the print: the stamp, the place, the note. */}
-        <View style={styles.rule} />
+        {/* Available on every filter — the preset only decides the default. */}
+        <SectionLabel>Date stamp</SectionLabel>
         <Pressable style={styles.stampRow} onPress={() => setStampOn(!stampOn)}>
           <View style={styles.grow}>
-            <Text style={styles.eyebrow}>Date stamp</Text>
             <Text style={[styles.stampValue, !stampOn && styles.stampValueOff]}>{stampLabel}</Text>
-            <Text style={styles.hint}>
+            <Text style={styles.stampHint}>
               {takenAt
                 ? "Read from the file — when the shutter actually fired."
                 : "This one carried no capture date, so today’s is used."}
@@ -470,10 +427,9 @@ export default function Compose() {
           />
         </Pressable>
 
-        <View style={styles.rule} />
+        <SectionLabel>Who was there</SectionLabel>
         <Pressable style={styles.tagRow} onPress={() => setPicking(true)} accessibilityLabel="Tag members">
           <View style={styles.grow}>
-            <Text style={styles.eyebrow}>Who was there</Text>
             {tags.length > 0 ? (
               <View style={styles.tagFaces}>
                 {tags.slice(0, 6).map((t) => (
@@ -484,7 +440,9 @@ export default function Compose() {
                 </Text>
               </View>
             ) : (
-              <Text style={styles.hint}>Tag the members in the picture. Each decides whether it shows on their profile.</Text>
+              <Text style={styles.stampHint}>
+                Tag the members in the picture. Each decides whether it shows on their profile.
+              </Text>
             )}
           </View>
           <Feather name="chevron-right" size={16} color={colors.inkFaint} />
@@ -497,30 +455,21 @@ export default function Compose() {
           onClose={() => setPicking(false)}
         />
 
-        <View style={styles.hairline} />
-        <View style={styles.field}>
-          <Text style={styles.eyebrow}>Where</Text>
-          <TextInput
+        <SectionLabel>The note</SectionLabel>
+        <View style={styles.fields}>
+          <TextField
+            label="Location"
             value={location}
             onChangeText={(t) => setLocation(t.slice(0, MAX_LOCATION_LENGTH))}
-            placeholder="A town, a street, a bar — optional"
-            placeholderTextColor={colors.inkFaint}
+            placeholder="Optional — a town, a street, a bar."
             autoCapitalize="words"
-            autoCorrect={false}
-            returnKeyType="done"
-            style={styles.input}
           />
-        </View>
-        <View style={styles.hairline} />
-        <View style={styles.field}>
-          <Text style={styles.eyebrow}>Caption</Text>
-          <TextInput
+          <TextField
+            label="Caption"
             value={caption}
             onChangeText={(t) => setCaption(t.slice(0, MAX_CAPTION_LENGTH))}
-            placeholder="Optional — keep it quiet."
-            placeholderTextColor={colors.inkFaint}
             multiline
-            style={[styles.input, styles.inputMultiline]}
+            placeholder="Optional — keep it quiet."
           />
         </View>
       </ScrollView>
@@ -532,6 +481,16 @@ export default function Compose() {
         {stage ? <Text style={styles.stage}>{stage}</Text> : null}
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+/** A hairline ruled across the page with its name set into the left of it. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={styles.sectionLabel}>
+      <Text style={styles.sectionLabelText}>{children}</Text>
+      <View style={styles.sectionRule} />
+    </View>
   );
 }
 
@@ -560,8 +519,6 @@ function VideoPreview({ uri, filter, muted }: { uri: string; filter: FilterSpec;
   );
 }
 
-const SWATCH = 64;
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   scroll: { paddingBottom: spacing.xl },
@@ -573,14 +530,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   previewFilm: { position: "absolute", left: spacing.lg, bottom: spacing.md },
-  previewFilmText: {
-    fontFamily: type.mono,
-    fontSize: 10,
-    letterSpacing: 2.2,
-    textTransform: "uppercase",
-    color: colors.onShutter,
-    opacity: 0.85,
-  },
   previewControls: {
     position: "absolute",
     right: spacing.md,
@@ -591,37 +540,50 @@ const styles = StyleSheet.create({
   previewControl: {
     width: 30,
     height: 30,
-    borderRadius: 15,
+    borderRadius: radii.round,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(28, 25, 21, 0.6)",
   },
+  previewFilmText: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 2.2,
+    textTransform: "uppercase",
+    color: colors.onShutter,
+    opacity: 0.85,
+  },
 
-  eyebrow: {
+  sectionLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
+  },
+  sectionLabelText: {
     fontFamily: type.mono,
     fontSize: 10,
     letterSpacing: 2.4,
     textTransform: "uppercase",
     color: colors.inkFaint,
   },
-  sheetHead: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  sheetName: { fontFamily: type.serif, fontSize: 17, color: colors.ink },
+  sectionRule: { flex: 1, height: 1, backgroundColor: colors.border },
 
   trayContent: { paddingHorizontal: spacing.lg, gap: spacing.md },
-  swatchWrap: { alignItems: "center", width: SWATCH },
+  swatchWrap: { alignItems: "center", width: 72 },
   swatch: {
-    width: SWATCH,
-    height: SWATCH,
+    width: 72,
+    height: 72,
+    borderRadius: radii.sm,
     overflow: "hidden",
     backgroundColor: colors.paperSunken,
+    ...hairline,
   },
+  swatchSelected: { borderColor: colors.ink },
+  swatchImage: { width: 70, height: 70 },
+  swatchVideo: { backgroundColor: colors.paperSunken },
   swatchRule: {
     height: 2,
     width: 22,
@@ -635,20 +597,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: "uppercase",
     color: colors.inkFaint,
-    marginTop: 4,
+    marginTop: 5,
   },
   swatchNameSelected: { color: colors.ink },
 
   filterDescription: {
+    ...type.body,
     fontFamily: type.serif,
     fontSize: 14,
-    fontStyle: "italic",
     lineHeight: 20,
     color: colors.inkSoft,
     paddingHorizontal: spacing.lg,
     marginTop: spacing.md,
   },
-  note: {
+  videoNote: {
     ...type.caption,
     fontSize: 12,
     color: colors.inkFaint,
@@ -656,50 +618,38 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
 
-  rule: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.lg, marginTop: spacing.xl },
-  hairline: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.lg },
-
   stampRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.lg,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
   },
   stampValue: {
     fontFamily: type.mono,
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "700",
     letterSpacing: 1,
     color: colors.stamp,
     textShadowColor: colors.stampGlow,
     textShadowRadius: 5,
     textShadowOffset: { width: 0, height: 0 },
-    marginTop: spacing.xs,
   },
   stampValueOff: {
     color: colors.inkFaint,
     textShadowColor: "transparent",
   },
-  hint: { ...type.caption, fontSize: 12, color: colors.inkFaint, marginTop: 3 },
+  stampHint: { ...type.caption, fontSize: 12, color: colors.inkFaint, marginTop: 3 },
 
+  fields: { paddingHorizontal: spacing.lg },
   tagRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: spacing.lg,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
   },
-  tagFaces: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm },
+  tagFaces: { flexDirection: "row", alignItems: "center", gap: 6 },
   tagNames: { flex: 1, fontSize: 13, color: colors.ink, marginLeft: 4 },
-  field: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  input: {
-    fontSize: 15,
-    color: colors.ink,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: 0,
-  },
-  inputMultiline: { minHeight: 72, textAlignVertical: "top" },
+  stage: { ...type.caption, fontSize: 12, color: colors.inkFaint, textAlign: "center", marginTop: spacing.sm },
 
   footer: {
     paddingHorizontal: spacing.lg,
@@ -709,5 +659,4 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.paper,
   },
-  stage: { ...type.caption, fontSize: 12, color: colors.inkFaint, textAlign: "center", marginTop: spacing.sm },
 });

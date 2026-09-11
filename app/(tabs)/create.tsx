@@ -12,12 +12,16 @@ import { composeParamsFor, libraryGranted, randomOldPhoto } from "@/utils/librar
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 
 /**
+ * Where a post begins.
+ *
  * One photograph per post. Short videos are allowed but live in the same
  * feed and grid as everything else — there is no separate video surface.
  *
- * Laid out like the back of a camera: a wide shutter for the thing you do
- * most, two quieter plates beside it, and a line of type explaining what
- * happens next. Nothing here is a card in a rounded box.
+ * Set like the rest of VINTAGE: a serif line, then quiet rows ruled off
+ * with hairlines, each a way of finding a picture. The library first,
+ * because that is where the photographs are; the camera and a short clip
+ * beside it; then the two ways of looking back into the roll. Nothing
+ * here is a card, a plate or a dark block.
  */
 export default function Create() {
   const router = useRouter();
@@ -119,80 +123,98 @@ export default function Create() {
     if (!result.canceled && result.assets[0]) await openCompose(result.assets[0], "photo");
   };
 
+  const native = Platform.OS !== "web";
+
   return (
     <Screen padded={false}>
       <View style={styles.body}>
         <Text style={styles.eyebrow}>New post</Text>
-        <Text style={styles.heading}>Share a photograph</Text>
-        <Text style={styles.sub}>
-          One image per post. You'll choose the film and the date stamp before it goes out.
-        </Text>
+        <Text style={styles.heading}>Share a photograph.</Text>
+        <Text style={styles.sub}>One picture at a time. You choose the film and the date stamp next.</Text>
 
-        <Pressable style={styles.shutter} onPress={() => pick("photo")}>
-          <View style={styles.shutterRing}>
-            <Feather name="image" size={26} color={colors.onShutter} />
-          </View>
-          <View style={styles.shutterText}>
-            <Text style={styles.shutterTitle}>From your library</Text>
-            <Text style={styles.shutterSub}>Pick a photograph you've already taken</Text>
-          </View>
-          <Feather name="chevron-right" size={18} color="rgba(242, 235, 221, 0.5)" />
-        </Pressable>
-
-        <View style={styles.plates}>
-          {/* The camera is a native affordance; browser review uses the library picker. */}
-          {Platform.OS !== "web" ? (
-            <Pressable style={styles.plate} onPress={takePhoto}>
-              <Feather name="camera" size={20} color={colors.ink} />
-              <Text style={styles.plateTitle}>Camera</Text>
-              <Text style={styles.plateSub}>Take one now</Text>
-            </Pressable>
-          ) : null}
-          <Pressable style={styles.plate} onPress={() => pick("video")}>
-            <Feather name="film" size={20} color={colors.ink} />
-            <Text style={styles.plateTitle}>Short video</Text>
-            <Text style={styles.plateSub}>Up to {MAX_VIDEO_SECONDS}s</Text>
-          </Pressable>
-        </View>
+        <View style={styles.rule} />
+        <Row
+          icon="image"
+          title="From your library"
+          body="A photograph you've already taken"
+          onPress={() => pick("photo")}
+          primary
+        />
+        {native ? (
+          <>
+            <View style={styles.hairline} />
+            <Row icon="camera" title="Camera" body="Take one now" onPress={takePhoto} />
+          </>
+        ) : null}
+        <View style={styles.hairline} />
+        <Row icon="film" title="Short video" body={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`} onPress={() => pick("video")} />
+        <View style={styles.rule} />
 
         {/* The back of the drawer: the library read for what is already in it. */}
-        {Platform.OS !== "web" ? (
-          <View style={styles.archive}>
-            <Pressable style={styles.archiveRow} onPress={findSomething} disabled={finding}>
-              {finding ? (
-                <ActivityIndicator size="small" color={colors.inkSoft} />
-              ) : (
-                <Feather name="shuffle" size={16} color={colors.ink} />
-              )}
-              <View style={styles.archiveText}>
-                <Text style={styles.archiveTitle}>Find me something</Text>
-                <Text style={styles.archiveSub}>One photograph, at random, from a while ago</Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={colors.inkFaint} />
-            </Pressable>
-            <View style={styles.archiveRule} />
-            <Pressable style={styles.archiveRow} onPress={() => router.push("/memories")}>
-              <Feather name="sun" size={16} color={colors.ink} />
-              <View style={styles.archiveText}>
-                <Text style={styles.archiveTitle}>On this day</Text>
-                <Text style={styles.archiveSub}>What you shot on this date in other years</Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={colors.inkFaint} />
-            </Pressable>
-          </View>
+        {native ? (
+          <>
+            <Text style={[styles.eyebrow, styles.eyebrowSpaced]}>Look back</Text>
+            <Row
+              icon="sun"
+              title="On this day"
+              body="What you shot on this date in other years"
+              onPress={() => router.push("/memories")}
+            />
+            <View style={styles.hairline} />
+            <Row
+              icon="shuffle"
+              title="Find me something"
+              body="One photograph, at random, from a while ago"
+              onPress={findSomething}
+              busy={finding}
+            />
+            <View style={styles.rule} />
+          </>
         ) : null}
 
         <View style={styles.spacer} />
-
-        <View style={styles.note}>
-          <View style={styles.noteRule} />
-          <Text style={styles.noteText}>
-            Videos sit in the same feed and the same grid as photographs. There is no separate
-            place for them, and nothing here is ranked.
-          </Text>
-        </View>
+        <Text style={styles.note}>Nothing here is ranked. A photograph is seen by the people who follow you, in the order it was posted.</Text>
       </View>
     </Screen>
+  );
+}
+
+function Row({
+  icon,
+  title,
+  body,
+  onPress,
+  primary = false,
+  busy = false,
+}: {
+  icon: React.ComponentProps<typeof Feather>["name"];
+  title: string;
+  body: string;
+  onPress: () => void;
+  primary?: boolean;
+  busy?: boolean;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      onPress={onPress}
+      disabled={busy}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+    >
+      <View style={[styles.ring, primary && styles.ringPrimary]}>
+        {busy ? (
+          <ActivityIndicator size="small" color={colors.inkSoft} />
+        ) : (
+          <Feather name={icon} size={18} color={primary ? colors.onShutter : colors.ink} />
+        )}
+      </View>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <Text style={styles.rowBody}>{body}</Text>
+      </View>
+      <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+    </Pressable>
   );
 }
 
@@ -207,53 +229,34 @@ const styles = StyleSheet.create({
     color: colors.inkFaint,
     marginTop: spacing.xl,
   },
-  heading: { ...type.title, marginTop: spacing.sm },
-  sub: { ...type.caption, marginTop: spacing.xs, lineHeight: 19, marginBottom: spacing.xl },
+  eyebrowSpaced: { marginTop: spacing.lg, marginBottom: spacing.xs },
+  heading: { ...type.title, fontSize: 26, marginTop: spacing.sm },
+  sub: { ...type.caption, marginTop: spacing.xs, lineHeight: 19 },
 
-  shutter: {
+  rule: { height: 1, backgroundColor: colors.borderStrong, marginTop: spacing.xl },
+  hairline: { height: 1, backgroundColor: colors.border },
+
+  row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.lg,
-    backgroundColor: colors.shutter,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    gap: spacing.md,
+    paddingVertical: spacing.md + 2,
   },
-  shutterRing: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  rowPressed: { opacity: 0.6 },
+  ring: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(242, 235, 221, 0.35)",
+    borderColor: colors.borderStrong,
     alignItems: "center",
     justifyContent: "center",
   },
-  shutterText: { flex: 1 },
-  shutterTitle: { fontSize: 15, fontWeight: "600", color: colors.onShutter },
-  shutterSub: { fontSize: 12, color: "rgba(242, 235, 221, 0.6)", marginTop: 3 },
-
-  plates: { flexDirection: "row", gap: 1, marginTop: 1 },
-  plate: {
-    flex: 1,
-    backgroundColor: colors.paperRaised,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    gap: spacing.xs,
-  },
-  plateTitle: { fontSize: 14, fontWeight: "600", color: colors.ink, marginTop: spacing.xs },
-  plateSub: { fontSize: 11, color: colors.inkFaint },
+  ringPrimary: { backgroundColor: colors.shutter, borderColor: colors.shutter },
+  rowText: { flex: 1 },
+  rowTitle: { fontSize: 15, fontWeight: "600", color: colors.ink },
+  rowBody: { fontSize: 12, color: colors.inkFaint, marginTop: 2 },
 
   spacer: { flex: 1 },
-
-  archive: { marginTop: spacing.xl },
-  archiveRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md },
-  archiveText: { flex: 1 },
-  archiveTitle: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  archiveSub: { fontSize: 12, color: colors.inkFaint, marginTop: 2 },
-  archiveRule: { height: 1, backgroundColor: colors.border },
-
-  note: { paddingBottom: spacing.xl },
-  noteRule: { height: 1, width: 28, backgroundColor: colors.borderStrong, marginBottom: spacing.md },
-  noteText: { ...type.caption, fontSize: 12, lineHeight: 19, color: colors.inkFaint },
+  note: { ...type.caption, fontSize: 12, lineHeight: 18, color: colors.inkFaint, paddingBottom: spacing.xl },
 });
