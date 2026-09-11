@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import Feather from "@expo/vector-icons/Feather";
@@ -10,10 +11,9 @@ import { Avatar } from "@/components/Avatar";
 import { PostMedia } from "@/components/PostMedia";
 import { EmptyState } from "@/components/EmptyState";
 import { PostSkeleton } from "@/components/Skeleton";
-import { INLINE_COMMENTS } from "@/components/PostCard";
+import { Byline, INLINE_COMMENTS } from "@/components/PostCard";
 import { colors, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
-import { signatureDate } from "@/utils/time";
 import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
@@ -33,6 +33,8 @@ export default function PostDetail() {
   const { session } = useSession();
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId = session?.user?.id ?? "";
+  // Comments or a profile pushed on top of this screen pause its video.
+  const focused = useIsFocused();
 
   const postQ = useQuery({
     queryKey: ["post", id],
@@ -84,7 +86,7 @@ export default function PostDetail() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Stack.Screen options={{ title: "" }} />
 
-      <PostMedia post={post} onDoubleTap={() => like(true)} bare priority="high" />
+      <PostMedia post={post} onDoubleTap={() => like(true)} active={focused} bare priority="high" />
 
       <View style={styles.header}>
         <Pressable onPress={openProfile}>
@@ -94,13 +96,8 @@ export default function PostDetail() {
           <Text style={styles.username} numberOfLines={1}>
             {post.author.username}
           </Text>
-          {post.location ? (
-            <Text style={styles.location} numberOfLines={1}>
-              {post.location}
-            </Text>
-          ) : null}
+          <Byline post={post} />
         </Pressable>
-        <Text style={styles.date}>{signatureDate(post.taken_at ?? post.created_at)}</Text>
       </View>
 
       <View style={styles.actions}>
@@ -188,15 +185,6 @@ const styles = StyleSheet.create({
   },
   headerText: { flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  location: { fontSize: 12, color: colors.inkSoft, marginTop: 1 },
-  date: {
-    fontFamily: type.mono,
-    fontSize: 10,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: colors.inkFaint,
-    marginLeft: spacing.sm,
-  },
   actions: {
     flexDirection: "row",
     alignItems: "center",

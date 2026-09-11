@@ -1,5 +1,14 @@
-import React, { useMemo } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import React, { useMemo, useRef, useState } from "react";
+import {
+  FlatList,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+  type GestureResponderEvent,
+} from "react-native";
 import { Image } from "expo-image";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
@@ -23,35 +32,94 @@ interface Props {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** How far in and out a pinch can take the line. */
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 2.2;
+
 /**
  * A member's photographs hung off one line, by the day they were taken.
  *
  * The line runs down the middle of the page. Each photograph sits at the
  * end of a short branch to one side of it, the next one to the other,
- * with the capture date written along the branch — so the page reads as
- * a life in pictures rather than a log of posts. Years are lettered on
- * the line as they pass, and a long silence between two photographs is
- * said out loud instead of hidden.
+ * with the day it was taken written along the branch and the place under
+ * it — so the page reads as a life in pictures rather than a log of
+ * posts. Years are lettered on the line as they pass, and a long silence
+ * between two photographs is said out loud instead of hidden.
+ *
+ * Pinch to zoom: the frames grow and the line stretches with them, so a
+ * decade can be read at a glance or one summer looked at closely. It is a
+ * real re-layout, not a scaled screenshot, so nothing goes soft.
  */
 export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
   const { width } = useWindowDimensions();
   const rows = useMemo(() => buildTimeline(posts), [posts]);
-  // The branch is a quarter of the page; the frame takes the rest of its
-  // half, with a small margin so a landscape frame never touches the edge.
-  const branch = Math.round(width * 0.11);
-  const frame = Math.round(width / 2 - branch - spacing.lg - 6);
+
+  const [zoom, setZoom] = useState(1);
+  const [pinching, setPinching] = useState(false);
+  const pinch = useRef({ startDistance: 0, startZoom: 1, pending: 1, scheduled: false });
+
+  // Two fingers are a pinch and are claimed before the list can scroll
+  // with them; one finger is left entirely to the list.
+  const responder = useMemo(() => {
+    const distance = (e: GestureResponderEvent) => {
+      const [a, b] = e.nativeEvent.touches;
+      if (!a || !b) return 0;
+      return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+    };
+    const twoFingers = (e: GestureResponderEvent) => e.nativeEvent.touches.length === 2;
+    return PanResponder.create({
+      onStartShouldSetPanResponderCapture: twoFingers,
+      onMoveShouldSetPanResponderCapture: twoFingers,
+      onPanResponderGrant: (e) => {
+        pinch.current.startDistance = distance(e);
+        pinch.current.startZoom = pinch.current.pending;
+        setPinching(true);
+      },
+      onPanResponderMove: (e) => {
+        const d = distance(e);
+        if (!pinch.current.startDistance || !d) return;
+        const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, (pinch.current.startZoom * d) / pinch.current.startDistance));
+        pinch.current.pending = next;
+        // One layout per frame, however many touch events arrive.
+        if (!pinch.current.scheduled) {
+          pinch.current.scheduled = true;
+          requestAnimationFrame(() => {
+            pinch.current.scheduled = false;
+            setZoom(pinch.current.pending);
+          });
+        }
+      },
+      onPanResponderRelease: () => setPinching(false),
+      onPanResponderTerminate: () => setPinching(false),
+      onPanResponderTerminationRequest: () => false,
+    });
+  }, []);
+
+  // Each half of the page holds a frame at its outer edge and the branch
+  // filling the rest of the way to the spine. Zooming in grows the frame
+  // until the branch is just long enough to carry its words, and stretches
+  // the spacing on, so time itself opens up; zooming out does the reverse.
+  const half = width / 2 - spacing.lg - 6;
+  const frame = Math.round(Math.min(half - 40, Math.max(64, half * 0.75 * zoom)));
+  const branch = Math.round(half - frame);
+  const gap = Math.round(spacing.md * zoom);
 
   return (
-    <FlatList
-      data={rows}
-      keyExtractor={(r) => r.key}
-      ListHeaderComponent={header}
-      ListEmptyComponent={empty}
-      onRefresh={onRefresh}
-      refreshing={refreshing ?? false}
-      contentContainerStyle={[styles.list, rows.length > 0 && styles.listWithRows]}
-      renderItem={({ item }) => <Row row={item} branch={branch} frame={frame} onOpenPost={onOpenPost} />}
-    />
+    <View style={styles.root} {...responder.panHandlers}>
+      <FlatList
+        data={rows}
+        keyExtractor={(r) => r.key}
+        ListHeaderComponent={header}
+        ListEmptyComponent={empty}
+        onRefresh={onRefresh}
+        refreshing={refreshing ?? false}
+        scrollEnabled={!pinching}
+        contentContainerStyle={[styles.list, rows.length > 0 && styles.listWithRows]}
+        renderItem={({ item }) => (
+          <Row row={item} branch={branch} frame={frame} gap={gap} onOpenPost={onOpenPost} />
+        )}
+      />
+    </View>
   );
 }
 
@@ -59,11 +127,13 @@ function Row({
   row,
   branch,
   frame,
+  gap,
   onOpenPost,
 }: {
   row: TimelineRow;
   branch: number;
   frame: number;
+  gap: number;
   onOpenPost: (post: PostRow) => void;
 }) {
   if (row.kind === "year") {
@@ -90,49 +160,56 @@ function Row({
     : mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path);
   const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
   const ratio = aspectRatio(post.width, post.height);
-  const stamp = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+  const stamp = `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+  const place = post.location?.trim() || null;
   const left = side === "left";
 
-  const picture = (
-    <Pressable
-      onPress={() => onOpenPost(post)}
-      style={[styles.frame, { width: frame, aspectRatio: ratio }]}
-      accessibilityRole="imagebutton"
-      accessibilityLabel={`${stamp}, ${date.getFullYear()}`}
-    >
-      {url ? (
-        <Image
-          source={url}
-          style={[StyleSheet.absoluteFill, live ? ({ filter: live } as object) : null]}
-          contentFit="cover"
-          transition={80}
-          cachePolicy="memory-disk"
-          recyclingKey={post.id}
-        />
-      ) : null}
-      {isVideo ? (
-        <View style={styles.videoBadge}>
-          <Feather name="play" size={10} color="#FFFFFF" />
-        </View>
-      ) : null}
-    </Pressable>
-  );
+  const frameHeight = Math.round(frame / ratio);
+  // The branch meets the frame at its middle; the words hang under the
+  // frame, set toward the spine so the eye reads line → picture → words.
+  const armTop = gap + frameHeight / 2;
 
-  // The branch: a hairline from the spine to the frame, the date set along
-  // it on the spine side so the eye reads line → date → picture.
-  const arm = (
-    <View style={[styles.arm, { width: branch }, left ? styles.armLeft : styles.armRight]}>
-      <View style={styles.armLine} />
-      <Text style={[styles.date, left ? styles.dateLeft : styles.dateRight]} numberOfLines={1}>
+  const picture = (
+    <View style={[styles.column, { width: frame }, left ? styles.columnLeft : styles.columnRight]}>
+      <Pressable
+        onPress={() => onOpenPost(post)}
+        style={[styles.frame, { width: frame, height: frameHeight }]}
+        accessibilityRole="imagebutton"
+        accessibilityLabel={place ? `${stamp}, ${place}` : stamp}
+      >
+        {url ? (
+          <Image
+            source={url}
+            style={[StyleSheet.absoluteFill, live ? ({ filter: live } as object) : null]}
+            contentFit="cover"
+            transition={80}
+            cachePolicy="memory-disk"
+            recyclingKey={post.id}
+          />
+        ) : null}
+        {isVideo ? (
+          <View style={styles.videoBadge}>
+            <Feather name="play" size={10} color="#FFFFFF" />
+          </View>
+        ) : null}
+      </Pressable>
+      <Text style={[styles.date, left ? styles.textLeft : styles.textRight]} numberOfLines={1}>
         {stamp}
       </Text>
+      {place ? (
+        <Text style={[styles.place, left ? styles.textLeft : styles.textRight]} numberOfLines={1}>
+          {place}
+        </Text>
+      ) : null}
     </View>
   );
 
+  const arm = <View style={[styles.armLine, { width: branch, marginTop: armTop }]} />;
+
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, { paddingVertical: gap }]}>
       <View style={styles.line} />
-      <View style={styles.node} />
+      <View style={[styles.node, { top: armTop }]} />
       <View style={[styles.half, styles.halfLeft]}>
         {left ? (
           <>
@@ -154,6 +231,7 @@ function Row({
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   list: { paddingBottom: spacing.xxl },
   listWithRows: { paddingBottom: spacing.xxl * 2 },
 
@@ -171,11 +249,10 @@ const styles = StyleSheet.create({
   node: {
     position: "absolute",
     left: "50%",
-    top: "50%",
     width: 7,
     height: 7,
     marginLeft: -3.5,
-    marginTop: -3.5,
+    marginTop: -3,
     borderRadius: 4,
     backgroundColor: colors.paper,
     borderWidth: 1,
@@ -184,28 +261,30 @@ const styles = StyleSheet.create({
 
   row: {
     flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: spacing.md,
+    alignItems: "flex-start",
   },
-  half: { flex: 1, flexDirection: "row", alignItems: "center" },
+  half: { flex: 1, flexDirection: "row", alignItems: "flex-start" },
   halfLeft: { justifyContent: "flex-end" },
   halfRight: { justifyContent: "flex-start" },
 
-  arm: { justifyContent: "center" },
-  armLeft: { alignItems: "flex-start" },
-  armRight: { alignItems: "flex-end" },
-  armLine: { width: "100%", height: 1, backgroundColor: colors.borderStrong },
+  column: { gap: 3 },
+  columnLeft: { alignItems: "flex-end" },
+  columnRight: { alignItems: "flex-start" },
+  armLine: { height: 1, backgroundColor: colors.borderStrong },
   date: {
-    position: "absolute",
-    top: -15,
+    marginTop: 3,
     fontFamily: type.mono,
     fontSize: 9,
-    letterSpacing: 1.4,
+    letterSpacing: 1.2,
     textTransform: "uppercase",
     color: colors.inkSoft,
   },
-  dateLeft: { right: 6 },
-  dateRight: { left: 6 },
+  place: {
+    fontSize: 11,
+    color: colors.inkFaint,
+  },
+  textLeft: { textAlign: "right" },
+  textRight: { textAlign: "left" },
 
   frame: {
     backgroundColor: colors.paperSunken,

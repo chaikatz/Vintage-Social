@@ -64,3 +64,9 @@ export function signatureLine(post: {
   const place = post.location?.trim();
   return place ? `${date} · ${place}` : date;
 }
+
+/** `Jan 23, 2003` — the date as it sits after a place: `NYC · Jan 23, 2003`. */
+export function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}

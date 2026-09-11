@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -19,15 +20,20 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { Image } from "expo-image";
 import Feather from "@expo/vector-icons/Feather";
 import { Button } from "@/components/Button";
-import { TextField } from "@/components/TextField";
 import { DateStamp } from "@/components/DateStamp";
-import { colors, hairline, radii, spacing, type } from "@/theme";
+import { colors, spacing, type } from "@/theme";
 import { FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters";
 import type { FilteredImageHandle, FilterSpec } from "@/filters";
 import { FilterOverlay } from "@/components/FilterOverlay";
 import { cssFilterFor } from "@/filters/cssFilter";
 import { bakeVideo, canBakeVideo } from "@/filters/bakeVideo";
-import { ownedPath, prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
+import {
+  mediaUrlString,
+  ownedPath,
+  prepareFeedImage,
+  prepareThumbnail,
+  uploadFile,
+} from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { createPost } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
@@ -41,6 +47,10 @@ import { describePublishFailure, publishStep } from "@/utils/publishError";
  * filter on-device before upload — and so is video, where the build can
  * (see `bakeVideo`) — and the stamp shows when the shutter fired rather
  * than when the post was made.
+ *
+ * Laid out like a print being finished: the photograph full-bleed at the
+ * top, a contact sheet of the films under it, then the two lines that go
+ * on the back. Nothing here is boxed; the rules are hairlines.
  */
 export default function Compose() {
   const router = useRouter();
@@ -67,8 +77,15 @@ export default function Compose() {
   const [caption, setCaption] = useState("");
   const [location, setLocation] = useState("");
   const [busy, setBusy] = useState(false);
+  // What publishing is doing right now, said under the button. A bake and
+  // an upload can take a few seconds each; a spinner alone reads as stuck.
+  const [stage, setStage] = useState<string | null>(null);
 
   const filteredRef = useRef<FilteredImageHandle>(null);
+  // The plain photograph sits under the renderer and shows at once; the
+  // filtered frame fades in over it when the GPU has the picture. Nobody
+  // waits on a black rectangle.
+  const [rendererReady, setRendererReady] = useState(false);
   // The renderer could not read the file. Rare now that library originals
   // are re-encoded first, but a black frame must never be what gets posted.
   const [renderFailed, setRenderFailed] = useState(false);
@@ -79,12 +96,12 @@ export default function Compose() {
   const bakes = isVideo && canBakeVideo();
   // A video's poster frame, pulled once: it makes the filter tray show real
   // frames instead of grey boxes, and it's the thumbnail the grid will use.
-  const [poster, setPoster] = useState<string | null>(null);
+  const [poster, setPoster] = useState<{ uri: string; width: number; height: number } | null>(null);
   useEffect(() => {
     if (!isVideo || !uri) return;
     let live = true;
     VideoThumbnails.getThumbnailAsync(uri, { time: 500 })
-      .then((p) => live && setPoster(p.uri))
+      .then((p) => live && setPoster({ uri: p.uri, width: p.width, height: p.height }))
       .catch(() => undefined);
     return () => {
       live = false;
@@ -140,6 +157,7 @@ export default function Compose() {
         // recorded and the look is applied at play time, as it always was.
         let source = uri;
         if (bakes && !isDemoMode()) {
+          setStage("Applying the film to the clip…");
           try {
             const out = await publishStep("render", () => bakeVideo(uri, filter));
             source = out.uri;
@@ -155,10 +173,11 @@ export default function Compose() {
         // The poster frame is what the profile grid draws — a grid square
         // can't play a movie — so it is made either way, uploaded or not.
         // Cut from the finished clip, so the square matches what plays.
+        setStage("Cutting the poster frame…");
         let posterUri: string | null = null;
         try {
-          const poster = await VideoThumbnails.getThumbnailAsync(source, { time: 500 });
-          posterUri = (await prepareThumbnail(poster.uri)).uri;
+          const frame = await VideoThumbnails.getThumbnailAsync(source, { time: 500 });
+          posterUri = (await prepareThumbnail(frame.uri)).uri;
         } catch {
           posterUri = null; // a missing poster frame shouldn't block publishing
         }
@@ -167,6 +186,7 @@ export default function Compose() {
           mediaPath = uri; // demo mode keeps the local recording, no upload
           thumbPath = posterUri;
         } else {
+          setStage("Uploading the clip…");
           const ext = source.split("?")[0].split(".").pop()?.toLowerCase() ?? "mp4";
           mediaPath = await publishStep("media-upload", () =>
             uploadFile(
@@ -188,6 +208,7 @@ export default function Compose() {
         }
         // Photos are always baked through the GL renderer, on every platform:
         // the filter has to end up in the pixels, not just in the metadata.
+        setStage("Baking the film in…");
         const shot = await publishStep("render", async () => {
           const rendered = await filteredRef.current?.snapshot();
           if (!rendered) throw new Error("The filter renderer isn’t ready yet — try again.");
@@ -200,6 +221,7 @@ export default function Compose() {
           mediaPath = feedImage.uri; // keep the baked file locally, no upload
         } else {
           const thumb = await publishStep("resize", () => prepareThumbnail(shot.uri));
+          setStage("Uploading…");
           mediaPath = await publishStep("media-upload", () =>
             uploadFile("media", ownedPath(userId, `${postId}.jpg`), feedImage.uri, "image/jpeg"),
           );
@@ -209,6 +231,7 @@ export default function Compose() {
         }
       }
 
+      setStage("Saving…");
       await publishStep("post-insert", () =>
         createPost({
           id: postId,
@@ -228,6 +251,22 @@ export default function Compose() {
         }),
       );
 
+      // Warm the image cache with what was just uploaded, so the feed and
+      // the grid draw the new post at once instead of fetching it back
+      // from the CDN. Best-effort and brief: publishing never waits on it.
+      if (!isDemoMode()) {
+        const warm = [
+          isVideo ? null : mediaUrlString("media", mediaPath),
+          mediaUrlString("thumbnails", thumbPath),
+        ].filter((u): u is string => Boolean(u));
+        if (warm.length > 0) {
+          await Promise.race([
+            Image.prefetch(warm, "memory-disk").catch(() => false),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+          ]);
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["user-posts"] });
       queryClient.invalidateQueries({ queryKey: ["explore"] });
@@ -241,10 +280,14 @@ export default function Compose() {
       showAlert("Couldn’t publish", describePublishFailure(err));
     } finally {
       setBusy(false);
+      setStage(null);
     }
   };
 
   const stampLabel = dateStampText(stampIso);
+  // What the contact sheet and the still are drawn from.
+  const still = isVideo ? poster : { uri, width: width ?? 0, height: height ?? 0 };
+  const showStill = isVideo ? bakes && Boolean(poster) && !motion : !renderFailed;
 
   return (
     <KeyboardAvoidingView
@@ -255,29 +298,33 @@ export default function Compose() {
         style={styles.root}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
-        {/* The frame, full bleed, with the film stock struck across the
-            bottom-left the way a lab writes it on the sleeve. */}
+        {/* The frame, full bleed. The plain picture underneath appears at
+            once; the filtered render fades over it when the GPU is ready. */}
         <View style={[styles.preview, { aspectRatio: previewRatio }]}>
-          {isVideo ? (
-            bakes && poster && !motion ? (
-              // One frame through the same renderer that bakes photographs:
-              // exactly the look the clip will be posted with.
-              <FilteredImage uri={poster} filter={filter} style={StyleSheet.absoluteFill} />
-            ) : (
-              <VideoPreview uri={uri} filter={filter} muted={previewMuted} />
-            )
-          ) : renderFailed ? (
-            <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" />
-          ) : (
-            <FilteredImage
-              ref={filteredRef}
-              uri={uri}
-              filter={filter}
-              style={StyleSheet.absoluteFill}
-              onError={() => setRenderFailed(true)}
-            />
-          )}
+          {still?.uri ? (
+            <Image source={still.uri} style={StyleSheet.absoluteFill} contentFit="cover" />
+          ) : null}
+          {isVideo && !showStill ? (
+            <VideoPreview uri={uri} filter={filter} muted={previewMuted} />
+          ) : null}
+          {showStill && still?.uri ? (
+            <View style={[StyleSheet.absoluteFill, { opacity: rendererReady ? 1 : 0 }]}>
+              <FilteredImage
+                ref={isVideo ? undefined : filteredRef}
+                uri={still.uri}
+                width={still.width}
+                height={still.height}
+                filter={filter}
+                style={StyleSheet.absoluteFill}
+                onReady={() => setRendererReady(true)}
+                onError={() => {
+                  if (!isVideo) setRenderFailed(true);
+                }}
+              />
+            </View>
+          ) : null}
           {stampOn ? <DateStamp iso={stampIso} /> : null}
           <View pointerEvents="none" style={styles.previewFilm}>
             <Text style={styles.previewFilmText}>{filter.name}</Text>
@@ -287,13 +334,18 @@ export default function Compose() {
               {bakes && poster ? (
                 <Pressable
                   style={styles.previewControl}
-                  onPress={() => setMotion((m) => !m)}
+                  onPress={() => {
+                    // Coming back to the still, the renderer starts over;
+                    // let it fade in again rather than flash a blank frame.
+                    setRendererReady(false);
+                    setMotion((m) => !m);
+                  }}
                   accessibilityLabel={motion ? "Show the still" : "Play the clip"}
                 >
                   <Feather name={motion ? "pause" : "play"} size={14} color={colors.onShutter} />
                 </Pressable>
               ) : null}
-              {!bakes || !poster || motion ? (
+              {!showStill ? (
                 <Pressable
                   style={styles.previewControl}
                   onPress={() => setPreviewMuted((m) => !m)}
@@ -306,7 +358,12 @@ export default function Compose() {
           ) : null}
         </View>
 
-        <SectionLabel>Film</SectionLabel>
+        {/* The contact sheet: every film on the same frame, the chosen one
+            underscored in amber. No boxes — a strip of small prints. */}
+        <View style={styles.sheetHead}>
+          <Text style={styles.eyebrow}>Film</Text>
+          <Text style={styles.sheetName}>{filter.name}</Text>
+        </View>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -315,16 +372,27 @@ export default function Compose() {
           {FILTERS.map((f) => {
             const selected = f.id === filterId;
             return (
-              <Pressable key={f.id} style={styles.swatchWrap} onPress={() => selectFilter(f.id)}>
-                <View style={[styles.swatch, selected && styles.swatchSelected]}>
-                  {!isVideo || poster ? (
-                    <FilteredImage uri={poster ?? uri} filter={f} style={styles.swatchImage} />
-                  ) : (
-                    <View style={[styles.swatchImage, styles.swatchVideo]} />
-                  )}
+              <Pressable
+                key={f.id}
+                style={styles.swatchWrap}
+                onPress={() => selectFilter(f.id)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+              >
+                <View style={styles.swatch}>
+                  {still?.uri ? (
+                    <>
+                      <Image source={still.uri} style={StyleSheet.absoluteFill} contentFit="cover" />
+                      <FilteredImage
+                        uri={still.uri}
+                        width={still.width}
+                        height={still.height}
+                        filter={f}
+                        style={StyleSheet.absoluteFill}
+                      />
+                    </>
+                  ) : null}
                 </View>
-                {/* The selected stock is underscored in amber rather than
-                    boxed in — a mark on the contact sheet, not a button. */}
                 <View style={[styles.swatchRule, selected && styles.swatchRuleOn]} />
                 <Text style={[styles.swatchName, selected && styles.swatchNameSelected]} numberOfLines={1}>
                   {f.name}
@@ -335,24 +403,25 @@ export default function Compose() {
         </ScrollView>
         <Text style={styles.filterDescription}>{filter.description}</Text>
         {isVideo ? (
-          <Text style={styles.videoNote}>
+          <Text style={styles.note}>
             {bakes
               ? "The film goes onto the whole clip when you post. The still shows it exactly; play shows the clip with a close approximation."
               : "On video the filter is applied as it plays rather than burned into the file, so your original footage is kept intact."}
           </Text>
         ) : renderFailed ? (
-          <Text style={styles.videoNote}>
+          <Text style={styles.note}>
             This photograph couldn’t be read by the filter renderer. Go back and choose it again — if it
             keeps happening, pick it from the library instead.
           </Text>
         ) : null}
 
-        {/* Available on every filter — the preset only decides the default. */}
-        <SectionLabel>Date stamp</SectionLabel>
+        {/* The back of the print: the stamp, the place, the note. */}
+        <View style={styles.rule} />
         <Pressable style={styles.stampRow} onPress={() => setStampOn(!stampOn)}>
           <View style={styles.grow}>
+            <Text style={styles.eyebrow}>Date stamp</Text>
             <Text style={[styles.stampValue, !stampOn && styles.stampValueOff]}>{stampLabel}</Text>
-            <Text style={styles.stampHint}>
+            <Text style={styles.hint}>
               {takenAt
                 ? "Read from the file — when the shutter actually fired."
                 : "This one carried no capture date, so today’s is used."}
@@ -366,21 +435,30 @@ export default function Compose() {
           />
         </Pressable>
 
-        <SectionLabel>The note</SectionLabel>
-        <View style={styles.fields}>
-          <TextField
-            label="Location"
+        <View style={styles.rule} />
+        <View style={styles.field}>
+          <Text style={styles.eyebrow}>Where</Text>
+          <TextInput
             value={location}
             onChangeText={(t) => setLocation(t.slice(0, MAX_LOCATION_LENGTH))}
-            placeholder="Optional — a town, a street, a bar."
+            placeholder="A town, a street, a bar — optional"
+            placeholderTextColor={colors.inkFaint}
             autoCapitalize="words"
+            autoCorrect={false}
+            returnKeyType="done"
+            style={styles.input}
           />
-          <TextField
-            label="Caption"
+        </View>
+        <View style={styles.hairline} />
+        <View style={styles.field}>
+          <Text style={styles.eyebrow}>Caption</Text>
+          <TextInput
             value={caption}
             onChangeText={(t) => setCaption(t.slice(0, MAX_CAPTION_LENGTH))}
-            multiline
             placeholder="Optional — keep it quiet."
+            placeholderTextColor={colors.inkFaint}
+            multiline
+            style={[styles.input, styles.inputMultiline]}
           />
         </View>
       </ScrollView>
@@ -389,18 +467,9 @@ export default function Compose() {
           never scrolled off the bottom. */}
       <View style={styles.footer}>
         <Button title="Share to VINTAGE" onPress={publish} loading={busy} />
+        {stage ? <Text style={styles.stage}>{stage}</Text> : null}
       </View>
     </KeyboardAvoidingView>
-  );
-}
-
-/** A hairline ruled across the page with its name set into the left of it. */
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <View style={styles.sectionLabel}>
-      <Text style={styles.sectionLabelText}>{children}</Text>
-      <View style={styles.sectionRule} />
-    </View>
   );
 }
 
@@ -429,6 +498,8 @@ function VideoPreview({ uri, filter, muted }: { uri: string; filter: FilterSpec;
   );
 }
 
+const SWATCH = 64;
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   scroll: { paddingBottom: spacing.xl },
@@ -440,6 +511,14 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   previewFilm: { position: "absolute", left: spacing.lg, bottom: spacing.md },
+  previewFilmText: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 2.2,
+    textTransform: "uppercase",
+    color: colors.onShutter,
+    opacity: 0.85,
+  },
   previewControls: {
     position: "absolute",
     right: spacing.md,
@@ -450,50 +529,37 @@ const styles = StyleSheet.create({
   previewControl: {
     width: 30,
     height: 30,
-    borderRadius: radii.round,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(28, 25, 21, 0.6)",
   },
-  previewFilmText: {
-    fontFamily: type.mono,
-    fontSize: 10,
-    letterSpacing: 2.2,
-    textTransform: "uppercase",
-    color: colors.onShutter,
-    opacity: 0.85,
-  },
 
-  sectionLabel: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.xl,
-    marginBottom: spacing.md,
-  },
-  sectionLabelText: {
+  eyebrow: {
     fontFamily: type.mono,
     fontSize: 10,
     letterSpacing: 2.4,
     textTransform: "uppercase",
     color: colors.inkFaint,
   },
-  sectionRule: { flex: 1, height: 1, backgroundColor: colors.border },
+  sheetHead: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  sheetName: { fontFamily: type.serif, fontSize: 17, color: colors.ink },
 
   trayContent: { paddingHorizontal: spacing.lg, gap: spacing.md },
-  swatchWrap: { alignItems: "center", width: 72 },
+  swatchWrap: { alignItems: "center", width: SWATCH },
   swatch: {
-    width: 72,
-    height: 72,
-    borderRadius: radii.sm,
+    width: SWATCH,
+    height: SWATCH,
     overflow: "hidden",
     backgroundColor: colors.paperSunken,
-    ...hairline,
   },
-  swatchSelected: { borderColor: colors.ink },
-  swatchImage: { width: 70, height: 70 },
-  swatchVideo: { backgroundColor: colors.paperSunken },
   swatchRule: {
     height: 2,
     width: 22,
@@ -507,20 +573,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: "uppercase",
     color: colors.inkFaint,
-    marginTop: 5,
+    marginTop: 4,
   },
   swatchNameSelected: { color: colors.ink },
 
   filterDescription: {
-    ...type.body,
     fontFamily: type.serif,
     fontSize: 14,
+    fontStyle: "italic",
     lineHeight: 20,
     color: colors.inkSoft,
     paddingHorizontal: spacing.lg,
     marginTop: spacing.md,
   },
-  videoNote: {
+  note: {
     ...type.caption,
     fontSize: 12,
     color: colors.inkFaint,
@@ -528,29 +594,41 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
 
+  rule: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.lg, marginTop: spacing.xl },
+  hairline: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.lg },
+
   stampRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.lg,
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
   },
   stampValue: {
     fontFamily: type.mono,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "700",
     letterSpacing: 1,
     color: colors.stamp,
     textShadowColor: colors.stampGlow,
     textShadowRadius: 5,
     textShadowOffset: { width: 0, height: 0 },
+    marginTop: spacing.xs,
   },
   stampValueOff: {
     color: colors.inkFaint,
     textShadowColor: "transparent",
   },
-  stampHint: { ...type.caption, fontSize: 12, color: colors.inkFaint, marginTop: 3 },
+  hint: { ...type.caption, fontSize: 12, color: colors.inkFaint, marginTop: 3 },
 
-  fields: { paddingHorizontal: spacing.lg },
+  field: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  input: {
+    fontSize: 15,
+    color: colors.ink,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: 0,
+  },
+  inputMultiline: { minHeight: 72, textAlignVertical: "top" },
 
   footer: {
     paddingHorizontal: spacing.lg,
@@ -560,4 +638,5 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.paper,
   },
+  stage: { ...type.caption, fontSize: 12, color: colors.inkFaint, textAlign: "center", marginTop: spacing.sm },
 });

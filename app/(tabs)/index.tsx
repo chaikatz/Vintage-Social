@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
@@ -35,6 +36,11 @@ export default function Home() {
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
     usePostActions(userId, postIds);
 
+  // Leaving the feed — another tab, a profile, a single post — pauses it.
+  // The tab stays mounted underneath, and a clip you can no longer see
+  // should not go on talking.
+  const focused = useIsFocused();
+
   // Only the card actually on screen plays its video — see PostMedia for why
   // letting them all autoplay leaves some of them stuck on a black frame.
   const [visibleId, setVisibleId] = useState<string | null>(null);
@@ -59,10 +65,10 @@ export default function Home() {
         onShare={onShare}
         comments={commentsFor(item)}
         onMore={(p) => onMore(p)}
-        active={item.id === visibleId}
+        active={focused && item.id === visibleId}
       />
     ),
-    [likeCountFor, isLiked, toggleLike, onOpenComments, onShare, commentsFor, onMore, router, visibleId],
+    [likeCountFor, isLiked, toggleLike, onOpenComments, onShare, commentsFor, onMore, router, visibleId, focused],
   );
 
   return (

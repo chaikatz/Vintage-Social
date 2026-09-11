@@ -1,7 +1,6 @@
 import { Platform } from "react-native";
 import * as ImageManipulator from "expo-image-manipulator";
 import { File } from "expo-file-system";
-import { decode } from "base64-arraybuffer";
 import { supabase } from "@/lib/supabase";
 import { DEMO_PREFIX } from "@/demo/photos";
 import { PHOTOS } from "@/demo/photoAssets";
@@ -105,14 +104,15 @@ export async function uploadFile(
   contentType: string,
   { upsert = false }: { upsert?: boolean } = {},
 ): Promise<string> {
-  let body: ArrayBuffer;
+  let body: ArrayBuffer | Uint8Array;
   if (Platform.OS === "web") {
     // expo-file-system's File API is native-only; browsers read blob/data
     // uris through fetch.
     body = await (await fetch(localUri)).arrayBuffer();
   } else {
-    const base64 = await new File(localUri).base64();
-    body = decode(base64);
+    // Straight bytes. Going through base64 meant a video was read, grown
+    // by a third, and decoded again before a single byte left the phone.
+    body = await new File(localUri).bytes();
   }
   const { error } = await supabase.storage
     .from(bucket)

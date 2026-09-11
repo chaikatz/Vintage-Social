@@ -6,9 +6,13 @@ import type { FilteredImageHandle } from "./FilteredImage";
 
 interface Props {
   uri: string;
+  /** Accepted for parity with the GL renderer; the browser covers the frame on its own. */
+  width?: number | null;
+  height?: number | null;
   filter: FilterSpec;
   style?: StyleProp<ViewStyle>;
   onReady?: () => void;
+  onError?: (error: Error) => void;
 }
 
 /**

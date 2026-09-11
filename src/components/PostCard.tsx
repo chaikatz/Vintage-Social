@@ -4,7 +4,7 @@ import * as Haptics from "expo-haptics";
 import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { colors, spacing, type } from "@/theme";
-import { signatureDate } from "@/utils/time";
+import { shortDate } from "@/utils/time";
 import { Avatar } from "./Avatar";
 import { PostMedia } from "./PostMedia";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
@@ -49,10 +49,10 @@ export function PostCard({
 
   return (
     <View style={styles.card}>
-      {/* Who and where on the left, when on the right: the name with the
-          place under it, and across from them the day the shutter fired,
-          set in tracked mono like a date written on the back of a print.
-          Nothing else — the film stock is in the picture. */}
+      {/* The name, and under it where and when: `NYC · Jan 23, 2003`, the
+          way a place and a date are written on the back of a print. With no
+          place the date simply starts the line. Nothing else — the film
+          stock is in the picture. */}
       <View style={styles.header}>
         <Pressable onPress={() => onOpenProfile(post.author.username)}>
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
@@ -61,13 +61,8 @@ export function PostCard({
           <Text style={styles.username} numberOfLines={1}>
             {post.author.username}
           </Text>
-          {post.location ? (
-            <Text style={styles.location} numberOfLines={1}>
-              {post.location}
-            </Text>
-          ) : null}
+          <Byline post={post} />
         </Pressable>
-        <Text style={styles.date}>{signatureDate(post.taken_at ?? post.created_at)}</Text>
       </View>
 
       <PostMedia post={post} onDoubleTap={() => like(true)} active={active} />
@@ -130,6 +125,22 @@ export function PostCard({
   );
 }
 
+/** `NYC · Jan 23, 2003` — or just the date, when no place was written. */
+export function Byline({ post }: { post: { taken_at: string | null; created_at: string; location: string | null } }) {
+  const place = post.location?.trim();
+  return (
+    <Text style={styles.byline} numberOfLines={1}>
+      {place ? (
+        <>
+          <Text style={styles.place}>{place}</Text>
+          <Text style={styles.dot}> · </Text>
+        </>
+      ) : null}
+      <Text style={styles.date}>{shortDate(post.taken_at ?? post.created_at)}</Text>
+    </Text>
+  );
+}
+
 const styles = StyleSheet.create({
   card: { marginBottom: spacing.xl, backgroundColor: colors.paper },
   header: {
@@ -141,14 +152,15 @@ const styles = StyleSheet.create({
   },
   headerText: { flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  location: { fontSize: 12, color: colors.inkSoft, marginTop: 1 },
+  byline: { marginTop: 1, fontSize: 12, color: colors.inkSoft },
+  place: { fontSize: 12, color: colors.inkSoft },
+  dot: { fontSize: 12, color: colors.inkFaint },
   date: {
     fontFamily: type.mono,
     fontSize: 10,
     letterSpacing: 1.2,
     textTransform: "uppercase",
     color: colors.inkFaint,
-    marginLeft: spacing.sm,
   },
   actions: {
     flexDirection: "row",

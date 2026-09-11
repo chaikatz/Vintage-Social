@@ -85,3 +85,11 @@ describe("signature line", () => {
     expect(signatureLine({ taken_at: null, created_at: "2026-01-05T00:00:00", location: "  " })).toBe("January 5, 2026");
   });
 });
+
+describe("shortDate", () => {
+  it("writes the date the way it sits after a place", async () => {
+    const { shortDate } = await import("@/utils/time");
+    expect(shortDate("2003-01-23T15:00:00")).toBe("Jan 23, 2003");
+    expect(shortDate("2019-12-01T09:00:00")).toBe("Dec 1, 2019");
+  });
+});

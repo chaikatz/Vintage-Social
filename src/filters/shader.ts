@@ -10,9 +10,16 @@
 
 export const VERTEX_SHADER = `
 attribute vec2 aPosition;
+uniform vec2 uUVScale;
+uniform vec2 uUVOffset;
 varying vec2 vUV;
+varying vec2 vFrame;
 void main() {
-  vUV = aPosition * 0.5 + 0.5;
+  vFrame = aPosition * 0.5 + 0.5;
+  // The frame's corner-to-corner UV, narrowed to the part of the texture
+  // that covers the frame — a photograph is cropped to the frame the way a
+  // print is trimmed, never stretched to fit it.
+  vUV = vFrame * uUVScale + uUVOffset;
   // Flip Y so image textures render upright.
   gl_Position = vec4(aPosition.x, -aPosition.y, 0.0, 1.0);
 }
@@ -31,6 +38,7 @@ uniform float uGrain;
 uniform float uGrainSeed;
 
 varying vec2 vUV;
+varying vec2 vFrame;
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7)) + uGrainSeed) * 43758.5453);
@@ -46,15 +54,17 @@ void main() {
   float lift = uFade * 0.38;
   color.rgb = mix(color.rgb, uFadeColor, lift * (1.0 - color.rgb));
 
-  // 3. Vignette: gentle radial falloff, strongest in the corners.
-  vec2 centered = vUV - 0.5;
+  // 3. Vignette: gentle radial falloff, strongest in the corners of the
+  //    frame — measured on the frame, not the texture, so a crop is still
+  //    darkened at its own edges.
+  vec2 centered = vFrame - 0.5;
   float radial = smoothstep(0.35, 0.95, length(centered) * 1.35);
   color.rgb *= 1.0 - radial * uVignette * 0.55;
 
   // 4. Grain: monochrome luminance noise, slightly stronger in midtones.
   float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
   float midweight = 1.0 - abs(luma - 0.5) * 1.2;
-  float noise = hash(vUV * 512.0) - 0.5;
+  float noise = hash(vFrame * 512.0) - 0.5;
   color.rgb += noise * uGrain * 0.14 * max(midweight, 0.25);
 
   gl_FragColor = vec4(clamp(color.rgb, 0.0, 1.0), color.a);

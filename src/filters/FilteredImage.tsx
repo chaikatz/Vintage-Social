@@ -10,6 +10,7 @@ import { StyleProp, ViewStyle } from "react-native";
 import { GLView, ExpoWebGLRenderingContext } from "expo-gl";
 import { Asset } from "expo-asset";
 import { buildColorMatrix, toShaderUniforms } from "./colorMatrix";
+import { coverUV } from "./coverFit";
 import { FRAGMENT_SHADER, VERTEX_SHADER } from "./shader";
 import type { FilterSpec } from "./types";
 
@@ -21,6 +22,14 @@ export interface FilteredImageHandle {
 interface Props {
   /** Local or remote image uri. */
   uri: string;
+  /**
+   * The photograph's own size. With it the picture is cropped to cover
+   * the view like a print trimmed to a frame; without it the renderer has
+   * to assume the two match, and a portrait in a 4:5 frame comes out
+   * squashed.
+   */
+  width?: number | null;
+  height?: number | null;
   filter: FilterSpec;
   style?: StyleProp<ViewStyle>;
   onReady?: () => void;
@@ -34,16 +43,13 @@ interface GLState {
   program: WebGLProgram;
 }
 
-/**
- * GPU renderer for VINTAGE filters. Used at full size in the create flow
- * (live preview + publish-time bake) and at thumbnail size in the filter
- * tray. Not used in feeds — feeds show the baked JPEG.
- */
 export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
-  function FilteredImage({ uri, filter, style, onReady, onError }, ref) {
+  function FilteredImage({ uri, width, height, filter, style, onReady, onError }, ref) {
     const glViewRef = useRef<GLView>(null);
     const stateRef = useRef<GLState | null>(null);
     const filterRef = useRef(filter);
+    const sizeRef = useRef({ width: width ?? null, height: height ?? null });
+    sizeRef.current = { width: width ?? null, height: height ?? null };
     // A stable seed per mount keeps grain still between re-renders but
     // unique per photo.
     const grainSeed = useMemo(() => Math.random() * 100, []);
@@ -58,6 +64,14 @@ export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
 
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
         gl.useProgram(program);
+        const fit = coverUV(
+          sizeRef.current.width,
+          sizeRef.current.height,
+          gl.drawingBufferWidth,
+          gl.drawingBufferHeight,
+        );
+        gl.uniform2fv(gl.getUniformLocation(program, "uUVScale"), new Float32Array(fit.scale));
+        gl.uniform2fv(gl.getUniformLocation(program, "uUVOffset"), new Float32Array(fit.offset));
         gl.uniformMatrix4fv(
           gl.getUniformLocation(program, "uColorMatrix"),
           false,
@@ -78,11 +92,11 @@ export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
       [grainSeed],
     );
 
-    // Redraw whenever the selected filter changes.
+    // Redraw whenever the selected filter or the stated size changes.
     useEffect(() => {
       filterRef.current = filter;
       if (stateRef.current) draw(stateRef.current);
-    }, [filter, draw]);
+    }, [filter, width, height, draw]);
 
     const setUp = useCallback(
       async (gl: ExpoWebGLRenderingContext) => {

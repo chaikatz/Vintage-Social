@@ -97,9 +97,14 @@ private final class Baker {
     let composition = AVMutableVideoComposition(asset: asset, applyingCIFiltersWithHandler: { request in
       var image = request.sourceImage
       let extent = image.extent
-      if extent.width > 0, abs(extent.width - renderSize.width) > 0.5 {
-        let scale = renderSize.width / extent.width
-        image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+      // Fit the frame without ever changing its shape: one scale for both
+      // axes, centred. A frame that already matches passes straight through.
+      if extent.width > 0, extent.height > 0,
+        abs(extent.width - renderSize.width) > 0.5 || abs(extent.height - renderSize.height) > 0.5 {
+        let scale = min(renderSize.width / extent.width, renderSize.height / extent.height)
+        let dx = (renderSize.width - extent.width * scale) / 2 - extent.origin.x * scale
+        let dy = (renderSize.height - extent.height * scale) / 2 - extent.origin.y * scale
+        image = image.transformed(by: CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: dx, ty: dy))
       }
       image = image.cropped(to: frame)
 
