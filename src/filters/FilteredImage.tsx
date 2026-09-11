@@ -139,7 +139,6 @@ export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
         // re-encoded before they get here (see prepareForDarkroom).
         const asset = Asset.fromURI(uri);
         await asset.downloadAsync();
-        if (!asset.localUri) throw new Error("The photograph could not be read");
         const texture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -176,6 +175,11 @@ export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
 
     useImperativeHandle(ref, () => ({
       async snapshot() {
+        // The texture is still arriving on a big photograph; give it a
+        // moment rather than refusing the post outright.
+        for (let waited = 0; !stateRef.current && waited < 4000; waited += 100) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
         const view = glViewRef.current;
         if (!view || !stateRef.current) {
           throw new Error("Filter renderer is not ready yet");

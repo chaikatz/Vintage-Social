@@ -55,6 +55,15 @@
           "savePhotosPermission": "VINTAGE does not save anything to your library.",
           "isAccessMediaLocationEnabled": false
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "VINTAGE does not track where you are. It only turns the place you type on a post into a point on your own map.",
+          "locationAlwaysAndWhenInUsePermission": "VINTAGE does not track where you are. It only turns the place you type on a post into a point on your own map.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
       ]
     ],
     "experiments": {

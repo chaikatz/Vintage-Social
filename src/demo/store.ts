@@ -17,8 +17,11 @@ import type {
   PostRow,
   PostWithAuthor,
   ProfileRow,
+  PostTagRow,
+  PostTagWithMember,
   ReportRow,
   ReportStatus,
+  TagStatus,
 } from "@/types/db";
 import { FOUNDING_MEMBER_LIMIT } from "@/utils/membership";
 import {
@@ -56,6 +59,7 @@ interface DemoState {
   moderationActions: ModerationActionRow[];
   conversations: ConversationRow[];
   messages: MessageRow[];
+  tags: PostTagRow[];
   currentUserId: string | null;
 }
 
@@ -75,6 +79,7 @@ function initialState(): DemoState {
     applications: clone(DEMO_APPLICATIONS),
     invites: clone(DEMO_INVITES),
     reports: clone(DEMO_REPORTS),
+    tags: [],
     moderationActions: [],
     conversations: clone(DEMO_CONVERSATIONS),
     messages: clone(DEMO_MESSAGES),
@@ -1028,4 +1033,67 @@ export function demoConversationPeer(conversationId: string, userId: string): Pr
   if (!c) return null;
   const peerId = c.user_a === userId ? c.user_b : c.user_a;
   return clone(state.profiles.find((p) => p.id === peerId) ?? null);
+}
+
+// ---------------------------------------------------------------------------
+// tags: "you were there", pending until the member says so
+// ---------------------------------------------------------------------------
+export function demoTagMembers(postId: string, taggedBy: string, userIds: string[]): void {
+  const now = new Date().toISOString();
+  for (const userId of userIds) {
+    if (state.tags.some((t) => t.post_id === postId && t.user_id === userId)) continue;
+    state.tags.push({ post_id: postId, user_id: userId, tagged_by: taggedBy, status: "pending", created_at: now, decided_at: null });
+    state.activity.push({
+      id: newId("activity"),
+      recipient_id: userId,
+      actor_id: taggedBy,
+      type: "tag",
+      post_id: postId,
+      comment_id: null,
+      message: null,
+      created_at: now,
+      read_at: null,
+    });
+  }
+  emit();
+}
+
+export function demoFetchPostTags(postId: string): PostTagWithMember[] {
+  const me = state.currentUserId;
+  return state.tags
+    .filter((t) => t.post_id === postId && (t.status === "accepted" || t.user_id === me || t.tagged_by === me))
+    .map((t) => {
+      const p = state.profiles.find((x) => x.id === t.user_id);
+      return {
+        ...clone(t),
+        member: { id: t.user_id, username: p?.username ?? "member", full_name: p?.full_name ?? null, avatar_url: p?.avatar_url ?? null },
+      };
+    });
+}
+
+export function demoFetchTaggedPosts(userId: string): PostRow[] {
+  const ids = new Set(state.tags.filter((t) => t.user_id === userId && t.status === "accepted").map((t) => t.post_id));
+  return state.posts
+    .filter((p) => ids.has(p.id) && !p.removed_at)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .map(clone);
+}
+
+export function demoMyTagStatus(userId: string, postIds: string[]): Record<string, TagStatus> {
+  const out: Record<string, TagStatus> = {};
+  for (const t of state.tags) if (t.user_id === userId && postIds.includes(t.post_id)) out[t.post_id] = t.status;
+  return out;
+}
+
+export function demoDecideTag(userId: string, postId: string, status: Exclude<TagStatus, "pending">): void {
+  const tag = state.tags.find((t) => t.post_id === postId && t.user_id === userId);
+  if (!tag) return;
+  tag.status = status;
+  tag.decided_at = new Date().toISOString();
+  emit();
+}
+
+export function demoRemoveTag(postId: string, userId: string): void {
+  state.tags = state.tags.filter((t) => !(t.post_id === postId && t.user_id === userId));
+  emit();
 }

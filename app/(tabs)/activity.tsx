@@ -2,13 +2,14 @@ import React, { useEffect } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { colors, spacing } from "@/theme";
 import { fetchActivity, markActivityRead } from "@/api/activity";
+import { decideTag, fetchMyTagStatus } from "@/api/tags";
 import { mediaUrl } from "@/api/media";
 import { postAge } from "@/utils/time";
 import { useSession } from "@/providers/SessionProvider";
@@ -26,6 +27,8 @@ function line(item: ActivityWithRefs): string {
       return "asked to follow you.";
     case "message":
       return "sent you a message.";
+    case "tag":
+      return "tagged you in a photograph.";
     case "moderation":
       return item.message ?? "A note from the admins.";
   }
@@ -53,6 +56,24 @@ export default function Activity() {
       );
     }
   }, [isFocused, userId, activity.isFetched, queryClient]);
+
+  // A tag waits on you. Where one is still pending, the row carries the
+  // two answers; once decided it reads like any other notice.
+  const taggedPostIds =
+    activity.data?.filter((a) => a.type === "tag" && a.post).map((a) => a.post!.id) ?? [];
+  const tagStatus = useQuery({
+    queryKey: ["my-tag-status", userId, taggedPostIds.join(",")],
+    queryFn: () => fetchMyTagStatus(userId, taggedPostIds),
+    enabled: Boolean(userId) && taggedPostIds.length > 0,
+  });
+  const decide = useMutation({
+    mutationFn: ({ postId, status }: { postId: string; status: "accepted" | "declined" }) =>
+      decideTag(userId, postId, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-tag-status"] });
+      queryClient.invalidateQueries({ queryKey: ["tagged-posts", userId] });
+    },
+  });
 
   const open = (item: ActivityWithRefs) => {
     if (item.post) router.push(`/post/${item.post.id}`);
@@ -93,6 +114,26 @@ export default function Activity() {
                   {line(item)}
                 </Text>
                 <Text style={styles.age}>{postAge(item.created_at)}</Text>
+                {item.type === "tag" && item.post && tagStatus.data?.[item.post.id] === "pending" ? (
+                  <View style={styles.decide}>
+                    <Pressable
+                      style={styles.accept}
+                      disabled={decide.isPending}
+                      onPress={() => decide.mutate({ postId: item.post!.id, status: "accepted" })}
+                    >
+                      <Text style={styles.acceptText}>Show on my profile</Text>
+                    </Pressable>
+                    <Pressable
+                      hitSlop={6}
+                      disabled={decide.isPending}
+                      onPress={() => decide.mutate({ postId: item.post!.id, status: "declined" })}
+                    >
+                      <Text style={styles.declineText}>Not this one</Text>
+                    </Pressable>
+                  </View>
+                ) : item.type === "tag" && item.post && tagStatus.data?.[item.post.id] === "accepted" ? (
+                  <Text style={styles.decided}>On your profile</Text>
+                ) : null}
               </View>
               {thumb ? <Image source={thumb} style={styles.thumb} /> : null}
             </Pressable>
@@ -123,5 +164,15 @@ const styles = StyleSheet.create({
   line: { fontSize: 13, color: colors.ink, lineHeight: 18 },
   actor: { fontWeight: "600" },
   age: { fontSize: 11, color: colors.inkFaint, marginTop: 2 },
+  decide: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.sm },
+  accept: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+    borderRadius: 3,
+    backgroundColor: colors.shutter,
+  },
+  acceptText: { fontSize: 12, fontWeight: "600", color: colors.onShutter },
+  declineText: { fontSize: 12, color: colors.inkSoft },
+  decided: { fontSize: 11, color: colors.accent, marginTop: 4 },
   thumb: { width: 40, height: 40, backgroundColor: colors.paperSunken },
 });

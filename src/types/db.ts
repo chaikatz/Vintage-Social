@@ -27,7 +27,8 @@ export type ActivityType =
   | "follow"
   | "follow_request"
   | "moderation"
-  | "message";
+  | "message"
+  | "tag";
 
 /** A follow of a private member waits for that member to accept it. */
 export type FollowStatus = "pending" | "accepted";
@@ -124,11 +125,30 @@ export type PostRow = {
   taken_at: string | null;
   /** Free text the author typed, not a coordinate. */
   location: string | null;
+  /**
+   * That text as a point on the map, looked up on the phone when the post
+   * was made. Never the camera's GPS. Null when nothing was typed or the
+   * place could not be found.
+   */
+  lat: number | null;
+  lng: number | null;
   like_count: number;
   comment_count: number;
   created_at: string;
   removed_at: string | null;
   removed_by: string | null;
+}
+
+/** The tagged member's status. A tag shows on their profile only once accepted. */
+export type TagStatus = "pending" | "accepted" | "declined";
+
+export type PostTagRow = {
+  post_id: string;
+  user_id: string;
+  tagged_by: string;
+  status: TagStatus;
+  created_at: string;
+  decided_at: string | null;
 }
 
 export type LikeRow = {
@@ -222,6 +242,7 @@ export type Database = {
       invites: Table<InviteRow>;
       follows: Table<FollowRow>;
       posts: Table<PostRow>;
+      post_tags: Table<PostTagRow>;
       likes: Table<LikeRow>;
       comments: Table<CommentRow>;
       activity: Table<ActivityRow>;
@@ -299,6 +320,11 @@ export type Database = {
 /** A post joined with its author profile, as fetched for feeds and grids. */
 export type PostWithAuthor = PostRow & {
   author: Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">;
+};
+
+/** A tag joined with the member it names. */
+export type PostTagWithMember = PostTagRow & {
+  member: Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">;
 };
 
 /** A comment joined with its author profile. */

@@ -173,6 +173,8 @@ function post(
     caption,
     taken_at: hoursAgo(createdHoursAgo + SHOT_BEFORE_POSTING_HOURS),
     location: PLACES[seed.split("-")[0]] ?? null,
+    lat: null,
+    lng: null,
     like_count: 0, // recomputed by the store
     comment_count: 0,
     created_at: hoursAgo(createdHoursAgo),

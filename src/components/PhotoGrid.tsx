@@ -9,9 +9,12 @@ import { cssFilterFor } from "@/filters/cssFilter";
 import { needsDisplayFilter } from "@/utils/displayFilter";
 import type { PostRow } from "@/types/db";
 
+/** A grid row: the post, and whether it is here because its author tagged you. */
+export type GridPost = PostRow & { tagged_in?: boolean };
+
 interface Props {
-  posts: PostRow[];
-  onOpenPost: (post: PostRow) => void;
+  posts: GridPost[];
+  onOpenPost: (post: GridPost) => void;
   /** Rendered above the grid (profile header). */
   header?: React.ReactElement;
   /** Shown in place of the squares when there are none. */
@@ -66,6 +69,11 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
                 <Feather name="play" size={11} color="#FFFFFF" />
               </View>
             ) : null}
+            {item.tagged_in ? (
+              <View style={[styles.videoBadge, styles.tagBadge]}>
+                <Feather name="user" size={10} color="#FFFFFF" />
+              </View>
+            ) : null}
           </Pressable>
         );
       }}
@@ -81,6 +89,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  tagBadge: { top: undefined, bottom: 5, left: 5, right: undefined },
   videoBadge: {
     position: "absolute",
     top: 5,

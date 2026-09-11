@@ -6,7 +6,8 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { ProfileHeader } from "@/components/ProfileHeader";
-import { PhotoGrid } from "@/components/PhotoGrid";
+import { PhotoGrid, type GridPost } from "@/components/PhotoGrid";
+import { PostMap } from "@/components/PostMap";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
@@ -15,6 +16,7 @@ import { Timeline } from "@/components/Timeline";
 import { colors, spacing, type } from "@/theme";
 import { fetchProfileByUsername, follow, followState, unfollow } from "@/api/profiles";
 import { fetchUserPosts } from "@/api/posts";
+import { fetchTaggedPosts } from "@/api/tags";
 import { openConversation } from "@/api/messages";
 import { sortByTaken } from "@/utils/memories";
 import { useSession } from "@/providers/SessionProvider";
@@ -51,10 +53,17 @@ export default function UserProfile() {
     queryFn: () => fetchUserPosts(profile!.id),
     enabled: Boolean(profile?.id) && !locked,
   });
-  const rows = useMemo(
-    () => (sort === "taken" ? sortByTaken(postsQ.data ?? []) : postsQ.data ?? []),
-    [postsQ.data, sort],
-  );
+  const taggedQ = useQuery({
+    queryKey: ["tagged-posts", profile?.id],
+    queryFn: () => fetchTaggedPosts(profile!.id),
+    enabled: Boolean(profile?.id) && !locked,
+  });
+  const rows: GridPost[] = useMemo(() => {
+    const theirs = postsQ.data ?? [];
+    const taggedIn = (taggedQ.data ?? []).map((p) => ({ ...p, tagged_in: true }));
+    const all = [...theirs, ...taggedIn].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return sort === "taken" ? sortByTaken(all) : all;
+  }, [postsQ.data, taggedQ.data, sort]);
 
   const toggleFollow = useMutation({
     mutationFn: async (next: boolean) => {
@@ -157,29 +166,36 @@ export default function UserProfile() {
     </>
   );
 
-  const Surface = view === "timeline" && !locked ? Timeline : PhotoGrid;
+  // A tagged photograph belongs to its author's gallery, not this one.
+  const openPost = (p: GridPost) =>
+    view === "timeline" || view === "map" || p.tagged_in
+      ? router.push(`/post/${p.id}`)
+      : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
+  const shown = locked ? [] : rows;
 
   return (
     <Screen padded={false}>
       <Stack.Screen options={{ title: profile.username }} />
-      <Surface
-        posts={locked ? [] : rows}
-        onOpenPost={(p) =>
-          view === "timeline"
-            ? router.push(`/post/${p.id}`)
-            : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } })
-        }
-        refreshing={postsQ.isRefetching}
-        onRefresh={() => postsQ.refetch()}
-        header={header}
-        empty={
-          locked ? null : postsQ.isFetched ? (
-            <EmptyState title="No photographs yet" />
-          ) : (
-            <GridSkeleton />
-          )
-        }
-      />
+      {view === "map" && !locked ? (
+        <PostMap posts={shown} onOpenPost={openPost} header={header} />
+      ) : view === "timeline" && !locked ? (
+        <Timeline posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
+      ) : (
+        <PhotoGrid
+          posts={shown}
+          onOpenPost={openPost}
+          refreshing={postsQ.isRefetching}
+          onRefresh={() => postsQ.refetch()}
+          header={header}
+          empty={
+            locked ? null : postsQ.isFetched ? (
+              <EmptyState title="No photographs yet" />
+            ) : (
+              <GridSkeleton />
+            )
+          }
+        />
+      )}
     </Screen>
   );
 }

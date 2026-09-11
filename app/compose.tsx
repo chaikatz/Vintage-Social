@@ -27,6 +27,10 @@ import type { FilteredImageHandle, FilterSpec } from "@/filters";
 import { FilterOverlay } from "@/components/FilterOverlay";
 import { cssFilterFor } from "@/filters/cssFilter";
 import { bakeVideo, canBakeVideo } from "@/filters/bakeVideo";
+import { TagPicker, type Taggable } from "@/components/TagPicker";
+import { Avatar } from "@/components/Avatar";
+import { tagMembers } from "@/api/tags";
+import { geocodePlace } from "@/utils/geocode";
 import {
   mediaUrlString,
   ownedPath,
@@ -86,6 +90,21 @@ export default function Compose() {
   // filtered frame fades in over it when the GPU has the picture. Nobody
   // waits on a black rectangle.
   const [rendererReady, setRendererReady] = useState(false);
+  // Belt and braces: if the renderer's "ready" never arrives, the filtered
+  // frame is shown regardless after a moment. The plain picture underneath
+  // is only ever a placeholder — never what the member is choosing from.
+  const [rendererShown, setRendererShown] = useState(false);
+  useEffect(() => {
+    if (rendererReady) {
+      setRendererShown(true);
+      return;
+    }
+    const t = setTimeout(() => setRendererShown(true), 1200);
+    return () => clearTimeout(t);
+  }, [rendererReady]);
+  // Who was there. Sent with the post; each of them decides.
+  const [tags, setTags] = useState<Taggable[]>([]);
+  const [picking, setPicking] = useState(false);
   // The renderer could not read the file. Rare now that library originals
   // are re-encoded first, but a black frame must never be what gets posted.
   const [renderFailed, setRenderFailed] = useState(false);
@@ -231,7 +250,10 @@ export default function Compose() {
         }
       }
 
+      // The place as a point, from the words alone. Never the camera's GPS.
       setStage("Saving…");
+      const place = location.trim();
+      const point = place && !isDemoMode() ? await geocodePlace(place) : null;
       await publishStep("post-insert", () =>
         createPost({
           id: postId,
@@ -247,9 +269,21 @@ export default function Compose() {
           show_date_stamp: stampOn,
           caption: caption.trim(),
           taken_at: takenAt,
-          location: location.trim() || null,
+          location: place || null,
+          lat: point?.lat ?? null,
+          lng: point?.lng ?? null,
         }),
       );
+
+      // The tags ride behind the post. Their failure is worth a word but
+      // never the photograph: it is already up.
+      if (tags.length > 0) {
+        try {
+          await tagMembers(postId, userId, tags.map((t) => t.id));
+        } catch {
+          showAlert("Posted, but the tags didn’t take", "The photograph is up. You can try tagging again later.");
+        }
+      }
 
       // Warm the image cache with what was just uploaded, so the feed and
       // the grid draw the new post at once instead of fetching it back
@@ -310,7 +344,7 @@ export default function Compose() {
             <VideoPreview uri={uri} filter={filter} muted={previewMuted} />
           ) : null}
           {showStill && still?.uri ? (
-            <View style={[StyleSheet.absoluteFill, { opacity: rendererReady ? 1 : 0 }]}>
+            <View style={[StyleSheet.absoluteFill, { opacity: rendererShown ? 1 : 0 }]}>
               <FilteredImage
                 ref={isVideo ? undefined : filteredRef}
                 uri={still.uri}
@@ -379,17 +413,18 @@ export default function Compose() {
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
               >
+                {/* One GL context on this screen — the big frame. The small
+                    prints use the play-time approximation, which is close
+                    enough to choose by and costs nothing. */}
                 <View style={styles.swatch}>
                   {still?.uri ? (
                     <>
-                      <Image source={still.uri} style={StyleSheet.absoluteFill} contentFit="cover" />
-                      <FilteredImage
-                        uri={still.uri}
-                        width={still.width}
-                        height={still.height}
-                        filter={f}
-                        style={StyleSheet.absoluteFill}
+                      <Image
+                        source={still.uri}
+                        style={[StyleSheet.absoluteFill, { filter: cssFilterFor(f).filter } as object]}
+                        contentFit="cover"
                       />
+                      <FilterOverlay filter={f} />
                     </>
                   ) : null}
                 </View>
@@ -436,6 +471,33 @@ export default function Compose() {
         </Pressable>
 
         <View style={styles.rule} />
+        <Pressable style={styles.tagRow} onPress={() => setPicking(true)} accessibilityLabel="Tag members">
+          <View style={styles.grow}>
+            <Text style={styles.eyebrow}>Who was there</Text>
+            {tags.length > 0 ? (
+              <View style={styles.tagFaces}>
+                {tags.slice(0, 6).map((t) => (
+                  <Avatar key={t.id} path={t.avatar_url} username={t.username} size={24} />
+                ))}
+                <Text style={styles.tagNames} numberOfLines={1}>
+                  {tags.map((t) => t.username).join(", ")}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.hint}>Tag the members in the picture. Each decides whether it shows on their profile.</Text>
+            )}
+          </View>
+          <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+        </Pressable>
+        <TagPicker
+          visible={picking}
+          myId={session?.user?.id ?? ""}
+          selected={tags}
+          onChange={setTags}
+          onClose={() => setPicking(false)}
+        />
+
+        <View style={styles.hairline} />
         <View style={styles.field}>
           <Text style={styles.eyebrow}>Where</Text>
           <TextInput
@@ -621,6 +683,15 @@ const styles = StyleSheet.create({
   },
   hint: { ...type.caption, fontSize: 12, color: colors.inkFaint, marginTop: 3 },
 
+  tagRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  tagFaces: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm },
+  tagNames: { flex: 1, fontSize: 13, color: colors.ink, marginLeft: 4 },
   field: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   input: {
     fontSize: 15,

@@ -97,6 +97,8 @@ export interface NewPost {
   caption: string;
   taken_at: string | null;
   location: string | null;
+  lat: number | null;
+  lng: number | null;
 }
 
 /** Photographs from across VINTAGE — the one surface showing work you don't follow. */

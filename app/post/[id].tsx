@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -14,6 +14,7 @@ import { PostSkeleton } from "@/components/Skeleton";
 import { Byline, INLINE_COMMENTS } from "@/components/PostCard";
 import { colors, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
+import { fetchPostTags, removeTag } from "@/api/tags";
 import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
@@ -30,11 +31,27 @@ import { useSession } from "@/providers/SessionProvider";
  */
 export default function PostDetail() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { session } = useSession();
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId = session?.user?.id ?? "";
   // Comments or a profile pushed on top of this screen pause its video.
   const focused = useIsFocused();
+
+  // Who was there, as far as the viewer is allowed to know: accepted tags,
+  // plus your own pending one if it is you in the picture.
+  const tagsQ = useQuery({
+    queryKey: ["post-tags", id],
+    queryFn: () => fetchPostTags(id ?? ""),
+    enabled: Boolean(id),
+  });
+  const untag = useMutation({
+    mutationFn: () => removeTag(id ?? "", userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["post-tags", id] });
+      queryClient.invalidateQueries({ queryKey: ["tagged-posts", userId] });
+    },
+  });
 
   const postQ = useQuery({
     queryKey: ["post", id],
@@ -81,13 +98,15 @@ export default function PostDetail() {
   const hidden = post.comment_count - preview.length;
   const sameNight = night.data?.length ?? 0;
   const openProfile = () => router.push(`/user/${post.author.username}`);
+  const shownTags = (tagsQ.data ?? []).filter((t) => t.status === "accepted" || t.user_id === userId);
+  const myTag = shownTags.find((t) => t.user_id === userId);
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Stack.Screen options={{ title: "" }} />
 
-      <PostMedia post={post} onDoubleTap={() => like(true)} active={focused} bare priority="high" />
-
+      {/* Laid out as a feed card, because that is what it is: who, then the
+          picture, then the quiet row of actions and the words. */}
       <View style={styles.header}>
         <Pressable onPress={openProfile}>
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
@@ -99,6 +118,33 @@ export default function PostDetail() {
           <Byline post={post} />
         </Pressable>
       </View>
+
+      <PostMedia post={post} onDoubleTap={() => like(true)} active={focused} priority="high" />
+
+      {shownTags.length > 0 ? (
+        <View style={styles.with}>
+          <Feather name="user" size={12} color={colors.inkFaint} />
+          <Text style={styles.withText} numberOfLines={2}>
+            <Text style={styles.withLabel}>with </Text>
+            {shownTags.map((t, i) => (
+              <Text
+                key={t.user_id}
+                style={[styles.withName, t.status === "pending" && styles.withPending]}
+                onPress={() => router.push(`/user/${t.member.username}`)}
+              >
+                {t.member.username}
+                {t.status === "pending" ? " (pending)" : ""}
+                {i < shownTags.length - 1 ? ", " : ""}
+              </Text>
+            ))}
+          </Text>
+          {myTag ? (
+            <Pressable hitSlop={8} onPress={() => untag.mutate()} disabled={untag.isPending} accessibilityLabel="Remove me from this photograph">
+              <Text style={styles.untag}>Remove me</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.actions}>
         <Pressable hitSlop={8} onPress={() => like(!liked)} accessibilityLabel={liked ? "Unlike" : "Like"}>
@@ -135,6 +181,8 @@ export default function PostDetail() {
           <Text style={styles.captionAuthor}>{post.author.username}</Text> {post.caption}
         </Text>
       ) : null}
+
+      {(hidden > 0 || preview.length > 0) ? <View style={styles.commentsRule} /> : null}
 
       {hidden > 0 ? (
         <Pressable onPress={() => onOpenComments(post)}>
@@ -181,8 +229,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingVertical: spacing.sm + 2,
   },
+  with: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm + 2,
+  },
+  withText: { flex: 1, fontSize: 12, color: colors.inkSoft },
+  withLabel: { color: colors.inkFaint },
+  withName: { fontWeight: "600", color: colors.ink },
+  withPending: { fontWeight: "400", color: colors.inkFaint },
+  untag: { fontSize: 12, color: colors.inkSoft },
+  commentsRule: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.lg, marginTop: spacing.md },
   headerText: { flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
   actions: {
@@ -194,7 +255,7 @@ const styles = StyleSheet.create({
   },
   spacer: { flex: 1 },
   likes: { fontSize: 13, fontWeight: "600", color: colors.ink, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  caption: { ...type.body, fontSize: 14, paddingHorizontal: spacing.lg, paddingTop: spacing.xs + 2 },
+  caption: { ...type.body, fontFamily: type.serif, fontSize: 15, lineHeight: 22, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   captionAuthor: { fontWeight: "600" },
   comment: { ...type.body, fontSize: 14, color: colors.ink, paddingHorizontal: spacing.lg, paddingTop: spacing.xs + 2 },
   commentsLink: { ...type.caption, paddingHorizontal: spacing.lg, paddingTop: spacing.xs + 2 },
