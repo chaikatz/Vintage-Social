@@ -37,8 +37,10 @@ export default function TabsLayout() {
           lazyPreloadDistance: 1,
           tabBarShowLabel: false,
           tabBarShowIcon: true,
-          tabBarActiveTintColor: colors.ink,
-          tabBarInactiveTintColor: colors.inkFaint,
+          // Typed as strings by React Navigation, but resolved by the
+          // platform: dynamic colours pass straight through processColor.
+          tabBarActiveTintColor: colors.ink as unknown as string,
+          tabBarInactiveTintColor: colors.inkFaint as unknown as string,
           tabBarPressColor: "transparent",
           tabBarPressOpacity: 1,
           tabBarIndicatorStyle: styles.indicator,

@@ -161,6 +161,10 @@ private final class Baker {
     export.outputURL = outputURL
     export.outputFileType = .mp4
     export.shouldOptimizeForNetworkUse = true
+    // Storage refuses anything past ~50 MB, which is what "too long to
+    // post" was. The exporter lowers the bitrate to fit under this; a
+    // short clip is untouched, a full-length one is spent evenly.
+    export.fileLengthLimit = 40 * 1024 * 1024
 
     export.exportAsynchronously {
       switch export.status {

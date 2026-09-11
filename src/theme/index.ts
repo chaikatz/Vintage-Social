@@ -1,45 +1,87 @@
-import { Platform } from "react-native";
+import { DynamicColorIOS, Platform, type ColorValue } from "react-native";
 
 /**
  * VINTAGE design tokens.
  *
- * Warm off-white paper, ink-dark text, hairline borders, compact controls.
- * Photography dominates; chrome recedes. No gradients, no glass.
+ * Two prints of the same page. Light: warm off-white paper, ink-dark text,
+ * hairline borders. Dark: the same page struck on deep brown — the brown
+ * of an old darkroom — with cream type and gold marks. Photography
+ * dominates either way; chrome recedes. No gradients, no glass.
+ *
+ * Every token is a dynamic colour on iOS, so the whole app follows the
+ * appearance setting at render time without a single component knowing;
+ * `Appearance.setColorScheme` in `utils/appearance` is the switch. Other
+ * platforms read the light print.
  */
+function dyn(light: string, dark: string): ColorValue {
+  return Platform.OS === "ios" ? DynamicColorIOS({ light, dark }) : light;
+}
+
+/** The dark print, as sampled from the reference, for anything that needs a plain string. */
+export const dark = {
+  paper: "#38261E",
+  paperRaised: "#402C22",
+  paperSunken: "#2F2018",
+  ink: "#FFFDF8",
+  inkSoft: "#EBD8C0",
+  inkFaint: "#C4AB8F",
+  border: "#4B382D",
+  borderStrong: "#6A5243",
+  accent: "#D6B595",
+  accentDeep: "#B8956F",
+} as const;
+
+/** The light print, as it has always been. */
+export const light = {
+  paper: "#FAF6EF",
+  paperRaised: "#FFFDF8",
+  paperSunken: "#F3EDE2",
+  ink: "#2B2620",
+  inkSoft: "#6E655A",
+  inkFaint: "#9C927F",
+  border: "#E6DECF",
+  borderStrong: "#D5CBB8",
+  accent: "#A65B2A",
+  accentDeep: "#8C4A20",
+} as const;
+
 export const colors = {
   // Surfaces
-  paper: "#FAF6EF", // app background — warm off-white
-  paperRaised: "#FFFDF8", // cards, inputs
-  paperSunken: "#F3EDE2", // pressed states, wells
+  paper: dyn(light.paper, dark.paper), // app background
+  paperRaised: dyn(light.paperRaised, dark.paperRaised), // cards, inputs, buttons
+  paperSunken: dyn(light.paperSunken, dark.paperSunken), // pressed states, wells, the tab bar
 
   // Ink
-  ink: "#2B2620", // primary text
-  inkSoft: "#6E655A", // secondary text
-  inkFaint: "#9C927F", // tertiary text, placeholders
+  ink: dyn(light.ink, dark.ink), // primary text
+  inkSoft: dyn(light.inkSoft, dark.inkSoft), // secondary text
+  inkFaint: dyn(light.inkFaint, dark.inkFaint), // tertiary text, placeholders
 
   // Lines
-  border: "#E6DECF", // hairline borders
-  borderStrong: "#D5CBB8",
+  border: dyn(light.border, dark.border), // hairline borders
+  borderStrong: dyn(light.borderStrong, dark.borderStrong),
 
-  // Accents — muted, film-toned
-  accent: "#A65B2A", // burnt sienna, links and primary actions
-  accentDeep: "#8C4A20",
-  like: "#B3402E", // faded red for the like heart
-  danger: "#A03B2E",
-  success: "#5C7048",
+  // Accents — burnt sienna on paper, gold on the darkroom brown
+  accent: dyn(light.accent, dark.accent),
+  accentDeep: dyn(light.accentDeep, dark.accentDeep),
+  like: dyn("#B3402E", "#E07A6A"), // faded red for the like heart
+  danger: dyn("#A03B2E", "#E28A7A"),
+  success: dyn("#5C7048", "#9DB48A"),
 
   // The invitation card: a dark, printed object rather than a screen. Used
   // only where VINTAGE presents itself — the invitation, and the gate.
-  card: "#3A322A", // deep printed brown
-  cardDeep: "#2F2821", // the same, one shade down
+  card: dyn("#3A322A", "#47332A"), // deep printed brown
+  cardDeep: dyn("#2F2821", "#3A2A22"), // the same, one shade down
   gold: "#D6BE94", // the ink the rule and the wordmark are struck in
   goldSoft: "#B9A47E", // the same, receded
 
   // Photographic details
   stamp: "#FFB03A", // date-stamp amber
   stampGlow: "rgba(255, 150, 40, 0.55)",
-  shutter: "#1C1915", // camera / capture surfaces
-  onShutter: "#F2EBDD",
+  // Camera / capture surfaces and the primary button. On the dark print
+  // the shutter is the cream, so the one button on a screen still reads
+  // as the one button.
+  shutter: dyn("#1C1915", "#F5E9D8"),
+  onShutter: dyn("#F2EBDD", "#38261E"),
 } as const;
 
 export const spacing = {

@@ -15,6 +15,7 @@ import { mediaUrl, prepareAvatar, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
+import { loadAppearance, setAppearance, type AppearanceChoice } from "@/utils/appearance";
 
 export default function Settings() {
   const router = useRouter();
@@ -27,6 +28,12 @@ export default function Settings() {
   const [newAvatarUri, setNewAvatarUri] = useState<string | null>(null);
   const [isPrivate, setIsPrivate] = useState(profile?.is_private ?? false);
   const [busy, setBusy] = useState(false);
+  // Light print, dark print, or the phone's choice. Takes effect at once.
+  const [appearance, setAppearanceChoice] = useState<AppearanceChoice>(loadAppearance);
+  const chooseAppearance = (choice: AppearanceChoice) => {
+    setAppearanceChoice(choice);
+    setAppearance(choice);
+  };
 
   const requests = useQuery({
     queryKey: ["follow-requests", session?.user?.id ?? ""],
@@ -130,6 +137,35 @@ export default function Settings() {
 
       <View style={styles.divider} />
 
+      <View style={styles.settingText}>
+        <Text style={styles.settingLabel}>Appearance</Text>
+        <Text style={styles.settingHint}>The same page, printed light or on darkroom brown.</Text>
+      </View>
+      <View style={styles.choices} accessibilityRole="radiogroup">
+        {(
+          [
+            ["system", "Automatic"],
+            ["light", "Light"],
+            ["dark", "Dark"],
+          ] as [AppearanceChoice, string][]
+        ).map(([value, label]) => {
+          const on = appearance === value;
+          return (
+            <Pressable
+              key={value}
+              style={[styles.choice, on && styles.choiceOn]}
+              onPress={() => chooseAppearance(value)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+            >
+              <Text style={[styles.choiceText, on && styles.choiceTextOn]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={styles.divider} />
+
       <Button title="Save" onPress={save} loading={busy} />
       <View style={styles.divider} />
       <Button
@@ -164,4 +200,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   requestsLabel: { fontSize: 15, color: colors.accent },
+  choices: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  choice: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: "center",
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.paperRaised,
+  },
+  choiceOn: { backgroundColor: colors.shutter, borderColor: colors.shutter },
+  choiceText: { fontSize: 13, fontWeight: "600", color: colors.ink },
+  choiceTextOn: { color: colors.onShutter },
 });

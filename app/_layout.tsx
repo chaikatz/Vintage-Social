@@ -5,16 +5,22 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { SessionProvider } from "@/providers/SessionProvider";
 import { colors, type } from "@/theme";
+import { restoreAppearance } from "@/utils/appearance";
+
+// Before the first screen draws, so the page opens on the print it was left on.
+restoreAppearance();
 
 export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <SessionProvider>
-        <StatusBar style="dark" />
+        <StatusBar style="auto" />
         <Stack
           screenOptions={{
-            headerStyle: { backgroundColor: colors.paper },
-            headerTintColor: colors.ink,
+            // Typed as strings by React Navigation, but resolved by the
+            // platform: dynamic colours pass straight through processColor.
+            headerStyle: { backgroundColor: colors.paper as unknown as string },
+            headerTintColor: colors.ink as unknown as string,
             headerTitleStyle: { fontFamily: type.serif, fontSize: 17 },
             headerShadowVisible: false,
             // The chevron alone. iOS labels a back button with the previous

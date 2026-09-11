@@ -164,12 +164,14 @@ export default function Compose() {
         }
 
         // The poster frame is what the profile grid draws — a grid square
-        // can't play a movie — so it is made either way, uploaded or not.
-        // Cut from the finished clip, so the square matches what plays.
+        // can't play a movie — and what a feed card shows until the clip
+        // starts. Cut from the finished clip so it matches what plays, and
+        // kept at feed size: a grid-sized frame blown up to the card read
+        // as a fuzzy video.
         let posterUri: string | null = null;
         try {
           const poster = await VideoThumbnails.getThumbnailAsync(source, { time: 500 });
-          posterUri = (await prepareThumbnail(poster.uri)).uri;
+          posterUri = (await prepareFeedImage(poster.uri)).uri;
         } catch {
           posterUri = null; // a missing poster frame shouldn't block publishing
         }
