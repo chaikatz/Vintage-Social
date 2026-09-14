@@ -9,6 +9,7 @@ import { colors, spacing, type } from "@/theme";
 import { fetchPost, updateCaption } from "@/api/posts";
 import { MAX_CAPTION_LENGTH } from "@/utils/validation";
 import { rewritePostEverywhere } from "@/utils/postCache";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
  * Change the words under your own photograph.
@@ -52,6 +53,7 @@ export default function EditCaption() {
         <View style={styles.body}>
           <Text style={styles.eyebrow}>Caption</Text>
           <TextInput
+            inputAccessoryViewID={KEYBOARD_DONE}
             value={caption}
             onChangeText={(t) => setDraft(t.slice(0, MAX_CAPTION_LENGTH))}
             multiline

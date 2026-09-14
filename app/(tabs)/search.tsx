@@ -19,6 +19,7 @@ import {
   type RecentSearch,
 } from "@/utils/searchHistory";
 import { useSession } from "@/providers/SessionProvider";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
  * Find people, or look at what the rest of VINTAGE has been shooting.
@@ -74,6 +75,7 @@ export default function Search() {
     <View style={styles.searchWrap}>
       <Feather name="search" size={15} color={colors.inkFaint} style={styles.searchIcon} />
       <TextInput
+        inputAccessoryViewID={KEYBOARD_DONE}
         value={q}
         onChangeText={setQ}
         onFocus={() => setFocused(true)}

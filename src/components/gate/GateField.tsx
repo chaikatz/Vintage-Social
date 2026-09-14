@@ -1,6 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { colors, spacing, type } from "@/theme";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
  * A field ruled onto the card: a small letterspaced label, gold ink, and a
@@ -24,6 +25,7 @@ export function GateField({
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        inputAccessoryViewID={KEYBOARD_DONE}
         {...inputProps}
         placeholderTextColor="rgba(214, 190, 148, 0.32)"
         selectionColor={colors.gold}

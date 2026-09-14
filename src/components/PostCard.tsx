@@ -161,12 +161,11 @@ export function Byline({
 }
 
 const styles = StyleSheet.create({
+  // Posts are separated by air, not rules.
   card: {
     paddingBottom: spacing.lg,
     marginBottom: spacing.md,
     backgroundColor: colors.paper,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   header: {
     flexDirection: "row",

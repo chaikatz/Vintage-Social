@@ -27,6 +27,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
  * One conversation. Messages are plain: words, or a photograph passed along
@@ -102,6 +103,7 @@ export default function Thread() {
         ]}
       >
         <TextInput
+          inputAccessoryViewID={KEYBOARD_DONE}
           value={draft}
           onChangeText={(t) => setDraft(t.slice(0, MAX_MESSAGE_LENGTH))}
           placeholder="Write something…"

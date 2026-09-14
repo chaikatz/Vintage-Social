@@ -11,6 +11,7 @@ import { colors, radii, spacing } from "@/theme";
 import { fetchMembers, setInviteQuota, setSuspension, warnMember } from "@/api/moderation";
 import { formatMemberNumber } from "@/utils/membership";
 import type { ProfileRow } from "@/types/db";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /** Status, number and output — what a suspension decision is made against. */
 function memberSubtitle(member: ProfileRow): string {
@@ -110,6 +111,7 @@ export default function AdminMembers() {
     <Screen padded={false}>
       <View style={styles.searchWrap}>
         <TextInput
+          inputAccessoryViewID={KEYBOARD_DONE}
           value={q}
           onChangeText={setQ}
           placeholder="Search members"

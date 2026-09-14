@@ -4,6 +4,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
 import { canSearchPlaces, searchPlaces, type Place } from "@/api/places";
 import { MAX_LOCATION_LENGTH } from "@/utils/validation";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /** What the composer holds: a chosen place, or words with no point behind them. */
 export type PlaceChoice = { kind: "place"; place: Place } | { kind: "text"; text: string } | null;
@@ -95,6 +96,7 @@ export function PlacePicker({ visible, value, onChange, onClose }: Props) {
         <View style={styles.searchWrap}>
           <Feather name="map-pin" size={15} color={colors.inkFaint} />
           <TextInput
+            inputAccessoryViewID={KEYBOARD_DONE}
             value={q}
             onChangeText={(t) => setQ(t.slice(0, MAX_LOCATION_LENGTH))}
             placeholder={searchable ? "A restaurant, a hotel, a town…" : "A town, a street, a bar"}

@@ -1,6 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
 import { colors, radii, spacing, type } from "@/theme";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 interface Props extends TextInputProps {
   label?: string;
@@ -13,6 +14,7 @@ export function TextField({ label, error, hint, style, ...inputProps }: Props) {
     <View style={styles.wrap}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
+        inputAccessoryViewID={KEYBOARD_DONE}
         placeholderTextColor={colors.inkFaint}
         style={[styles.input, inputProps.multiline && styles.multiline, error ? styles.inputError : null, style]}
         {...inputProps}

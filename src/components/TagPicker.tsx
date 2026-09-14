@@ -6,6 +6,7 @@ import { colors, spacing, type } from "@/theme";
 import { fetchFollowing, searchProfiles } from "@/api/profiles";
 import { Avatar } from "./Avatar";
 import type { ProfileRow } from "@/types/db";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 export type Taggable = Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">;
 
@@ -70,6 +71,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
         <View style={styles.searchWrap}>
           <Feather name="search" size={15} color={colors.inkFaint} />
           <TextInput
+            inputAccessoryViewID={KEYBOARD_DONE}
             value={q}
             onChangeText={setQ}
             placeholder="Search members"

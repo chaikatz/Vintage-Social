@@ -7,6 +7,7 @@ import { SessionProvider } from "@/providers/SessionProvider";
 import { colors, type } from "@/theme";
 import { restoreAppearance } from "@/utils/appearance";
 import { useNotificationTaps } from "@/utils/push";
+import { KeyboardDone } from "@/components/KeyboardDone";
 
 // Before the first screen draws, so the page opens on the print it was left on.
 restoreAppearance();
@@ -23,6 +24,7 @@ export default function RootLayout() {
       <SessionProvider>
         <StatusBar style="auto" />
         <NotificationTaps />
+        <KeyboardDone />
         <Stack
           screenOptions={{
             // Typed as strings by React Navigation, but resolved by the

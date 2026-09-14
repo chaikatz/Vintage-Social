@@ -25,6 +25,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
 import { MAX_COMMENT_LENGTH } from "@/utils/validation";
 import type { CommentWithAuthor } from "@/types/db";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
  * The comments on one photograph.
@@ -161,6 +162,7 @@ export default function Comments() {
         ]}
       >
         <TextInput
+          inputAccessoryViewID={KEYBOARD_DONE}
           value={draft}
           onChangeText={(t) => setDraft(t.slice(0, MAX_COMMENT_LENGTH))}
           placeholder="Add a comment…"

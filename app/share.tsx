@@ -15,6 +15,7 @@ import { mediaUrl } from "@/api/media";
 import { sharePostWith } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
  * Send a photograph to someone. Members you follow, a line to go with it,
@@ -99,6 +100,8 @@ export default function Share() {
       <Text style={styles.sectionLabel}>To a member</Text>
 
       <TextInput
+
+        inputAccessoryViewID={KEYBOARD_DONE}
         value={note}
         onChangeText={(t) => setNote(t.slice(0, MAX_MESSAGE_LENGTH))}
         placeholder="Add a line…"

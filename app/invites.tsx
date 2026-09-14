@@ -26,6 +26,7 @@ import {
   inviteUrl,
   inviteUrlLabel,
 } from "@/utils/inviteLink";
+import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
  * Invitations.
@@ -48,6 +49,10 @@ export default function Invitations() {
   // Most members never change the address. The editor stays folded so the
   // screen is the card, the button and the count — nothing to read first.
   const [editing, setEditing] = useState(false);
+  // Every hook lives above the loading return below. One declared after it
+  // ran on some renders and not others, and React threw the moment the
+  // link arrived — which is what "Invitations crashes" was.
+  const [codeCopied, setCodeCopied] = useState(false);
 
   // The field starts as whatever the link currently is, so editing it reads
   // as changing something rather than filling something in.
@@ -91,7 +96,6 @@ export default function Invitations() {
   };
   // The code is the link's ending. It is what somebody types after
   // installing the app, when the link they tapped is long gone.
-  const [codeCopied, setCodeCopied] = useState(false);
   const copyCode = async () => {
     await Clipboard.setStringAsync(slug);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -181,6 +185,7 @@ export default function Invitations() {
           <>
             <Text style={styles.sectionLabel}>The address</Text>
             <TextInput
+              inputAccessoryViewID={KEYBOARD_DONE}
               value={suffix}
               onChangeText={(t) => setSuffix(t.replace(/[^A-Za-z0-9-]/g, "").toLowerCase().slice(0, SLUG_MAX))}
               style={styles.input}

@@ -19,14 +19,14 @@ function dyn(light: string, dark: string): ColorValue {
 
 /** The dark print, as sampled from the reference, for anything that needs a plain string. */
 export const dark = {
-  paper: "#2C1B14", // the page: darkroom brown, deep enough for the photographs to glow
-  paperRaised: "#38251C", // buttons, inputs — a step up, still brown
-  paperSunken: "#241510", // the tab bar, the header, the gaps between prints
-  ink: "#FBF3E8", // cream type
-  inkSoft: "#E4CFB3",
-  inkFaint: "#B89C7F",
-  border: "#43302A", // a hairline you feel more than see
-  borderStrong: "#655044", // button edges and rules
+  paper: "#3B2C27", // the page: Espresso (SW 2736), the brown of a darkroom wall
+  paperRaised: "#47362F", // buttons, inputs — a step up, still brown
+  paperSunken: "#2F221E", // the tab bar, the header, the gaps between prints
+  ink: "#F6ECDF", // cream type
+  inkSoft: "#DDC7AC",
+  inkFaint: "#B39A80",
+  border: "#52403A", // a hairline you feel more than see
+  borderStrong: "#74604F", // button edges and rules — visible against the espresso
   accent: "#D4B48F", // gold marks
   accentDeep: "#B08E67",
 } as const;
@@ -69,8 +69,8 @@ export const colors = {
 
   // The invitation card: a dark, printed object rather than a screen. Used
   // only where VINTAGE presents itself — the invitation, and the gate.
-  card: dyn("#3A322A", "#3D2A21"), // deep printed brown
-  cardDeep: dyn("#2F2821", "#30201A"), // the same, one shade down
+  card: dyn("#3A322A", "#2F221E"), // deep printed brown — on the espresso page, one shade down
+  cardDeep: dyn("#2F2821", "#261B17"), // the same, one shade down again
   gold: "#D6BE94", // the ink the rule and the wordmark are struck in
   goldSoft: "#B9A47E", // the same, receded
 
@@ -81,7 +81,7 @@ export const colors = {
   // the shutter is the cream, so the one button on a screen still reads
   // as the one button.
   shutter: dyn("#1C1915", "#F3E6D3"),
-  onShutter: dyn("#F2EBDD", "#2C1B14"),
+  onShutter: dyn("#F2EBDD", "#3B2C27"),
 } as const;
 
 export const spacing = {
