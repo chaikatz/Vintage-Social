@@ -38,39 +38,38 @@ const ZOOM_MAX = 3;
 /** Two taps closer together than this open the photograph. */
 const DOUBLE_TAP_MS = 280;
 
-/** The spine's distance from the left edge, and how far the entries sit right of it. */
-const SPINE_X = spacing.lg + 4;
-const ARM = 14;
-const INDENT = SPINE_X + ARM + spacing.sm;
-
 /**
  * A member's photographs hung off one line, by the day they were taken.
  *
- * The line runs down the left of the page. Every entry hangs to its right
- * at one set size — the photograph, and under it, all on the same left
- * edge, where it was taken, when, and what the member said about it.
- * Years are lettered on the line as they pass; a long silence between two
+ * The line runs down the middle of the page. Each entry puts the
+ * photograph on one side and its words on the other — where, when, and
+ * the caption, one under the other on one left edge — and the next entry
+ * swaps sides, so the page reads as a life in pictures. Years are
+ * lettered on the line as they pass; a long silence between two
  * photographs is said out loud.
  *
  * Nothing here moves when you pinch. The page is a print: pinching
  * magnifies it where your fingers are, the way a photograph magnifies,
  * and letting go leaves it there until you pinch back out or tap
- * "Actual size". Tap a photograph to see it close, at full resolution.
+ * "Actual size". Tap a photograph to inspect it close, at full
+ * resolution; closing lands exactly where you were on the line.
  */
 export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
   const { width } = useWindowDimensions();
   const rows = useMemo(() => buildTimeline(posts), [posts]);
+
   const [inspecting, setInspecting] = useState<PostRow | null>(null);
   const [zoomed, setZoomed] = useState(false);
   const scroll = useRef<ScrollView>(null);
 
-  // One set size: the frame takes the width to the right of the spine,
-  // less a margin, so a photograph is a photograph and not a thumbnail.
-  const frame = Math.round(width - INDENT - spacing.lg * 1.5);
+  // Each half of the page holds either the photograph or its words. The
+  // frame takes most of its half; the size is set once and stays.
+  const half = width / 2 - spacing.lg;
+  const frame = Math.round(half * 0.86);
+  const gap = spacing.lg;
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const z = e.nativeEvent.zoomScale ?? 1;
-    const next = z > 1.02;
+    const next = (e.nativeEvent.zoomScale ?? 1) > 1.02;
     if (next !== zoomed) setZoomed(next);
   };
   const actualSize = () => {
@@ -83,7 +82,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
       <ScrollView
         ref={scroll}
         style={styles.root}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, rows.length > 0 && styles.listWithRows]}
         minimumZoomScale={1}
         maximumZoomScale={ZOOM_MAX}
         bouncesZoom
@@ -100,15 +99,11 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         {/* One child: the page. The scroll view zooms this as a whole. */}
         <View style={{ width }}>
           {header}
-          {rows.length === 0 ? (
-            empty
-          ) : (
-            <View style={styles.page}>
-              {rows.map((row) => (
-                <Row key={row.key} row={row} frame={frame} onOpenPost={onOpenPost} onInspect={setInspecting} />
+          {rows.length === 0
+            ? empty
+            : rows.map((row) => (
+                <Row key={row.key} row={row} frame={frame} gap={gap} onOpenPost={onOpenPost} onInspect={setInspecting} />
               ))}
-            </View>
-          )}
         </View>
       </ScrollView>
       {zoomed ? (
@@ -132,11 +127,13 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
 function Row({
   row,
   frame,
+  gap,
   onOpenPost,
   onInspect,
 }: {
   row: TimelineRow;
   frame: number;
+  gap: number;
   onOpenPost: (post: PostRow) => void;
   onInspect: (post: PostRow) => void;
 }) {
@@ -158,7 +155,7 @@ function Row({
     );
   }
 
-  const { post } = row;
+  const { post, side } = row;
   const isVideo = post.media_type === "video";
   const url = isVideo
     ? mediaUrl("thumbnails", post.thumb_path)
@@ -166,6 +163,7 @@ function Row({
   const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
   const ratio = aspectRatio(post.width, post.height);
   const frameHeight = Math.round(frame / ratio);
+  const left = side === "left";
   const place = post.location?.trim() || null;
   const caption = post.caption?.trim() || null;
 
@@ -181,87 +179,123 @@ function Row({
     onInspect(post);
   };
 
+  const picture = (
+    <Pressable
+      onPress={tap}
+      onLongPress={() => onOpenPost(post)}
+      style={[styles.frame, { width: frame, height: frameHeight }]}
+      accessibilityRole="imagebutton"
+      accessibilityLabel={caption ?? "Photograph"}
+    >
+      {url ? (
+        <Image
+          source={url}
+          style={[StyleSheet.absoluteFill, live ? ({ filter: live } as object) : null]}
+          contentFit="cover"
+          transition={80}
+          cachePolicy="memory-disk"
+          recyclingKey={post.id}
+        />
+      ) : null}
+      {isVideo ? (
+        <View style={styles.videoBadge}>
+          <Feather name="play" size={10} color="#FFFFFF" />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+
+  // The words: where, when, and what was said, one under the other on a
+  // single left edge, whichever side of the line they sit.
+  const words = (
+    <Pressable
+      style={[styles.words, left ? styles.wordsRight : styles.wordsLeft]}
+      onPress={() => onOpenPost(post)}
+      accessibilityRole="button"
+    >
+      <View style={styles.wordsBlock}>
+        {place ? (
+          <Text style={styles.place} numberOfLines={1}>
+            {place}
+          </Text>
+        ) : null}
+        <Text style={styles.date}>{shortDate(post.taken_at ?? post.created_at)}</Text>
+        {caption ? (
+          <Text style={styles.caption} numberOfLines={6}>
+            {caption}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+
+  // The branch meets the frame at its middle; the words sit level with it.
+  const armTop = gap + frameHeight / 2;
+
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, { paddingVertical: gap }]}>
       <View style={styles.line} />
-      {/* The branch: a node on the spine, an arm to the frame's top edge. */}
-      <View style={[styles.node, { top: spacing.lg + 8 }]} />
-      <View style={[styles.arm, { top: spacing.lg + 11 }]} />
-
-      <View style={styles.entry}>
-        <Pressable
-          onPress={tap}
-          onLongPress={() => onOpenPost(post)}
-          style={[styles.frame, { width: frame, height: frameHeight }]}
-          accessibilityRole="imagebutton"
-          accessibilityLabel={caption ?? "Photograph"}
-        >
-          {url ? (
-            <Image
-              source={url}
-              style={[StyleSheet.absoluteFill, live ? ({ filter: live } as object) : null]}
-              contentFit="cover"
-              transition={80}
-              cachePolicy="memory-disk"
-              recyclingKey={post.id}
-            />
-          ) : null}
-          {isVideo ? (
-            <View style={styles.videoBadge}>
-              <Feather name="play" size={10} color="#FFFFFF" />
-            </View>
-          ) : null}
-        </Pressable>
-
-        {/* The words, one under the other, all on the frame's left edge:
-            where, when, and what was said. */}
-        <Pressable style={[styles.words, { width: frame }]} onPress={() => onOpenPost(post)} accessibilityRole="button">
-          {place ? (
-            <Text style={styles.place} numberOfLines={1}>
-              {place}
-            </Text>
-          ) : null}
-          <Text style={styles.date}>{shortDate(post.taken_at ?? post.created_at)}</Text>
-          {caption ? (
-            <Text style={styles.caption} numberOfLines={6}>
-              {caption}
-            </Text>
-          ) : null}
-        </Pressable>
+      <View style={[styles.node, { top: armTop }]} />
+      <View style={[styles.half, styles.halfLeft]}>
+        {left ? (
+          <>
+            {picture}
+            <View style={[styles.arm, { marginTop: armTop }]} />
+          </>
+        ) : (
+          words
+        )}
+      </View>
+      <View style={[styles.half, styles.halfRight]}>
+        {left ? (
+          words
+        ) : (
+          <>
+            <View style={[styles.arm, { marginTop: armTop }]} />
+            {picture}
+          </>
+        )}
       </View>
     </View>
   );
 }
 
+const ARM = 10;
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  list: { paddingBottom: spacing.xxl * 2 },
-  page: { paddingTop: spacing.sm },
+  list: { paddingBottom: spacing.xxl },
+  listWithRows: { paddingBottom: spacing.xxl * 2 },
 
   // The spine. Every row draws its own segment, so the line is exactly as
   // long as the page and needs no measuring.
   line: {
     position: "absolute",
-    left: SPINE_X,
+    left: "50%",
     top: 0,
     bottom: 0,
     width: 1,
+    marginLeft: -0.5,
     backgroundColor: colors.borderStrong,
   },
   node: {
     position: "absolute",
-    left: SPINE_X - 3,
+    left: "50%",
     width: 7,
     height: 7,
+    marginLeft: -3.5,
+    marginTop: -3,
     borderRadius: 4,
     backgroundColor: colors.paper,
     borderWidth: 1,
     borderColor: colors.ink,
   },
-  arm: { position: "absolute", left: SPINE_X + 4, width: ARM + spacing.sm - 4, height: 1, backgroundColor: colors.borderStrong },
+  arm: { width: ARM, height: 1, backgroundColor: colors.borderStrong },
 
-  row: { paddingVertical: spacing.lg },
-  entry: { paddingLeft: INDENT },
+  row: { flexDirection: "row", alignItems: "flex-start" },
+  half: { flex: 1, flexDirection: "row", alignItems: "flex-start" },
+  halfLeft: { justifyContent: "flex-end" },
+  halfRight: { justifyContent: "flex-start" },
 
   frame: {
     backgroundColor: colors.paperSunken,
@@ -271,17 +305,22 @@ const styles = StyleSheet.create({
   },
   videoBadge: {
     position: "absolute",
-    top: 6,
-    right: 6,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    top: 5,
+    right: 5,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(20, 15, 10, 0.45)",
   },
 
-  words: { paddingTop: spacing.md, alignItems: "flex-start" },
+  words: { flex: 1, paddingTop: 2 },
+  // The words sit on the side opposite the picture, hugging the spine.
+  wordsRight: { paddingLeft: spacing.md + ARM, paddingRight: spacing.lg },
+  wordsLeft: { paddingRight: spacing.md + ARM, paddingLeft: spacing.lg },
+  // Every line starts on the same left edge, on either side of the line.
+  wordsBlock: { alignItems: "flex-start" },
   place: {
     fontFamily: type.mono,
     fontSize: 11,
@@ -306,22 +345,25 @@ const styles = StyleSheet.create({
     textAlign: "left",
   },
 
-  marker: { paddingLeft: INDENT, paddingVertical: spacing.sm },
+  marker: { alignItems: "center", paddingVertical: spacing.sm },
   year: {
     fontFamily: type.serif,
     fontSize: 16,
     letterSpacing: 1,
     color: colors.ink,
-    alignSelf: "flex-start",
+    backgroundColor: colors.paper,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
   },
 
-  gap: { paddingLeft: INDENT, paddingVertical: spacing.sm },
+  gap: { alignItems: "center", paddingVertical: spacing.sm },
   gapLine: {
     position: "absolute",
-    left: SPINE_X,
+    left: "50%",
     top: 0,
     bottom: 0,
     width: 1,
+    marginLeft: -0.5,
     borderLeftWidth: 1,
     borderStyle: "dotted",
     borderColor: colors.borderStrong,
@@ -333,7 +375,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     textTransform: "uppercase",
     color: colors.inkFaint,
-    alignSelf: "flex-start",
+    backgroundColor: colors.paper,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
   },
 
   reset: {
