@@ -161,6 +161,30 @@ export type AppSettingRow = {
   updated_by: string | null;
 }
 
+/** Where a member's phone can be reached. One row per device token. */
+export type PushTokenRow = {
+  token: string;
+  user_id: string;
+  platform: "ios" | "android" | "web";
+  device: string | null;
+  created_at: string;
+  updated_at: string;
+  invalid_at: string | null;
+}
+
+/** What a member wants to be told about. Absent row means all of it. */
+export type NotificationPrefsRow = {
+  user_id: string;
+  likes: boolean;
+  comments: boolean;
+  follows: boolean;
+  tags: boolean;
+  messages: boolean;
+  posts: boolean;
+  memories: boolean;
+  updated_at: string;
+}
+
 export type LikeRow = {
   post_id: string;
   user_id: string;
@@ -254,6 +278,8 @@ export type Database = {
       posts: Table<PostRow>;
       post_tags: Table<PostTagRow>;
       app_settings: Table<AppSettingRow>;
+      push_tokens: Table<PushTokenRow>;
+      notification_prefs: Table<NotificationPrefsRow>;
       likes: Table<LikeRow>;
       comments: Table<CommentRow>;
       activity: Table<ActivityRow>;

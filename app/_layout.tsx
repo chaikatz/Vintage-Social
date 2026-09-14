@@ -6,15 +6,23 @@ import { queryClient } from "@/lib/queryClient";
 import { SessionProvider } from "@/providers/SessionProvider";
 import { colors, type } from "@/theme";
 import { restoreAppearance } from "@/utils/appearance";
+import { useNotificationTaps } from "@/utils/push";
 
 // Before the first screen draws, so the page opens on the print it was left on.
 restoreAppearance();
+
+/** A tapped notice goes where it points. Lives under the router, renders nothing. */
+function NotificationTaps() {
+  useNotificationTaps();
+  return null;
+}
 
 export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <SessionProvider>
         <StatusBar style="auto" />
+        <NotificationTaps />
         <Stack
           screenOptions={{
             // Typed as strings by React Navigation, but resolved by the

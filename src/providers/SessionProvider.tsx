@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
+import { forgetPushToken } from "@/utils/push";
 
 interface SessionState {
   /** undefined while restoring the persisted session on launch. */
@@ -118,6 +119,8 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   }, [refreshProfile]);
 
   const signOut = useCallback(async () => {
+    // While still signed in, so the row can be deleted under RLS.
+    await forgetPushToken();
     await supabase.auth.signOut();
     await leaveToLanding();
   }, []);

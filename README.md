@@ -538,3 +538,16 @@ this repo:
   installing (Landing → "I have an invitation", or the waiting screen → "I have an invitation").
 - Native modules (`vintage-video`, `vintage-places`, `react-native-maps`, `expo-location`) require a full
   EAS build; they cannot ship over the air.
+- **Migration `0017_push.sql`** — applied to staging and production. Adds `push_tokens` and
+  `notification_prefs` (both member-own under RLS), `activity.pushed_at` / `posts.notified_at`
+  (once-only stamps), the `pg_net` + `pg_cron` extensions, triggers that hand every new activity row
+  and every new post to the `push` edge function, and a daily `vintage-memories` job (15:00 UTC).
+- **Edge function `supabase/functions/push`** — deployed to both projects (JWT verified). Sends
+  likes (at most one per member per half hour), comments (with the words), follows and requests,
+  tags, messages, welcome notes, "someone you follow posted", and one "N years ago today" a day,
+  each honouring the member's toggles in Settings → Notifications. Dead tokens are retired
+  automatically. The hook it is called through is the `push_hook` row in `app_settings`
+  (`{"url": ".../functions/v1/push", "key": "<anon key>"}`), set per project and never committed.
+- **iOS delivery needs an APNs key in EAS**: run `npx eas-cli credentials --platform ios` on the Mac,
+  choose the production build profile → *Push Notifications* → set up a key. Without it tokens are
+  filed but Apple delivers nothing. `expo-notifications` is native, so this is a full EAS build.

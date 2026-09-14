@@ -16,6 +16,13 @@ import { isDemoMode } from "@/lib/env";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
 import { loadAppearance, setAppearance, type AppearanceChoice } from "@/utils/appearance";
+import {
+  DEFAULT_PREFS,
+  fetchNotificationPrefs,
+  updateNotificationPrefs,
+  type NotificationPrefs,
+} from "@/api/notifications";
+import { pushSupported, registerForPush } from "@/utils/push";
 
 export default function Settings() {
   const router = useRouter();
@@ -33,6 +40,28 @@ export default function Settings() {
   const chooseAppearance = (choice: AppearanceChoice) => {
     setAppearanceChoice(choice);
     setAppearance(choice);
+  };
+
+  // What the phone is allowed to say. Read once; each switch writes at once.
+  const userId = session?.user?.id ?? "";
+  const prefsQuery = useQuery({
+    queryKey: ["notification-prefs", userId],
+    queryFn: () => fetchNotificationPrefs(userId),
+    enabled: Boolean(userId),
+  });
+  const [prefsEdit, setPrefsEdit] = useState<NotificationPrefs | null>(null);
+  const prefs = prefsEdit ?? prefsQuery.data ?? DEFAULT_PREFS;
+  const togglePref = (key: keyof NotificationPrefs) => (on: boolean) => {
+    const next = { ...prefs, [key]: on };
+    setPrefsEdit(next);
+    if (!userId) return;
+    updateNotificationPrefs(userId, next)
+      .then(() => {
+        queryClient.setQueryData(["notification-prefs", userId], next);
+        // Turning something on is also a reason to make sure the phone is registered.
+        if (on && pushSupported()) registerForPush(userId);
+      })
+      .catch((err) => showAlert("Couldn’t save", err instanceof Error ? err.message : String(err)));
   };
 
   const requests = useQuery({
@@ -138,6 +167,40 @@ export default function Settings() {
       <View style={styles.divider} />
 
       <View style={styles.settingText}>
+        <Text style={styles.settingLabel}>Notifications</Text>
+        <Text style={styles.settingHint}>
+          A name and what happened, nothing more. Likes arrive at most once every half hour; a
+          memory at most once a day.
+        </Text>
+      </View>
+      {(
+        [
+          ["likes", "Likes", "Someone liked your photograph."],
+          ["comments", "Comments", "Someone wrote under your photograph."],
+          ["follows", "Follows", "A new follower, or a request to follow you."],
+          ["tags", "Tags", "Someone put you in a photograph."],
+          ["messages", "Messages", "A letter in the tray."],
+          ["posts", "New photographs", "Someone you follow posted."],
+          ["memories", "On this day", "One of your own, from this day in another year."],
+        ] as [keyof NotificationPrefs, string, string][]
+      ).map(([key, label, hint]) => (
+        <View key={key} style={styles.prefRow}>
+          <View style={styles.settingText}>
+            <Text style={styles.prefLabel}>{label}</Text>
+            <Text style={styles.prefHint}>{hint}</Text>
+          </View>
+          <Switch
+            value={prefs[key]}
+            onValueChange={togglePref(key)}
+            trackColor={{ true: colors.accent, false: colors.borderStrong }}
+            thumbColor={colors.paperRaised}
+          />
+        </View>
+      ))}
+
+      <View style={styles.divider} />
+
+      <View style={styles.settingText}>
         <Text style={styles.settingLabel}>Appearance</Text>
         <Text style={styles.settingHint}>The same page, printed light or on darkroom brown.</Text>
       </View>
@@ -200,6 +263,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   requestsLabel: { fontSize: 15, color: colors.accent },
+  prefRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.md },
+  prefLabel: { fontSize: 14, color: colors.ink },
+  prefHint: { ...type.caption, fontSize: 12, marginTop: 1 },
   choices: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   choice: {
     flex: 1,

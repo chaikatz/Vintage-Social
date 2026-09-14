@@ -9,6 +9,7 @@ import { SwipeTabs } from "@/navigation/SwipeTabs";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { emitHomeAgain } from "@/utils/homeRefresh";
+import { usePushRegistration } from "@/utils/push";
 
 /**
  * Home / Search / Post / Activity / Profile — nothing else.
@@ -20,6 +21,8 @@ import { emitHomeAgain } from "@/utils/homeRefresh";
 export default function TabsLayout() {
   const { session, profile, profileLoaded } = useSession();
   const insets = useSafeAreaInsets();
+  // An approved member on a real phone: ask once, file the token.
+  usePushRegistration(session?.user?.id, profileLoaded && profile?.status === "approved");
 
   if (session === null) return <Redirect href="/(gate)/landing" />;
   if (profileLoaded && profile?.status !== "approved") {
