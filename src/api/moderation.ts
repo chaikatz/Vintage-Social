@@ -197,3 +197,30 @@ export async function fetchMembers(q: string): Promise<ProfileRow[]> {
   if (error) throw error;
   return (data ?? []) as ProfileRow[];
 }
+
+/** Admin: read the number every new member is given. */
+export async function fetchDefaultInviteQuota(): Promise<number> {
+  if (isDemoMode()) return 5;
+  const { data, error } = await supabase.rpc("default_invite_quota", {});
+  if (error) throw error;
+  return Number(data ?? 5);
+}
+
+/** Admin: set the number every new member is given from now on. */
+export async function setDefaultInviteQuota(quota: number): Promise<number> {
+  if (isDemoMode()) return quota;
+  const { data, error } = await supabase.rpc("admin_set_default_invite_quota", { p_quota: quota });
+  if (error) throw error;
+  return Number(data);
+}
+
+/** Admin: give one member a new allowance. */
+export async function setInviteQuota(profileId: string, quota: number): Promise<number> {
+  if (isDemoMode()) {
+    demo.demoSetInviteQuota(profileId, quota);
+    return quota;
+  }
+  const { data, error } = await supabase.rpc("admin_set_invite_quota", { p_profile_id: profileId, p_quota: quota });
+  if (error) throw error;
+  return Number(data);
+}

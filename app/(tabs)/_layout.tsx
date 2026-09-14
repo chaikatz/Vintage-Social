@@ -8,6 +8,7 @@ import { fetchUnreadMessageCount } from "@/api/messages";
 import { SwipeTabs } from "@/navigation/SwipeTabs";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
+import { emitHomeAgain } from "@/utils/homeRefresh";
 
 /**
  * Home / Search / Post / Activity / Profile — nothing else.
@@ -55,6 +56,14 @@ export default function TabsLayout() {
             title: "Home",
             tabBarIcon: ({ color }) => <Feather name="home" size={23} color={color} />,
           }}
+          // Tapping Home while already on Home is "again": the feed goes
+          // back to the top and asks for what is new. From any other tab it
+          // is plain navigation, untouched.
+          listeners={({ navigation }) => ({
+            tabPress: () => {
+              if (navigation.isFocused()) emitHomeAgain();
+            },
+          })}
         />
         <SwipeTabs.Screen
           name="search"

@@ -522,3 +522,19 @@ this repo:
   go to Storage.
 - `src/types/db.ts` is hand-maintained to mirror the migrations; once a
   project is linked you can regenerate with `supabase gen types`.
+
+
+## Setup notes (September 2026 pass)
+
+- **Migration `0016_invitations_and_places.sql`** — applied to staging and production. Adds `app_settings`
+  (admin-only read; `default_invite_quota` = 5), `redeem_invite_link(p_slug)` (returns a reason:
+  `joined` / `already_member` / `unknown` / `own` / `closed`; atomic, retry-safe), the admin RPCs
+  `admin_set_invite_quota(profile, n)` and `admin_set_default_invite_quota(n)`, and `posts.place_id`.
+  Approved members who held fewer than five invitations were raised to five.
+- **Places** come from Apple Maps through the local module `modules/vintage-places` (MKLocalSearch).
+  No API key or environment variable is needed. Web and Android keep a typed place with no point.
+- **Invitation links** still use `EXPO_PUBLIC_INVITE_BASE` for the web landing page (`api/invite.ts`);
+  without it the app shares `vintage://invite/<code>` and the code itself, which the recipient enters after
+  installing (Landing → "I have an invitation", or the waiting screen → "I have an invitation").
+- Native modules (`vintage-video`, `vintage-places`, `react-native-maps`, `expo-location`) require a full
+  EAS build; they cannot ship over the air.

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, StyleSheet, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
@@ -10,6 +10,7 @@ import { PostSkeleton } from "@/components/Skeleton";
 import { FEED_PAGE_SIZE, fetchFeedPage } from "@/api/posts";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
+import { onHomeAgain } from "@/utils/homeRefresh";
 
 /**
  * The home feed: the members you follow, newest first, and nothing else on
@@ -40,6 +41,22 @@ export default function Home() {
   // The tab stays mounted underneath, and a clip you can no longer see
   // should not go on talking.
   const focused = useIsFocused();
+
+  // Home tapped while on Home: to the top, and one refetch — never a second
+  // while the first is still out, however many times the icon is tapped.
+  const listRef = useRef<FlatList<(typeof posts)[number]>>(null);
+  const refetchRef = useRef(feed.refetch);
+  refetchRef.current = feed.refetch;
+  const fetchingRef = useRef(false);
+  fetchingRef.current = feed.isFetching;
+  useEffect(
+    () =>
+      onHomeAgain(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        if (!fetchingRef.current) void refetchRef.current();
+      }),
+    [],
+  );
 
   // Only the card actually on screen plays its video — see PostMedia for why
   // letting them all autoplay leaves some of them stuck on a black frame.
@@ -74,6 +91,7 @@ export default function Home() {
   return (
     <Screen padded={false}>
       <FlatList
+        ref={listRef}
         data={posts}
         keyExtractor={(p) => p.id}
         contentContainerStyle={styles.list}

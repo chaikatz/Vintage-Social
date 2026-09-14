@@ -19,16 +19,16 @@ function dyn(light: string, dark: string): ColorValue {
 
 /** The dark print, as sampled from the reference, for anything that needs a plain string. */
 export const dark = {
-  paper: "#38261E",
-  paperRaised: "#402C22",
-  paperSunken: "#2F2018",
-  ink: "#FFFDF8",
-  inkSoft: "#EBD8C0",
-  inkFaint: "#C4AB8F",
-  border: "#4B382D",
-  borderStrong: "#6A5243",
-  accent: "#D6B595",
-  accentDeep: "#B8956F",
+  paper: "#2C1B14", // the page: darkroom brown, deep enough for the photographs to glow
+  paperRaised: "#38251C", // buttons, inputs — a step up, still brown
+  paperSunken: "#241510", // the tab bar, the header, the gaps between prints
+  ink: "#FBF3E8", // cream type
+  inkSoft: "#E4CFB3",
+  inkFaint: "#B89C7F",
+  border: "#43302A", // a hairline you feel more than see
+  borderStrong: "#655044", // button edges and rules
+  accent: "#D4B48F", // gold marks
+  accentDeep: "#B08E67",
 } as const;
 
 /** The light print, as it has always been. */
@@ -69,8 +69,8 @@ export const colors = {
 
   // The invitation card: a dark, printed object rather than a screen. Used
   // only where VINTAGE presents itself — the invitation, and the gate.
-  card: dyn("#3A322A", "#47332A"), // deep printed brown
-  cardDeep: dyn("#2F2821", "#3A2A22"), // the same, one shade down
+  card: dyn("#3A322A", "#3D2A21"), // deep printed brown
+  cardDeep: dyn("#2F2821", "#30201A"), // the same, one shade down
   gold: "#D6BE94", // the ink the rule and the wordmark are struck in
   goldSoft: "#B9A47E", // the same, receded
 
@@ -80,8 +80,8 @@ export const colors = {
   // Camera / capture surfaces and the primary button. On the dark print
   // the shutter is the cream, so the one button on a screen still reads
   // as the one button.
-  shutter: dyn("#1C1915", "#F5E9D8"),
-  onShutter: dyn("#F2EBDD", "#38261E"),
+  shutter: dyn("#1C1915", "#F3E6D3"),
+  onShutter: dyn("#F2EBDD", "#2C1B14"),
 } as const;
 
 export const spacing = {

@@ -132,6 +132,8 @@ export type PostRow = {
    */
   lat: number | null;
   lng: number | null;
+  /** The provider's identifier for that place, when one was chosen rather than typed. */
+  place_id: string | null;
   like_count: number;
   comment_count: number;
   created_at: string;
@@ -149,6 +151,14 @@ export type PostTagRow = {
   status: TagStatus;
   created_at: string;
   decided_at: string | null;
+}
+
+/** A number an admin may turn: `default_invite_quota`, for now. */
+export type AppSettingRow = {
+  key: string;
+  value: unknown;
+  updated_at: string;
+  updated_by: string | null;
 }
 
 export type LikeRow = {
@@ -243,6 +253,7 @@ export type Database = {
       follows: Table<FollowRow>;
       posts: Table<PostRow>;
       post_tags: Table<PostTagRow>;
+      app_settings: Table<AppSettingRow>;
       likes: Table<LikeRow>;
       comments: Table<CommentRow>;
       activity: Table<ActivityRow>;
@@ -266,6 +277,22 @@ export type Database = {
       join_with_invite: {
         Args: { p_slug: string };
         Returns: boolean;
+      };
+      redeem_invite_link: {
+        Args: { p_slug: string };
+        Returns: string;
+      };
+      default_invite_quota: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+      admin_set_default_invite_quota: {
+        Args: { p_quota: number };
+        Returns: number;
+      };
+      admin_set_invite_quota: {
+        Args: { p_profile_id: string; p_quota: number };
+        Returns: number;
       };
       invite_link_owner: {
         Args: { p_slug: string };

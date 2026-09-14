@@ -99,6 +99,7 @@ export interface NewPost {
   location: string | null;
   lat: number | null;
   lng: number | null;
+  place_id: string | null;
 }
 
 /** Photographs from across VINTAGE — the one surface showing work you don't follow. */
@@ -125,6 +126,26 @@ export async function createPost(post: NewPost): Promise<void> {
   }
   const { error } = await supabase.from("posts").insert(post);
   if (error) throw error;
+}
+
+/**
+ * Change the words under your own photograph. Ownership is the database's
+ * to enforce — the posts update policy admits authors only — so a request
+ * for somebody else's post updates nothing and comes back as such.
+ */
+export async function updateCaption(postId: string, caption: string): Promise<void> {
+  const trimmed = caption.trim();
+  if (isDemoMode()) {
+    demo.demoUpdateCaption(postId, trimmed);
+    return;
+  }
+  const { data, error } = await supabase
+    .from("posts")
+    .update({ caption: trimmed })
+    .eq("id", postId)
+    .select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error("Only the author can change a caption.");
 }
 
 export async function deleteOwnPost(postId: string): Promise<void> {

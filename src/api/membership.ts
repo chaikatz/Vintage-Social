@@ -4,6 +4,7 @@ import * as demo from "@/demo/store";
 import { prepareAvatar, uploadFile } from "./media";
 import { normalizeUsername } from "@/utils/validation";
 import type { ApplicationRow } from "@/types/db";
+import { asRedeemResult, describeRedeem, type RedeemResult } from "@/utils/invitationReasons";
 
 /**
  * Membership flows. New accounts are created in `applied` status by a
@@ -93,6 +94,20 @@ export interface InviteSignupInput {
   code: string;
 }
 
+export { describeRedeem };
+export type { RedeemResult };
+
+/**
+ * Take up an invitation with the account you are signed in to. Safe to
+ * call again: a member who already joined is told so and nothing is spent.
+ */
+export async function redeemInviteLink(slug: string): Promise<RedeemResult> {
+  if (isDemoMode()) return demo.demoRedeemInviteLink(slug);
+  const { data, error } = await supabase.rpc("redeem_invite_link", { p_slug: slug });
+  if (error) throw error;
+  return asRedeemResult(String(data));
+}
+
 /** Create an account and take up an invitation in one flow → instant approval. */
 export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
   if (isDemoMode()) {
@@ -105,13 +120,12 @@ export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
   }
 
   await signUp(input.email, input.password, input.desiredUsername, input.fullName);
-  const { data, error } = await supabase.rpc("join_with_invite", { p_slug: input.code });
-  if (error) throw error;
-  if (!data) {
-    throw new Error(
-      "That invitation is no longer open. The member who sent it may have used all of theirs, " +
-        "or replaced the link.",
-    );
+  const result = await redeemInviteLink(input.code);
+  const problem = describeRedeem(result);
+  if (problem) {
+    // The account exists but is not a member: it waits as an application
+    // would, and the code can be entered again from the waiting screen.
+    throw new Error(problem + " Your account has been created; enter a valid invitation to join.");
   }
 }
 

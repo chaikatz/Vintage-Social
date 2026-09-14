@@ -125,43 +125,69 @@ export function PostCard({
   );
 }
 
-/** `NYC · Jan 23, 2003` — or just the date, when no place was written. */
-export function Byline({ post }: { post: { taken_at: string | null; created_at: string; location: string | null } }) {
+/**
+ * `NYC · JAN 23, 2003` — the one metadata row under a name: where, then
+ * when the shutter fired (the posting date only when the file carried no
+ * capture date). One face, one size, one colour for both, so they read as
+ * a single line of type rather than two facts. A long place gives way
+ * before the date does; with no place the date starts the line.
+ */
+export function Byline({
+  post,
+  size = "small",
+  style,
+}: {
+  post: { taken_at: string | null; created_at: string; location: string | null };
+  size?: "small" | "large";
+  style?: object;
+}) {
   const place = post.location?.trim();
+  const large = size === "large";
   return (
-    <Text style={styles.byline} numberOfLines={1}>
+    <View style={[styles.byline, style]}>
       {place ? (
         <>
-          <Text style={styles.place}>{place}</Text>
-          <Text style={styles.dot}> · </Text>
+          <Text style={[styles.meta, large && styles.metaLarge, styles.place]} numberOfLines={1}>
+            {place}
+          </Text>
+          <Text style={[styles.meta, large && styles.metaLarge, styles.dot]}>·</Text>
         </>
       ) : null}
-      <Text style={styles.date}>{shortDate(post.taken_at ?? post.created_at)}</Text>
-    </Text>
+      <Text style={[styles.meta, large && styles.metaLarge]} numberOfLines={1}>
+        {shortDate(post.taken_at ?? post.created_at)}
+      </Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: spacing.xl, backgroundColor: colors.paper },
+  card: {
+    paddingBottom: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.paper,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm + 2,
+    gap: spacing.md,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.md,
   },
   headerText: { flex: 1 },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },
-  byline: { marginTop: 1, fontSize: 12, color: colors.inkSoft },
-  place: { fontSize: 12, color: colors.inkSoft },
-  dot: { fontSize: 12, color: colors.inkFaint },
-  date: {
+  byline: { flexDirection: "row", alignItems: "center", marginTop: 2, gap: 6 },
+  meta: {
     fontFamily: type.mono,
     fontSize: 10,
-    letterSpacing: 1.2,
+    letterSpacing: 1.4,
     textTransform: "uppercase",
-    color: colors.inkFaint,
+    color: colors.inkSoft,
   },
+  metaLarge: { fontSize: 12, letterSpacing: 1.8 },
+  place: { flexShrink: 1 },
+  dot: { color: colors.inkFaint },
   actions: {
     flexDirection: "row",
     alignItems: "center",

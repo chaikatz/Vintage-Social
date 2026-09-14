@@ -46,6 +46,8 @@ export default function Invite() {
   const [code, setCode] = useState(params.slug ?? "");
   const [inviter, setInviter] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
+  // A well-formed code that nobody owns: a typo, or a link since replaced.
+  const [unknown, setUnknown] = useState(false);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -61,6 +63,7 @@ export default function Invite() {
     if (describeSlugProblem(slug)) {
       setInviter(null);
       setClosed(false);
+      setUnknown(false);
       return;
     }
     let live = true;
@@ -69,6 +72,7 @@ export default function Invite() {
         if (!live) return;
         setInviter(owner.inviter);
         setClosed(Boolean(owner.inviter) && !owner.open);
+        setUnknown(owner.inviter === null);
       })
       .catch(() => undefined);
     return () => {
@@ -134,7 +138,9 @@ export default function Invite() {
                   ? closed
                     ? `${inviter} invited you, but every invitation they were given has since been taken up.`
                     : `${inviter} invited you to VINTAGE. Fill this in and you are a member — no queue, no review.`
-                  : "A member has put your name forward. Enter the invitation they sent and you are in — no queue, no review."}
+                  : unknown
+                    ? "That invitation isn’t one we know. Check the code against what you were sent — the member may also have replaced their link."
+                    : "A member has put your name forward. Enter the invitation they sent and you are in — no queue, no review."}
               </Text>
 
               <GateField

@@ -2,10 +2,11 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import Feather from "@expo/vector-icons/Feather";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { showAlert, showPrompt } from "@/utils/alert";
 import { Screen } from "@/components/Screen";
 import { colors, radii, spacing, type } from "@/theme";
-import { fetchApplications, fetchReports } from "@/api/moderation";
+import { fetchApplications, fetchDefaultInviteQuota, fetchReports, setDefaultInviteQuota } from "@/api/moderation";
 import { useSession } from "@/providers/SessionProvider";
 
 /** The admin dashboard. Only profiles with role = admin can see this. */
@@ -23,6 +24,31 @@ export default function AdminHome() {
     queryFn: () => fetchReports("open"),
     enabled: isAdmin,
   });
+  const queryClient = useQueryClient();
+  const defaultQuota = useQuery({
+    queryKey: ["admin-default-quota"],
+    queryFn: fetchDefaultInviteQuota,
+    enabled: isAdmin,
+  });
+  const setDefault = useMutation({
+    mutationFn: setDefaultInviteQuota,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-default-quota"] }),
+    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+  });
+  const promptDefault = () =>
+    showPrompt(
+      "Invitations per new member",
+      "Every member who joins from now on is given this many. Members already inside keep what they have.",
+      (value) => {
+        const n = Number.parseInt((value ?? "").trim(), 10);
+        if (!Number.isInteger(n) || n < 0 || n > 1000) {
+          showAlert("Not a number we can use", "Enter a whole number between 0 and 1000.");
+          return;
+        }
+        setDefault.mutate(n);
+      },
+      String(defaultQuota.data ?? 5),
+    );
 
   if (profileLoaded && !isAdmin) return <Redirect href="/(tabs)" />;
 
@@ -53,6 +79,16 @@ export default function AdminHome() {
         Decisions here are made by people. Nothing in VINTAGE bans or removes
         automatically.
       </Text>
+      <Pressable style={styles.row} onPress={promptDefault}>
+        <Feather name="mail" size={20} color={colors.ink} />
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle}>Invitations per member</Text>
+          <Text style={styles.rowSub}>
+            {defaultQuota.data != null ? `${defaultQuota.data} for each new member` : "The default allowance"}
+          </Text>
+        </View>
+        <Feather name="edit-2" size={16} color={colors.inkFaint} />
+      </Pressable>
       {rows.map((row) => (
         <Pressable key={row.href} style={styles.row} onPress={() => router.push(row.href)}>
           <Feather name={row.icon} size={20} color={colors.ink} />

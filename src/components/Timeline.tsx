@@ -18,6 +18,8 @@ import { cssFilterFor } from "@/filters/cssFilter";
 import { needsDisplayFilter } from "@/utils/displayFilter";
 import { buildTimeline, type TimelineRow } from "@/utils/timeline";
 import { aspectRatio } from "./PostMedia";
+import { Byline } from "./PostCard";
+import { PhotoInspector } from "./PhotoInspector";
 import type { PostRow } from "@/types/db";
 
 interface Props {
@@ -30,25 +32,28 @@ interface Props {
   refreshing?: boolean;
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 /** How far in and out a pinch can take the line. */
-const ZOOM_MIN = 0.6;
-const ZOOM_MAX = 2.2;
+const ZOOM_MIN = 0.55;
+const ZOOM_MAX = 2.4;
+/** Two taps closer together than this open the photograph. */
+const DOUBLE_TAP_MS = 280;
 
 /**
  * A member's photographs hung off one line, by the day they were taken.
  *
- * The line runs down the middle of the page. Each photograph sits at the
- * end of a short branch to one side of it, the next one to the other,
- * with the day it was taken written along the branch and the place under
- * it — so the page reads as a life in pictures rather than a log of
- * posts. Years are lettered on the line as they pass, and a long silence
- * between two photographs is said out loud instead of hidden.
+ * The line runs down the middle of the page. Each entry puts the
+ * photograph on one side and its words on the other — where and when,
+ * then the caption, set large enough to be read as part of the picture
+ * rather than as metadata under it — and the next entry swaps sides, so
+ * the page reads as a life in pictures. Years are lettered on the line as
+ * they pass; a long silence between two photographs is said out loud.
  *
- * Pinch to zoom: the frames grow and the line stretches with them, so a
- * decade can be read at a glance or one summer looked at closely. It is a
- * real re-layout, not a scaled screenshot, so nothing goes soft.
+ * Pinch to zoom the whole history: out to survey a decade at a glance, in
+ * to read one summer. It is a real re-layout — frames, type and spacing
+ * grow together — so nothing goes soft and the list keeps its place. Tap
+ * a photograph (or double-tap) to inspect it close, at full resolution,
+ * with the platform's own pinch and pan; closing lands exactly where you
+ * were on the line.
  */
 export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
   const { width } = useWindowDimensions();
@@ -57,6 +62,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const [zoom, setZoom] = useState(1);
   const [pinching, setPinching] = useState(false);
   const pinch = useRef({ startDistance: 0, startZoom: 1, pending: 1, scheduled: false });
+  const [inspecting, setInspecting] = useState<PostRow | null>(null);
 
   // Two fingers are a pinch and are claimed before the list can scroll
   // with them; one finger is left entirely to the list.
@@ -95,14 +101,19 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
     });
   }, []);
 
-  // Each half of the page holds a frame at its outer edge and the branch
-  // filling the rest of the way to the spine. Zooming in grows the frame
-  // until the branch is just long enough to carry its words, and stretches
-  // the spacing on, so time itself opens up; zooming out does the reverse.
-  const half = width / 2 - spacing.lg - 6;
-  const frame = Math.round(Math.min(half - 40, Math.max(64, half * 0.75 * zoom)));
-  const branch = Math.round(half - frame);
-  const gap = Math.round(spacing.md * zoom);
+  const resetZoom = () => {
+    pinch.current.pending = 1;
+    setZoom(1);
+  };
+
+  // Each half of the page holds either the photograph or its words. The
+  // frame takes most of its half and grows with the zoom until it meets
+  // the gutter; the type grows more gently so it stays readable rather
+  // than shouting.
+  const half = width / 2 - spacing.lg;
+  const frame = Math.round(Math.min(half - 10, Math.max(72, half * 0.86 * zoom)));
+  const gap = Math.round(spacing.lg * zoom);
+  const typeScale = Math.min(1.35, Math.max(0.8, 0.6 + zoom * 0.4));
 
   return (
     <View style={styles.root} {...responder.panHandlers}>
@@ -115,9 +126,35 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         refreshing={refreshing ?? false}
         scrollEnabled={!pinching}
         contentContainerStyle={[styles.list, rows.length > 0 && styles.listWithRows]}
+        // Frames are drawn from the grid thumbnail until inspected; the
+        // window is kept modest so a long history scrolls without stutter.
+        windowSize={7}
+        maxToRenderPerBatch={6}
+        removeClippedSubviews
         renderItem={({ item }) => (
-          <Row row={item} branch={branch} frame={frame} gap={gap} onOpenPost={onOpenPost} />
+          <Row
+            row={item}
+            frame={frame}
+            gap={gap}
+            typeScale={typeScale}
+            onOpenPost={onOpenPost}
+            onInspect={setInspecting}
+          />
         )}
+      />
+      {Math.abs(zoom - 1) > 0.05 ? (
+        <Pressable style={styles.reset} onPress={resetZoom} hitSlop={8} accessibilityLabel="Back to the overview">
+          <Feather name="minimize-2" size={12} color={colors.inkSoft} />
+          <Text style={styles.resetText}>Overview</Text>
+        </Pressable>
+      ) : null}
+      <PhotoInspector
+        post={inspecting}
+        onClose={() => setInspecting(null)}
+        onOpenPost={(p) => {
+          setInspecting(null);
+          onOpenPost(p);
+        }}
       />
     </View>
   );
@@ -125,17 +162,20 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
 
 function Row({
   row,
-  branch,
   frame,
   gap,
+  typeScale,
   onOpenPost,
+  onInspect,
 }: {
   row: TimelineRow;
-  branch: number;
   frame: number;
   gap: number;
+  typeScale: number;
   onOpenPost: (post: PostRow) => void;
+  onInspect: (post: PostRow) => void;
 }) {
+  const lastTap = useRef(0);
   if (row.kind === "year") {
     return (
       <View style={styles.marker}>
@@ -153,58 +193,85 @@ function Row({
     );
   }
 
-  const { post, side, date } = row;
+  const { post, side } = row;
   const isVideo = post.media_type === "video";
   const url = isVideo
     ? mediaUrl("thumbnails", post.thumb_path)
     : mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path);
   const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
   const ratio = aspectRatio(post.width, post.height);
-  const stamp = `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
-  const place = post.location?.trim() || null;
-  const left = side === "left";
-
   const frameHeight = Math.round(frame / ratio);
-  // The branch meets the frame at its middle; the words hang under the
-  // frame, set toward the spine so the eye reads line → picture → words.
-  const armTop = gap + frameHeight / 2;
+  const left = side === "left";
+  const caption = post.caption?.trim() || null;
+
+  // One tap inspects the picture; a second within a beat does the same,
+  // so a double-tap never falls through to anything else.
+  const tap = () => {
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      lastTap.current = 0;
+      return;
+    }
+    lastTap.current = now;
+    onInspect(post);
+  };
 
   const picture = (
-    <View style={[styles.column, { width: frame }, left ? styles.columnLeft : styles.columnRight]}>
-      <Pressable
-        onPress={() => onOpenPost(post)}
-        style={[styles.frame, { width: frame, height: frameHeight }]}
-        accessibilityRole="imagebutton"
-        accessibilityLabel={place ? `${stamp}, ${place}` : stamp}
-      >
-        {url ? (
-          <Image
-            source={url}
-            style={[StyleSheet.absoluteFill, live ? ({ filter: live } as object) : null]}
-            contentFit="cover"
-            transition={80}
-            cachePolicy="memory-disk"
-            recyclingKey={post.id}
-          />
-        ) : null}
-        {isVideo ? (
-          <View style={styles.videoBadge}>
-            <Feather name="play" size={10} color="#FFFFFF" />
-          </View>
-        ) : null}
-      </Pressable>
-      <Text style={[styles.date, left ? styles.textLeft : styles.textRight]} numberOfLines={1}>
-        {stamp}
-      </Text>
-      {place ? (
-        <Text style={[styles.place, left ? styles.textLeft : styles.textRight]} numberOfLines={1}>
-          {place}
-        </Text>
+    <Pressable
+      onPress={tap}
+      onLongPress={() => onOpenPost(post)}
+      style={[styles.frame, { width: frame, height: frameHeight }]}
+      accessibilityRole="imagebutton"
+      accessibilityLabel={caption ?? "Photograph"}
+    >
+      {url ? (
+        <Image
+          source={url}
+          style={[StyleSheet.absoluteFill, live ? ({ filter: live } as object) : null]}
+          contentFit="cover"
+          transition={80}
+          cachePolicy="memory-disk"
+          recyclingKey={post.id}
+        />
       ) : null}
-    </View>
+      {isVideo ? (
+        <View style={styles.videoBadge}>
+          <Feather name="play" size={10} color="#FFFFFF" />
+        </View>
+      ) : null}
+    </Pressable>
   );
 
-  const arm = <View style={[styles.armLine, { width: branch, marginTop: armTop }]} />;
+  // The words: where and when on one line, the caption under it with air
+  // around it, set toward the spine so the eye reads line → words.
+  const words = (
+    <Pressable
+      style={[styles.words, left ? styles.wordsRight : styles.wordsLeft]}
+      onPress={() => onOpenPost(post)}
+      accessibilityRole="button"
+    >
+      <Byline
+        post={post}
+        size="large"
+        style={[styles.wordsByline, { justifyContent: left ? "flex-start" : "flex-end" }]}
+      />
+      {caption ? (
+        <Text
+          style={[
+            styles.caption,
+            { fontSize: Math.round(16 * typeScale), lineHeight: Math.round(25 * typeScale) },
+            left ? styles.textLeft : styles.textRight,
+          ]}
+          numberOfLines={typeScale > 1.1 ? 8 : 5}
+        >
+          {caption}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+
+  // The branch meets the frame at its middle; the words sit level with it.
+  const armTop = gap + frameHeight / 2;
 
   return (
     <View style={[styles.row, { paddingVertical: gap }]}>
@@ -214,21 +281,27 @@ function Row({
         {left ? (
           <>
             {picture}
-            {arm}
+            <View style={[styles.arm, { marginTop: armTop }]} />
           </>
-        ) : null}
+        ) : (
+          words
+        )}
       </View>
       <View style={[styles.half, styles.halfRight]}>
-        {!left ? (
+        {left ? (
+          words
+        ) : (
           <>
-            {arm}
+            <View style={[styles.arm, { marginTop: armTop }]} />
             {picture}
           </>
-        ) : null}
+        )}
       </View>
     </View>
   );
 }
+
+const ARM = 10;
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -258,33 +331,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.ink,
   },
+  arm: { width: ARM, height: 1, backgroundColor: colors.borderStrong },
 
-  row: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
+  row: { flexDirection: "row", alignItems: "flex-start" },
   half: { flex: 1, flexDirection: "row", alignItems: "flex-start" },
   halfLeft: { justifyContent: "flex-end" },
   halfRight: { justifyContent: "flex-start" },
-
-  column: { gap: 3 },
-  columnLeft: { alignItems: "flex-end" },
-  columnRight: { alignItems: "flex-start" },
-  armLine: { height: 1, backgroundColor: colors.borderStrong },
-  date: {
-    marginTop: 3,
-    fontFamily: type.mono,
-    fontSize: 9,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: colors.inkSoft,
-  },
-  place: {
-    fontSize: 11,
-    color: colors.inkFaint,
-  },
-  textLeft: { textAlign: "right" },
-  textRight: { textAlign: "left" },
 
   frame: {
     backgroundColor: colors.paperSunken,
@@ -304,10 +356,24 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(20, 15, 10, 0.45)",
   },
 
+  words: { flex: 1, paddingTop: 2 },
+  // The words sit on the side opposite the picture, hugging the spine.
+  wordsRight: { paddingLeft: spacing.md + ARM, paddingRight: spacing.lg, alignItems: "flex-start" },
+  wordsLeft: { paddingRight: spacing.md + ARM, paddingLeft: spacing.lg, alignItems: "flex-end" },
+  wordsByline: { marginTop: 0 },
+  caption: {
+    fontFamily: type.serif,
+    color: colors.ink,
+    marginTop: spacing.sm,
+  },
+  textLeft: { textAlign: "left" },
+  textRight: { textAlign: "right" },
+
   marker: { alignItems: "center", paddingVertical: spacing.sm },
   year: {
     fontFamily: type.serif,
-    fontSize: 15,
+    fontSize: 16,
+    letterSpacing: 1,
     color: colors.ink,
     backgroundColor: colors.paper,
     paddingHorizontal: spacing.sm,
@@ -336,5 +402,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
+  },
+
+  reset: {
+    position: "absolute",
+    bottom: spacing.lg,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.paperRaised,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  resetText: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 1.8,
+    textTransform: "uppercase",
+    color: colors.inkSoft,
   },
 });

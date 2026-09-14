@@ -6,7 +6,9 @@ import { GateLayout } from "@/components/gate/GateLayout";
 import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
-import { fetchMyApplication } from "@/api/membership";
+import { describeRedeem, fetchMyApplication, redeemInviteLink } from "@/api/membership";
+import { slugFromInput } from "@/utils/inviteLink";
+import { showAlert, showPrompt } from "@/utils/alert";
 
 const COPY: Record<string, { title: string; body: string }> = {
   applied: {
@@ -51,6 +53,35 @@ export default function Pending() {
     router.replace("/");
   };
 
+  // Somebody on the waitlist who is then handed an invitation should not
+  // have to make a second account. The code goes in here, with the account
+  // they already have; the database grants membership, or says why not.
+  const [redeeming, setRedeeming] = React.useState(false);
+  const enterInvitation = () =>
+    showPrompt(
+      "Your invitation",
+      "Enter the code or paste the link a member sent you.",
+      async (input) => {
+        const slug = slugFromInput(input ?? "");
+        if (!slug) return;
+        setRedeeming(true);
+        try {
+          const result = await redeemInviteLink(slug);
+          const problem = describeRedeem(result);
+          if (problem) {
+            showAlert("Not this one", problem);
+            return;
+          }
+          await refreshProfile();
+          router.replace("/");
+        } catch (err) {
+          showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
+        } finally {
+          setRedeeming(false);
+        }
+      },
+    );
+
   return (
     <GateLayout back={false} scroll={false}>
       <View style={styles.center}>
@@ -61,7 +92,10 @@ export default function Pending() {
       </View>
       <View style={styles.actions}>
         {status === "applied" || status === "waitlisted" ? (
-          <GateButton title="Check status" onPress={checkAgain} />
+          <>
+            <GateButton title="I have an invitation" variant="solid" onPress={enterInvitation} loading={redeeming} />
+            <GateButton title="Check status" onPress={checkAgain} style={styles.gap} />
+          </>
         ) : null}
         <GateButton title="Sign out" variant="quiet" onPress={signOut} style={styles.gap} />
       </View>

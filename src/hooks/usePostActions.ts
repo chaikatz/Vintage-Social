@@ -109,6 +109,13 @@ export function usePostActions(userId: string, postIds: string[]) {
       if (post.author_id === userId) {
         showAlert("Your post", undefined, [
           {
+            text: "Edit caption",
+            onPress: () => {
+              seed(post);
+              router.push({ pathname: "/edit-caption", params: { postId: post.id } });
+            },
+          },
+          {
             text: "Delete post",
             style: "destructive",
             onPress: async () => {
@@ -134,7 +141,7 @@ export function usePostActions(userId: string, postIds: string[]) {
         ]);
       }
     },
-    [userId, router, queryClient, refreshProfile],
+    [userId, router, queryClient, refreshProfile, seed],
   );
 
   return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenPost, commentsFor };

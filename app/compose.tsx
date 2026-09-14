@@ -30,12 +30,13 @@ import { bakeVideo, canBakeVideo } from "@/filters/bakeVideo";
 import { TagPicker, type Taggable } from "@/components/TagPicker";
 import { Avatar } from "@/components/Avatar";
 import { tagMembers } from "@/api/tags";
-import { geocodePlace } from "@/utils/geocode";
+import { PlacePicker, type PlaceChoice } from "@/components/PlacePicker";
+import { placeFields } from "@/api/places";
 import { mediaUrlString, ownedPath, prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { createPost } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
-import { MAX_CAPTION_LENGTH, MAX_LOCATION_LENGTH } from "@/utils/validation";
+import { MAX_CAPTION_LENGTH } from "@/utils/validation";
 import { dateStampText } from "@/utils/time";
 import { describePublishFailure, publishStep } from "@/utils/publishError";
 
@@ -69,7 +70,10 @@ export default function Compose() {
   const filter = getFilter(filterId);
   const [stampOn, setStampOn] = useState(dateStampStartsOn(FILTERS[0].id));
   const [caption, setCaption] = useState("");
-  const [location, setLocation] = useState("");
+  // Where it was taken: a place chosen from the map, or words alone.
+  const [place, setPlace] = useState<PlaceChoice>(null);
+  const [placing, setPlacing] = useState(false);
+  const location = place?.kind === "place" ? place.place.name : place?.kind === "text" ? place.text : "";
   const [busy, setBusy] = useState(false);
   // What publishing is doing right now, said under the button. A bake and
   // an upload can take a few seconds each; a spinner alone reads as stuck.
@@ -225,10 +229,10 @@ export default function Compose() {
         }
       }
 
-      // The place as a point, from the words alone. Never the camera's GPS.
+      // The place is the one chosen, with its own point — never the phone's
+      // location, never a guess from the words. Words alone carry no point.
       setStage("Saving…");
-      const place = location.trim();
-      const point = place && !isDemoMode() ? await geocodePlace(place) : null;
+      const chosen = place?.kind === "place" ? placeFields(place.place) : null;
       await publishStep("post-insert", () =>
         createPost({
           id: postId,
@@ -244,9 +248,10 @@ export default function Compose() {
           show_date_stamp: stampOn,
           caption: caption.trim(),
           taken_at: takenAt,
-          location: place || null,
-          lat: point?.lat ?? null,
-          lng: point?.lng ?? null,
+          location: chosen?.location ?? (location.trim() || null),
+          lat: chosen?.lat ?? null,
+          lng: chosen?.lng ?? null,
+          place_id: chosen?.place_id ?? null,
         }),
       );
 
@@ -457,15 +462,36 @@ export default function Compose() {
           onClose={() => setPicking(false)}
         />
 
+        <SectionLabel>Where</SectionLabel>
+        <Pressable style={styles.tagRow} onPress={() => setPlacing(true)} accessibilityLabel="Choose a place">
+          <View style={styles.grow}>
+            {place ? (
+              <>
+                <Text style={styles.placeName} numberOfLines={1}>
+                  {location}
+                </Text>
+                <Text style={styles.stampHint} numberOfLines={1}>
+                  {place.kind === "place"
+                    ? place.place.subtitle || "On the map"
+                    : "Just the words — no point on the map"}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.stampHint}>Optional — a restaurant, a beach, a town. It pins the photograph on your map.</Text>
+            )}
+          </View>
+          {place ? (
+            <Pressable hitSlop={10} onPress={() => setPlace(null)} accessibilityLabel="Remove the place">
+              <Feather name="x" size={16} color={colors.inkFaint} />
+            </Pressable>
+          ) : (
+            <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+          )}
+        </Pressable>
+        <PlacePicker visible={placing} value={place} onChange={setPlace} onClose={() => setPlacing(false)} />
+
         <SectionLabel>The note</SectionLabel>
         <View style={styles.fields}>
-          <TextField
-            label="Location"
-            value={location}
-            onChangeText={(t) => setLocation(t.slice(0, MAX_LOCATION_LENGTH))}
-            placeholder="Optional — a town, a street, a bar."
-            autoCapitalize="words"
-          />
           <TextField
             label="Caption"
             value={caption}
@@ -651,6 +677,7 @@ const styles = StyleSheet.create({
   },
   tagFaces: { flexDirection: "row", alignItems: "center", gap: 6 },
   tagNames: { flex: 1, fontSize: 13, color: colors.ink, marginLeft: 4 },
+  placeName: { fontSize: 15, color: colors.ink },
   stage: { ...type.caption, fontSize: 12, color: colors.inkFaint, textAlign: "center", marginTop: spacing.sm },
 
   footer: {

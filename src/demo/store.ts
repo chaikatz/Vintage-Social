@@ -280,6 +280,14 @@ export function demoCreatePost(post: Omit<PostRow, "like_count" | "comment_count
   recomputeCounts(state);
 }
 
+export function demoUpdateCaption(postId: string, caption: string): void {
+  const post = state.posts.find((p) => p.id === postId && !p.removed_at);
+  if (!post) throw new Error("Only the author can change a caption.");
+  if (post.author_id !== state.currentUserId) throw new Error("Only the author can change a caption.");
+  post.caption = caption;
+  emit();
+}
+
 export function demoDeletePost(postId: string): void {
   state.posts = state.posts.filter((p) => p.id !== postId);
   state.likes = state.likes.filter((l) => l.post_id !== postId);
@@ -707,6 +715,27 @@ export function demoInviteOwner(slug: string): { inviter: string | null; open: b
   };
 }
 
+/** The demo mirror of redeem_invite_link: a reason, not a boolean. */
+export function demoRedeemInviteLink(slug: string): "joined" | "already_member" | "unknown" | "own" | "closed" {
+  const me = state.currentUserId ? state.profiles.find((p) => p.id === state.currentUserId) : undefined;
+  if (!me) throw new Error("Not signed in");
+  if (me.status === "approved") return "already_member";
+  const owner = ownerOfSlug(slug);
+  const host = owner ? state.profiles.find((p) => p.id === owner) : undefined;
+  if (!owner || !host || host.status !== "approved") return "unknown";
+  if (owner === me.id) return "own";
+  if (usedBy(owner) >= host.invite_quota) return "closed";
+  me.status = "approved";
+  me.approved_at = new Date().toISOString();
+  me.invited_by = owner;
+  me.invite_quota = Math.max(me.invite_quota, 5);
+  const memberNo = assignMemberNo(me.id);
+  note(me.id, welcomeMessage(memberNo));
+  note(owner, "Someone joined VINTAGE on your invitation.", me.id);
+  recomputeCounts(state);
+  return "joined";
+}
+
 export function demoJoinWithInvite(input: {
   fullName: string;
   desiredUsername: string;
@@ -733,7 +762,7 @@ export function demoJoinWithInvite(input: {
     social_handle: null,
     role: "member",
     status: "approved",
-    invite_quota: 3,
+    invite_quota: 5,
     member_no: null, // issued just below, the way redeem_invite does
     invited_by: inviter,
     is_private: false,
@@ -1095,5 +1124,12 @@ export function demoDecideTag(userId: string, postId: string, status: Exclude<Ta
 
 export function demoRemoveTag(postId: string, userId: string): void {
   state.tags = state.tags.filter((t) => !(t.post_id === postId && t.user_id === userId));
+  emit();
+}
+
+export function demoSetInviteQuota(profileId: string, quota: number): void {
+  const p = state.profiles.find((x) => x.id === profileId);
+  if (!p) throw new Error("No such member");
+  p.invite_quota = quota;
   emit();
 }

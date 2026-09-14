@@ -8,7 +8,7 @@ import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { colors, radii, spacing } from "@/theme";
-import { fetchMembers, setSuspension, warnMember } from "@/api/moderation";
+import { fetchMembers, setInviteQuota, setSuspension, warnMember } from "@/api/moderation";
 import { formatMemberNumber } from "@/utils/membership";
 import type { ProfileRow } from "@/types/db";
 
@@ -17,6 +17,7 @@ function memberSubtitle(member: ProfileRow): string {
   const parts: string[] = [member.status];
   if (member.member_no !== null) parts.push(formatMemberNumber(member.member_no));
   parts.push(`${member.post_count} posts`);
+  parts.push(`${member.invite_quota} invitations`);
   return parts.join(" · ");
 }
 
@@ -48,6 +49,30 @@ export default function AdminMembers() {
     onSuccess: refresh,
     onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
   });
+
+  const quota = useMutation({
+    mutationFn: ({ id, n }: { id: string; n: number }) => setInviteQuota(id, n),
+    onSuccess: refresh,
+    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+  });
+
+  // The allowance as a whole number, typed: "8" means eight invitations,
+  // not eight more. The member sees a note when it goes up.
+  const promptQuota = (member: ProfileRow) => {
+    showPrompt(
+      `Invitations for ${member.username}`,
+      `They have ${member.invite_quota} now. Enter the new total.`,
+      (value) => {
+        const n = Number.parseInt((value ?? "").trim(), 10);
+        if (!Number.isInteger(n) || n < 0 || n > 1000) {
+          showAlert("Not a number we can use", "Enter a whole number between 0 and 1000.");
+          return;
+        }
+        quota.mutate({ id: member.id, n });
+      },
+      String(member.invite_quota),
+    );
+  };
 
   const promptWarn = (member: ProfileRow) => {
     showPrompt(
@@ -106,6 +131,7 @@ export default function AdminMembers() {
             onPress={() => router.push(`/user/${item.username}`)}
             right={
               <View style={styles.actions}>
+                <Button title="Invites" variant="secondary" small onPress={() => promptQuota(item)} />
                 <Button title="Warn" variant="secondary" small onPress={() => promptWarn(item)} />
                 <Button
                   title={item.status === "suspended" ? "Reinstate" : "Suspend"}

@@ -89,13 +89,26 @@ export default function Invitations() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+  // The code is the link's ending. It is what somebody types after
+  // installing the app, when the link they tapped is long gone.
+  const [codeCopied, setCodeCopied] = useState(false);
+  const copyCode = async () => {
+    await Clipboard.setStringAsync(slug);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  };
 
-  // The share sheet is the invitation. The line is short enough to survive
-  // being read off a lock screen, and the link goes last so a preview card
-  // — where the recipient's phone draws one — sits under the words.
+  // The share sheet is the invitation. The words carry the code as well as
+  // the link, because a link does not survive installing an app: the
+  // recipient taps it, is sent to install, and arrives with nothing — the
+  // code is what they type then. The link goes last so a preview card,
+  // where the recipient's phone draws one, sits under the words.
   const send = () =>
     Share.share({
-      message: `You're invited to VINTAGE — a members' club for photographs.\n\n${url}`,
+      message:
+        `You're invited to VINTAGE — a members' club for photographs.\n\n` +
+        `Your invitation code is ${slug}. Install VINTAGE, choose "I have an invitation" and enter it — or open:\n${url}`,
     });
 
   const confirmRotate = () =>
@@ -132,6 +145,15 @@ export default function Invitations() {
             <Text style={styles.secondaryText}>{copied ? "Copied" : "Copy"}</Text>
           </Pressable>
         </View>
+
+        {/* The code on its own, for the person who has to type it. */}
+        <Pressable style={styles.codeRow} onPress={copyCode} accessibilityLabel="Copy invitation code">
+          <View style={styles.grow}>
+            <Text style={styles.codeLabel}>Invitation code</Text>
+            <Text style={styles.code}>{slug}</Text>
+          </View>
+          <Text style={styles.codeCopy}>{codeCopied ? "Copied" : "Copy code"}</Text>
+        </Pressable>
 
         {/* The count, said the way it actually behaves. */}
         <View style={styles.allowanceRow}>
@@ -283,6 +305,32 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
 
+  grow: { flex: 1 },
+  codeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  codeLabel: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 2.4,
+    textTransform: "uppercase",
+    color: colors.inkFaint,
+  },
+  code: { fontFamily: type.mono, fontSize: 18, letterSpacing: 1.5, color: colors.ink, marginTop: 4 },
+  codeCopy: {
+    fontFamily: type.mono,
+    fontSize: 11,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    color: colors.accent,
+  },
   allowanceRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, marginTop: spacing.xl },
   allowance: { ...type.title, fontSize: 28 },
   allowanceOf: { ...type.caption, color: colors.inkSoft },
