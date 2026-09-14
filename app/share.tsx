@@ -18,8 +18,10 @@ import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 
 /**
  * Send a photograph to someone. Members you follow, a line to go with it,
- * and it lands in their messages — nothing is posted anywhere public, and
- * there is no "share to story" or link to copy.
+ * and it lands in their messages — nothing is posted anywhere public by
+ * us. The one way out is at the top: the photograph as a print, signed,
+ * handed to the phone's share sheet for the member to place wherever they
+ * like.
  */
 export default function Share() {
   const router = useRouter();
@@ -77,6 +79,24 @@ export default function Share() {
           </Text>
         </View>
       </View>
+
+      <Pressable
+        style={styles.exportRow}
+        onPress={() => router.push({ pathname: "/export", params: { postId: postId ?? "" } })}
+        accessibilityRole="button"
+        accessibilityLabel="Share outside VINTAGE"
+      >
+        <View style={styles.exportIcon}>
+          <Feather name="external-link" size={16} color={colors.ink} />
+        </View>
+        <View style={styles.rowText}>
+          <Text style={styles.exportTitle}>Share outside VINTAGE</Text>
+          <Text style={styles.exportHint}>As a signed print — Instagram, WhatsApp, anywhere.</Text>
+        </View>
+        <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+      </Pressable>
+
+      <Text style={styles.sectionLabel}>To a member</Text>
 
       <TextInput
         value={note}
@@ -150,6 +170,30 @@ const styles = StyleSheet.create({
   previewText: { flex: 1 },
   previewAuthor: { fontSize: 14, fontWeight: "600", color: colors.ink },
   previewCaption: { ...type.caption, marginTop: 2 },
+  exportRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.paperRaised,
+  },
+  exportIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.paperSunken,
+  },
+  exportTitle: { fontSize: 15, color: colors.ink },
+  exportHint: { ...type.caption, marginTop: 2 },
+  sectionLabel: { ...type.label, marginHorizontal: spacing.lg, marginTop: spacing.xl },
   note: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.md,

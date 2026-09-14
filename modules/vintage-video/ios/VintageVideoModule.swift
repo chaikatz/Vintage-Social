@@ -3,6 +3,8 @@ import CoreGraphics
 import CoreImage
 import ExpoModulesCore
 import Foundation
+import QuartzCore
+import UIKit
 
 /// The look to burn in, in the same terms the GL shader takes: the composed
 /// 4x5 colour matrix (row-major, last column the offset) and the film
@@ -41,6 +43,276 @@ public class VintageVideoModule: Module {
         Baker(uri: uri, options: options).run(promise: promise)
       }
     }
+
+    AsyncFunction("brand") { (uri: String, options: BrandOptions, promise: Promise) in
+      // Core Animation exports must not start on the main thread.
+      Self.queue.async {
+        Brander(uri: uri, options: options).run(promise: promise)
+      }
+    }
+  }
+}
+
+// MARK: - The print around a film
+
+/// A rectangle in output pixels, y down from the top — `exportLayout` in JS.
+struct BrandRect: Record {
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+  @Field var width: Double = 0
+  @Field var height: Double = 0
+}
+
+struct BrandTextBox: Record {
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+  @Field var width: Double = 0
+  @Field var height: Double = 0
+  @Field var size: Double = 12
+  @Field var spacing: Double = 0
+}
+
+/// Everything the print needs, measured by `src/utils/exportLayout.ts` so
+/// the still and the film are the same object. Colours are `#rrggbb`.
+struct BrandOptions: Record {
+  @Field var width: Double = 1080
+  @Field var height: Double = 1350
+  @Field var photo: BrandRect = BrandRect()
+  @Field var rule: BrandRect = BrandRect()
+  @Field var wordmark: BrandTextBox = BrandTextBox()
+  @Field var byline: BrandTextBox = BrandTextBox()
+  @Field var credit: BrandTextBox = BrandTextBox()
+  @Field var stamp: BrandTextBox = BrandTextBox()
+  @Field var paper: String = "#FAF6EF"
+  @Field var well: String = "#F3EDE2"
+  @Field var ink: String = "#2B2620"
+  @Field var inkSoft: String = "#6E655A"
+  @Field var inkFaint: String = "#9C927F"
+  @Field var ruleColor: String = "#D5CBB8"
+  @Field var wordmarkText: String = "VINTAGE"
+  @Field var bylineText: String = ""
+  @Field var creditText: String = ""
+  @Field var stampText: String = ""
+}
+
+/// Writes a copy of a film as a VINTAGE print: paper around it, the label
+/// beneath — wordmark, place and date, the member — and the amber stamp
+/// where the feed shows it. The film is scaled to cover its frame and
+/// clipped to it, the way the feed crops; the sound comes through as is.
+private final class Brander {
+  private let uri: String
+  private let options: BrandOptions
+
+  init(uri: String, options: BrandOptions) {
+    self.uri = uri
+    self.options = options
+  }
+
+  func run(promise: Promise) {
+    guard let url = Baker.fileURL(from: uri) else {
+      promise.reject("E_BRAND_INPUT", "The film could not be found at \(uri)")
+      return
+    }
+    let asset = AVURLAsset(url: url)
+    guard let track = asset.tracks(withMediaType: .video).first else {
+      promise.reject("E_BRAND_INPUT", "The file has no video track")
+      return
+    }
+
+    let W = Brander.even(options.width)
+    let H = Brander.even(options.height)
+    guard W > 0, H > 0, options.photo.width > 0, options.photo.height > 0 else {
+      promise.reject("E_BRAND_INPUT", "The print has no size")
+      return
+    }
+    let renderSize = CGSize(width: W, height: H)
+    let photo = Brander.rect(options.photo)
+
+    // The film, upright, scaled to cover its frame and centred in it.
+    let natural = track.naturalSize.applying(track.preferredTransform)
+    let uprightWidth = abs(natural.width)
+    let uprightHeight = abs(natural.height)
+    guard uprightWidth > 0, uprightHeight > 0 else {
+      promise.reject("E_BRAND_INPUT", "The film reports no size")
+      return
+    }
+    let scale = max(photo.width / uprightWidth, photo.height / uprightHeight)
+    let offsetX = photo.minX + (photo.width - uprightWidth * scale) / 2
+    let offsetY = photo.minY + (photo.height - uprightHeight * scale) / 2
+    let transform = track.preferredTransform
+      .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+      .concatenating(CGAffineTransform(translationX: offsetX, y: offsetY))
+
+    let range = CMTimeRange(start: .zero, duration: asset.duration)
+    let instruction = AVMutableVideoCompositionInstruction()
+    instruction.timeRange = range
+    instruction.backgroundColor = Brander.color(options.well)
+    let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+    layerInstruction.setTransform(transform, at: .zero)
+    instruction.layerInstructions = [layerInstruction]
+
+    let composition = AVMutableVideoComposition()
+    composition.renderSize = renderSize
+    let fps = track.nominalFrameRate > 1 ? Int32(track.nominalFrameRate.rounded()) : 30
+    composition.frameDuration = CMTime(value: 1, timescale: fps)
+    composition.instructions = [instruction]
+    composition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+    composition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+    composition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
+
+    // Core Animation's origin is the bottom-left, so every rectangle from
+    // the layout is flipped once here and nowhere else.
+    let parent = CALayer()
+    parent.frame = CGRect(origin: .zero, size: renderSize)
+    parent.backgroundColor = Brander.color(options.paper)
+    parent.isGeometryFlipped = false
+
+    // The frame the film shows through: the rendered frame is full-size
+    // and clipped to the photograph's rectangle.
+    let clip = CALayer()
+    clip.frame = Brander.flip(photo, in: H)
+    clip.masksToBounds = true
+    clip.backgroundColor = Brander.color(options.well)
+    let videoLayer = CALayer()
+    videoLayer.frame = CGRect(x: -clip.frame.minX, y: -clip.frame.minY, width: W, height: H)
+    clip.addSublayer(videoLayer)
+    parent.addSublayer(clip)
+
+    let rule = CALayer()
+    rule.frame = Brander.flip(Brander.rect(options.rule), in: H)
+    rule.backgroundColor = Brander.color(options.ruleColor)
+    parent.addSublayer(rule)
+
+    if !options.wordmarkText.isEmpty {
+      parent.addSublayer(Brander.text(
+        options.wordmarkText, box: options.wordmark, in: H,
+        font: Brander.font("Georgia", size: options.wordmark.size),
+        color: options.ink, alignment: .left
+      ))
+    }
+    if !options.bylineText.isEmpty {
+      parent.addSublayer(Brander.text(
+        options.bylineText, box: options.byline, in: H,
+        font: Brander.font("CourierNewPSMT", size: options.byline.size),
+        color: options.inkSoft, alignment: .right
+      ))
+    }
+    if !options.creditText.isEmpty {
+      parent.addSublayer(Brander.text(
+        options.creditText, box: options.credit, in: H,
+        font: Brander.font("CourierNewPSMT", size: options.credit.size),
+        color: options.inkFaint, alignment: .right
+      ))
+    }
+    if !options.stampText.isEmpty {
+      let stamp = Brander.text(
+        options.stampText, box: options.stamp, in: H,
+        font: Brander.font("CourierNewPS-BoldMT", size: options.stamp.size),
+        color: "#FFB03A", alignment: .right
+      )
+      stamp.opacity = 0.92
+      stamp.shadowColor = UIColor(red: 1, green: 150.0 / 255.0, blue: 40.0 / 255.0, alpha: 1).cgColor
+      stamp.shadowOpacity = 0.55
+      stamp.shadowRadius = CGFloat(options.stamp.size * 0.4)
+      stamp.shadowOffset = .zero
+      parent.addSublayer(stamp)
+    }
+
+    composition.animationTool = AVVideoCompositionCoreAnimationTool(
+      postProcessingAsVideoLayer: videoLayer, in: parent
+    )
+
+    guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+      promise.reject("E_BRAND_EXPORT", "This film cannot be exported")
+      return
+    }
+    let outputURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("vintage-print-\(UUID().uuidString).mp4")
+    export.videoComposition = composition
+    export.outputURL = outputURL
+    export.outputFileType = .mp4
+    export.shouldOptimizeForNetworkUse = true
+
+    export.exportAsynchronously {
+      switch export.status {
+      case .completed:
+        let result: [String: Any] = [
+          "uri": outputURL.absoluteString,
+          "width": Int(W),
+          "height": Int(H)
+        ]
+        promise.resolve(result)
+      case .cancelled:
+        promise.reject("E_BRAND_CANCELLED", "The export was cancelled")
+      default:
+        let reason = export.error?.localizedDescription ?? "unknown error"
+        promise.reject("E_BRAND_EXPORT", "The print could not be made: \(reason)")
+      }
+    }
+  }
+
+  // MARK: - Helpers
+
+  static func even(_ value: Double) -> CGFloat {
+    return CGFloat(max(2, Int((value / 2).rounded()) * 2))
+  }
+
+  static func rect(_ r: BrandRect) -> CGRect {
+    return CGRect(x: r.x, y: r.y, width: r.width, height: r.height)
+  }
+
+  static func rect(_ b: BrandTextBox) -> CGRect {
+    return CGRect(x: b.x, y: b.y, width: b.width, height: b.height)
+  }
+
+  /// Top-down layout to bottom-up Core Animation.
+  static func flip(_ r: CGRect, in height: CGFloat) -> CGRect {
+    return CGRect(x: r.minX, y: height - r.minY - r.height, width: r.width, height: r.height)
+  }
+
+  static func color(_ hex: String) -> CGColor {
+    var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+    if s.hasPrefix("#") { s.removeFirst() }
+    guard s.count == 6, let v = UInt32(s, radix: 16) else {
+      return UIColor.white.cgColor
+    }
+    return UIColor(
+      red: CGFloat((v >> 16) & 0xff) / 255,
+      green: CGFloat((v >> 8) & 0xff) / 255,
+      blue: CGFloat(v & 0xff) / 255,
+      alpha: 1
+    ).cgColor
+  }
+
+  static func font(_ name: String, size: Double) -> UIFont {
+    let points = CGFloat(max(1, size))
+    if let named = UIFont(name: name, size: points) {
+      return named
+    }
+    if name.hasPrefix("Courier") {
+      return UIFont.monospacedSystemFont(ofSize: points, weight: name.contains("Bold") ? .bold : .regular)
+    }
+    return UIFont.systemFont(ofSize: points)
+  }
+
+  static func text(
+    _ string: String, box: BrandTextBox, in height: CGFloat,
+    font: UIFont, color: String, alignment: CATextLayerAlignmentMode
+  ) -> CATextLayer {
+    let layer = CATextLayer()
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: font,
+      .foregroundColor: UIColor(cgColor: Brander.color(color)),
+      .kern: CGFloat(box.spacing)
+    ]
+    layer.string = NSAttributedString(string: string, attributes: attributes)
+    layer.frame = Brander.flip(Brander.rect(box), in: height)
+    layer.alignmentMode = alignment
+    layer.truncationMode = .end
+    layer.isWrapped = false
+    // Units are already pixels; nothing here is scaled for a screen.
+    layer.contentsScale = 1
+    return layer
   }
 }
 

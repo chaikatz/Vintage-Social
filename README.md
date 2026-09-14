@@ -551,3 +551,10 @@ this repo:
 - **iOS delivery needs an APNs key in EAS**: run `npx eas-cli credentials --platform ios` on the Mac,
   choose the production build profile → *Push Notifications* → set up a key. Without it tokens are
   filed but Apple delivers nothing. `expo-notifications` is native, so this is a full EAS build.
+- **Sharing outside VINTAGE** — the send (paper plane) sheet now opens with "Share outside VINTAGE".
+  A photograph leaves as a *print*: paper (light or darkroom brown), a margin, and a label with the
+  wordmark, place · date, and the member's name; a "Story" shape puts the same print on a 9:16 page.
+  Stills are captured on the phone (`react-native-view-shot`) at 3× a 540-point card; films are
+  branded natively by `modules/vintage-video` (`brand`) — the same paper and label painted around the
+  moving picture with Core Animation, sound kept — then handed to the system share sheet
+  (`expo-sharing`). VINTAGE posts nothing itself. Both packages are native: full EAS build required.

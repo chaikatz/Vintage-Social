@@ -76,6 +76,7 @@ export default function RootLayout() {
           <Stack.Screen name="messages/index" options={{ title: "Messages" }} />
           <Stack.Screen name="messages/[id]" options={{ title: "" }} />
           <Stack.Screen name="share" options={{ presentation: "modal", title: "Send to" }} />
+          <Stack.Screen name="export" options={{ presentation: "modal", title: "Share outside" }} />
           <Stack.Screen name="requests" options={{ title: "Requests" }} />
           <Stack.Screen name="user/[username]" options={{ title: "" }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
