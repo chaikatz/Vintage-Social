@@ -33,7 +33,8 @@ interface Props {
   refreshing?: boolean;
 }
 
-/** How far in a pinch can go. Out is where it started. */
+/** How far a pinch can take the page, in and out. */
+const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 3;
 /** Two taps closer together than this open the photograph. */
 const DOUBLE_TAP_MS = 280;
@@ -50,15 +51,22 @@ const DOUBLE_TAP_MS = 280;
  *
  * Nothing here moves when you pinch. The page is a print: pinching
  * magnifies it where your fingers are, the way a photograph magnifies,
- * and letting go leaves it there until you pinch back out or tap
- * "Actual size". Tap a photograph to inspect it close, at full
- * resolution; closing lands exactly where you were on the line.
+ * or shrinks it to survey more of the line, and letting go leaves it
+ * there until you pinch back or tap "Actual size". Tap a photograph to
+ * see it close, at full resolution, and swipe on from there to the next
+ * one along the line; closing lands exactly where you were.
  */
 export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
   const { width } = useWindowDimensions();
   const rows = useMemo(() => buildTimeline(posts), [posts]);
 
-  const [inspecting, setInspecting] = useState<PostRow | null>(null);
+  // The photographs alone, in the order they hang, for paging through them close.
+  const photos = useMemo(() => rows.flatMap((r) => (r.kind === "post" ? [r.post] : [])), [rows]);
+  const [inspecting, setInspecting] = useState<number | null>(null);
+  const inspect = (post: PostRow) => {
+    const i = photos.findIndex((p) => p.id === post.id);
+    setInspecting(i < 0 ? null : i);
+  };
   const [zoomed, setZoomed] = useState(false);
   const scroll = useRef<ScrollView>(null);
 
@@ -69,7 +77,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const gap = spacing.lg;
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const next = (e.nativeEvent.zoomScale ?? 1) > 1.02;
+    const next = Math.abs((e.nativeEvent.zoomScale ?? 1) - 1) > 0.02;
     if (next !== zoomed) setZoomed(next);
   };
   const actualSize = () => {
@@ -83,9 +91,12 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         ref={scroll}
         style={styles.root}
         contentContainerStyle={[styles.list, rows.length > 0 && styles.listWithRows]}
-        minimumZoomScale={1}
+        minimumZoomScale={ZOOM_MIN}
         maximumZoomScale={ZOOM_MAX}
         bouncesZoom
+        // Shrunk below the page, the print sits in the middle rather than
+        // in a corner.
+        centerContent
         // A pinch zooms the print; nothing is laid out again.
         pinchGestureEnabled
         onScroll={onScroll}
@@ -102,7 +113,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
           {rows.length === 0
             ? empty
             : rows.map((row) => (
-                <Row key={row.key} row={row} frame={frame} gap={gap} onOpenPost={onOpenPost} onInspect={setInspecting} />
+                <Row key={row.key} row={row} frame={frame} gap={gap} onOpenPost={onOpenPost} onInspect={inspect} />
               ))}
         </View>
       </ScrollView>
@@ -113,7 +124,8 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         </Pressable>
       ) : null}
       <PhotoInspector
-        post={inspecting}
+        posts={photos}
+        index={inspecting}
         onClose={() => setInspecting(null)}
         onOpenPost={(p) => {
           setInspecting(null);
@@ -206,10 +218,13 @@ function Row({
   );
 
   // The words: where, when, and what was said, one under the other on a
-  // single left edge, whichever side of the line they sit.
+  // single left edge, whichever side of the line they sit. The block is as
+  // tall as the frame across from it and the lines sit in its middle, so
+  // the branch that reaches them meets them at their centre, as the
+  // branch on the other side meets the photograph at its centre.
   const words = (
     <Pressable
-      style={[styles.words, left ? styles.wordsRight : styles.wordsLeft]}
+      style={[styles.words, { minHeight: frameHeight }, left ? styles.wordsRight : styles.wordsLeft]}
       onPress={() => onOpenPost(post)}
       accessibilityRole="button"
     >
@@ -221,7 +236,7 @@ function Row({
         ) : null}
         <Text style={styles.date}>{shortDate(post.taken_at ?? post.created_at)}</Text>
         {caption ? (
-          <Text style={styles.caption} numberOfLines={6}>
+          <Text style={styles.caption} numberOfLines={5}>
             {caption}
           </Text>
         ) : null}
@@ -229,13 +244,14 @@ function Row({
     </Pressable>
   );
 
-  // The branch meets the frame at its middle; the words sit level with it.
-  const armTop = gap + frameHeight / 2;
+  // Two branches leave the one node: one to the middle of the frame, one
+  // to the middle of the words.
+  const armTop = frameHeight / 2;
 
   return (
     <View style={[styles.row, { paddingVertical: gap }]}>
       <View style={styles.line} />
-      <View style={[styles.node, { top: armTop }]} />
+      <View style={[styles.node, { top: gap + armTop }]} />
       <View style={[styles.half, styles.halfLeft]}>
         {left ? (
           <>
@@ -243,12 +259,18 @@ function Row({
             <View style={[styles.arm, { marginTop: armTop }]} />
           </>
         ) : (
-          words
+          <>
+            {words}
+            <View style={[styles.arm, styles.armCentred]} />
+          </>
         )}
       </View>
       <View style={[styles.half, styles.halfRight]}>
         {left ? (
-          words
+          <>
+            <View style={[styles.arm, styles.armCentred]} />
+            {words}
+          </>
         ) : (
           <>
             <View style={[styles.arm, { marginTop: armTop }]} />
@@ -291,6 +313,8 @@ const styles = StyleSheet.create({
     borderColor: colors.ink,
   },
   arm: { width: ARM, height: 1, backgroundColor: colors.borderStrong },
+  // The branch to the words: level with the middle of however many lines there are.
+  armCentred: { alignSelf: "center" },
 
   row: { flexDirection: "row", alignItems: "flex-start" },
   half: { flex: 1, flexDirection: "row", alignItems: "flex-start" },
@@ -315,10 +339,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(20, 15, 10, 0.45)",
   },
 
-  words: { flex: 1, paddingTop: 2 },
-  // The words sit on the side opposite the picture, hugging the spine.
-  wordsRight: { paddingLeft: spacing.md + ARM, paddingRight: spacing.lg },
-  wordsLeft: { paddingRight: spacing.md + ARM, paddingLeft: spacing.lg },
+  words: { flex: 1, justifyContent: "center" },
+  // The words sit on the side opposite the picture, a step off the branch.
+  wordsRight: { paddingLeft: spacing.md, paddingRight: spacing.lg },
+  wordsLeft: { paddingRight: spacing.md, paddingLeft: spacing.lg },
   // Every line starts on the same left edge, on either side of the line.
   wordsBlock: { alignItems: "flex-start" },
   place: {
