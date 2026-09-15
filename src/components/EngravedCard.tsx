@@ -82,5 +82,5 @@ function octagon(width: number, height: number, pad: number, cut: number): strin
 
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, overflow: "hidden" },
-  paper: { backgroundColor: colors.paper },
+  paper: { backgroundColor: colors.paperRaised },
 });

@@ -71,13 +71,23 @@ describe("reading a suffix out of whatever was pasted", () => {
 });
 
 describe("the link a member shares", () => {
-  it("falls back to the app scheme with no domain configured", () => {
-    // EXPO_PUBLIC_INVITE_BASE is unset under test, which is the TestFlight
-    // situation: the link opens the app for anyone who already has it.
-    expect(inviteUrl("chai-katz")).toBe("vintage://invite/chai-katz");
+  it("lives on the domain when nothing else is configured", () => {
+    // EXPO_PUBLIC_INVITE_BASE is unset under test; the domain is the default.
+    expect(inviteUrl("chai-katz")).toBe("https://vintagesocial.app/i/chai-katz");
   });
 
   it("reads without the https:// when shown on screen", () => {
     expect(inviteUrlLabel("chai-katz")).not.toMatch(/^https:\/\//);
+  });
+});
+
+describe("the invitation domain", () => {
+  it("is vintagesocial.app, and the old Vercel address is rewritten to it", async () => {
+    const { inviteBaseFor } = await import("@/utils/inviteLink");
+    expect(inviteBaseFor(undefined)).toBe("https://vintagesocial.app");
+    expect(inviteBaseFor("https://vintage-social.vercel.app")).toBe("https://vintagesocial.app");
+    expect(inviteBaseFor("https://vintage-social.vercel.app/")).toBe("https://vintagesocial.app");
+    expect(inviteBaseFor("https://staging.example.com")).toBe("https://staging.example.com");
+    expect(inviteBaseFor("")).toBeUndefined();
   });
 });

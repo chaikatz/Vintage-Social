@@ -130,9 +130,9 @@ export default function Invitations() {
     <Screen padded={false}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* What the other person receives, shown to the person sending it. */}
-        <EngravedCard style={styles.card}>
+        <EngravedCard style={styles.card} tone="paper">
           <Text style={styles.cardEyebrow}>By invitation</Text>
-          <Text style={styles.cardWordmark}>Vintage</Text>
+          <Text style={styles.cardWordmark}>VINTAGE</Text>
           <View style={styles.cardRule} />
           <Text style={styles.cardLink} numberOfLines={2}>
             {inviteUrlLabel(slug)}
@@ -239,10 +239,12 @@ export default function Invitations() {
 const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
+  // The card a member hands over, printed like the door: cream, ink, the
+  // wordmark tracked wide inside the engraved frame.
   card: {
-    backgroundColor: colors.card,
-    paddingVertical: spacing.xl,
-    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.paperRaised,
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.xl,
     alignItems: "center",
   },
   cardEyebrow: {
@@ -250,26 +252,28 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2.6,
     textTransform: "uppercase",
-    color: colors.goldSoft,
+    color: colors.inkFaint,
   },
   cardWordmark: {
-    fontFamily: type.script,
-    fontSize: 40,
-    color: colors.gold,
-    marginTop: spacing.xs,
+    fontFamily: type.serif,
+    fontSize: 30,
+    lineHeight: 40,
+    letterSpacing: 8,
+    color: colors.ink,
+    marginTop: spacing.sm,
   },
   cardRule: {
-    width: 46,
+    width: 24,
     height: 1,
-    backgroundColor: colors.goldSoft,
+    backgroundColor: colors.ink,
     marginVertical: spacing.md,
-    opacity: 0.7,
+    opacity: 0.85,
   },
   cardLink: {
     fontFamily: type.mono,
     fontSize: 11,
-    letterSpacing: 0.6,
-    color: colors.goldSoft,
+    letterSpacing: 1.2,
+    color: colors.inkSoft,
     textAlign: "center",
   },
 

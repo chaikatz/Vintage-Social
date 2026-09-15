@@ -15,7 +15,7 @@ https://<your-domain>/i/chai
 invitation link works there exactly as it would anywhere else:
 
 ```
-https://vintage-social.vercel.app/i/chai
+https://vintagesocial.app/i/chai
 ```
 
 Everything in this document works on that hostname. A domain is worth buying

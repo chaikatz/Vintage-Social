@@ -6,13 +6,30 @@
  * host comes from configuration rather than being hard-coded, because it
  * changes exactly twice: once when the domain is bought, and never again.
  *
- * Until a domain exists, EXPO_PUBLIC_INVITE_BASE is unset and the app falls
- * back to the vintage:// scheme, which opens the app directly for anyone
- * who already has it. That is the honest behaviour for a TestFlight build:
- * shareable, and useless to somebody without the app — which is the gap the
- * web page will close.
+ * The domain is vintagesocial.app. EXPO_PUBLIC_INVITE_BASE may still point
+ * elsewhere (a staging host), and the Vercel address the site lived at
+ * before the domain is rewritten to the domain, so a build made with the
+ * old value shares the right link. Only when the variable is set to
+ * nothing at all does the app fall back to the vintage:// scheme, which
+ * opens the app directly for anyone who already has it.
  */
-const base = process.env.EXPO_PUBLIC_INVITE_BASE?.replace(/\/+$/, "");
+export const INVITE_DOMAIN = "https://vintagesocial.app";
+const LEGACY_HOSTS = ["vintage-social.vercel.app"];
+
+function resolveBase(configured: string | undefined): string | undefined {
+  const trimmed = configured?.trim().replace(/\/+$/, "");
+  if (trimmed === undefined) return INVITE_DOMAIN;
+  if (trimmed === "") return undefined;
+  const host = trimmed.replace(/^https?:\/\//, "");
+  return LEGACY_HOSTS.includes(host) ? INVITE_DOMAIN : trimmed;
+}
+
+const base = resolveBase(process.env.EXPO_PUBLIC_INVITE_BASE);
+
+/** Test seam: what the app would use for a given configured value. */
+export function inviteBaseFor(configured: string | undefined): string | undefined {
+  return resolveBase(configured);
+}
 
 /** The link a member shares. */
 export function inviteUrl(slug: string): string {

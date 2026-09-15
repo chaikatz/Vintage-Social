@@ -17,11 +17,13 @@
  * give App Store Connect.
  */
 
+import { inviteBaseFor } from "@/utils/inviteLink";
+
 const trim = (v: string | undefined) => (v ?? "").trim() || null;
 
 export const SUPPORT_EMAIL: string | null = trim(process.env.EXPO_PUBLIC_SUPPORT_EMAIL);
 
-const inviteBase = trim(process.env.EXPO_PUBLIC_INVITE_BASE)?.replace(/\/+$/, "") ?? null;
+const inviteBase = inviteBaseFor(process.env.EXPO_PUBLIC_INVITE_BASE)?.replace(/^vintage:.*$/, "") || null;
 
 export const PRIVACY_URL: string | null =
   trim(process.env.EXPO_PUBLIC_PRIVACY_URL) ?? (inviteBase ? `${inviteBase}/privacy` : null);
