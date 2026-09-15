@@ -1,11 +1,14 @@
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, type ViewStyle } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
+import { GATE_BUTTON, GATE_ON_BUTTON } from "./palette";
 
 /**
- * The actions on a printed card: struck in gold, or ruled in it. Nothing
- * fills with colour and nothing has a rounded corner — this is ink on
- * stock, not a button in a browser.
+ * The actions at the door, as the landing page draws them: a dark bar
+ * with an arrow, a ruled bar with an arrow, or a line of capitals with
+ * nothing around it. No rounded corners — ink on paper, not a button in
+ * a browser.
  */
 export function GateButton({
   title,
@@ -20,42 +23,51 @@ export function GateButton({
   loading?: boolean;
   style?: ViewStyle;
 }) {
+  const solid = variant === "solid";
+  const quiet = variant === "quiet";
+  const ink = solid ? (GATE_ON_BUTTON as unknown as string) : (colors.ink as unknown as string);
   return (
     <Pressable
       style={({ pressed }) => [
         styles.base,
-        variant === "solid" && styles.solid,
+        solid && styles.solid,
         variant === "outline" && styles.outline,
-        variant === "quiet" && styles.quiet,
+        quiet && styles.quiet,
         pressed && styles.pressed,
         loading && styles.loading,
         style,
       ]}
       onPress={onPress}
       disabled={loading}
+      accessibilityRole="button"
     >
       {loading ? (
-        <ActivityIndicator size="small" color={variant === "solid" ? colors.card : colors.gold} />
+        <ActivityIndicator size="small" color={ink} />
       ) : (
-        <Text style={[styles.label, variant === "solid" && styles.labelSolid]}>{title}</Text>
+        <>
+          <Text style={[styles.label, solid && styles.labelSolid]}>{title}</Text>
+          {quiet ? <View style={styles.quietRule} /> : <Feather name="arrow-right" size={18} color={ink} style={styles.arrow} />}
+        </>
       )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  base: { paddingVertical: 15, alignItems: "center", justifyContent: "center" },
-  solid: { backgroundColor: colors.gold },
-  outline: { borderWidth: 1, borderColor: colors.gold },
-  quiet: { paddingVertical: spacing.md },
-  pressed: { opacity: 0.7 },
+  base: { height: 44, alignItems: "center", justifyContent: "center" },
+  solid: { backgroundColor: GATE_BUTTON },
+  outline: { borderWidth: 1, borderColor: colors.ink },
+  quiet: { height: undefined, paddingVertical: spacing.md },
+  pressed: { opacity: 0.75 },
   loading: { opacity: 0.6 },
   label: {
     fontFamily: type.mono,
     fontSize: 11,
-    letterSpacing: 2.6,
+    letterSpacing: 2.4,
     textTransform: "uppercase",
-    color: colors.gold,
+    color: colors.ink,
   },
-  labelSolid: { color: colors.cardDeep },
+  labelSolid: { color: GATE_ON_BUTTON },
+  arrow: { position: "absolute", right: 16 },
+  quietRule: { width: 26, height: 1, backgroundColor: colors.ink, marginTop: 7, opacity: 0.8 },
 });

@@ -14,17 +14,21 @@ export function EngravedCard({
   children,
   style,
   cut = 34,
+  tone = "dark",
 }: {
   children?: React.ReactNode;
   /** Length of the mitre along each edge, in points. */
   cut?: number;
   style?: ViewStyle;
+  /** Dark stock with gold rules, or the cream page with ink rules. */
+  tone?: "dark" | "paper";
 }) {
   const [size, setSize] = React.useState({ width: 0, height: 0 });
+  const stroke = tone === "paper" ? (colors.ink as unknown as string) : (colors.gold as unknown as string);
 
   return (
     <View
-      style={[styles.card, style]}
+      style={[styles.card, tone === "paper" && styles.paper, style]}
       onLayout={(e) => setSize(e.nativeEvent.layout)}
     >
       {size.width > 0 ? (
@@ -37,13 +41,13 @@ export function EngravedCard({
           <Polygon
             points={octagon(size.width, size.height, 14, cut)}
             fill="none"
-            stroke={colors.gold}
+            stroke={stroke}
             strokeWidth={1}
           />
           <Polygon
             points={octagon(size.width, size.height, 20, cut - 6)}
             fill="none"
-            stroke={colors.gold}
+            stroke={stroke}
             strokeWidth={0.75}
             opacity={0.75}
           />
@@ -78,4 +82,5 @@ function octagon(width: number, height: number, pad: number, cut: number): strin
 
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, overflow: "hidden" },
+  paper: { backgroundColor: colors.paper },
 });

@@ -4,7 +4,7 @@ import { colors, spacing, type } from "@/theme";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
- * A field ruled onto the card: a small letterspaced label, gold ink, and a
+ * A field ruled onto the page: a small letterspaced label, ink, and a
  * hairline underneath. No box, no fill — a line to write on, the way a
  * printed form has one.
  */
@@ -27,8 +27,8 @@ export function GateField({
       <TextInput
         inputAccessoryViewID={KEYBOARD_DONE}
         {...inputProps}
-        placeholderTextColor="rgba(214, 190, 148, 0.32)"
-        selectionColor={colors.gold}
+        placeholderTextColor={colors.inkFaint}
+        selectionColor={colors.ink}
         style={[styles.input, mono && styles.mono, inputProps.multiline && styles.multiline]}
       />
       <View style={[styles.rule, error ? styles.ruleError : null]} />
@@ -48,14 +48,14 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2,
     textTransform: "uppercase",
-    color: colors.goldSoft,
+    color: colors.inkFaint,
     marginBottom: spacing.xs,
   },
-  input: { fontSize: 16, color: colors.gold, paddingVertical: 6 },
+  input: { fontSize: 16, color: colors.ink, paddingVertical: 6 },
   mono: { fontFamily: type.mono, letterSpacing: 3 },
   multiline: { minHeight: 72, textAlignVertical: "top" },
-  rule: { height: 1, backgroundColor: colors.goldSoft, opacity: 0.38 },
-  ruleError: { backgroundColor: colors.stamp, opacity: 0.9 },
-  error: { fontSize: 11, color: colors.stamp, marginTop: spacing.xs },
-  hint: { fontSize: 11, color: colors.goldSoft, opacity: 0.7, marginTop: spacing.xs },
+  rule: { height: 1, backgroundColor: colors.borderStrong },
+  ruleError: { backgroundColor: colors.danger },
+  error: { fontSize: 11, color: colors.danger, marginTop: spacing.xs },
+  hint: { fontSize: 11, color: colors.inkFaint, marginTop: spacing.xs },
 });

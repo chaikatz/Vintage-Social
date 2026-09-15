@@ -116,7 +116,7 @@ export default function Invite() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style="light" />
+      <StatusBar style="auto" />
       <KeyboardAvoidingView
         style={styles.root}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -128,10 +128,10 @@ export default function Invite() {
           ]}
           keyboardShouldPersistTaps="handled"
         >
-          <EngravedCard style={styles.card}>
+          <EngravedCard style={styles.card} tone="paper">
             <View style={styles.cardInner}>
               <Text style={styles.eyebrow}>By invitation</Text>
-              <Text style={styles.wordmark}>Vintage</Text>
+              <Text style={styles.wordmark}>VINTAGE</Text>
               <View style={styles.rule} />
               <Text style={styles.blurb}>
                 {inviter
@@ -198,14 +198,14 @@ export default function Invite() {
         onPress={() => router.back()}
         accessibilityLabel="Back"
       >
-        <Feather name="chevron-left" size={22} color={colors.goldSoft} />
+        <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.cardDeep },
+  root: { flex: 1, backgroundColor: colors.paper },
   // flexGrow lets the card stretch to the full height of a short screen
   // instead of floating in the top half of it.
   scroll: { flexGrow: 1, paddingHorizontal: spacing.md },
@@ -218,30 +218,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 3,
     textTransform: "uppercase",
-    color: colors.goldSoft,
+    color: colors.inkFaint,
     textAlign: "center",
   },
   wordmark: {
-    fontFamily: type.script,
-    fontSize: 58,
-    lineHeight: 82,
-    color: colors.gold,
+    fontFamily: type.serif,
+    fontSize: 34,
+    lineHeight: 44,
+    letterSpacing: 9,
+    color: colors.ink,
     textAlign: "center",
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
   rule: {
     height: 1,
-    width: 54,
+    width: 24,
     alignSelf: "center",
-    backgroundColor: colors.goldSoft,
-    opacity: 0.6,
-    marginTop: spacing.xs,
+    backgroundColor: colors.ink,
+    opacity: 0.85,
+    marginTop: spacing.md,
   },
   blurb: {
     fontFamily: type.serif,
     fontSize: 14,
     lineHeight: 22,
-    color: colors.goldSoft,
+    color: colors.inkSoft,
     textAlign: "center",
     marginTop: spacing.lg,
     marginBottom: spacing.xl,
@@ -249,10 +250,10 @@ const styles = StyleSheet.create({
 
   footRule: {
     height: 1,
-    width: 34,
+    width: 24,
     alignSelf: "center",
-    backgroundColor: colors.goldSoft,
-    opacity: 0.4,
+    backgroundColor: colors.ink,
+    opacity: 0.5,
     marginTop: spacing.xxl,
   },
   foot: {
@@ -260,8 +261,7 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2.5,
     textTransform: "uppercase",
-    color: colors.goldSoft,
-    opacity: 0.8,
+    color: colors.inkFaint,
     textAlign: "center",
     marginTop: spacing.md,
   },

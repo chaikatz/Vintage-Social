@@ -86,7 +86,7 @@ export default function Pending() {
   return (
     <GateLayout back={false} scroll={false}>
       <View style={styles.center}>
-        <Text style={styles.wordmark}>Vintage</Text>
+        <Text style={styles.wordmark}>VINTAGE</Text>
         <View style={styles.rule} />
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.body}>{copy.body}</Text>
@@ -116,20 +116,20 @@ export default function Pending() {
 const styles = StyleSheet.create({
   link: { textDecorationLine: "underline", marginTop: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  wordmark: { fontFamily: type.script, fontSize: 52, lineHeight: 74, color: colors.gold },
+  wordmark: { fontFamily: type.serif, fontSize: 34, lineHeight: 44, letterSpacing: 9, color: colors.ink },
   rule: {
-    width: 48,
+    width: 24,
     height: 1,
-    backgroundColor: colors.goldSoft,
-    opacity: 0.55,
+    backgroundColor: colors.ink,
+    opacity: 0.85,
     marginVertical: spacing.lg,
   },
-  title: { fontFamily: type.serif, fontSize: 19, color: colors.gold },
+  title: { fontFamily: type.serif, fontSize: 19, color: colors.ink },
   body: {
     fontFamily: type.serif,
     fontSize: 14,
     lineHeight: 22,
-    color: colors.goldSoft,
+    color: colors.inkSoft,
     textAlign: "center",
     marginTop: spacing.md,
     maxWidth: 290,

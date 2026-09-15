@@ -94,7 +94,7 @@ export default function Apply() {
           <Image source={{ uri: avatarUri }} style={styles.portraitImage} contentFit="cover" />
         ) : (
           <View style={styles.portraitEmpty}>
-            <Feather name="user" size={22} color={colors.goldSoft} />
+            <Feather name="user" size={22} color={colors.inkFaint as unknown as string} />
           </View>
         )}
         <Text style={styles.portraitLabel}>
@@ -193,8 +193,7 @@ const styles = StyleSheet.create({
     height: 82,
     borderRadius: 41,
     borderWidth: 1,
-    borderColor: colors.goldSoft,
-    opacity: 0.85,
+    borderColor: colors.borderStrong,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -203,22 +202,20 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2,
     textTransform: "uppercase",
-    color: colors.goldSoft,
+    color: colors.inkFaint,
     marginTop: spacing.sm + 2,
   },
   divider: {
     height: 1,
-    backgroundColor: colors.goldSoft,
-    opacity: 0.22,
+    backgroundColor: colors.border,
     marginBottom: spacing.xl,
   },
-  footLink: { textDecorationLine: "underline" },
+  footLink: { textDecorationLine: "underline", color: colors.ink },
   footnote: {
     fontFamily: type.serif,
     fontSize: 12,
     lineHeight: 19,
-    color: colors.goldSoft,
-    opacity: 0.7,
+    color: colors.inkSoft,
     textAlign: "center",
     marginTop: spacing.lg,
   },

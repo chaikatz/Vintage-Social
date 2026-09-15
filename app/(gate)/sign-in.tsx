@@ -90,8 +90,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 17,
     letterSpacing: 0.6,
-    color: colors.goldSoft,
-    opacity: 0.75,
+    color: colors.inkFaint,
     marginBottom: spacing.xl,
   },
 });
