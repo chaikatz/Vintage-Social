@@ -50,7 +50,16 @@ export function PhotoInspector({ posts, index, onClose, onOpenPost }: Props) {
   }, [index]);
 
   if (index == null || posts.length === 0) return null;
-  const post = posts[Math.min(current, posts.length - 1)];
+  const post = posts[Math.min(Math.max(current, 0), posts.length - 1)];
+
+  // Closing deactivates every page first, so a zoomed photograph is put back
+  // to scale 1 before its scroll view is torn down. The platform recycles
+  // scroll views between screens, and one left zoomed would carry that zoom
+  // into whatever list is drawn next.
+  const close = () => {
+    setCurrent(-1);
+    requestAnimationFrame(onClose);
+  };
 
   const onPage = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const next = Math.round(e.nativeEvent.contentOffset.x / width);
@@ -58,7 +67,7 @@ export function PhotoInspector({ posts, index, onClose, onOpenPost }: Props) {
   };
 
   return (
-    <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={close}>
       <View style={styles.root}>
         <FlatList
           data={posts}
@@ -94,14 +103,21 @@ export function PhotoInspector({ posts, index, onClose, onOpenPost }: Props) {
             </Text>
           ) : null}
           {onOpenPost ? (
-            <Pressable hitSlop={8} onPress={() => onOpenPost(post)} style={styles.open}>
+            <Pressable
+              hitSlop={8}
+              onPress={() => {
+                setCurrent(-1);
+                requestAnimationFrame(() => onOpenPost(post));
+              }}
+              style={styles.open}
+            >
               <Text style={styles.openText}>Open the post</Text>
               <Feather name="arrow-right" size={13} color={colors.accent} />
             </Pressable>
           ) : null}
         </View>
 
-        <Pressable style={styles.close} hitSlop={12} onPress={onClose} accessibilityLabel="Back to the timeline">
+        <Pressable style={styles.close} hitSlop={12} onPress={close} accessibilityLabel="Back to the timeline">
           <Feather name="x" size={20} color={colors.ink} />
         </Pressable>
       </View>
@@ -132,7 +148,17 @@ function Page({ post, width, height, active }: { post: PostRow; width: number; h
   }
 
   const url = mediaUrl("media", post.media_path) ?? thumb;
-  return <ZoomablePhoto url={url} placeholder={thumb && thumb !== url ? thumb : undefined} width={width} height={height} fitWidth={fitWidth} fitHeight={fitHeight} />;
+  return (
+    <ZoomablePhoto
+      url={url}
+      placeholder={thumb && thumb !== url ? thumb : undefined}
+      width={width}
+      height={height}
+      fitWidth={fitWidth}
+      fitHeight={fitHeight}
+      active={active}
+    />
+  );
 }
 
 function ZoomablePhoto({
@@ -142,6 +168,7 @@ function ZoomablePhoto({
   height,
   fitWidth,
   fitHeight,
+  active,
 }: {
   url: string | number | null;
   placeholder?: string | number;
@@ -149,10 +176,20 @@ function ZoomablePhoto({
   height: number;
   fitWidth: number;
   fitHeight: number;
+  active: boolean;
 }) {
   const scroll = useRef<ScrollView>(null);
   const zoomed = useRef(false);
   const lastTap = useRef(0);
+
+  // A page you have swiped away from, or are closing, goes back to actual
+  // size while it is still on screen — see the note on `close` above.
+  useEffect(() => {
+    if (!active && zoomed.current) {
+      zoomed.current = false;
+      scroll.current?.scrollResponderZoomTo({ x: 0, y: 0, width, height, animated: false });
+    }
+  }, [active, width, height]);
 
   const onTap = (e: { nativeEvent: { locationX: number; locationY: number } }) => {
     const now = Date.now();

@@ -1,5 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import {
+  Animated,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -7,6 +9,7 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type GestureResponderEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
@@ -33,9 +36,9 @@ interface Props {
   refreshing?: boolean;
 }
 
-/** How far a pinch can take the page, in and out. */
+/** How far a pinch can take the line, in and out. */
 const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 3;
+const ZOOM_MAX = 2.5;
 /** Two taps closer together than this open the photograph. */
 const DOUBLE_TAP_MS = 280;
 
@@ -49,12 +52,15 @@ const DOUBLE_TAP_MS = 280;
  * lettered on the line as they pass; a long silence between two
  * photographs is said out loud.
  *
- * Nothing here moves when you pinch. The page is a print: pinching
- * magnifies it where your fingers are, the way a photograph magnifies,
- * or shrinks it to survey more of the line, and letting go leaves it
- * there until you pinch back or tap "Actual size". Tap a photograph to
- * see it close, at full resolution, and swipe on from there to the next
- * one along the line; closing lands exactly where you were.
+ * Pinch magnifies the line, or shrinks it to survey more of it, about the
+ * point between your fingers; the profile above it is not touched. It is
+ * a transform on the block of rows, nothing more: no row is laid out
+ * again, and no native scroll view is ever zoomed. The last point matters
+ * — the platform recycles scroll views between screens, and one left at a
+ * zoom other than 1 carried that zoom into the grid, the send sheet and
+ * anywhere else a list was drawn next. Letting go leaves the line where it
+ * is until you pinch back or tap "Actual size". Tap a photograph to see
+ * it close, and swipe on from there to the next one along the line.
  */
 export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
   const { width } = useWindowDimensions();
@@ -67,8 +73,6 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
     const i = photos.findIndex((p) => p.id === post.id);
     setInspecting(i < 0 ? null : i);
   };
-  const [zoomed, setZoomed] = useState(false);
-  const scroll = useRef<ScrollView>(null);
 
   // Each half of the page holds either the photograph or its words. The
   // frame takes most of its half; the size is set once and stays.
@@ -76,46 +80,147 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const frame = Math.round(half * 0.86);
   const gap = spacing.lg;
 
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const next = Math.abs((e.nativeEvent.zoomScale ?? 1) - 1) > 0.02;
-    if (next !== zoomed) setZoomed(next);
-  };
+  // --- the pinch -----------------------------------------------------------
+  const scroll = useRef<ScrollView>(null);
+  const root = useRef<View>(null);
+  const rootTop = useRef(0); // where the scroll view starts on the screen
+  const scrollY = useRef(0); // how far the page is scrolled
+  const blockTop = useRef(0); // where the rows begin, within the page
+  const [measured, setMeasured] = useState(false);
+  // The block's unscaled height, its scale, and its sideways shift. Animated
+  // values so the pinch moves the native props frame by frame without a
+  // single row rendering again.
+  const base = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(1)).current;
+  const shift = useRef(new Animated.Value(0)).current;
+  const live = useRef({ scale: 1, shift: 0 }).current;
+  const pinch = useRef({ distance: 0, scale: 1, cx: 0, cy: 0 }).current;
+  const [pinching, setPinching] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
+
+  const responder = useMemo(() => {
+    const twoFingers = (e: GestureResponderEvent) => e.nativeEvent.touches.length === 2;
+    const read = (e: GestureResponderEvent) => {
+      const [a, b] = e.nativeEvent.touches;
+      if (!a || !b) return null;
+      return {
+        distance: Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY),
+        fx: (a.pageX + b.pageX) / 2,
+        fy: (a.pageY + b.pageY) / 2 - rootTop.current,
+      };
+    };
+    return PanResponder.create({
+      // Two fingers are a pinch and are claimed before the page can scroll
+      // with them; one finger is left entirely to the page.
+      onStartShouldSetPanResponderCapture: twoFingers,
+      onMoveShouldSetPanResponderCapture: twoFingers,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (e) => {
+        const t = read(e);
+        if (!t) return;
+        pinch.distance = t.distance;
+        pinch.scale = live.scale;
+        // The point of the line under the fingers, in the block's own
+        // unscaled coordinates — it stays under them as the scale changes.
+        pinch.cx = (t.fx - width / 2 - live.shift) / live.scale;
+        pinch.cy = (scrollY.current + t.fy - blockTop.current) / live.scale;
+        setPinching(true);
+      },
+      onPanResponderMove: (e) => {
+        const t = read(e);
+        if (!t || !pinch.distance) return;
+        const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, (pinch.scale * t.distance) / pinch.distance));
+        // Sideways: only as far as the line has grown past the page edges.
+        const room = Math.max(0, (width * next - width) / 2);
+        const nextShift = Math.min(room, Math.max(-room, t.fx - width / 2 - pinch.cx * next));
+        live.scale = next;
+        live.shift = nextShift;
+        scale.setValue(next);
+        shift.setValue(nextShift);
+        // Up and down: the page scrolls so the same point stays under the fingers.
+        const y = Math.max(0, blockTop.current + pinch.cy * next - t.fy);
+        scroll.current?.scrollTo({ y, animated: false });
+      },
+      onPanResponderRelease: () => {
+        setPinching(false);
+        setZoomed(Math.abs(live.scale - 1) > 0.02);
+      },
+      onPanResponderTerminate: () => {
+        setPinching(false);
+        setZoomed(Math.abs(live.scale - 1) > 0.02);
+      },
+    });
+  }, [width, base, scale, shift, live, pinch]);
+
   const actualSize = () => {
-    scroll.current?.scrollResponderZoomTo({ x: 0, y: 0, width, height: 1, animated: true });
+    live.scale = 1;
+    live.shift = 0;
+    Animated.parallel([
+      Animated.timing(scale, { toValue: 1, duration: 220, useNativeDriver: false }),
+      Animated.timing(shift, { toValue: 0, duration: 220, useNativeDriver: false }),
+    ]).start();
     setZoomed(false);
   };
 
+  // The scaled block keeps the page the right length: its wrapper is as
+  // tall as the rows are at this scale, and the rows are drawn from its
+  // top, scaled about the spine.
+  const blockHeight = Animated.multiply(base, scale);
+  const settle = Animated.divide(Animated.multiply(base, Animated.subtract(scale, 1)), 2);
+
   return (
-    <View style={styles.root}>
+    <View
+      ref={root}
+      style={styles.root}
+      {...responder.panHandlers}
+      onLayout={() => {
+        // Measured on screen: where the page begins, for the pinch's arithmetic.
+        root.current?.measureInWindow((_x, y) => {
+          rootTop.current = y;
+        });
+      }}
+    >
       <ScrollView
         ref={scroll}
         style={styles.root}
         contentContainerStyle={[styles.list, rows.length > 0 && styles.listWithRows]}
-        minimumZoomScale={ZOOM_MIN}
-        maximumZoomScale={ZOOM_MAX}
-        bouncesZoom
-        // Shrunk below the page, the print sits in the middle rather than
-        // in a corner.
-        centerContent
-        // A pinch zooms the print; nothing is laid out again.
-        pinchGestureEnabled
-        onScroll={onScroll}
-        scrollEventThrottle={120}
+        scrollEnabled={!pinching}
+        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+          scrollY.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         refreshControl={
           onRefresh ? (
             <RefreshControl refreshing={refreshing ?? false} onRefresh={onRefresh} tintColor={colors.inkFaint as unknown as string} />
           ) : undefined
         }
       >
-        {/* One child: the page. The scroll view zooms this as a whole. */}
-        <View style={{ width }}>
-          {header}
-          {rows.length === 0
-            ? empty
-            : rows.map((row) => (
+        {header}
+        {rows.length === 0 ? (
+          empty
+        ) : (
+          <Animated.View
+            style={[styles.block, measured ? { height: blockHeight } : null]}
+            onLayout={(e) => {
+              blockTop.current = e.nativeEvent.layout.y;
+            }}
+          >
+            <Animated.View
+              style={{ width, transform: [{ translateX: shift }, { translateY: settle }, { scale }] }}
+              onLayout={(e) => {
+                const h = e.nativeEvent.layout.height;
+                if (h > 0) {
+                  base.setValue(h);
+                  if (!measured) setMeasured(true);
+                }
+              }}
+            >
+              {rows.map((row) => (
                 <Row key={row.key} row={row} frame={frame} gap={gap} onOpenPost={onOpenPost} onInspect={inspect} />
               ))}
-        </View>
+            </Animated.View>
+          </Animated.View>
+        )}
       </ScrollView>
       {zoomed ? (
         <Pressable style={styles.reset} onPress={actualSize} hitSlop={8} accessibilityLabel="Back to actual size">
@@ -288,6 +393,9 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   list: { paddingBottom: spacing.xxl },
   listWithRows: { paddingBottom: spacing.xxl * 2 },
+  // Whatever the scale, the block clips to its own height so the rows never
+  // draw over the profile above or past the end of the page.
+  block: { overflow: "hidden" },
 
   // The spine. Every row draws its own segment, so the line is exactly as
   // long as the page and needs no measuring.
@@ -362,8 +470,8 @@ const styles = StyleSheet.create({
   },
   caption: {
     fontFamily: type.serif,
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 20,
     color: colors.ink,
     marginTop: spacing.sm,
     textAlign: "left",
