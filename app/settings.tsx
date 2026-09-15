@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -23,11 +23,14 @@ import {
   type NotificationPrefs,
 } from "@/api/notifications";
 import { pushSupported, registerForPush } from "@/utils/push";
+import { deleteMyAccount } from "@/api/account";
+import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL, supportMailto } from "@/config/launch";
 
 export default function Settings() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { session, profile, refreshProfile, signOut } = useSession();
+  const [deleting, setDeleting] = useState(false);
 
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
@@ -113,6 +116,49 @@ export default function Settings() {
       setBusy(false);
     }
   };
+
+  // The documents open on the web when a copy is hosted, and in the app
+  // otherwise, so they are always one tap away.
+  const openDoc = (doc: "privacy" | "terms", url: string | null) => {
+    if (url) Linking.openURL(url).catch(() => router.push(`/legal/${doc}`));
+    else router.push(`/legal/${doc}`);
+  };
+
+  // Two questions, then it is done. The words say what goes, because it
+  // all goes.
+  const confirmDelete = () =>
+    showAlert(
+      "Delete your account?",
+      "Your profile, photographs, comments, likes, follows, tags and messages are removed for good. Your membership number is never reissued. This cannot be undone.",
+      [
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: () =>
+            showAlert("Are you sure?", "This is the last step. Everything is deleted now.", [
+              {
+                text: "Yes, delete everything",
+                style: "destructive",
+                onPress: async () => {
+                  const userId = session?.user?.id;
+                  if (!userId) return;
+                  setDeleting(true);
+                  try {
+                    await deleteMyAccount(userId);
+                    queryClient.clear();
+                    await signOut();
+                  } catch (err) {
+                    setDeleting(false);
+                    showAlert("Couldn’t delete the account", err instanceof Error ? err.message : String(err));
+                  }
+                },
+              },
+              { text: "Keep my account", style: "cancel" },
+            ]),
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
 
   return (
     <Screen scroll>
@@ -230,10 +276,40 @@ export default function Settings() {
       <View style={styles.divider} />
 
       <Button title="Save" onPress={save} loading={busy} />
+
       <View style={styles.divider} />
+
+      <Pressable style={styles.linkRow} onPress={() => router.push("/blocked")} accessibilityRole="button">
+        <Text style={styles.linkLabel}>Blocked members</Text>
+        <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+      </Pressable>
+      <Pressable style={styles.linkRow} onPress={() => openDoc("privacy", PRIVACY_URL)} accessibilityRole="link">
+        <Text style={styles.linkLabel}>Privacy Policy</Text>
+        <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+      </Pressable>
+      <Pressable style={styles.linkRow} onPress={() => openDoc("terms", TERMS_URL)} accessibilityRole="link">
+        <Text style={styles.linkLabel}>Terms of Use</Text>
+        <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+      </Pressable>
+      {SUPPORT_EMAIL ? (
+        <Pressable
+          style={styles.linkRow}
+          onPress={() => Linking.openURL(supportMailto("VINTAGE support") ?? "")}
+          accessibilityRole="link"
+        >
+          <View>
+            <Text style={styles.linkLabel}>Support</Text>
+            <Text style={styles.linkHint}>{SUPPORT_EMAIL}</Text>
+          </View>
+          <Feather name="mail" size={16} color={colors.inkFaint} />
+        </Pressable>
+      ) : null}
+
+      <View style={styles.divider} />
+
       <Button
         title="Sign out"
-        variant="danger"
+        variant="secondary"
         onPress={() =>
           showAlert("Sign out?", undefined, [
             { text: "Sign out", style: "destructive", onPress: signOut },
@@ -241,6 +317,12 @@ export default function Settings() {
           ])
         }
       />
+      <View style={styles.deleteWrap}>
+        <Button title="Delete account" variant="danger" onPress={confirmDelete} loading={deleting} />
+        <Text style={styles.deleteHint}>
+          Removes your profile and everything you have posted. Cannot be undone.
+        </Text>
+      </View>
     </Screen>
   );
 }
@@ -263,6 +345,18 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   requestsLabel: { fontSize: 15, color: colors.accent },
+  linkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  linkLabel: { fontSize: 15, color: colors.ink },
+  linkHint: { ...type.caption, fontSize: 12, marginTop: 2 },
+  deleteWrap: { marginTop: spacing.lg },
+  deleteHint: { ...type.caption, fontSize: 12, textAlign: "center", marginTop: spacing.sm },
   prefRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.md },
   prefLabel: { fontSize: 14, color: colors.ink },
   prefHint: { ...type.caption, fontSize: 12, marginTop: 1 },

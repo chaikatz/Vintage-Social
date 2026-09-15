@@ -112,7 +112,10 @@ export default function Create() {
 
   const takePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) return;
+    if (!permission.granted) {
+      showAlert("Camera is off", "VINTAGE can only take a photograph if it may use the camera. You can allow this in Settings.");
+      return;
+    }
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
       allowsEditing: true,

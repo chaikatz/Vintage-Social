@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
 import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
+import { blockMember } from "@/api/blocks";
 import { INLINE_COMMENTS } from "@/components/PostCard";
 import { useSession } from "@/providers/SessionProvider";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
@@ -136,6 +137,30 @@ export function usePostActions(userId: string, postIds: string[]) {
             style: "destructive",
             onPress: () =>
               router.push({ pathname: "/report", params: { targetType: "post", postId: post.id } }),
+          },
+          {
+            text: `Block ${post.author.username}`,
+            style: "destructive",
+            onPress: () =>
+              showAlert(
+                `Block ${post.author.username}?`,
+                "They won't see your photographs or profile, and you won't see theirs. You can unblock from Settings.",
+                [
+                  {
+                    text: "Block",
+                    style: "destructive",
+                    onPress: async () => {
+                      try {
+                        await blockMember(post.author_id);
+                        queryClient.invalidateQueries();
+                      } catch (err) {
+                        showAlert("That didn’t work", err instanceof Error ? err.message : String(err));
+                      }
+                    },
+                  },
+                  { text: "Cancel", style: "cancel" },
+                ],
+              ),
           },
           { text: "Cancel", style: "cancel" },
         ]);

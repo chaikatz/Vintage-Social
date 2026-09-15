@@ -170,6 +170,17 @@ export default function Apply() {
         Applications are read by people, not machines. Nothing here is scored, ranked, or decided
         automatically.
       </Text>
+      <Text style={styles.footnote}>
+        By applying you agree to the{" "}
+        <Text style={styles.footLink} onPress={() => router.push("/legal/terms")}>
+          Terms of Use
+        </Text>{" "}
+        and{" "}
+        <Text style={styles.footLink} onPress={() => router.push("/legal/privacy")}>
+          Privacy Policy
+        </Text>
+        .
+      </Text>
     </GateLayout>
   );
 }
@@ -201,6 +212,7 @@ const styles = StyleSheet.create({
     opacity: 0.22,
     marginBottom: spacing.xl,
   },
+  footLink: { textDecorationLine: "underline" },
   footnote: {
     fontFamily: type.serif,
     fontSize: 12,

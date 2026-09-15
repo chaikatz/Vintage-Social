@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -72,6 +72,15 @@ export default function Landing() {
 
           <View style={styles.footRule} />
           <Text style={styles.foot}>Members only · Est. 2026</Text>
+          <View style={styles.legalRow}>
+            <Pressable hitSlop={8} onPress={() => router.push("/legal/privacy")} accessibilityRole="link">
+              <Text style={styles.legal}>Privacy</Text>
+            </Pressable>
+            <Text style={styles.legal}>·</Text>
+            <Pressable hitSlop={8} onPress={() => router.push("/legal/terms")} accessibilityRole="link">
+              <Text style={styles.legal}>Terms</Text>
+            </Pressable>
+          </View>
           {isDemoMode() ? (
             <Text style={styles.demoNote}>Review build · demo data · any sign-in works</Text>
           ) : null}
@@ -142,6 +151,15 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textAlign: "center",
     marginTop: spacing.md,
+  },
+  legalRow: { flexDirection: "row", justifyContent: "center", gap: 8, marginTop: spacing.sm },
+  legal: {
+    fontFamily: type.mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    color: colors.goldSoft,
+    opacity: 0.6,
   },
   demoNote: {
     fontFamily: type.mono,

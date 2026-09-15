@@ -82,6 +82,8 @@ export default function RootLayout() {
           <Stack.Screen name="requests" options={{ title: "Requests" }} />
           <Stack.Screen name="user/[username]" options={{ title: "" }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
+          <Stack.Screen name="blocked" options={{ title: "Blocked members" }} />
+          <Stack.Screen name="legal/[doc]" options={{ title: "" }} />
           <Stack.Screen name="invites" options={{ title: "Invitations" }} />
           <Stack.Screen name="report" options={{ presentation: "modal", title: "Report" }} />
           <Stack.Screen name="admin/index" options={{ title: "Admin" }} />

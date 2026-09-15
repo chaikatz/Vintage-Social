@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { GateLayout } from "@/components/gate/GateLayout";
@@ -9,6 +9,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { describeRedeem, fetchMyApplication, redeemInviteLink } from "@/api/membership";
 import { slugFromInput } from "@/utils/inviteLink";
 import { showAlert, showPrompt } from "@/utils/alert";
+import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
 
 const COPY: Record<string, { title: string; body: string }> = {
   applied: {
@@ -25,7 +26,7 @@ const COPY: Record<string, { title: string; body: string }> = {
   },
   suspended: {
     title: "Account suspended",
-    body: "Your membership is currently suspended. If you believe this is a mistake, contact the admins.",
+    body: "Your membership is currently suspended. If you believe this is a mistake, write to us.",
   },
 };
 
@@ -89,6 +90,15 @@ export default function Pending() {
         <View style={styles.rule} />
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.body}>{copy.body}</Text>
+        {status === "suspended" && SUPPORT_EMAIL ? (
+          <Text
+            style={[styles.body, styles.link]}
+            onPress={() => Linking.openURL(supportMailto("VINTAGE membership") ?? "")}
+            accessibilityRole="link"
+          >
+            {SUPPORT_EMAIL}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.actions}>
         {status === "applied" || status === "waitlisted" ? (
@@ -104,6 +114,7 @@ export default function Pending() {
 }
 
 const styles = StyleSheet.create({
+  link: { textDecorationLine: "underline", marginTop: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   wordmark: { fontFamily: type.script, fontSize: 52, lineHeight: 74, color: colors.gold },
   rule: {

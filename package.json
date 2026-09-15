@@ -19,7 +19,8 @@
     "seed:build": "node seed/build.mjs",
     "use:staging": "node scripts/use-env.mjs staging",
     "use:production": "node scripts/use-env.mjs production",
-    "env": "node scripts/use-env.mjs status"
+    "env": "node scripts/use-env.mjs status",
+    "build:legal": "node scripts/build-legal.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

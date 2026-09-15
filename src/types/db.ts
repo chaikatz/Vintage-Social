@@ -185,6 +185,13 @@ export type NotificationPrefsRow = {
   updated_at: string;
 }
 
+/** One member keeping another out of their view. Owned by the blocker. */
+export type BlockRow = {
+  blocker_id: string;
+  blocked_id: string;
+  created_at: string;
+}
+
 export type LikeRow = {
   post_id: string;
   user_id: string;
@@ -280,6 +287,7 @@ export type Database = {
       app_settings: Table<AppSettingRow>;
       push_tokens: Table<PushTokenRow>;
       notification_prefs: Table<NotificationPrefsRow>;
+      blocks: Table<BlockRow>;
       likes: Table<LikeRow>;
       comments: Table<CommentRow>;
       activity: Table<ActivityRow>;
@@ -319,6 +327,18 @@ export type Database = {
       admin_set_invite_quota: {
         Args: { p_profile_id: string; p_quota: number };
         Returns: number;
+      };
+      block_member: {
+        Args: { p_user: string };
+        Returns: undefined;
+      };
+      unblock_member: {
+        Args: { p_user: string };
+        Returns: undefined;
+      };
+      delete_my_account: {
+        Args: Record<string, never>;
+        Returns: undefined;
       };
       invite_link_owner: {
         Args: { p_slug: string };

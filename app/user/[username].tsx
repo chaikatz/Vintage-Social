@@ -18,6 +18,7 @@ import { fetchProfileByUsername, follow, followState, unfollow } from "@/api/pro
 import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
 import { openConversation } from "@/api/messages";
+import { blockMember, fetchBlockedIds, unblockMember } from "@/api/blocks";
 import { sortByTaken } from "@/utils/memories";
 import { useSession } from "@/providers/SessionProvider";
 
@@ -45,8 +46,18 @@ export default function UserProfile() {
 
   const status = followQ.data ?? null;
   const isMe = profile?.id === myId;
+
+  // Have I blocked this member? Their photographs are hidden by the
+  // database either way; this decides what the page says about it.
+  const blockedQ = useQuery({
+    queryKey: ["blocked-ids", myId],
+    queryFn: () => fetchBlockedIds(myId),
+    enabled: Boolean(myId),
+  });
+  const blocked = Boolean(profile && blockedQ.data?.has(profile.id));
+
   // A private member's photographs are theirs until they let you in.
-  const locked = Boolean(profile?.is_private) && !isMe && status !== "accepted";
+  const locked = (Boolean(profile?.is_private) && !isMe && status !== "accepted") || blocked;
 
   const postsQ = useQuery({
     queryKey: ["user-posts", profile?.id],
@@ -81,9 +92,34 @@ export default function UserProfile() {
 
   const message = async () => {
     if (!profile) return;
-    const conversationId = await openConversation(myId, profile.id);
-    router.push(`/messages/${conversationId}`);
+    try {
+      const conversationId = await openConversation(myId, profile.id);
+      router.push(`/messages/${conversationId}`);
+    } catch (err) {
+      showAlert("Couldn’t open the conversation", err instanceof Error ? err.message : String(err));
+    }
   };
+
+  const afterBlockChange = () => {
+    queryClient.invalidateQueries({ queryKey: ["blocked-ids", myId] });
+    queryClient.invalidateQueries({ queryKey: ["blocked", myId] });
+    queryClient.invalidateQueries({ queryKey: ["follow-state", myId, profile?.id] });
+    queryClient.invalidateQueries({ queryKey: ["profile", username] });
+    queryClient.invalidateQueries({ queryKey: ["user-posts", profile?.id] });
+    queryClient.invalidateQueries({ queryKey: ["feed"] });
+    queryClient.invalidateQueries({ queryKey: ["explore"] });
+    queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    queryClient.invalidateQueries({ queryKey: ["activity"] });
+  };
+  const toggleBlock = useMutation({
+    mutationFn: async () => {
+      if (!profile) return;
+      if (blocked) await unblockMember(profile.id);
+      else await blockMember(profile.id);
+    },
+    onSuccess: afterBlockChange,
+    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
+  });
 
   if (!profile) {
     return (
@@ -101,7 +137,9 @@ export default function UserProfile() {
     );
   }
 
-  const reportMember = () => {
+  // Report and block live behind the "…" beside the buttons — and on a
+  // long press of the follow button, as before.
+  const memberMenu = () => {
     showAlert(profile.username, undefined, [
       {
         text: "Report member",
@@ -109,6 +147,21 @@ export default function UserProfile() {
         onPress: () =>
           router.push({ pathname: "/report", params: { targetType: "profile", profileId: profile.id } }),
       },
+      blocked
+        ? { text: "Unblock", onPress: () => toggleBlock.mutate() }
+        : {
+            text: "Block member",
+            style: "destructive",
+            onPress: () =>
+              showAlert(
+                `Block ${profile.username}?`,
+                "They won't see your photographs or profile, and you won't see theirs. Neither of you is told. You can unblock from Settings.",
+                [
+                  { text: "Block", style: "destructive", onPress: () => toggleBlock.mutate() },
+                  { text: "Cancel", style: "cancel" },
+                ],
+              ),
+          },
       { text: "Cancel", style: "cancel" },
     ]);
   };
@@ -131,7 +184,16 @@ export default function UserProfile() {
                 })
         }
         action={
-          isMe ? undefined : (
+          isMe ? undefined : blocked ? (
+            <View style={styles.actions}>
+              <View style={styles.followButton}>
+                <Button title="Unblock" variant="secondary" small loading={toggleBlock.isPending} onPress={() => toggleBlock.mutate()} />
+              </View>
+              <Pressable style={styles.messageButton} onPress={memberMenu} accessibilityLabel="More">
+                <Feather name="more-horizontal" size={16} color={colors.ink} />
+              </Pressable>
+            </View>
+          ) : (
             <View style={styles.actions}>
               <View style={styles.followButton}>
                 <Button
@@ -140,17 +202,26 @@ export default function UserProfile() {
                   small
                   loading={toggleFollow.isPending}
                   onPress={() => toggleFollow.mutate(status === null)}
-                  onLongPress={reportMember}
+                  onLongPress={memberMenu}
                 />
               </View>
               <Pressable style={styles.messageButton} onPress={message} accessibilityLabel="Message">
                 <Feather name="send" size={16} color={colors.ink} />
               </Pressable>
+              <Pressable style={styles.messageButton} onPress={memberMenu} accessibilityLabel="More">
+                <Feather name="more-horizontal" size={16} color={colors.ink} />
+              </Pressable>
             </View>
           )
         }
       />
-      {locked ? (
+      {blocked ? (
+        <View style={styles.locked}>
+          <Feather name="slash" size={18} color={colors.inkFaint} />
+          <Text style={styles.lockedTitle}>You blocked {profile.username}</Text>
+          <Text style={styles.lockedBody}>Neither of you sees the other’s photographs. Unblock to change that.</Text>
+        </View>
+      ) : locked ? (
         <View style={styles.locked}>
           <Feather name="lock" size={18} color={colors.inkFaint} />
           <Text style={styles.lockedTitle}>This account is private</Text>
