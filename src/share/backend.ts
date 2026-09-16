@@ -9,12 +9,23 @@
  * good standing. Everything else is silence.
  *
  * The storage path of the photograph is learned here and used here, to
- * fetch the bytes; it is never sent onward. No React Native imports.
+ * fetch the bytes; it is never sent onward. The database gives it up only
+ * to a caller holding the server's key (SHARE_MEDIA_KEY), so someone with
+ * a valid token and the public anonymous key, calling the database
+ * directly, learns nothing a browser could not. No React Native imports.
  */
 
 export interface Backend {
   url: string;
+  /** The anonymous key: public by design, the same one the app carries. */
   key: string;
+  /**
+   * The server's own key for `shared_post_media`, from the server-only
+   * environment variable SHARE_MEDIA_KEY. Its SHA-256 is in the database;
+   * without it the database names no file. Never in a bundle, a reply or a
+   * log — it goes into one request body, to the database, and nowhere else.
+   */
+  mediaKey: string | null;
 }
 
 export const TOKEN = /^[a-f0-9]{32}$/;
@@ -28,7 +39,8 @@ export function cleanToken(raw: unknown): string {
 export function backend(env: Record<string, string | undefined> = process.env): Backend | null {
   const url = env.EXPO_PUBLIC_SUPABASE_URL;
   const key = env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  return url && key ? { url: url.replace(/\/+$/, ""), key } : null;
+  const mediaKey = env.SHARE_MEDIA_KEY?.trim() || null;
+  return url && key ? { url: url.replace(/\/+$/, ""), key, mediaKey } : null;
 }
 
 /** One remote procedure call, as the anonymous role. Null when the server is not configured. */
@@ -66,9 +78,11 @@ export type MediaLookup = { state: "ok"; source: MediaSource | null } | { state:
  */
 export async function sharedMediaSource(token: string, kind: MediaKind): Promise<MediaLookup> {
   const b = backend();
-  if (!b || !TOKEN.test(token)) return b ? { state: "ok", source: null } : { state: "unavailable" };
+  // No key configured is a deployment fault, not a dead link: say "unavailable", and never ask.
+  if (!b || !b.mediaKey) return { state: "unavailable" };
+  if (!TOKEN.test(token)) return { state: "ok", source: null };
   try {
-    const res = await rpc("shared_post_media", { p_token: token });
+    const res = await rpc("shared_post_media", { p_token: token, p_key: b.mediaKey });
     if (!res || !res.ok) return { state: "unavailable" };
     const rows = (await res.json()) as Array<Record<string, unknown>>;
     const row = Array.isArray(rows) ? rows[0] : null;

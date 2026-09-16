@@ -559,16 +559,22 @@ this repo:
   moving picture with Core Animation, sound kept — then handed to the system share sheet
   (`expo-sharing`). VINTAGE posts nothing itself. Both packages are native: full EAS build required.
 - **Migration `0019_shares.sql` — applied to STAGING ONLY. NOT YET APPLIED TO PRODUCTION.** Run it on
-  production (SQL editor, whole file) before shipping the build that carries the Story link; until then
-  the app's "Share outside VINTAGE" still exports prints, but the Story link quietly fails to mint and
-  no link is copied. It adds `post_shares` (one 32-hex token per shared post, minted by the database,
-  author-only, revocable), `share_events` (the loop counted: `share_started`, `link_created`,
-  `page_opened`, `membership_requested`), and four functions: `create_post_share` /
-  `revoke_post_share` (members, own posts only), `shared_post` (anonymous, by token, answers with the
-  one photograph or nothing) and `record_share_event` (anonymous, only `membership_requested`, only for
-  a live token). No existing policy or grant changes. The two anonymous functions appear in the
-  Supabase advisor list next to `invite_link_owner` and `username_available` for the same reason: the
-  public page calls them before anyone is signed in.
+  production (SQL editor, whole file) before shipping the build that carries the Story link, then run
+  `supabase/production/11_share_media_key.sql` with a fresh key (see below); until both are done the
+  app's "Share outside VINTAGE" still exports prints, but the Story link quietly fails to mint and no
+  link is copied. It adds `post_shares` (one 32-hex token per shared post, minted by the database from
+  a UUID, author-only, revocable), `share_events` (the loop counted: `share_started`, `link_created`,
+  `page_opened`, `membership_requested`), and five functions: `create_post_share` / `revoke_post_share`
+  (members, own posts only), `live_share_post` (internal: the one rule — live share, live post,
+  approved author), `shared_post` (anonymous, by token, the page's metadata: kind, shape, place, date,
+  username, has-poster — never a path), `shared_post_media` (the file, only to a caller holding the
+  server key) and `record_share_event` (anonymous, only `membership_requested`, only for a live
+  token). No existing policy or grant changes. **The file is idempotent**: every statement is
+  `if not exists`, `drop … if exists` or `create or replace`, so running the whole file again on a
+  database that already carries an earlier version (as staging did) is safe and ends in the same
+  state — that is how staging was brought up to date. The anonymous functions appear in the Supabase
+  advisor list next to `invite_link_owner` and `username_available` for the same reason: the public
+  page calls them before anyone is signed in.
 - **Share links** are `https://vintagesocial.app/s/<token>`, served by `api/share.ts` (Vercel) from the
   pure HTML in `src/share/publicPage.ts`: the photograph alone, "FROM <NAME>'S ARCHIVE", date, place,
   two lines about the club, "Request membership" (→ `/s/<token>/request` → `/apply`) and "I have an
@@ -581,15 +587,26 @@ this repo:
 - **The picture behind a share link is served by VINTAGE, not by the store.** The page never carries a
   Supabase Storage address: its `<img>`/`<video>` and `og:image` point at `/s/<token>/media` (and
   `/s/<token>/poster` for a film), served by `api/share-media.ts`. On every request that function asks
-  the database (`shared_post_media`) whether the token is still live — share not turned off, post not
-  removed or deleted, author still approved — and only then fetches the file and streams it through
-  with an allow-list of headers (type, length, range; `no-store`) and a generic filename. No redirect,
-  no path, no store header reaches a browser. So "Turn off" stops the picture as well as the page. The
-  buckets themselves are unchanged and the app's own media loading is untouched. Two things remain
-  true of any shared picture: a copy already downloaded or screenshotted stays downloaded, and in-app
-  members still load media by its direct address as before. The rule lives in one SQL function,
-  `live_share_post`, and is proved by `supabase/tests/05_shares.sql` (`npm run test:rls`) and by
-  `tests/shareMedia.test.ts`.
+  the database (`shared_post_media(token, key)`) whether the token is still live — share not turned
+  off, post not removed or deleted, author still approved — and only then fetches the file and streams
+  it through with an allow-list of headers (type, length, range; `no-store`) and a generic filename. No
+  redirect, no path, no store header reaches a browser. So "Turn off" stops the picture as well as the
+  page. The buckets themselves are unchanged and the app's own media loading is untouched.
+- **Only our server can learn a file's path.** `shared_post_media` is callable with the anon key (the
+  server has nothing else), but answers only when the call carries the server key, whose SHA-256 is
+  the `share_media_key` row of `app_settings` (admin-readable only). The key is the **server-only
+  Vercel environment variable `SHARE_MEDIA_KEY`** — no `EXPO_PUBLIC_` prefix, so it is in no app or
+  web bundle — and travels in one request body from the Vercel function to the database. Someone
+  holding a valid share token and the public anon key who calls the database directly gets an empty
+  answer; `shared_post` (the page's metadata) carries no path; `posts` is readable by members only.
+  Without the key configured the media route answers 503 and never asks the database. Set it once per
+  project with `supabase/production/11_share_media_key.sql` (the file explains; only the hash is
+  stored; never commit a key). The service-role key stays where it has always been: nowhere near a
+  server we run. Two things remain true of any shared picture: a copy already downloaded or
+  screenshotted stays downloaded, and in-app members still load media by its direct address as
+  before. The rule lives in one SQL function, `live_share_post`, and is proved by
+  `supabase/tests/05_shares.sql` (`npm run test:rls`; 55 checks, including a sweep of every function
+  anon may execute) and by `tests/shareMedia.test.ts`.
 - **Share card label** now reads, top to bottom on the right: PLACE (wraps to two lines, never
   truncated) · LONG DATE · `@name · FOUNDING MEMBER NO. 00027` (or `MEMBER NO. 10001`, or `@name`
   alone when no number has been assigned). Missing fields are omitted, never printed as "undefined".

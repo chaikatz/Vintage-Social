@@ -376,9 +376,9 @@ export type Database = {
           username: string;
         }[];
       };
-      /** For the page's own server only: the file behind a live share. */
+      /** For the page's own server only: the file behind a live share, to a caller holding the server key. */
       shared_post_media: {
-        Args: { p_token: string };
+        Args: { p_token: string; p_key: string };
         Returns: { media_path: string; thumb_path: string | null; media_type: string }[];
       };
       record_share_event: {

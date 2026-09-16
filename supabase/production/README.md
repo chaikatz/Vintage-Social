@@ -15,6 +15,7 @@ directory should ever be edited to contain one.
 | `EXPO_PUBLIC_SUPABASE_URL` | EAS env + local `.env` | Yes — it ships in the app bundle |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | EAS env + local `.env` | It ships in the app bundle, so it is public **by design** — but RLS is the only thing standing behind it, so still don't paste it around |
 | `service_role` key | Supabase dashboard only | **No. Never.** It bypasses RLS entirely |
+| `SHARE_MEDIA_KEY` | Vercel env (server-only) + its SHA-256 in `app_settings` | **No.** It lets the share-page server learn file paths for live share links, and nothing else. Set with `11_share_media_key.sql` |
 | Database password | Supabase dashboard only | **No. Never.** |
 
 The anon key being in the bundle is not a leak: every policy in `0003_rls.sql`

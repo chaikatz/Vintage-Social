@@ -78,9 +78,17 @@ Connect → App Review Information.
 5. **Run migration `supabase/migrations/0019_shares.sql` on production** (SQL
    editor, whole file). It has been applied to staging and tested there; it
    has NOT been applied to production. Without it the Story share still
-   exports the print but no link is copied. Then redeploy Vercel so
-   `/s/<token>` and `/s/<token>/media` are served. (The file is safe to
-   re-run: it drops and recreates only its own `shared_post` function.)
+   exports the print but no link is copied. The file is idempotent (every
+   statement is `if not exists` / `drop if exists` / `create or replace`),
+   so running it twice is harmless. Then:
+   - make a key on your Mac (`openssl rand -hex 32`);
+   - in Vercel → Settings → Environment Variables add **`SHARE_MEDIA_KEY`**
+     with that value for Production (and Preview) — server-only, no
+     `EXPO_PUBLIC_` prefix, never in any bundle;
+   - run `supabase/production/11_share_media_key.sql` with the same key
+     pasted in (only its hash is stored), on staging and on production;
+   - redeploy Vercel so `/s/<token>`, `/s/<token>/media` and the key are live.
+   Until the key is set the share page renders but its picture answers 503.
 6. **Confirm email confirmations are OFF** in Supabase Auth for production
    (Authentication → Providers → Email → "Confirm email"). Sign-up returns no
    user with confirmations on, and both the application and invitation flows

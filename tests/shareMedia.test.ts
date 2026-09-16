@@ -17,6 +17,8 @@ import { cleanToken, servedHeaders, storageUrl } from "@/share/backend";
  */
 
 const SUPABASE = "https://example.supabase.co";
+/** The server's key. Its hash is what the database holds; the model compares the key itself. */
+const SERVER_KEY = "test-share-media-key-0123456789abcdef";
 const LIVE = "0123456789abcdef0123456789abcdef";
 const REVOKED = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const REMOVED_POST = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -67,6 +69,7 @@ const PHOTO_BYTES = Buffer.from("\xff\xd8\xff photograph bytes \xff\xd9", "binar
 const FILM_BYTES = Buffer.from("film bytes 0123456789");
 
 let storageFetches: string[] = [];
+let rpcCalls: Array<{ name: string; body: { p_token?: string; p_key?: string } }> = [];
 let databaseDown = false;
 
 function fakeFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
@@ -74,10 +77,13 @@ function fakeFetch(input: string | URL | Request, init?: RequestInit): Promise<R
   if (url.pathname.startsWith("/rest/v1/rpc/")) {
     if (databaseDown) return Promise.reject(new Error("connect ECONNREFUSED"));
     const name = url.pathname.slice("/rest/v1/rpc/".length);
-    const body = JSON.parse(String(init?.body ?? "{}")) as { p_token?: string };
+    const body = JSON.parse(String(init?.body ?? "{}")) as { p_token?: string; p_key?: string };
     const post = livePost(body.p_token ?? "");
+    rpcCalls.push({ name, body });
     if (name === "shared_post_media") {
-      const rows = post ? [{ media_path: post.media_path, thumb_path: post.thumb_path, media_type: post.media_type }] : [];
+      // As the migration states it: a live token AND the server's key, or nothing.
+      const keyed = typeof body.p_key === "string" && body.p_key !== "" && body.p_key === SERVER_KEY;
+      const rows = post && keyed ? [{ media_path: post.media_path, thumb_path: post.thumb_path, media_type: post.media_type }] : [];
       return Promise.resolve(Response.json(rows));
     }
     if (name === "shared_post") {
@@ -189,6 +195,7 @@ function expectNoAddress(res: FakeRes, html = res.body) {
   expect(everything).not.toContain("secret-folder");
   expect(everything).not.toContain("IMG_000");
   expect(everything).not.toContain("clip.mp4");
+  expect(everything).not.toContain(SERVER_KEY);
   expect(res.headers["location"]).toBeUndefined();
   expect(res.headers["x-served-from"]).toBeUndefined();
   expect(res.headers["etag"]).toBeUndefined();
@@ -197,8 +204,10 @@ function expectNoAddress(res: FakeRes, html = res.body) {
 beforeEach(() => {
   vi.stubEnv("EXPO_PUBLIC_SUPABASE_URL", SUPABASE);
   vi.stubEnv("EXPO_PUBLIC_SUPABASE_ANON_KEY", "anon-key-for-tests");
+  vi.stubEnv("SHARE_MEDIA_KEY", SERVER_KEY);
   vi.stubGlobal("fetch", vi.fn(fakeFetch));
   storageFetches = [];
+  rpcCalls = [];
   databaseDown = false;
 });
 afterEach(() => {
@@ -216,8 +225,36 @@ describe("the picture behind a shared link", () => {
     expect(res.headers["cache-control"]).toContain("no-store");
     expect(res.headers["content-disposition"]).toBe('inline; filename="vintage.jpg"');
     expectNoAddress(res);
-    // The server itself fetched the real file, once.
+    // The server itself fetched the real file, once, having presented its key to the database.
     expect(storageFetches).toEqual([`${SUPABASE}/storage/v1/object/public/media/chai/secret-folder/IMG_0001.jpg`]);
+    expect(rpcCalls).toEqual([{ name: "shared_post_media", body: { p_token: LIVE, p_key: SERVER_KEY } }]);
+  });
+
+  it("is the only holder of the key: a client with a valid token and the public anon key gets no path from the database", async () => {
+    // What anyone can do: call the same RPC the server calls, with the anon key, without SHARE_MEDIA_KEY.
+    const asClient = async (body: Record<string, unknown>) =>
+      (await fetch(`${SUPABASE}/rest/v1/rpc/shared_post_media`, { method: "POST", body: JSON.stringify(body) })).json();
+    expect(await asClient({ p_token: LIVE })).toEqual([]);
+    expect(await asClient({ p_token: LIVE, p_key: "" })).toEqual([]);
+    expect(await asClient({ p_token: LIVE, p_key: "guess" })).toEqual([]);
+    expect(await asClient({ p_token: LIVE, p_key: SERVER_KEY.toUpperCase() })).toEqual([]);
+    // The page's own RPC, which anyone may call, carries no path either (`shared_post` in the migration);
+    // the model hands one over on purpose, and the page test below proves it is never repeated.
+    // Through the server, the same token still serves the bytes.
+    const res = await serveMedia(LIVE);
+    expect(res.statusCode).toBe(200);
+    expect(res.bytes.equals(PHOTO_BYTES)).toBe(true);
+    // And a revoked token fails through the server as well.
+    expect((await serveMedia(REVOKED)).statusCode).toBe(404);
+  });
+
+  it("refuses to run at all without its key: 503, and the database is never asked", async () => {
+    vi.stubEnv("SHARE_MEDIA_KEY", "");
+    const res = await serveMedia(LIVE);
+    expect(res.statusCode).toBe(503);
+    expect(res.bytes.length).toBe(0);
+    expect(rpcCalls).toEqual([]);
+    expect(storageFetches).toEqual([]);
   });
 
   it("serves nothing once the share is turned off", async () => {
@@ -236,8 +273,7 @@ describe("the picture behind a shared link", () => {
     }
     expect(storageFetches).toEqual([]);
     // A malformed token never even reaches the database.
-    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
-    expect(calls.filter((u) => u.includes("/rpc/"))).toHaveLength(1); // only UNKNOWN, which is well-formed
+    expect(rpcCalls.map((c) => c.body.p_token)).toEqual([UNKNOWN]); // only the well-formed one
   });
 
   it("serves nothing for a post that was removed, or deleted outright", async () => {
@@ -334,7 +370,7 @@ describe("the small pure parts", () => {
   });
 
   it("builds a store address for a path and passes a whole address through", () => {
-    const b = { url: SUPABASE, key: "k" };
+    const b = { url: SUPABASE, key: "k", mediaKey: null };
     expect(storageUrl(b, "media", "a b/c.jpg")).toBe(`${SUPABASE}/storage/v1/object/public/media/a%20b/c.jpg`);
     expect(storageUrl(b, "media", "https://picsum.photos/id/1/1200/800")).toBe("https://picsum.photos/id/1/1200/800");
   });
