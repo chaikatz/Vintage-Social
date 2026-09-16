@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { PRINT_WIDTH, STORY_WIDTH, exportByline, exportLayout, printRatio } from "@/utils/exportLayout";
+import {
+  PRINT_WIDTH,
+  STORY_WIDTH,
+  exportByline,
+  exportLabelText,
+  exportLayout,
+  memberCredit,
+  placeLineCount,
+  printRatio,
+} from "@/utils/exportLayout";
 
 describe("the shape of a print", () => {
   it("clamps the photograph the way the feed does", () => {
@@ -20,9 +29,12 @@ describe("the shape of a print", () => {
     expect(L.rule.y).toBeGreaterThan(L.photo.y + L.photo.height);
     expect(L.wordmark.y).toBeGreaterThan(L.rule.y);
     expect(L.credit.y + L.credit.height).toBeLessThan(L.height - L.margin / 2);
-    // Words on the left, words on the right, never overlapping.
+    // Words on the left, words on the right, never overlapping; the right
+    // block reads top to bottom: place, date, member.
     expect(L.wordmark.x + L.wordmark.width).toBeLessThanOrEqual(L.byline.x);
     expect(L.byline.x + L.byline.width).toBe(PRINT_WIDTH - L.margin);
+    expect(L.place.y).toBeLessThan(L.byline.y);
+    expect(L.byline.y).toBeLessThan(L.credit.y);
   });
 
   it("puts a story on a 9:16 page and keeps the print inside it", () => {
@@ -49,6 +61,54 @@ describe("the shape of a print", () => {
     expect(L.stamp.x + L.stamp.width).toBeLessThan(L.photo.x + L.photo.width);
     expect(L.stamp.y + L.stamp.height).toBeLessThan(L.photo.y + L.photo.height);
     expect(L.stamp.y).toBeGreaterThan(L.photo.y + L.photo.height / 2);
+  });
+});
+
+describe("the label's words", () => {
+  const post = {
+    location: "The Metropolitan Museum of Art",
+    taken_at: "2026-09-15T14:00:00Z",
+    created_at: "2026-09-16T09:00:00Z",
+    author: { username: "chai" },
+  };
+
+  it("wraps a long place to two lines rather than cutting it off", () => {
+    expect(placeLineCount("NYC")).toBe(1);
+    expect(placeLineCount("The Metropolitan Museum of Art")).toBe(2);
+    expect(placeLineCount("")).toBe(0);
+    expect(placeLineCount(null)).toBe(0);
+    const one = exportLayout(1, "print", PRINT_WIDTH, { placeLines: 1 });
+    const two = exportLayout(1, "print", PRINT_WIDTH, { placeLines: 2 });
+    expect(two.place.height).toBeGreaterThan(one.place.height);
+    expect(two.height).toBeGreaterThanOrEqual(one.height);
+    expect(two.place.size).toBeLessThan(one.place.size);
+  });
+
+  it("says where, when and whose, from the post's own fields", () => {
+    const words = exportLabelText(post, 1);
+    expect(words.place).toBe("THE METROPOLITAN MUSEUM OF ART");
+    expect(words.placeLines).toBe(2);
+    expect(words.date).toBe("SEPTEMBER 15, 2026");
+    expect(words.credit).toBe("chai · FOUNDING MEMBER NO. 00001");
+  });
+
+  it("leaves out what is not there and never invents a number", () => {
+    const words = exportLabelText({ ...post, location: "  ", taken_at: null }, null);
+    expect(words.place).toBeNull();
+    expect(words.placeLines).toBe(0);
+    expect(words.date).toBe("SEPTEMBER 16, 2026");
+    expect(words.credit).toBe("chai");
+    expect(JSON.stringify(words)).not.toMatch(/undefined|null ·|· $/);
+    const none = exportLayout(1, "print", PRINT_WIDTH, { placeLines: 0 });
+    expect(none.place.height).toBe(0);
+  });
+
+  it("keeps founding-member semantics and formats any length of number", () => {
+    expect(memberCredit("chai", 27)).toBe("chai · FOUNDING MEMBER NO. 00027");
+    expect(memberCredit("chai", 10_001)).toBe("chai · MEMBER NO. 10001");
+    expect(memberCredit("a_very_long_username_indeed", 3)).toBe("a_very_long_username_indeed · FOUNDING MEMBER NO. 00003");
+    expect(memberCredit("chai", null)).toBe("chai");
+    expect(memberCredit("chai", 0)).toBe("chai");
   });
 });
 

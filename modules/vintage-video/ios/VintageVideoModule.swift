@@ -80,6 +80,7 @@ struct BrandOptions: Record {
   @Field var photo: BrandRect = BrandRect()
   @Field var rule: BrandRect = BrandRect()
   @Field var wordmark: BrandTextBox = BrandTextBox()
+  @Field var place: BrandTextBox = BrandTextBox()
   @Field var byline: BrandTextBox = BrandTextBox()
   @Field var credit: BrandTextBox = BrandTextBox()
   @Field var stamp: BrandTextBox = BrandTextBox()
@@ -90,6 +91,7 @@ struct BrandOptions: Record {
   @Field var inkFaint: String = "#9C927F"
   @Field var ruleColor: String = "#D5CBB8"
   @Field var wordmarkText: String = "VINTAGE"
+  @Field var placeText: String = ""
   @Field var bylineText: String = ""
   @Field var creditText: String = ""
   @Field var stampText: String = ""
@@ -188,6 +190,14 @@ private final class Brander {
         options.wordmarkText, box: options.wordmark, in: H,
         font: Brander.font("Georgia", size: options.wordmark.size),
         color: options.ink, alignment: .left
+      ))
+    }
+    if !options.placeText.isEmpty && options.place.height > 0 {
+      // A long place runs to a second line rather than being cut off.
+      parent.addSublayer(Brander.text(
+        options.placeText, box: options.place, in: H,
+        font: Brander.font("CourierNewPSMT", size: options.place.size),
+        color: options.inkSoft, alignment: .right, wrap: true
       ))
     }
     if !options.bylineText.isEmpty {
@@ -297,7 +307,7 @@ private final class Brander {
 
   static func text(
     _ string: String, box: BrandTextBox, in height: CGFloat,
-    font: UIFont, color: String, alignment: CATextLayerAlignmentMode
+    font: UIFont, color: String, alignment: CATextLayerAlignmentMode, wrap: Bool = false
   ) -> CATextLayer {
     let layer = CATextLayer()
     let attributes: [NSAttributedString.Key: Any] = [
@@ -309,7 +319,7 @@ private final class Brander {
     layer.frame = Brander.flip(Brander.rect(box), in: height)
     layer.alignmentMode = alignment
     layer.truncationMode = .end
-    layer.isWrapped = false
+    layer.isWrapped = wrap
     // Units are already pixels; nothing here is scaled for a screen.
     layer.contentsScale = 1
     return layer

@@ -192,6 +192,31 @@ export type BlockRow = {
   created_at: string;
 }
 
+/** A photograph the author chose to show beyond the club, keyed by an unguessable token. */
+export type PostShareRow = {
+  token: string;
+  post_id: string;
+  owner_id: string;
+  format: "print" | "story";
+  theme: "paper" | "darkroom";
+  created_at: string;
+  revoked_at: string | null;
+  view_count: number;
+  last_viewed_at: string | null;
+}
+
+/** One step of the sharing loop, counted. */
+export type ShareEventRow = {
+  id: string;
+  kind: "share_started" | "link_created" | "page_opened" | "membership_requested";
+  actor_id: string | null;
+  post_id: string | null;
+  token: string | null;
+  format: "print" | "story" | null;
+  theme: "paper" | "darkroom" | null;
+  created_at: string;
+}
+
 export type LikeRow = {
   post_id: string;
   user_id: string;
@@ -288,6 +313,8 @@ export type Database = {
       push_tokens: Table<PushTokenRow>;
       notification_prefs: Table<NotificationPrefsRow>;
       blocks: Table<BlockRow>;
+      post_shares: Table<PostShareRow>;
+      share_events: Table<ShareEventRow>;
       likes: Table<LikeRow>;
       comments: Table<CommentRow>;
       activity: Table<ActivityRow>;
@@ -327,6 +354,32 @@ export type Database = {
       admin_set_invite_quota: {
         Args: { p_profile_id: string; p_quota: number };
         Returns: number;
+      };
+      create_post_share: {
+        Args: { p_post_id: string; p_format: string; p_theme: string };
+        Returns: string;
+      };
+      revoke_post_share: {
+        Args: { p_post_id: string };
+        Returns: undefined;
+      };
+      shared_post: {
+        Args: { p_token: string };
+        Returns: {
+          media_path: string;
+          thumb_path: string | null;
+          media_type: string;
+          width: number | null;
+          height: number | null;
+          location: string | null;
+          taken_at: string | null;
+          created_at: string;
+          username: string;
+        }[];
+      };
+      record_share_event: {
+        Args: { p_token: string; p_kind: string };
+        Returns: undefined;
       };
       block_member: {
         Args: { p_user: string };

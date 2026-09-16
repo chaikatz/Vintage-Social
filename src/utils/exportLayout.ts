@@ -1,9 +1,12 @@
+import { signatureDate } from "./time";
+import { formatMemberNumber, isFoundingMember } from "./membership";
+
 /**
  * The geometry of an exported print.
  *
  * A photograph leaves VINTAGE the way a print leaves a darkroom: on paper,
- * with a margin, and a label along the bottom — the wordmark on the left,
- * the place and date on the right, the member's name under them. Two
+ * with a margin, and a label along the bottom — the wordmark on the left
+ * and, on the right, where it was taken, when, and whose it is. Two
  * formats: `print`, the photograph's own shape with the paper around it,
  * for a feed; `story`, a 9:16 page with the print sitting in the middle,
  * for a story. Two papers: the light page and the darkroom brown.
@@ -40,10 +43,26 @@ export interface ExportLayout {
   /** The hairline above the label. */
   rule: Rect;
   wordmark: TextBox;
+  /** Where it was taken; one or two lines, or nothing (height 0). */
+  place: TextBox;
+  /** When it was taken. */
   byline: TextBox;
+  /** Whose it is: the member and their number. */
   credit: TextBox;
   /** The amber date stamp, bottom-right of the photograph. */
   stamp: TextBox;
+}
+
+/** What the label says, with nothing invented and nothing left dangling. */
+export interface ExportLabelText {
+  /** Upper-case place, or null when the post names none. */
+  place: string | null;
+  /** How many lines the place takes: 0, 1 or 2. */
+  placeLines: 0 | 1 | 2;
+  /** `SEPTEMBER 15, 2026`. */
+  date: string;
+  /** `chai · MEMBER NO. 00027`, `chai · FOUNDING MEMBER NO. 00002`, or just `chai`. */
+  credit: string;
 }
 
 // The same clamp the feed applies: nothing taller than 4:5, nothing wider
@@ -60,15 +79,66 @@ export function printRatio(width: number | null, height: number | null): number 
 export const PRINT_WIDTH = 540;
 export const STORY_WIDTH = 360;
 
-export function exportLayout(ratio: number, format: ExportFormat, width: number): ExportLayout {
+/** A place longer than this is set on two lines rather than cut off. */
+export const PLACE_WRAP_AT = 22;
+
+/** How many lines a place needs on the label. */
+export function placeLineCount(place: string | null | undefined): 0 | 1 | 2 {
+  const p = place?.trim();
+  if (!p) return 0;
+  return p.length > PLACE_WRAP_AT ? 2 : 1;
+}
+
+/** The member's line under the date. Real number or nothing; never a placeholder. */
+export function memberCredit(username: string, memberNo: number | null | undefined): string {
+  const name = username.trim();
+  if (typeof memberNo !== "number" || memberNo < 1) return name;
+  const number = formatMemberNumber(memberNo);
+  return isFoundingMember(memberNo) ? `${name} · FOUNDING MEMBER ${number}` : `${name} · MEMBER ${number}`;
+}
+
+/**
+ * The words on the label for a post: place, date, member — from the same
+ * fields the app shows everywhere else. A missing place is simply absent;
+ * the date is the capture date, or the day it was posted when the file
+ * carried none, exactly as the feed byline decides it.
+ */
+export function exportLabelText(
+  post: { location: string | null; taken_at: string | null; created_at: string; author: { username: string } },
+  memberNo: number | null | undefined,
+): ExportLabelText {
+  const place = post.location?.trim() ? post.location.trim().toUpperCase() : null;
+  return {
+    place,
+    placeLines: placeLineCount(place),
+    date: signatureDate(post.taken_at ?? post.created_at).toUpperCase(),
+    credit: memberCredit(post.author.username, memberNo),
+  };
+}
+
+export function exportLayout(
+  ratio: number,
+  format: ExportFormat,
+  width: number,
+  label: { placeLines?: 0 | 1 | 2 } = {},
+): ExportLayout {
   const W = width;
+  const placeLines = label.placeLines ?? 1;
   const margin = r(W * 0.07);
   const gap = r(margin * 0.75);
-  // The label: a rule, then a row with the wordmark and the right-hand block.
+
+  // The label: a rule, then the wordmark on the left and, on the right,
+  // the place (one or two lines), the date, and the member.
   const wordmarkSize = r2(W * 0.034);
   const bylineSize = r2(W * 0.019);
+  const placeSize = placeLines === 2 ? r2(W * 0.0165) : bylineSize;
   const creditSize = r2(W * 0.017);
-  const labelHeight = r(W * 0.115);
+  const between = r2(W * 0.006);
+  const placeHeight = placeLines === 0 ? 0 : r2(placeSize * 1.35 * placeLines);
+  const bylineHeight = r2(bylineSize * 1.35);
+  const creditHeight = r2(creditSize * 1.35);
+  const block = placeHeight + (placeLines ? between : 0) + bylineHeight + between + creditHeight;
+  const labelHeight = Math.max(r(W * 0.115), r(block + W * 0.04));
 
   let photoWidth = W - 2 * margin;
   let photoHeight = r(photoWidth / ratio);
@@ -89,7 +159,7 @@ export function exportLayout(ratio: number, format: ExportFormat, width: number)
   }
   const photo: Rect = { x: r((W - photoWidth) / 2), y: top, width: photoWidth, height: photoHeight };
   const labelTop = photo.y + photo.height + gap;
-  const centerY = labelTop + labelHeight * 0.56;
+  const centerY = labelTop + labelHeight / 2 + W * 0.004;
 
   const rule: Rect = { x: margin, y: labelTop, width: W - 2 * margin, height: Math.max(1, r2(W * 0.002)) };
 
@@ -97,29 +167,37 @@ export function exportLayout(ratio: number, format: ExportFormat, width: number)
   const wordmark: TextBox = {
     x: margin,
     y: r2(centerY - wordmarkHeight / 2),
-    width: r((W - 2 * margin) * 0.5),
+    width: r((W - 2 * margin) * 0.42),
     height: wordmarkHeight,
     size: wordmarkSize,
     spacing: r2(wordmarkSize * 0.2),
   };
 
-  const bylineHeight = r2(bylineSize * 1.35);
-  const creditHeight = r2(creditSize * 1.35);
-  const between = r2(W * 0.005);
-  const blockHeight = bylineHeight + between + creditHeight;
-  const rightX = r(W / 2);
+  // The right-hand block, stacked and centred on the same line as the wordmark.
+  const rightX = margin + wordmark.width;
   const rightWidth = W - margin - rightX;
+  let y = r2(centerY - block / 2);
+  const place: TextBox = {
+    x: rightX,
+    y,
+    width: rightWidth,
+    height: placeHeight,
+    size: placeSize,
+    spacing: r2(placeSize * 0.14),
+  };
+  if (placeLines) y = r2(y + placeHeight + between);
   const byline: TextBox = {
     x: rightX,
-    y: r2(centerY - blockHeight / 2),
+    y,
     width: rightWidth,
     height: bylineHeight,
     size: bylineSize,
     spacing: r2(bylineSize * 0.16),
   };
+  y = r2(y + bylineHeight + between);
   const credit: TextBox = {
     x: rightX,
-    y: r2(byline.y + bylineHeight + between),
+    y,
     width: rightWidth,
     height: creditHeight,
     size: creditSize,
@@ -138,10 +216,10 @@ export function exportLayout(ratio: number, format: ExportFormat, width: number)
     spacing: 0,
   };
 
-  return { width: W, height, margin, photo, rule, wordmark, byline, credit, stamp };
+  return { width: W, height, margin, photo, rule, wordmark, place, byline, credit, stamp };
 }
 
-/** The label's right-hand line: `NYC · Jan 23, 2003`, or the date alone. */
+/** The label's one-line form, kept for anything that wants `NYC · Jan 23, 2003`. */
 export function exportByline(place: string | null | undefined, date: string): string {
   const p = place?.trim();
   return p ? `${p} · ${date}` : date;

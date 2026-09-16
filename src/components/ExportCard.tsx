@@ -2,8 +2,8 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { colors, dark, light, type } from "@/theme";
-import { dateStampText, shortDate } from "@/utils/time";
-import { exportByline, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
+import { dateStampText } from "@/utils/time";
+import { exportLabelText, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
 import type { PostWithAuthor } from "@/types/db";
 
 interface Props {
@@ -14,6 +14,8 @@ interface Props {
   paper: ExportPaper;
   /** The card's width in points; everything else follows from it. */
   width: number;
+  /** The author's membership number, when known. Never invented. */
+  memberNo?: number | null;
   /** The picture has drawn; a capture will not be blank. */
   onReady?: () => void;
 }
@@ -30,10 +32,13 @@ export function exportPalette(paper: ExportPaper) {
  * Rendered from `exportLayout` so the preview on screen, the still that
  * is captured, and the film the native side brands are the same object
  * at three sizes. Nothing here is dynamic colour: a print is one paper.
+ * The label says where, when and whose — and says nothing where there is
+ * nothing to say.
  */
-export function ExportCard({ post, source, format, paper, width, onReady }: Props) {
+export function ExportCard({ post, source, format, paper, width, memberNo, onReady }: Props) {
   const ratio = printRatio(post.width, post.height);
-  const L = exportLayout(ratio, format, width);
+  const words = exportLabelText(post, memberNo);
+  const L = exportLayout(ratio, format, width, { placeLines: words.placeLines });
   const c = exportPalette(paper);
   const date = post.taken_at ?? post.created_at;
 
@@ -82,6 +87,25 @@ export function ExportCard({ post, source, format, paper, width, onReady }: Prop
       >
         VINTAGE
       </Text>
+      {words.place ? (
+        <Text
+          style={[
+            styles.abs,
+            rect(L.place),
+            styles.right,
+            {
+              fontFamily: type.mono,
+              fontSize: L.place.size,
+              lineHeight: L.place.height / words.placeLines,
+              letterSpacing: L.place.spacing,
+              color: c.inkSoft,
+            },
+          ]}
+          numberOfLines={words.placeLines}
+        >
+          {words.place}
+        </Text>
+      ) : null}
       <Text
         style={[
           styles.abs,
@@ -97,7 +121,7 @@ export function ExportCard({ post, source, format, paper, width, onReady }: Prop
         ]}
         numberOfLines={1}
       >
-        {exportByline(post.location, shortDate(date)).toUpperCase()}
+        {words.date}
       </Text>
       <Text
         style={[
@@ -114,7 +138,7 @@ export function ExportCard({ post, source, format, paper, width, onReady }: Prop
         ]}
         numberOfLines={1}
       >
-        {post.author.username}
+        {words.credit}
       </Text>
     </View>
   );

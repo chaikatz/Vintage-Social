@@ -4,8 +4,8 @@ import { Directory, File, Paths } from "expo-file-system";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import { exportPalette } from "@/components/ExportCard";
-import { dateStampText, shortDate } from "@/utils/time";
-import { exportByline, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
+import { dateStampText } from "@/utils/time";
+import { exportLabelText, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
 import type { BrandOptions, VintageVideoModule } from "../../modules/vintage-video";
 import type { PostWithAuthor } from "@/types/db";
 
@@ -50,6 +50,7 @@ export async function brandVideo(
   remoteUrl: string,
   format: ExportFormat,
   paper: ExportPaper,
+  memberNo: number | null | undefined,
   onStage?: (stage: string) => void,
 ): Promise<string> {
   if (!native?.brand) throw new Error("Branding a film is not available in this build");
@@ -63,7 +64,8 @@ export async function brandVideo(
 
   onStage?.("Printing…");
   const width = VIDEO_WIDTH[format];
-  const L = exportLayout(printRatio(post.width, post.height), format, width);
+  const words = exportLabelText(post, memberNo);
+  const L = exportLayout(printRatio(post.width, post.height), format, width, { placeLines: words.placeLines });
   const c = exportPalette(paper);
   const date = post.taken_at ?? post.created_at;
   const options: BrandOptions = {
@@ -72,6 +74,7 @@ export async function brandVideo(
     photo: L.photo,
     rule: L.rule,
     wordmark: L.wordmark,
+    place: L.place,
     byline: L.byline,
     credit: L.credit,
     stamp: L.stamp,
@@ -82,8 +85,9 @@ export async function brandVideo(
     inkFaint: c.inkFaint,
     ruleColor: c.rule,
     wordmarkText: "VINTAGE",
-    bylineText: exportByline(post.location, shortDate(date)).toUpperCase(),
-    creditText: post.author.username,
+    placeText: words.place ?? "",
+    bylineText: words.date,
+    creditText: words.credit,
     stampText: post.show_date_stamp ? dateStampText(date) : "",
   };
   const result = await native.brand(local.uri, options);

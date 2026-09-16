@@ -75,7 +75,12 @@ Connect → App Review Information.
    accurate; the framing is a draft.
 4. **Build and upload** a binary containing this commit (full EAS build; the
    compliance screens are JavaScript but native packages changed earlier).
-5. **Confirm email confirmations are OFF** in Supabase Auth for production
+5. **Run migration `supabase/migrations/0019_shares.sql` on production** (SQL
+   editor, whole file). It has been applied to staging and tested there; it
+   has NOT been applied to production. Without it the Story share still
+   exports the print but no link is copied. Then redeploy Vercel so
+   `/s/<token>` is served.
+6. **Confirm email confirmations are OFF** in Supabase Auth for production
    (Authentication → Providers → Email → "Confirm email"). Sign-up returns no
    user with confirmations on, and both the application and invitation flows
    would fail. This could not be verified from the database.

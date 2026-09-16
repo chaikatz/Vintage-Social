@@ -558,3 +558,26 @@ this repo:
   branded natively by `modules/vintage-video` (`brand`) — the same paper and label painted around the
   moving picture with Core Animation, sound kept — then handed to the system share sheet
   (`expo-sharing`). VINTAGE posts nothing itself. Both packages are native: full EAS build required.
+- **Migration `0019_shares.sql` — applied to STAGING ONLY. NOT YET APPLIED TO PRODUCTION.** Run it on
+  production (SQL editor, whole file) before shipping the build that carries the Story link; until then
+  the app's "Share outside VINTAGE" still exports prints, but the Story link quietly fails to mint and
+  no link is copied. It adds `post_shares` (one 32-hex token per shared post, minted by the database,
+  author-only, revocable), `share_events` (the loop counted: `share_started`, `link_created`,
+  `page_opened`, `membership_requested`), and four functions: `create_post_share` /
+  `revoke_post_share` (members, own posts only), `shared_post` (anonymous, by token, answers with the
+  one photograph or nothing) and `record_share_event` (anonymous, only `membership_requested`, only for
+  a live token). No existing policy or grant changes. The two anonymous functions appear in the
+  Supabase advisor list next to `invite_link_owner` and `username_available` for the same reason: the
+  public page calls them before anyone is signed in.
+- **Share links** are `https://vintagesocial.app/s/<token>`, served by `api/share.ts` (Vercel) from the
+  pure HTML in `src/share/publicPage.ts`: the photograph alone, "FROM <NAME>'S ARCHIVE", date, place,
+  two lines about the club, "Request membership" (→ `/s/<token>/request` → `/apply`) and "I have an
+  invitation" (→ `/invite`). No profile, likes, comments or other posts are reachable. A revoked share,
+  a deleted post, a suspended author or an unknown token all render the same "no longer shared" page
+  (404); a database outage renders "cannot be shown just now" (503). Redeploy Vercel after pulling so the
+  `/s/:token` rewrites in `vercel.json` are live. The app copies the link to the clipboard only for the
+  Story shape, right before the share sheet opens; Instagram accepts the image alone, and the link
+  sticker is added by hand from the clipboard (Apple and Instagram offer no way to pre-fill it).
+- **Share card label** now reads, top to bottom on the right: PLACE (wraps to two lines, never
+  truncated) · LONG DATE · `name · FOUNDING MEMBER NO. 00027` (or `MEMBER NO. 10001`, or the name
+  alone when no number has been assigned). Missing fields are omitted, never printed as "undefined".

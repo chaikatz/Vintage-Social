@@ -43,6 +43,8 @@ export interface BrandOptions {
   photo: BrandRect;
   rule: BrandRect;
   wordmark: BrandTextBox;
+  /** Where it was taken; may be two lines tall, or zero-height when there is no place. */
+  place: BrandTextBox;
   byline: BrandTextBox;
   credit: BrandTextBox;
   stamp: BrandTextBox;
@@ -53,6 +55,7 @@ export interface BrandOptions {
   inkFaint: string;
   ruleColor: string;
   wordmarkText: string;
+  placeText: string;
   bylineText: string;
   creditText: string;
   stampText: string;

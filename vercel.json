@@ -22,6 +22,14 @@
       "destination": "/terms.html"
     },
     {
+      "source": "/s/:token/request",
+      "destination": "/api/share?token=:token&go=request"
+    },
+    {
+      "source": "/s/:token",
+      "destination": "/api/share?token=:token"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
