@@ -22,6 +22,14 @@
       "destination": "/terms.html"
     },
     {
+      "source": "/s/:token/media",
+      "destination": "/api/share-media?token=:token"
+    },
+    {
+      "source": "/s/:token/poster",
+      "destination": "/api/share-media?token=:token&kind=poster"
+    },
+    {
       "source": "/s/:token/request",
       "destination": "/api/share?token=:token&go=request"
     },

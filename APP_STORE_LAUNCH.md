@@ -79,7 +79,8 @@ Connect → App Review Information.
    editor, whole file). It has been applied to staging and tested there; it
    has NOT been applied to production. Without it the Story share still
    exports the print but no link is copied. Then redeploy Vercel so
-   `/s/<token>` is served.
+   `/s/<token>` and `/s/<token>/media` are served. (The file is safe to
+   re-run: it drops and recreates only its own `shared_post` function.)
 6. **Confirm email confirmations are OFF** in Supabase Auth for production
    (Authentication → Providers → Email → "Confirm email"). Sign-up returns no
    user with confirmations on, and both the application and invitation flows

@@ -140,8 +140,22 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
       >
         {words.credit}
       </Text>
+      <Image
+        source={EXPORT_ICON}
+        style={[styles.abs, rect(L.icon), { borderRadius: iconRadius(L.icon.width) }]}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+      />
     </View>
   );
+}
+
+/** The app icon, as the card carries it. Shared with the film branding, which loads the same file. */
+export const EXPORT_ICON = require("../../assets/icon.png");
+
+/** iOS rounds its icons at about 22% of their side. */
+export function iconRadius(size: number): number {
+  return Math.round(size * 0.22 * 100) / 100;
 }
 
 function rect(r: { x: number; y: number; width: number; height: number }) {

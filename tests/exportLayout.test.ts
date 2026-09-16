@@ -10,6 +10,27 @@ import {
   printRatio,
 } from "@/utils/exportLayout";
 
+describe("the app icon in the corner", () => {
+  it("sits small in the bottom-left corner of a print, inside the paper", () => {
+    const L = exportLayout(1, "print", PRINT_WIDTH);
+    expect(L.icon.width).toBe(L.icon.height);
+    expect(L.icon.width).toBe(27);
+    expect(L.icon.x).toBeLessThan(L.margin);
+    expect(L.icon.y + L.icon.height).toBeLessThan(L.height);
+    expect(L.icon.y + L.icon.height).toBeGreaterThan(L.height - L.margin);
+    // Clear of the wordmark, which sits on the label line above.
+    expect(L.icon.y).toBeGreaterThan(L.wordmark.y + L.wordmark.height);
+  });
+
+  it("is raised clear of Instagram's reply bar on a story", () => {
+    const L = exportLayout(4 / 5, "story", STORY_WIDTH);
+    expect(L.icon.x).toBeLessThan(L.margin);
+    expect(L.height - (L.icon.y + L.icon.height)).toBeGreaterThanOrEqual(L.height * 0.12 - 1);
+    // Below the print, never over it.
+    expect(L.icon.y).toBeGreaterThan(L.credit.y + L.credit.height);
+  });
+});
+
 describe("the shape of a print", () => {
   it("clamps the photograph the way the feed does", () => {
     expect(printRatio(1000, 1000)).toBe(1);
@@ -89,7 +110,7 @@ describe("the label's words", () => {
     expect(words.place).toBe("THE METROPOLITAN MUSEUM OF ART");
     expect(words.placeLines).toBe(2);
     expect(words.date).toBe("SEPTEMBER 15, 2026");
-    expect(words.credit).toBe("chai · FOUNDING MEMBER NO. 00001");
+    expect(words.credit).toBe("@chai · FOUNDING MEMBER NO. 00001");
   });
 
   it("leaves out what is not there and never invents a number", () => {
@@ -97,18 +118,20 @@ describe("the label's words", () => {
     expect(words.place).toBeNull();
     expect(words.placeLines).toBe(0);
     expect(words.date).toBe("SEPTEMBER 16, 2026");
-    expect(words.credit).toBe("chai");
+    expect(words.credit).toBe("@chai");
     expect(JSON.stringify(words)).not.toMatch(/undefined|null ·|· $/);
     const none = exportLayout(1, "print", PRINT_WIDTH, { placeLines: 0 });
     expect(none.place.height).toBe(0);
   });
 
   it("keeps founding-member semantics and formats any length of number", () => {
-    expect(memberCredit("chai", 27)).toBe("chai · FOUNDING MEMBER NO. 00027");
-    expect(memberCredit("chai", 10_001)).toBe("chai · MEMBER NO. 10001");
-    expect(memberCredit("a_very_long_username_indeed", 3)).toBe("a_very_long_username_indeed · FOUNDING MEMBER NO. 00003");
-    expect(memberCredit("chai", null)).toBe("chai");
-    expect(memberCredit("chai", 0)).toBe("chai");
+    expect(memberCredit("chai", 27)).toBe("@chai · FOUNDING MEMBER NO. 00027");
+    expect(memberCredit("chai", 10_001)).toBe("@chai · MEMBER NO. 10001");
+    expect(memberCredit("a_very_long_username_indeed", 3)).toBe("@a_very_long_username_indeed · FOUNDING MEMBER NO. 00003");
+    expect(memberCredit("chai", null)).toBe("@chai");
+    expect(memberCredit("chai", 0)).toBe("@chai");
+    // One @, however the name arrives.
+    expect(memberCredit("@chai", 27)).toBe("@chai · FOUNDING MEMBER NO. 00027");
   });
 });
 

@@ -578,6 +578,20 @@ this repo:
   `/s/:token` rewrites in `vercel.json` are live. The app copies the link to the clipboard only for the
   Story shape, right before the share sheet opens; Instagram accepts the image alone, and the link
   sticker is added by hand from the clipboard (Apple and Instagram offer no way to pre-fill it).
+- **The picture behind a share link is served by VINTAGE, not by the store.** The page never carries a
+  Supabase Storage address: its `<img>`/`<video>` and `og:image` point at `/s/<token>/media` (and
+  `/s/<token>/poster` for a film), served by `api/share-media.ts`. On every request that function asks
+  the database (`shared_post_media`) whether the token is still live — share not turned off, post not
+  removed or deleted, author still approved — and only then fetches the file and streams it through
+  with an allow-list of headers (type, length, range; `no-store`) and a generic filename. No redirect,
+  no path, no store header reaches a browser. So "Turn off" stops the picture as well as the page. The
+  buckets themselves are unchanged and the app's own media loading is untouched. Two things remain
+  true of any shared picture: a copy already downloaded or screenshotted stays downloaded, and in-app
+  members still load media by its direct address as before. The rule lives in one SQL function,
+  `live_share_post`, and is proved by `supabase/tests/05_shares.sql` (`npm run test:rls`) and by
+  `tests/shareMedia.test.ts`.
 - **Share card label** now reads, top to bottom on the right: PLACE (wraps to two lines, never
-  truncated) · LONG DATE · `name · FOUNDING MEMBER NO. 00027` (or `MEMBER NO. 10001`, or the name
+  truncated) · LONG DATE · `@name · FOUNDING MEMBER NO. 00027` (or `MEMBER NO. 10001`, or `@name`
   alone when no number has been assigned). Missing fields are omitted, never printed as "undefined".
+  The app icon sits small in the card's bottom-left corner, on stills and on branded films alike (on a
+  Story page it is raised clear of Instagram's reply bar).

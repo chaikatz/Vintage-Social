@@ -366,9 +366,8 @@ export type Database = {
       shared_post: {
         Args: { p_token: string };
         Returns: {
-          media_path: string;
-          thumb_path: string | null;
           media_type: string;
+          has_poster: boolean;
           width: number | null;
           height: number | null;
           location: string | null;
@@ -376,6 +375,11 @@ export type Database = {
           created_at: string;
           username: string;
         }[];
+      };
+      /** For the page's own server only: the file behind a live share. */
+      shared_post_media: {
+        Args: { p_token: string };
+        Returns: { media_path: string; thumb_path: string | null; media_type: string }[];
       };
       record_share_event: {
         Args: { p_token: string; p_kind: string };

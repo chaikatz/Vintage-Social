@@ -9,16 +9,18 @@ import { signatureDate } from "../utils/time";
  * the member's is on it or reachable from it. Pure HTML from a small set
  * of fields, so it renders in a crawler as well as a phone and can be
  * tested without a server. Every value that came from a member passes
- * through `escapeHtml`.
+ * through `escapeHtml`. The picture is never an address in the store: it
+ * is `/s/<token>/media`, served by our own function, which checks the
+ * token again — so the page cannot leak a path, because it never has one.
  *
  * No imports from the app's React Native code: this runs in a Vercel
  * function.
  */
 
 export interface SharedPhotograph {
-  mediaUrl: string;
-  posterUrl: string | null;
   mediaType: "photo" | "video";
+  /** A film has a still to show before it plays. */
+  hasPoster: boolean;
   width: number | null;
   height: number | null;
   location: string | null;
@@ -79,14 +81,16 @@ export function publicSharePage({ origin, token, photograph, unavailable = false
   const p = photograph;
   const title = p ? `A photograph from ${p.username}’s archive · VINTAGE` : "VINTAGE";
   const description = "VINTAGE is a private social network for photographs worth keeping. Membership by invitation.";
-  const ogImage = p ? (p.mediaType === "video" ? p.posterUrl ?? "" : p.mediaUrl) : `${origin}/invite-card.png`;
   const url = `${origin}/s/${token}`;
+  const mediaSrc = `${url}/media`;
+  const posterSrc = p?.hasPoster ? `${url}/poster` : null;
+  const ogImage = p ? (p.mediaType === "video" ? posterSrc ?? `${origin}/invite-card.png` : mediaSrc) : `${origin}/invite-card.png`;
   const ratio = p ? frameRatio(p.width, p.height) : 1;
 
   const picture = p
     ? p.mediaType === "video"
-      ? `<video class="picture" src="${escapeHtml(p.mediaUrl)}"${p.posterUrl ? ` poster="${escapeHtml(p.posterUrl)}"` : ""} muted autoplay loop playsinline preload="metadata"></video>`
-      : `<img class="picture" src="${escapeHtml(p.mediaUrl)}" alt="" loading="eager" decoding="async">`
+      ? `<video class="picture" src="${escapeHtml(mediaSrc)}"${posterSrc ? ` poster="${escapeHtml(posterSrc)}"` : ""} muted autoplay loop playsinline preload="metadata"></video>`
+      : `<img class="picture" src="${escapeHtml(mediaSrc)}" alt="" loading="eager" decoding="async">`
     : "";
 
   const details = p ? detailLines(p) : [];
@@ -110,7 +114,7 @@ export function publicSharePage({ origin, token, photograph, unavailable = false
 <meta property="og:url" content="${escapeHtml(url)}">
 <meta property="og:title" content="${escapeHtml(title)}">
 <meta property="og:description" content="${escapeHtml(description)}">
-${ogImage ? `<meta property="og:image" content="${escapeHtml(ogImage)}">` : ""}
+<meta property="og:image" content="${escapeHtml(ogImage)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="robots" content="noindex">
 <style>

@@ -138,6 +138,24 @@ try {
     }
   }
 
+  // Sharing beyond the club: the link, the file behind it, and turning it off.
+  if (res.status === 0 && process.exitCode !== 1) {
+    process.stdout.write("· supabase/tests/05_shares.sql … ");
+    const shares = psql(["-U", "vintage_owner", "-f", join(here, "05_shares.sql")], {
+      allowFail: true,
+    });
+    if (shares.status !== 0) {
+      console.log("FAILED");
+      process.stdout.write(shares.stdout ?? "");
+      process.stderr.write(shares.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log("ok");
+      const note = (shares.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+      if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+    }
+  }
+
   const seedSql = join(here, "..", "production", "08_house_accounts.sql");
   if (existsSync(seedSql) && res.status === 0) {
     console.log("");

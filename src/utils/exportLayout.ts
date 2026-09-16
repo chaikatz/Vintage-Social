@@ -6,7 +6,8 @@ import { formatMemberNumber, isFoundingMember } from "./membership";
  *
  * A photograph leaves VINTAGE the way a print leaves a darkroom: on paper,
  * with a margin, and a label along the bottom — the wordmark on the left
- * and, on the right, where it was taken, when, and whose it is. Two
+ * and, on the right, where it was taken, when, and whose it is; the app
+ * icon, small, in the bottom-left corner. Two
  * formats: `print`, the photograph's own shape with the paper around it,
  * for a feed; `story`, a 9:16 page with the print sitting in the middle,
  * for a story. Two papers: the light page and the darkroom brown.
@@ -51,6 +52,8 @@ export interface ExportLayout {
   credit: TextBox;
   /** The amber date stamp, bottom-right of the photograph. */
   stamp: TextBox;
+  /** The app icon, small, in the bottom-left corner of the card. */
+  icon: Rect;
 }
 
 /** What the label says, with nothing invented and nothing left dangling. */
@@ -61,7 +64,7 @@ export interface ExportLabelText {
   placeLines: 0 | 1 | 2;
   /** `SEPTEMBER 15, 2026`. */
   date: string;
-  /** `chai · MEMBER NO. 00027`, `chai · FOUNDING MEMBER NO. 00002`, or just `chai`. */
+  /** `@chai · MEMBER NO. 00027`, `@chai · FOUNDING MEMBER NO. 00002`, or just `@chai`. */
   credit: string;
 }
 
@@ -89,9 +92,9 @@ export function placeLineCount(place: string | null | undefined): 0 | 1 | 2 {
   return p.length > PLACE_WRAP_AT ? 2 : 1;
 }
 
-/** The member's line under the date. Real number or nothing; never a placeholder. */
+/** The member's line under the date: always `@name`; a real number or nothing after it. */
 export function memberCredit(username: string, memberNo: number | null | undefined): string {
-  const name = username.trim();
+  const name = `@${username.trim().replace(/^@+/, "")}`;
   if (typeof memberNo !== "number" || memberNo < 1) return name;
   const number = formatMemberNumber(memberNo);
   return isFoundingMember(memberNo) ? `${name} · FOUNDING MEMBER ${number}` : `${name} · MEMBER ${number}`;
@@ -216,7 +219,18 @@ export function exportLayout(
     spacing: 0,
   };
 
-  return { width: W, height, margin, photo, rule, wordmark, place, byline, credit, stamp };
+  // The app icon in the card's bottom-left corner. On a story the bottom of
+  // the page sits under Instagram's reply bar, so it is raised clear of it.
+  const iconSize = r(W * 0.05);
+  const iconInset = r(margin * 0.4);
+  const icon: Rect = {
+    x: iconInset,
+    y: format === "story" ? height - r(height * 0.12) - iconSize : height - iconInset - iconSize,
+    width: iconSize,
+    height: iconSize,
+  };
+
+  return { width: W, height, margin, photo, rule, wordmark, place, byline, credit, stamp, icon };
 }
 
 /** The label's one-line form, kept for anything that wants `NYC · Jan 23, 2003`. */

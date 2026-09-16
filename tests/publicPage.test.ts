@@ -3,9 +3,8 @@ import { archiveLine, detailLines, frameRatio, publicSharePage, type SharedPhoto
 
 const token = "0123456789abcdef0123456789abcdef";
 const photograph: SharedPhotograph = {
-  mediaUrl: "https://x.supabase.co/storage/v1/object/public/media/u/p.jpg",
-  posterUrl: null,
   mediaType: "photo",
+  hasPoster: false,
   width: 1200,
   height: 1500,
   location: "The Met · New York",
@@ -17,7 +16,10 @@ const photograph: SharedPhotograph = {
 describe("the page a shared link opens", () => {
   it("shows the one photograph, whose archive, when and where — and the way in", () => {
     const html = publicSharePage({ origin: "https://vintagesocial.app", token, photograph });
-    expect(html).toContain(photograph.mediaUrl);
+    expect(html).toContain(`src="https://vintagesocial.app/s/${token}/media"`);
+    expect(html).toContain(`<meta property="og:image" content="https://vintagesocial.app/s/${token}/media">`);
+    expect(html).not.toContain("storage/v1");
+    expect(html).not.toContain("supabase");
     expect(html).toContain("FROM CHAI’S ARCHIVE");
     expect(html).toContain("SEPTEMBER 15, 2026");
     expect(html).toContain("THE MET · NEW YORK");
@@ -60,10 +62,11 @@ describe("the page a shared link opens", () => {
     const html = publicSharePage({
       origin: "https://vintagesocial.app",
       token,
-      photograph: { ...photograph, mediaType: "video", posterUrl: "https://x/poster.jpg", width: 1920, height: 1080 },
+      photograph: { ...photograph, mediaType: "video", hasPoster: true, width: 1920, height: 1080 },
     });
     expect(html).toContain("<video");
-    expect(html).toContain('poster="https://x/poster.jpg"');
+    expect(html).toContain(`poster="https://vintagesocial.app/s/${token}/poster"`);
+    expect(html).toContain(`<meta property="og:image" content="https://vintagesocial.app/s/${token}/poster">`);
     expect(html).toContain("aspect-ratio:1.7777777777777777");
   });
 

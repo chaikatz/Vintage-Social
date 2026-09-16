@@ -84,6 +84,8 @@ struct BrandOptions: Record {
   @Field var byline: BrandTextBox = BrandTextBox()
   @Field var credit: BrandTextBox = BrandTextBox()
   @Field var stamp: BrandTextBox = BrandTextBox()
+  @Field var icon: BrandRect = BrandRect()
+  @Field var iconUri: String = ""
   @Field var paper: String = "#FAF6EF"
   @Field var well: String = "#F3EDE2"
   @Field var ink: String = "#2B2620"
@@ -226,6 +228,20 @@ private final class Brander {
       stamp.shadowRadius = CGFloat(options.stamp.size * 0.4)
       stamp.shadowOffset = .zero
       parent.addSublayer(stamp)
+    }
+
+    // The app icon, small, in the bottom-left corner — the same file the
+    // on-screen card shows, rounded as iOS rounds it.
+    if options.icon.width > 0, options.icon.height > 0,
+       let iconURL = Baker.fileURL(from: options.iconUri),
+       let image = UIImage(contentsOfFile: iconURL.path)?.cgImage {
+      let icon = CALayer()
+      icon.frame = Brander.flip(Brander.rect(options.icon), in: H)
+      icon.contents = image
+      icon.contentsGravity = .resizeAspectFill
+      icon.cornerRadius = CGFloat(options.icon.width * 0.22)
+      icon.masksToBounds = true
+      parent.addSublayer(icon)
     }
 
     composition.animationTool = AVVideoCompositionCoreAnimationTool(

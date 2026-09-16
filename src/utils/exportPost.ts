@@ -3,7 +3,8 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import { Directory, File, Paths } from "expo-file-system";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
-import { exportPalette } from "@/components/ExportCard";
+import { Asset } from "expo-asset";
+import { EXPORT_ICON, exportPalette } from "@/components/ExportCard";
 import { dateStampText } from "@/utils/time";
 import { exportLabelText, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
 import type { BrandOptions, VintageVideoModule } from "../../modules/vintage-video";
@@ -63,6 +64,7 @@ export async function brandVideo(
   }
 
   onStage?.("Printing…");
+  const iconUri = await iconFile();
   const width = VIDEO_WIDTH[format];
   const words = exportLabelText(post, memberNo);
   const L = exportLayout(printRatio(post.width, post.height), format, width, { placeLines: words.placeLines });
@@ -78,6 +80,8 @@ export async function brandVideo(
     byline: L.byline,
     credit: L.credit,
     stamp: L.stamp,
+    icon: L.icon,
+    iconUri,
     paper: c.paper,
     well: c.well,
     ink: c.ink,
@@ -92,6 +96,17 @@ export async function brandVideo(
   };
   const result = await native.brand(local.uri, options);
   return result.uri;
+}
+
+/** The app icon as a file on disk for the native side; "" when it cannot be had, and the film goes without. */
+async function iconFile(): Promise<string> {
+  try {
+    const asset = Asset.fromModule(EXPORT_ICON);
+    if (!asset.localUri) await asset.downloadAsync();
+    return asset.localUri ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /** Hand a file to the phone's share sheet. Resolves when the sheet closes. */

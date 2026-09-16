@@ -48,6 +48,9 @@ export interface BrandOptions {
   byline: BrandTextBox;
   credit: BrandTextBox;
   stamp: BrandTextBox;
+  /** The app icon's square, bottom-left; drawn from `iconUri` when that is a readable file. */
+  icon: BrandRect;
+  iconUri: string;
   paper: string;
   well: string;
   ink: string;
