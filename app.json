@@ -20,7 +20,7 @@
     "android": {
       "package": "club.vintage.app",
       "adaptiveIcon": {
-        "backgroundColor": "#1C1915",
+        "backgroundColor": "#FAF6EC",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
