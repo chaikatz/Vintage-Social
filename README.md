@@ -305,11 +305,13 @@ capitals, a copperplate wordmark (Snell Roundhand on iOS, an italic serif
 elsewhere). The navigation header is hidden on all five; each carries its
 own back mark.
 
-The landing is one photograph sunk almost to nothing under a brown wash and
-a radial vignette — texture in the paper rather than a picture on a poster.
-There are no app screenshots, no feature list and no member count: the
-point of VINTAGE is that not everyone is inside, so the front door should
-read as a closed one.
+The landing screen is the same page as vintagesocial.app: the name small in
+the corner, the V as the centrepiece (a still of the turning mark,
+`assets/brand/mark-v.png`), and three ways in as words alone, each signed
+with the short rule (`src/components/gate/rule.ts` keeps the rule to the
+word). There are no app screenshots, no feature list and no member count:
+the point of VINTAGE is that not everyone is inside, so the front door
+should read as a closed one.
 
 `src/components/gate/` holds the three shared pieces — the dark layout, the
 ruled field, and the struck/ruled buttons — so the five screens cannot

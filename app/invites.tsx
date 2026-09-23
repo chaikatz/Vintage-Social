@@ -27,6 +27,7 @@ import {
   inviteUrlLabel,
 } from "@/utils/inviteLink";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { ruleWidth } from "@/components/gate/rule";
 
 /**
  * Invitations.
@@ -149,7 +150,7 @@ export default function Invitations() {
         <View style={styles.actions}>
           <Pressable style={({ pressed }) => [styles.word, pressed && styles.pressed]} onPress={send} accessibilityRole="button">
             <Text style={styles.wordText}>Send invitation</Text>
-            <View style={styles.wordRule} />
+            <View style={[styles.wordRule, { width: ruleWidth("Send invitation") }]} />
           </Pressable>
           <Pressable
             style={({ pressed }) => [styles.word, pressed && styles.pressed]}
@@ -158,7 +159,7 @@ export default function Invitations() {
             accessibilityLabel="Copy link"
           >
             <Text style={styles.wordText}>{copied ? "Copied" : "Copy"}</Text>
-            <View style={styles.wordRule} />
+            <View style={[styles.wordRule, { width: ruleWidth(copied ? "Copied" : "Copy") }]} />
           </Pressable>
         </View>
 
@@ -219,7 +220,7 @@ export default function Invitations() {
                 accessibilityRole="button"
               >
                 <Text style={styles.wordText}>Update address</Text>
-                <View style={styles.wordRule} />
+                <View style={[styles.wordRule, { width: ruleWidth("Update address") }]} />
               </Pressable>
               <Pressable
                 style={styles.cancel}
@@ -254,9 +255,10 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
   // The card a member hands over, printed like the door: the name small in
-  // the corner, the V, the address beneath. Cream on cream — no frame.
+  // the corner, the V, the address beneath. The same cream as the page — no
+  // frame, no panel; the card is the page.
   card: {
-    backgroundColor: colors.paperRaised,
+    backgroundColor: colors.paper,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.xl,

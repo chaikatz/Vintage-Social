@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } 
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
 import { GATE_BUTTON, GATE_ON_BUTTON } from "./palette";
+import { ruleWidth } from "./rule";
 
 /**
  * The actions at the door, as the landing page draws them: a dark bar
@@ -46,7 +47,7 @@ export function GateButton({
       ) : (
         <>
           <Text style={[styles.label, solid && styles.labelSolid]}>{title}</Text>
-          {quiet ? <View style={styles.quietRule} /> : <Feather name="arrow-right" size={18} color={ink} style={styles.arrow} />}
+          {quiet ? <View style={[styles.quietRule, { width: ruleWidth(title) }]} /> : <Feather name="arrow-right" size={18} color={ink} style={styles.arrow} />}
         </>
       )}
     </Pressable>
