@@ -26,19 +26,14 @@ const INK_FAINT = "rgba(71, 61, 53, .42)";
 const LINE = "rgba(71, 61, 53, .28)";
 
 /**
- * three.js for the mark, pinned with integrity hashes — the same map
- * public/home.html carries. It must precede any module script.
+ * three.js for the mark, served from this site (public/3d/vendor, r184) —
+ * the same map public/home.html carries. It must precede any module script.
  */
 const THREE_IMPORT_MAP = `<script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
-    "three/addons/controls/OrbitControls.js": "https://unpkg.com/three@0.184.0/examples/jsm/controls/OrbitControls.js"
-  },
-  "integrity": {
-    "https://unpkg.com/three@0.184.0/build/three.module.js": "sha384-8FCZ1eVO6it4+pbec2aDtnTrwjWXZLJRC+MAGCIPDgsYnUrl/E0A2YlF8ioMKI/J",
-    "https://unpkg.com/three@0.184.0/build/three.core.js": "sha384-dw2ooPewaEIrAgl6oFDBmmBWCE9oW9LxRGcfwZ0hLvEprzo202wXl7vCYHRlSnOT",
-    "https://unpkg.com/three@0.184.0/examples/jsm/controls/OrbitControls.js": "sha384-4rziNxOBZKQ69i+w+f89KJ55TCYquwchVbByQwmaOeIOXdOU2PLDn3kOfXHwIJC9"
+    "three": "/3d/vendor/three.module.js",
+    "three/addons/controls/OrbitControls.js": "/3d/vendor/OrbitControls.js"
   }
 }
 </script>`;

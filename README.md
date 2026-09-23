@@ -613,8 +613,9 @@ this repo:
   (`/invite`, `/sign-in`). The invitation page (`api/invite.ts`) turns the same V above "chai invited
   you to VINTAGE." The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — `minimal` mode, no
   export toolbar, nothing sent to a parent window) and `mark.js` (the model; `fill` sets its size in the
-  frame). three.js comes from unpkg, pinned to 0.184.0 with integrity hashes. If it cannot load, the
-  stage shows the wordmark in type and the page still reads. On Vercel, `scripts/web-entry.mjs` runs
+  frame), and `vendor/` (three.js r184 and its orbit controls, served from this site — the front door
+  depends on no one else's CDN). If WebGL is unavailable, the stage shows the wordmark in type and the
+  page still reads. On Vercel, `scripts/web-entry.mjs` runs
   after the Expo export: the app's `index.html` becomes `app.html` (served by the catch-all rewrite for
   every app route) and the landing page takes `index.html`. Local tooling (`e2e/serve.mjs`) is untouched.
 - **Places** is the fifth way a profile reads (Posted · Taken · Timeline · Map · Places). Photographs are

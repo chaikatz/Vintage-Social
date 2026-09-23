@@ -9,11 +9,12 @@
  * no hand controls, and spins itself. No export toolbar, no messages to
  * any parent window — nothing leaves the page.
  *
- * three.js arrives through the page's pinned <script type="importmap">
- * (unpkg, with integrity hashes), so the page must carry that map before
- * any module runs. If three.js cannot load — an old browser, a blocked
- * network — the stage shows the wordmark in type instead and fires a
- * `stage-error` event, so the page still reads.
+ * three.js arrives through the page's <script type="importmap">, which
+ * points at this site's own copy (public/3d/vendor, r184) — nothing is
+ * fetched from anyone else's server. The page must carry that map before
+ * any module runs. If three.js cannot load — an old browser, WebGL off —
+ * the stage shows the wordmark in type instead and fires a `stage-error`
+ * event, so the page still reads.
  *
  *   <vintage-stage background="#f9f5ec" minimal></vintage-stage>
  *   <script type="module">
