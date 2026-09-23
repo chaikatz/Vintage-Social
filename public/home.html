@@ -28,17 +28,19 @@
 }
 </script>
 <style>
-  @font-face {
-    font-family: "Tinos";
-    src: url("/3d/Tinos-Regular.ttf") format("truetype");
-    font-display: swap;
+  :root {
+    color-scheme: light;
+    --paper: #F9F5EC;
+    --ink: #473D35;
+    --ink-soft: rgba(71, 61, 53, .62);
+    --ink-faint: rgba(71, 61, 53, .42);
+    --line: rgba(71, 61, 53, .28);
   }
-  :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; background: #000; color: #F3EBDD; }
-  body { font: 400 clamp(15px, 1.35vw, 19px)/1.85 "Tinos", "Times New Roman", serif; -webkit-font-smoothing: antialiased; }
+  html, body { margin: 0; min-height: 100%; background: var(--paper); color: var(--ink); }
+  body { font: 400 clamp(15px, 1.35vw, 19px)/1.85 Georgia, "Times New Roman", serif; -webkit-font-smoothing: antialiased; }
   vintage-stage:not(:defined) { visibility: hidden; }
-  vintage-stage { display: block; width: 100vw; height: 64vh; }
+  vintage-stage { display: block; width: 100vw; height: 62vh; }
   .rules {
     width: max-content; max-width: min(640px, calc(100% - 64px));
     margin: 0 auto; padding: 0 0 8vh;
@@ -46,37 +48,37 @@
   .rules h2 {
     margin: 0 0 28px; font-weight: 400; font-size: 1em;
     letter-spacing: .28em; text-transform: lowercase;
-    color: rgba(243, 235, 221, .55);
+    color: var(--ink-soft);
   }
   .rules ol { list-style: none; counter-reset: rule; margin: 0; padding: 0; display: grid; gap: 14px; }
   .rules li { text-wrap: pretty; display: grid; grid-template-columns: 2ch 1fr; gap: 12px; }
-  .rules li::before { counter-increment: rule; content: counter(rule) "."; color: rgba(243, 235, 221, .55); }
+  .rules li::before { counter-increment: rule; content: counter(rule) "."; color: var(--ink-soft); }
   .apply {
     position: fixed; top: max(28px, env(safe-area-inset-top)); right: 32px; z-index: 10;
     font: 500 13px/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
     letter-spacing: .14em; text-transform: uppercase; text-decoration: none;
-    color: #F3EBDD; background: rgba(0, 0, 0, .35);
-    border: 1px solid rgba(243, 235, 221, .38); border-radius: 999px;
+    color: var(--ink); background: rgba(249, 245, 236, .7);
+    border: 1px solid var(--line); border-radius: 999px;
     padding: 14px 24px; cursor: pointer;
     transition: background .25s ease, color .25s ease, border-color .25s ease;
   }
-  .apply:hover { background: #F3EBDD; color: #000; border-color: #F3EBDD; }
+  .apply:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
   .doors {
     display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 26px;
     margin: 0 auto; padding: 0 24px 6vh;
     font: 500 11px/1.8 "Helvetica Neue", Helvetica, Arial, sans-serif;
     letter-spacing: .22em; text-transform: uppercase;
   }
-  .doors a { color: rgba(243, 235, 221, .62); text-decoration: none; border-bottom: 1px solid rgba(243, 235, 221, .25); padding-bottom: 2px; }
-  .doors a:hover { color: #F3EBDD; border-color: #F3EBDD; }
+  .doors a { color: var(--ink-soft); text-decoration: none; border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+  .doors a:hover { color: var(--ink); border-color: var(--ink); }
   .foot {
     text-align: center; padding: 0 24px max(32px, env(safe-area-inset-bottom));
     font: 500 10px/2 "Helvetica Neue", Helvetica, Arial, sans-serif;
-    letter-spacing: .24em; text-transform: uppercase; color: rgba(243, 235, 221, .38);
+    letter-spacing: .24em; text-transform: uppercase; color: var(--ink-faint);
   }
   .foot a { color: inherit; text-decoration: none; }
   @media (max-width: 600px) {
-    vintage-stage { height: 56vh; }
+    vintage-stage { height: 54vh; }
     .apply { right: 20px; padding: 12px 18px; font-size: 12px; }
     .rules { max-width: calc(100% - 48px); }
   }
@@ -84,7 +86,7 @@
 </head>
 <body>
 
-<vintage-stage background="#000000" autorotate aria-label="The VINTAGE mark, a Polaroid, turning"></vintage-stage>
+<vintage-stage background="#f9f5ec" ink="#473D35" minimal aria-label="The VINTAGE mark, a serif V, turning"></vintage-stage>
 
 <div class="rules">
   <h2>rules</h2>
@@ -107,12 +109,11 @@
 
 <div class="foot">Members only · Est. 2026<br><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div>
 
-<script src="/3d/opentype.min.js"></script>
 <script src="/3d/stage.js"></script>
 <script type="module">
   import { mountVintageMark } from '/3d/mark.js';
   const stage = document.querySelector('vintage-stage');
-  mountVintageMark(stage).catch(() => { /* the stage shows the wordmark in type instead */ });
+  mountVintageMark(stage, { fill: 2.0 }).catch(() => { /* the stage shows the wordmark in type instead */ });
 </script>
 </body>
 </html>

@@ -11,17 +11,19 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
  *
  * It says one thing the app could not: who invited you, before you have an
  * account. That is the reason to open it. Above the words turns the same
- * Polaroid as the landing page (public/3d), so an invitation and the front
- * door are one thing.
+ * V as the landing page (public/3d), so an invitation and the front door
+ * are one thing.
  */
 
 const SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 
-// The invitation is set on the same black page as the landing, under the
-// same turning Polaroid (public/3d), in the cream the mark is struck in.
-const INK = "#000000";
-const CREAM = "#F3EBDD";
-const CREAM_SOFT = "rgba(243, 235, 221, .62)";
+// The invitation is set on the same cream paper as the landing page, under
+// the same turning V (public/3d), in the espresso ink the mark is cut from.
+const PAPER = "#F9F5EC";
+const INK = "#473D35";
+const INK_SOFT = "rgba(71, 61, 53, .62)";
+const INK_FAINT = "rgba(71, 61, 53, .42)";
+const LINE = "rgba(71, 61, 53, .28)";
 
 /**
  * three.js for the mark, pinned with integrity hashes — the same map
@@ -152,45 +154,45 @@ function page({
 <meta name="robots" content="noindex">
 ${THREE_IMPORT_MAP}
 <style>
-  @font-face { font-family: "Tinos"; src: url("/3d/Tinos-Regular.ttf") format("truetype"); font-display: swap; }
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; background: ${INK}; color: ${CREAM}; }
-  body { font: 400 17px/1.6 "Tinos", "Times New Roman", serif; -webkit-font-smoothing: antialiased; }
+  html, body { margin: 0; min-height: 100%; background: ${PAPER}; color: ${INK}; }
+  body { font: 400 17px/1.6 Georgia, "Times New Roman", serif; -webkit-font-smoothing: antialiased; }
   vintage-stage:not(:defined) { visibility: hidden; }
-  vintage-stage { display: block; width: 100vw; height: 50vh; }
+  vintage-stage { display: block; width: 100vw; height: 46vh; }
   main { max-width: 520px; margin: 0 auto; padding: 4px 28px max(40px, env(safe-area-inset-bottom)); text-align: center; }
   .eyebrow {
     font: 500 11px/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
-    letter-spacing: .28em; text-transform: uppercase; color: ${CREAM_SOFT};
+    letter-spacing: .28em; text-transform: uppercase; color: ${INK_SOFT};
   }
   h1 { font-weight: 400; font-size: clamp(21px, 2.4vw, 27px); line-height: 1.45; margin: 18px 0 30px; text-wrap: pretty; }
   .cta {
     display: inline-block; text-decoration: none;
     font: 500 13px/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
     letter-spacing: .14em; text-transform: uppercase;
-    color: ${INK}; background: ${CREAM}; border: 1px solid ${CREAM}; border-radius: 999px;
+    color: ${PAPER}; background: ${INK}; border: 1px solid ${INK}; border-radius: 999px;
     padding: 16px 28px; transition: background .25s ease, color .25s ease;
   }
-  .cta:hover { background: transparent; color: ${CREAM}; }
-  .have { display: block; margin-top: 22px; color: ${CREAM_SOFT}; font-size: 15px; text-decoration: none; }
-  .have:hover { color: ${CREAM}; }
-  .note { color: ${CREAM_SOFT}; font-size: 15px; line-height: 1.6; margin: 26px 0 0; }
+  .cta:hover { background: transparent; color: ${INK}; }
+  .have { display: block; margin-top: 22px; color: ${INK_SOFT}; font-size: 15px; text-decoration: none; }
+  .have:hover { color: ${INK}; }
+  .note { color: ${INK_SOFT}; font-size: 15px; line-height: 1.6; margin: 26px 0 0; }
   .code { display: block; margin-top: 10px; font-family: ui-monospace, Menlo, monospace;
-          color: ${CREAM}; font-size: 15px; letter-spacing: 1px;
+          color: ${INK}; font-size: 15px; letter-spacing: 1px;
           /* A long suffix should wrap between characters rather than run off
              the page, but a short one must never be split mid-word. */
           overflow-wrap: anywhere; }
   .foot {
-    margin-top: 48px; font: 500 10px/2 "Helvetica Neue", Helvetica, Arial, sans-serif;
-    letter-spacing: .24em; text-transform: uppercase; color: rgba(243, 235, 221, .38);
+    margin-top: 48px; padding-top: 22px; border-top: 1px solid ${LINE};
+    font: 500 10px/2 "Helvetica Neue", Helvetica, Arial, sans-serif;
+    letter-spacing: .24em; text-transform: uppercase; color: ${INK_FAINT};
   }
   .foot a { color: inherit; text-decoration: none; }
-  @media (max-width: 600px) { vintage-stage { height: 46vh; } }
+  @media (max-width: 600px) { vintage-stage { height: 42vh; } }
 </style>
 </head>
 <body>
-  <vintage-stage background="#000000" autorotate aria-label="The VINTAGE mark, a Polaroid, turning"></vintage-stage>
+  <vintage-stage background="#f9f5ec" ink="#473D35" minimal aria-label="The VINTAGE mark, a serif V, turning"></vintage-stage>
   <main>
     <div class="eyebrow">By invitation</div>
     <h1>${heading}</h1>
@@ -209,11 +211,10 @@ ${THREE_IMPORT_MAP}
     }
     <div class="foot">Members only · Est. 2026<br><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div>
   </main>
-  <script src="/3d/opentype.min.js"></script>
   <script src="/3d/stage.js"></script>
   <script type="module">
     import { mountVintageMark } from '/3d/mark.js';
-    mountVintageMark(document.querySelector('vintage-stage')).catch(() => {});
+    mountVintageMark(document.querySelector('vintage-stage'), { fill: 2.2 }).catch(() => {});
   </script>
 </body>
 </html>`;

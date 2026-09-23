@@ -4,8 +4,10 @@
  * Trimmed from the Claude Design 3D stage the mark was made on: WebGL
  * renderer, neutral studio light with a soft ground shadow, orbit controls
  * (drag to turn, wheel to zoom), a camera framed to the object, resize
- * handling, and a slow turntable until the visitor touches it. No export
- * toolbar, no messages to any parent window — nothing leaves the page.
+ * handling, and a slow turntable until the visitor touches it. With the
+ * `minimal` attribute the object simply stands head-on with no shadow and
+ * no hand controls, and spins itself. No export toolbar, no messages to
+ * any parent window — nothing leaves the page.
  *
  * three.js arrives through the page's pinned <script type="importmap">
  * (unpkg, with integrity hashes), so the page must carry that map before
@@ -13,7 +15,7 @@
  * network — the stage shows the wordmark in type instead and fires a
  * `stage-error` event, so the page still reads.
  *
- *   <vintage-stage background="#000000" autorotate></vintage-stage>
+ *   <vintage-stage background="#f9f5ec" minimal></vintage-stage>
  *   <script type="module">
  *     const stage = document.querySelector('vintage-stage');
  *     const { THREE } = await stage.ready;
@@ -39,7 +41,7 @@
       justify-content: center;
       font: 400 clamp(28px, 4vw, 40px)/1 Georgia, "Times New Roman", serif;
       letter-spacing: .32em;
-      color: #F3EBDD;
+      color: var(--stage-ink, #473D35);
       user-select: none;
     }
   `;
@@ -81,6 +83,10 @@
     async _boot() {
       const bg = this.getAttribute('background');
       if (bg) this.style.setProperty('--stage-bg', bg);
+      const ink = this.getAttribute('ink');
+      if (ink) this.style.setProperty('--stage-ink', ink);
+      const minimal = this.hasAttribute('minimal');
+      this._minimal = minimal;
       const [THREE, controlsMod] = await Promise.all([
         import('three'),
         import('three/addons/controls/OrbitControls.js'),
@@ -127,6 +133,12 @@
       this._ground = ground;
       scene.add(ground);
 
+      if (minimal) {
+        ground.visible = false;
+        controls.enableZoom = false;
+        controls.enablePan = false;
+        controls.enableRotate = false;
+      }
       controls.autoRotate = this.hasAttribute('autorotate');
       controls.autoRotateSpeed = 1.2;
       controls.addEventListener('start', () => {
@@ -175,8 +187,8 @@
       if (!box.isEmpty()) {
         this._ground.position.y = box.min.y;
         const sphere = box.getBoundingSphere(new THREE.Sphere());
-        const dist = (sphere.radius / Math.tan((this._camera.fov * Math.PI) / 360)) * 1.35;
-        const dir = new THREE.Vector3(1, 0.55, 1.25).normalize();
+        const dist = (sphere.radius / Math.tan((this._camera.fov * Math.PI) / 360)) * (this._minimal ? 2.6 : 1.35);
+        const dir = this._minimal ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0.55, 1.25).normalize();
         this._camera.position.copy(sphere.center).add(dir.multiplyScalar(dist));
         this._camera.near = Math.max(dist / 100, 0.01);
         this._camera.far = dist * 100;
