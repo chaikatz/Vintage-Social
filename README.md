@@ -607,10 +607,13 @@ this repo:
   before. The rule lives in one SQL function, `live_share_post`, and is proved by
   `supabase/tests/05_shares.sql` (`npm run test:rls`; 55 checks, including a sweep of every function
   anon may execute) and by `tests/shareMedia.test.ts`.
-- **The front door is the V, and only the V.** `vintagesocial.app/` serves `public/home.html`: the 3D
-  VINTAGE mark made on Claude Design — the serif V from the app icon with its rule, cut in espresso and
-  turning slowly, small, on a full-screen cream page with nothing else on it yet (the rest of the page
-  comes later). The invitation page (`api/invite.ts`) turns the same V above "chai invited you to
+- **The front door is the app's landing screen, with the V where the prints lay.** `vintagesocial.app/`
+  serves `public/home.html`: the wordmark and its rule, the three ways in ("Apply for membership" →
+  `/apply`, "I have an invitation" → `/invite`, "Sign in" → `/sign-in`) and the footer (`/privacy`,
+  `/terms`), set in HTML to the same tokens, type and measurements as `app/(gate)/landing.tsx` — and
+  in place of the three prints, the 3D VINTAGE mark made on Claude Design: the serif V from the app
+  icon with its rule, cut in espresso, turning slowly. `tests/homePage.test.ts` holds it to that. The
+  invitation page (`api/invite.ts`) turns the same V above "chai invited you to
   VINTAGE." The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — `minimal` mode, no export
   toolbar, nothing sent to a parent window) and `mark.js` (the model; `fill` sets its size in the
   frame), and `vendor/` (three.js r184 and its orbit controls, served from this site — the front door

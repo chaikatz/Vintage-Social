@@ -23,18 +23,114 @@
 }
 </script>
 <style>
-  html, body { margin: 0; height: 100%; background: #f9f5ec; overflow: hidden; }
-  vintage-stage { display: block; width: 100vw; height: 100vh; height: 100dvh; }
+  /*
+   * The app's front door (app/(gate)/landing.tsx), set in HTML: the same
+   * cream, the same ink, the same three ways in — with the 3D V standing
+   * where the three prints lay. Tokens are the light print of src/theme.
+   */
+  :root {
+    color-scheme: light;
+    --paper: #FAF6EF;
+    --ink: #2B2620;
+    --ink-faint: #9C927F;
+    --button: #3F3C35;
+    --on-button: #F6F1E8;
+    --serif: Georgia, "Times New Roman", serif;
+    --mono: "Courier New", Courier, monospace;
+    /* A print was about a third of the page wide; the stage still takes its measure from that. */
+    --pw: min(31vw, 132px);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); }
+  body { font-family: var(--serif); -webkit-font-smoothing: antialiased; }
+  .page {
+    min-height: 100vh; min-height: 100dvh;
+    max-width: 430px; margin: 0 auto;
+    padding: env(safe-area-inset-top) 40px max(env(safe-area-inset-bottom), 16px);
+    display: flex; flex-direction: column;
+  }
+  .space { flex: 1; min-height: 8px; }
+  .space.a { flex: 1.1; } .space.b { flex: 0.8; } .space.c { flex: 1; } .space.d { flex: 0.6; }
+  @media (max-height: 719px) {
+    .space.a { flex: 0.5; } .space.b { flex: 0.4; } .space.c { flex: 0.5; } .space.d { flex: 0.3; }
+  }
+  .top { display: flex; flex-direction: column; align-items: center; }
+  h1 {
+    margin: 0; font: 400 42px/50px var(--serif); letter-spacing: 11px; text-indent: 11px;
+    text-align: center; color: var(--ink);
+  }
+  .rule { width: 24px; height: 1px; background: var(--ink); opacity: .85; margin-top: 8px; }
+
+  vintage-stage:not(:defined) { visibility: hidden; }
+  vintage-stage {
+    display: block; height: calc(var(--pw) * 2.1);
+    /* the mark may use the page's full width, as the prints did */
+    width: calc(100% + 80px); margin: 0 -40px;
+  }
+
+  .actions { display: flex; flex-direction: column; }
+  .button {
+    position: relative; height: 44px; margin-bottom: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font: 400 11px/1 var(--mono); letter-spacing: 2.4px; text-transform: uppercase;
+    color: var(--ink); text-decoration: none; -webkit-tap-highlight-color: transparent;
+  }
+  .button.solid { background: var(--button); color: var(--on-button); }
+  .button.outline { border: 1px solid var(--ink); }
+  .button:active { opacity: .8; }
+  .button svg { position: absolute; right: 16px; top: 13px; width: 18px; height: 18px; }
+  .sign-in {
+    align-self: center; margin-top: 12px; padding: 4px 10px;
+    display: flex; flex-direction: column; align-items: center;
+    font: 400 12px/1 var(--mono); letter-spacing: 3px; text-transform: uppercase;
+    color: var(--ink); text-decoration: none;
+  }
+  .sign-in .rule { width: 26px; margin-top: 7px; opacity: .8; }
+
+  .foot { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .foot, .foot a {
+    font: 400 9px/1.3 var(--mono); letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--ink-faint); text-decoration: none;
+  }
+  .legal { display: flex; gap: 8px; }
 </style>
 </head>
 <body>
+<div class="page">
+  <div class="space a"></div>
+  <div class="top">
+    <h1>VINTAGE</h1>
+    <div class="rule"></div>
+  </div>
+  <div class="space b"></div>
 
-<vintage-stage background="#f9f5ec" ink="#473D35" minimal aria-label="The VINTAGE mark, a serif V, turning"></vintage-stage>
+  <vintage-stage minimal aria-label="The VINTAGE mark, a serif V, turning"></vintage-stage>
+
+  <div class="space c"></div>
+  <nav class="actions" aria-label="Ways in">
+    <a class="button solid" href="/apply">Apply for membership
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </a>
+    <a class="button outline" href="/invite">I have an invitation
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </a>
+    <a class="sign-in" href="/sign-in">Sign in<span class="rule"></span></a>
+  </nav>
+
+  <div class="space d"></div>
+  <div class="foot">
+    <span>Members only · Est. 2026</span>
+    <div class="legal"><a href="/privacy">Privacy</a><span>·</span><a href="/terms">Terms</a></div>
+  </div>
+</div>
 
 <script src="/3d/stage.js?v=3"></script>
 <script type="module">
   import { mountVintageMark } from '/3d/mark.js?v=3';
-  mountVintageMark(document.querySelector('vintage-stage'), { fill: 3.0 }).catch(() => { /* the stage shows the mark still, in SVG */ });
+  const stage = document.querySelector('vintage-stage');
+  stage.style.setProperty('--stage-bg', '#FAF6EF');
+  stage.style.setProperty('--stage-ink', '#2B2620');
+  mountVintageMark(stage, { fill: 1.25 }).catch(() => { /* the stage shows the mark still, in SVG */ });
 </script>
 </body>
 </html>
