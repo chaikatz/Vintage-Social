@@ -607,6 +607,14 @@ this repo:
   before. The rule lives in one SQL function, `live_share_post`, and is proved by
   `supabase/tests/05_shares.sql` (`npm run test:rls`; 55 checks, including a sweep of every function
   anon may execute) and by `tests/shareMedia.test.ts`.
+- **Places** is the fifth way a profile reads (Posted · Taken · Timeline · Map · Places). Photographs are
+  filed under the town they were taken in — "New York", then "Bar Pitti · The Met · Central Park" small
+  beneath, the country and the years — most photographed place first, the familiar squares under each.
+  The town comes from each photograph's point through the phone's own reverse geocoder
+  (`src/utils/reverseGeocode.ts`, one lookup per five-kilometre cell, remembered for the session, no
+  permission, nothing written back); words with no point file under the words; photographs with no
+  place at all sit last under "No place given". The grouping is pure (`src/utils/placeGroups.ts`) and
+  tested. In the browser there is no geocoder, so places are the words as written.
 - **Share card label** now reads, top to bottom on the right: PLACE (wraps to two lines, never
   truncated) · LONG DATE · `@name · FOUNDING MEMBER NO. 00027` (or `MEMBER NO. 10001`, or `@name`
   alone when no number has been assigned). Missing fields are omitted, never printed as "undefined".

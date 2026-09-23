@@ -23,11 +23,11 @@ interface Props {
   refreshing?: boolean;
 }
 
-const GAP = 2;
+export const GRID_GAP = 2;
 
 /** The classic three-column square grid. */
 export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
-  const size = (Dimensions.get("window").width - GAP * 2) / 3;
+  const size = (Dimensions.get("window").width - GRID_GAP * 2) / 3;
   return (
     <FlatList
       data={posts}
@@ -37,47 +37,50 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
       ListEmptyComponent={empty}
       onRefresh={onRefresh}
       refreshing={refreshing ?? false}
-      columnWrapperStyle={{ gap: GAP }}
-      contentContainerStyle={{ gap: GAP, backgroundColor: colors.paper }}
-      renderItem={({ item }) => {
-        // A video's square is its poster frame. The media path itself is a
-        // movie, which an <Image> cannot draw — so a video with no poster
-        // gets a marked placeholder rather than an empty hole in the grid.
-        const isVideo = item.media_type === "video";
-        const url = isVideo
-          ? mediaUrl("thumbnails", item.thumb_path)
-          : mediaUrl("thumbnails", item.thumb_path) ?? mediaUrl("media", item.media_path);
-        // Same rule as the feed: only unbaked media needs the filter applied
-        // here, so a square matches the photograph it opens.
-        const live = needsDisplayFilter(item) ? cssFilterFor(getFilter(item.filter_id)).filter : null;
-        return (
-          <Pressable onPress={() => onOpenPost(item)} style={{ width: size, height: size }}>
-            {url ? (
-              <Image
-                source={url}
-                style={[styles.cell, live ? ({ filter: live } as object) : null]}
-                contentFit="cover"
-                transition={60}
-              />
-            ) : (
-              <View style={[styles.cell, styles.empty]}>
-                {isVideo ? <Feather name="film" size={18} color={colors.inkFaint} /> : null}
-              </View>
-            )}
-            {isVideo ? (
-              <View style={styles.videoBadge}>
-                <Feather name="play" size={11} color="#FFFFFF" />
-              </View>
-            ) : null}
-            {item.tagged_in ? (
-              <View style={[styles.videoBadge, styles.tagBadge]}>
-                <Feather name="user" size={10} color="#FFFFFF" />
-              </View>
-            ) : null}
-          </Pressable>
-        );
-      }}
+      columnWrapperStyle={{ gap: GRID_GAP }}
+      contentContainerStyle={{ gap: GRID_GAP, backgroundColor: colors.paper }}
+      renderItem={({ item }) => <PhotoTile post={item} size={size} onPress={() => onOpenPost(item)} />}
     />
+  );
+}
+
+/** One square of the grid: the photograph, or a film's poster, with its small marks. */
+export function PhotoTile({ post, size, onPress }: { post: GridPost; size: number; onPress: () => void }) {
+  // A video's square is its poster frame. The media path itself is a
+  // movie, which an <Image> cannot draw — so a video with no poster
+  // gets a marked placeholder rather than an empty hole in the grid.
+  const isVideo = post.media_type === "video";
+  const url = isVideo
+    ? mediaUrl("thumbnails", post.thumb_path)
+    : mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path);
+  // Same rule as the feed: only unbaked media needs the filter applied
+  // here, so a square matches the photograph it opens.
+  const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
+  return (
+    <Pressable onPress={onPress} style={{ width: size, height: size }}>
+      {url ? (
+        <Image
+          source={url}
+          style={[styles.cell, live ? ({ filter: live } as object) : null]}
+          contentFit="cover"
+          transition={60}
+        />
+      ) : (
+        <View style={[styles.cell, styles.empty]}>
+          {isVideo ? <Feather name="film" size={18} color={colors.inkFaint} /> : null}
+        </View>
+      )}
+      {isVideo ? (
+        <View style={styles.videoBadge}>
+          <Feather name="play" size={11} color="#FFFFFF" />
+        </View>
+      ) : null}
+      {post.tagged_in ? (
+        <View style={[styles.videoBadge, styles.tagBadge]}>
+          <Feather name="user" size={10} color="#FFFFFF" />
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 

@@ -8,6 +8,7 @@ import { ProfileHeader } from "@/components/ProfileHeader";
 import { PhotoGrid, type GridPost } from "@/components/PhotoGrid";
 import { Timeline } from "@/components/Timeline";
 import { PostMap } from "@/components/PostMap";
+import { PlaceGroups } from "@/components/PlaceGroups";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
@@ -20,7 +21,8 @@ import { useSession } from "@/providers/SessionProvider";
 
 /**
  * Your own page: the grid, the same photographs by the day they were
- * taken, hung on a timeline, or pinned on the world — and among them the
+ * taken, hung on a timeline, pinned on the world, or filed by the places
+ * they were taken — and among them the
  * photographs other members tagged you in and you chose to show.
  */
 export default function OwnProfile() {
@@ -104,7 +106,7 @@ export default function OwnProfile() {
 
   // A tagged photograph belongs to its author's gallery; yours open in yours.
   const openPost = (p: GridPost) =>
-    view === "timeline" || view === "map" || p.tagged_in
+    view === "timeline" || view === "map" || view === "places" || p.tagged_in
       ? router.push(`/post/${p.id}`)
       : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
 
@@ -112,6 +114,8 @@ export default function OwnProfile() {
     <Screen padded={false}>
       {view === "map" ? (
         <PostMap posts={rows} onOpenPost={openPost} header={header} />
+      ) : view === "places" ? (
+        <PlaceGroups posts={rows} onOpenPost={openPost} header={header} refreshing={posts.isRefetching} onRefresh={() => posts.refetch()} />
       ) : view === "timeline" ? (
         <Timeline posts={rows} onOpenPost={openPost} header={header} refreshing={posts.isRefetching} onRefresh={() => posts.refetch()} />
       ) : (

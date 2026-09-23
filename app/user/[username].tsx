@@ -8,6 +8,7 @@ import { Screen } from "@/components/Screen";
 import { ProfileHeader } from "@/components/ProfileHeader";
 import { PhotoGrid, type GridPost } from "@/components/PhotoGrid";
 import { PostMap } from "@/components/PostMap";
+import { PlaceGroups } from "@/components/PlaceGroups";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
@@ -239,7 +240,7 @@ export default function UserProfile() {
 
   // A tagged photograph belongs to its author's gallery, not this one.
   const openPost = (p: GridPost) =>
-    view === "timeline" || view === "map" || p.tagged_in
+    view === "timeline" || view === "map" || view === "places" || p.tagged_in
       ? router.push(`/post/${p.id}`)
       : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
   const shown = locked ? [] : rows;
@@ -249,6 +250,8 @@ export default function UserProfile() {
       <Stack.Screen options={{ title: profile.username }} />
       {view === "map" && !locked ? (
         <PostMap posts={shown} onOpenPost={openPost} header={header} />
+      ) : view === "places" && !locked ? (
+        <PlaceGroups posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
       ) : view === "timeline" && !locked ? (
         <Timeline posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
       ) : (

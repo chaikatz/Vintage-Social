@@ -4,8 +4,8 @@ import { colors, spacing, type } from "@/theme";
 
 /** Kept for the gallery's `sort` param: the two grid orders. */
 export type GridSort = "posted" | "taken";
-/** The four ways a profile reads. */
-export type ProfileView = GridSort | "timeline" | "map";
+/** The five ways a profile reads. */
+export type ProfileView = GridSort | "timeline" | "map" | "places";
 
 /**
  * The one control over a profile: how it reads.
@@ -14,8 +14,9 @@ export type ProfileView = GridSort | "timeline" | "map";
  * reads the same photographs by the day the shutter fired, which is the
  * order a shoebox of prints is in. "Timeline" hangs them off one line by
  * that same date, with the years written in. "Map" pins them where they
- * say they were taken. Four words in tracked mono, the current one in ink
- * — a mark on the contact sheet, not a segmented control.
+ * say they were taken; "Places" files them under those towns' names. Five
+ * words in tracked mono, the current one in ink — a mark on the contact
+ * sheet, not a segmented control.
  */
 export function GridSortToggle({ value, onChange }: { value: ProfileView; onChange: (next: ProfileView) => void }) {
   return (
@@ -27,6 +28,8 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
       <Option label="Timeline" active={value === "timeline"} onPress={() => onChange("timeline")} />
       <Text style={styles.divider}>·</Text>
       <Option label="Map" active={value === "map"} onPress={() => onChange("map")} />
+      <Text style={styles.divider}>·</Text>
+      <Option label="Places" active={value === "places"} onPress={() => onChange("places")} />
     </View>
   );
 }
