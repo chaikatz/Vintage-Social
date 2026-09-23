@@ -57,6 +57,17 @@ async function get(slug: string) {
 }
 
 describe("the invitation page", () => {
+  it("turns the same Polaroid as the landing page above the words, and falls back to type", async () => {
+    const { body } = await get("chai");
+    expect(body).toContain('<script type="importmap">');
+    expect(body).toContain("<vintage-stage");
+    expect(body).toContain('src="/3d/stage.js"');
+    expect(body).toContain("/3d/mark.js");
+    expect(body).toContain('src="/3d/opentype.min.js"');
+    // Never a viewer toolbar or an export button on an invitation.
+    expect(body).not.toMatch(/Download (OBJ|GLB)/);
+  });
+
   it("names the inviter, which is the reason to open it", async () => {
     const { status, body } = await get("chai-katz-photographs");
     expect(status).toBe(200);

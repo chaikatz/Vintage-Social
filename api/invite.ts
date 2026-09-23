@@ -10,15 +10,36 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
  * file.
  *
  * It says one thing the app could not: who invited you, before you have an
- * account. That is the reason to open it.
+ * account. That is the reason to open it. Above the words turns the same
+ * Polaroid as the landing page (public/3d), so an invitation and the front
+ * door are one thing.
  */
 
 const SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 
-const CARD = "#3A322A";
-const GOLD = "#D6BE94";
-const GOLD_SOFT = "#B9A47E";
-const PAPER = "#FAF6EF";
+// The invitation is set on the same black page as the landing, under the
+// same turning Polaroid (public/3d), in the cream the mark is struck in.
+const INK = "#000000";
+const CREAM = "#F3EBDD";
+const CREAM_SOFT = "rgba(243, 235, 221, .62)";
+
+/**
+ * three.js for the mark, pinned with integrity hashes — the same map
+ * public/home.html carries. It must precede any module script.
+ */
+const THREE_IMPORT_MAP = `<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+    "three/addons/controls/OrbitControls.js": "https://unpkg.com/three@0.184.0/examples/jsm/controls/OrbitControls.js"
+  },
+  "integrity": {
+    "https://unpkg.com/three@0.184.0/build/three.module.js": "sha384-8FCZ1eVO6it4+pbec2aDtnTrwjWXZLJRC+MAGCIPDgsYnUrl/E0A2YlF8ioMKI/J",
+    "https://unpkg.com/three@0.184.0/build/three.core.js": "sha384-dw2ooPewaEIrAgl6oFDBmmBWCE9oW9LxRGcfwZ0hLvEprzo202wXl7vCYHRlSnOT",
+    "https://unpkg.com/three@0.184.0/examples/jsm/controls/OrbitControls.js": "sha384-4rziNxOBZKQ69i+w+f89KJ55TCYquwchVbByQwmaOeIOXdOU2PLDn3kOfXHwIJC9"
+  }
+}
+</script>`;
 
 /** Never put untrusted text into HTML unescaped — a display name is chosen
  * by a member, and this page is served to strangers. */
@@ -114,7 +135,7 @@ function page({
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${escapeHtml(title)}</title>
 <meta name="description" content="${escapeHtml(description)}">
 <meta property="og:type" content="website">
@@ -129,66 +150,71 @@ function page({
 <meta name="twitter:description" content="${escapeHtml(description)}">
 <meta name="twitter:image" content="${escapeHtml(card)}">
 <meta name="robots" content="noindex">
+${THREE_IMPORT_MAP}
 <style>
-  :root { color-scheme: light; }
+  @font-face { font-family: "Tinos"; src: url("/3d/Tinos-Regular.ttf") format("truetype"); font-display: swap; }
+  :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; min-height: 100vh; background: ${PAPER};
-    display: flex; align-items: center; justify-content: center; padding: 24px;
-    font-family: Georgia, 'Times New Roman', serif; color: #2B2620;
-  }
-  .card {
-    position: relative; width: 100%; max-width: 420px; background: ${CARD};
-    padding: 56px 32px 44px; text-align: center;
-  }
-  .card::before, .card::after {
-    content: ''; position: absolute; border: 1px solid ${GOLD}; pointer-events: none;
-  }
-  .card::before { inset: 12px; }
-  .card::after  { inset: 19px; border-color: ${GOLD_SOFT}; opacity: .7; }
+  html, body { margin: 0; min-height: 100%; background: ${INK}; color: ${CREAM}; }
+  body { font: 400 17px/1.6 "Tinos", "Times New Roman", serif; -webkit-font-smoothing: antialiased; }
+  vintage-stage:not(:defined) { visibility: hidden; }
+  vintage-stage { display: block; width: 100vw; height: 50vh; }
+  main { max-width: 520px; margin: 0 auto; padding: 4px 28px max(40px, env(safe-area-inset-bottom)); text-align: center; }
   .eyebrow {
-    font-family: ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 2.6px;
-    text-transform: uppercase; color: ${GOLD_SOFT};
+    font: 500 11px/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
+    letter-spacing: .28em; text-transform: uppercase; color: ${CREAM_SOFT};
   }
-  .wordmark { font-size: 46px; color: ${GOLD}; margin: 10px 0 0; letter-spacing: 1px; }
-  .rule { width: 46px; height: 1px; background: ${GOLD_SOFT}; margin: 22px auto; opacity: .7; }
-  .blurb { color: ${GOLD_SOFT}; font-size: 16px; line-height: 1.55; margin: 0 8px 26px; }
+  h1 { font-weight: 400; font-size: clamp(21px, 2.4vw, 27px); line-height: 1.45; margin: 18px 0 30px; text-wrap: pretty; }
   .cta {
-    display: block; background: ${GOLD}; color: ${CARD}; text-decoration: none;
-    font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 2px;
-    text-transform: uppercase; padding: 14px; margin: 0 8px;
+    display: inline-block; text-decoration: none;
+    font: 500 13px/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: ${INK}; background: ${CREAM}; border: 1px solid ${CREAM}; border-radius: 999px;
+    padding: 16px 28px; transition: background .25s ease, color .25s ease;
   }
-  .have { display: block; margin-top: 18px; color: ${GOLD_SOFT}; font-size: 13px; text-decoration: none; }
-  .foot { color: ${GOLD_SOFT}; opacity: .65; font-size: 11px; margin-top: 26px;
-          font-family: ui-monospace, Menlo, monospace; letter-spacing: 1.6px; }
+  .cta:hover { background: transparent; color: ${CREAM}; }
+  .have { display: block; margin-top: 22px; color: ${CREAM_SOFT}; font-size: 15px; text-decoration: none; }
+  .have:hover { color: ${CREAM}; }
+  .note { color: ${CREAM_SOFT}; font-size: 15px; line-height: 1.6; margin: 26px 0 0; }
   .code { display: block; margin-top: 10px; font-family: ui-monospace, Menlo, monospace;
-          color: ${GOLD}; font-size: 15px; letter-spacing: 1px;
+          color: ${CREAM}; font-size: 15px; letter-spacing: 1px;
           /* A long suffix should wrap between characters rather than run off
-             the card, but a short one must never be split mid-word. */
+             the page, but a short one must never be split mid-word. */
           overflow-wrap: anywhere; }
+  .foot {
+    margin-top: 48px; font: 500 10px/2 "Helvetica Neue", Helvetica, Arial, sans-serif;
+    letter-spacing: .24em; text-transform: uppercase; color: rgba(243, 235, 221, .38);
+  }
+  .foot a { color: inherit; text-decoration: none; }
+  @media (max-width: 600px) { vintage-stage { height: 46vh; } }
 </style>
 </head>
 <body>
-  <main class="card">
+  <vintage-stage background="#000000" autorotate aria-label="The VINTAGE mark, a Polaroid, turning"></vintage-stage>
+  <main>
     <div class="eyebrow">By invitation</div>
-    <h1 class="wordmark">Vintage</h1>
-    <div class="rule"></div>
-    <p class="blurb">${heading}</p>
+    <h1>${heading}</h1>
     ${
       open && install
         ? `<a class="cta" href="${escapeHtml(install)}">Get started</a>
            <a class="have" href="${escapeHtml(appLink)}">I already have VINTAGE</a>`
         : open
           ? `<a class="cta" href="${escapeHtml(appLink)}">Open VINTAGE</a>
-             <p class="blurb" style="margin-top:22px;font-size:13px">
+             <p class="note">
                VINTAGE is in private testing. If you do not have it yet, ask the member
                who invited you — your invitation is
                <span class="code">${escapeHtml(slug)}</span>
              </p>`
           : ""
     }
-    <div class="foot">Members only · Est. 2026</div>
+    <div class="foot">Members only · Est. 2026<br><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div>
   </main>
+  <script src="/3d/opentype.min.js"></script>
+  <script src="/3d/stage.js"></script>
+  <script type="module">
+    import { mountVintageMark } from '/3d/mark.js';
+    mountVintageMark(document.querySelector('vintage-stage')).catch(() => {});
+  </script>
 </body>
 </html>`;
 }

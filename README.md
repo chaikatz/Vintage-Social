@@ -607,6 +607,17 @@ this repo:
   before. The rule lives in one SQL function, `live_share_post`, and is proved by
   `supabase/tests/05_shares.sql` (`npm run test:rls`; 55 checks, including a sweep of every function
   anon may execute) and by `tests/shareMedia.test.ts`.
+- **The front door is the Polaroid.** `vintagesocial.app/` serves `public/home.html`: the 3D VINTAGE
+  mark made on Claude Design — a Polaroid with the wordmark and an orange seven-segment date stamp —
+  turning slowly on black, the six rules beneath, "Apply to Join Vintage" (→ `/apply`), and the doors
+  for members (`/invite`, `/sign-in`). The invitation page (`api/invite.ts`) turns the same mark above
+  "chai invited you to VINTAGE." The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — no
+  export toolbar, nothing sent to a parent window), `mark.js` (the model; `stamp` option sets the digits),
+  `opentype.min.js` and `Tinos-Regular.ttf` (the glyphs are cut from the real font). three.js itself
+  comes from unpkg, pinned to 0.184.0 with integrity hashes. If it cannot load, the stage shows the
+  wordmark in type and the page still reads. On Vercel, `scripts/web-entry.mjs` runs after the Expo
+  export: the app's `index.html` becomes `app.html` (served by the catch-all rewrite for every app
+  route) and the landing page takes `index.html`. Local tooling (`e2e/serve.mjs`) is untouched.
 - **Places** is the fifth way a profile reads (Posted · Taken · Timeline · Map · Places). Photographs are
   filed under the town they were taken in — "New York", then "Bar Pitti · The Met · Central Park" small
   beneath, the country and the years — most photographed place first, the familiar squares under each.
