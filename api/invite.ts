@@ -206,9 +206,9 @@ ${THREE_IMPORT_MAP}
     }
     <div class="foot">Members only · Est. 2026<br><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div>
   </main>
-  <script src="/3d/stage.js?v=3"></script>
+  <script src="/3d/stage.js?v=4"></script>
   <script type="module">
-    import { mountVintageMark } from '/3d/mark.js?v=3';
+    import { mountVintageMark } from '/3d/mark.js?v=4';
     mountVintageMark(document.querySelector('vintage-stage'), { fill: 2.2 }).catch(() => {});
   </script>
 </body>

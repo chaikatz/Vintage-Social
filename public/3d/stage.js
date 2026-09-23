@@ -30,7 +30,7 @@
       display: block;
       width: 100%;
       height: 100%;
-      background: var(--stage-bg, #000);
+      background: var(--stage-bg, transparent); /* the page shows through until the scene draws */
       overflow: hidden;
     }
     canvas { display: block; outline: none; touch-action: pan-y; }

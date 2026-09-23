@@ -608,16 +608,17 @@ this repo:
   `supabase/tests/05_shares.sql` (`npm run test:rls`; 55 checks, including a sweep of every function
   anon may execute) and by `tests/shareMedia.test.ts`.
 - **The front door is the app's landing screen, with the V where the prints lay.** `vintagesocial.app/`
-  serves `public/home.html`: the wordmark and its rule, the three ways in ("Apply for membership" →
-  `/apply`, "I have an invitation" → `/invite`, "Sign in" → `/sign-in`) and the footer (`/privacy`,
-  `/terms`), set in HTML to the same tokens, type and measurements as `app/(gate)/landing.tsx` — and
-  in place of the three prints, the 3D VINTAGE mark made on Claude Design: the serif V from the app
-  icon with its rule, cut in espresso, turning slowly. `tests/homePage.test.ts` holds it to that. The
-  invitation page (`api/invite.ts`) turns the same V above "chai invited you to
+  serves `public/home.html`: the wordmark small in the top-left corner, the three ways in as words
+  alone, each signed with the short rule ("Apply for membership" → `/apply`, "I have an invitation" →
+  `/invite`, "Sign in" → `/sign-in`), and the footer (`/privacy`, `/terms`), set in HTML to the same
+  tokens, type and measurements as `app/(gate)/landing.tsx` — and where the three prints lay, the
+  centrepiece: the 3D VINTAGE mark made on Claude Design, the serif V from the app icon with its rule,
+  cut in espresso, turning slowly. The stage is transparent until the scene draws, so the page never
+  flashes another colour. `tests/homePage.test.ts` holds it to that. The invitation page (`api/invite.ts`) turns the same V above "chai invited you to
   VINTAGE." The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — `minimal` mode, no export
   toolbar, nothing sent to a parent window) and `mark.js` (the model; `fill` sets its size in the
   frame), and `vendor/` (three.js r184 and its orbit controls, served from this site — the front door
-  depends on no one else's CDN). The two scripts are referenced with a version query (`?v=3`) so a
+  depends on no one else's CDN). The two scripts are referenced with a version query (`?v=4`) so a
   browser holding a week-old copy under the `/3d/` cache header picks up a new one on deploy; bump it
   when either changes. If WebGL is unavailable, the stage shows the same V flat as an SVG, so the mark
   is there even when it cannot turn. On Vercel, `scripts/web-entry.mjs` runs
