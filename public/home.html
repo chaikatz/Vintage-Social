@@ -55,17 +55,19 @@
   @media (max-height: 719px) {
     .space.a { flex: 0.5; } .space.b { flex: 0.4; } .space.c { flex: 0.5; } .space.d { flex: 0.3; }
   }
-  /* The name, small, in the corner — the V is the centrepiece. */
+  /* The name, small, in the corner — the V is the centrepiece. The logo is
+     the app's wordmark at 36%: 42px/50px, tracked 11px, its 24px rule 8px
+     beneath — every measure scaled the same, the rule still centred. */
   .top {
     position: absolute; left: 24px; top: calc(env(safe-area-inset-top) + 22px);
-    display: flex; flex-direction: column; align-items: flex-start;
+    display: flex; flex-direction: column; align-items: center;
   }
   h1 {
-    margin: 0; font: 400 13px/16px var(--serif); letter-spacing: 4px;
+    margin: 0; font: 400 15px/18px var(--serif); letter-spacing: 4px; text-indent: 4px;
     color: var(--ink);
   }
   .rule { width: 24px; height: 1px; background: var(--ink); opacity: .85; margin-top: 8px; }
-  .top .rule { width: 16px; margin-top: 6px; }
+  .top .rule { width: 9px; margin-top: 3px; }
 
   vintage-stage:not(:defined) { visibility: hidden; }
   vintage-stage {
