@@ -607,15 +607,17 @@ this repo:
   before. The rule lives in one SQL function, `live_share_post`, and is proved by
   `supabase/tests/05_shares.sql` (`npm run test:rls`; 55 checks, including a sweep of every function
   anon may execute) and by `tests/shareMedia.test.ts`.
-- **The front door is the V.** `vintagesocial.app/` serves `public/home.html`: the 3D VINTAGE mark made
-  on Claude Design — the serif V from the app icon with its rule, cut in espresso and turning slowly on
-  cream — the six rules beneath, "Apply to Join Vintage" (→ `/apply`), and the doors for members
-  (`/invite`, `/sign-in`). The invitation page (`api/invite.ts`) turns the same V above "chai invited
-  you to VINTAGE." The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — `minimal` mode, no
-  export toolbar, nothing sent to a parent window) and `mark.js` (the model; `fill` sets its size in the
+- **The front door is the V, and only the V.** `vintagesocial.app/` serves `public/home.html`: the 3D
+  VINTAGE mark made on Claude Design — the serif V from the app icon with its rule, cut in espresso and
+  turning slowly, small, on a full-screen cream page with nothing else on it yet (the rest of the page
+  comes later). The invitation page (`api/invite.ts`) turns the same V above "chai invited you to
+  VINTAGE." The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — `minimal` mode, no export
+  toolbar, nothing sent to a parent window) and `mark.js` (the model; `fill` sets its size in the
   frame), and `vendor/` (three.js r184 and its orbit controls, served from this site — the front door
-  depends on no one else's CDN). If WebGL is unavailable, the stage shows the wordmark in type and the
-  page still reads. On Vercel, `scripts/web-entry.mjs` runs
+  depends on no one else's CDN). The two scripts are referenced with a version query (`?v=3`) so a
+  browser holding a week-old copy under the `/3d/` cache header picks up a new one on deploy; bump it
+  when either changes. If WebGL is unavailable, the stage shows the same V flat as an SVG, so the mark
+  is there even when it cannot turn. On Vercel, `scripts/web-entry.mjs` runs
   after the Expo export: the app's `index.html` becomes `app.html` (served by the catch-all rewrite for
   every app route) and the landing page takes `index.html`. Local tooling (`e2e/serve.mjs`) is untouched.
 - **Places** is the fifth way a profile reads (Posted · Taken · Timeline · Map · Places). Photographs are

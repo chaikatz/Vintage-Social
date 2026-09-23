@@ -13,8 +13,8 @@
  * points at this site's own copy (public/3d/vendor, r184) — nothing is
  * fetched from anyone else's server. The page must carry that map before
  * any module runs. If three.js cannot load — an old browser, WebGL off —
- * the stage shows the wordmark in type instead and fires a `stage-error`
- * event, so the page still reads.
+ * the stage shows the same V flat, as an SVG, and fires a `stage-error`
+ * event, so the mark is there even without WebGL — it just does not turn.
  *
  *   <vintage-stage background="#f9f5ec" minimal></vintage-stage>
  *   <script type="module">
@@ -40,11 +40,10 @@
       display: none;
       align-items: center;
       justify-content: center;
-      font: 400 clamp(28px, 4vw, 40px)/1 Georgia, "Times New Roman", serif;
-      letter-spacing: .32em;
       color: var(--stage-ink, #473D35);
       user-select: none;
     }
+    .fallback svg { width: min(34vmin, 220px); height: auto; fill: currentColor; }
   `;
 
   class VintageStage extends HTMLElement {
@@ -56,7 +55,12 @@
       root.appendChild(style);
       this._fallback = document.createElement('div');
       this._fallback.className = 'fallback';
-      this._fallback.textContent = 'VINTAGE';
+      // The same V, flat: the outline mark.js extrudes, as an SVG path.
+      this._fallback.innerHTML =
+        '<svg viewBox="303 320 652 666" role="img" aria-label="VINTAGE">' +
+        '<path d="M333 350H560V357Q497 360 500 400L651 772L803 440Q830 362 748 357V350H925V357' +
+        'Q880 360 852 405L627 890H601L405 420Q385 362 333 357Z"/>' +
+        '<path d="M507 947H745V956H507Z"/></svg>';
       root.appendChild(this._fallback);
       /** Resolves with { THREE } once the scene is live. */
       this.ready = new Promise((resolve, reject) => {

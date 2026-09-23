@@ -57,12 +57,15 @@ async function get(slug: string) {
 }
 
 describe("the invitation page", () => {
-  it("turns the same V as the landing page above the words, and falls back to type", async () => {
+  it("turns the same V as the landing page above the words, from this site's own scripts", async () => {
     const { body } = await get("chai");
     expect(body).toContain('<script type="importmap">');
     expect(body).toContain("<vintage-stage");
-    expect(body).toContain('src="/3d/stage.js"');
-    expect(body).toContain("/3d/mark.js");
+    // Versioned so a browser holding a cached copy under the /3d/ cache header refreshes on deploy.
+    expect(body).toMatch(/src="\/3d\/stage\.js\?v=\d+"/);
+    expect(body).toMatch(/\/3d\/mark\.js\?v=\d+/);
+    expect(body).toContain('"three": "/3d/vendor/three.module.js"');
+    expect(body).not.toContain("unpkg");
     expect(body).toContain("<vintage-stage");
     expect(body).toContain("minimal");
     // Never a viewer toolbar or an export button on an invitation.
