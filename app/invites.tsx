@@ -14,8 +14,8 @@ import * as Haptics from "expo-haptics";
 import { showAlert } from "@/utils/alert";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
+import { Image } from "expo-image";
 import { Screen } from "@/components/Screen";
-import { EngravedCard } from "@/components/EngravedCard";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchInviteLink, rotateInviteLink, setInviteSlug } from "@/api/membership";
 import {
@@ -37,9 +37,13 @@ import { KEYBOARD_DONE } from "@/components/KeyboardDone";
  * link and not a pile of one-shot codes. People hoarded the codes because
  * sending one cost you it whether or not anybody came.
  *
- * The card is the same printed object the recipient sees on the way in, so
- * a member knows what they are handing over.
+ * The card is what the recipient sees on the way in — the V on cream, the
+ * address beneath it — so a member knows what they are handing over. The
+ * actions are words with the short rule, as they are at the door.
  */
+
+/** The mark, as it stands on the landing page — a still of the turning V. */
+const MARK = require("../assets/brand/mark-v.png");
 export default function Invitations() {
   const queryClient = useQueryClient();
   const link = useQuery({ queryKey: ["invite-link"], queryFn: fetchInviteLink });
@@ -130,23 +134,31 @@ export default function Invitations() {
     <Screen padded={false}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* What the other person receives, shown to the person sending it. */}
-        <EngravedCard style={styles.card} tone="paper">
+        <View style={styles.card}>
+          <View style={styles.cardBrand}>
+            <Text style={styles.cardBrandWord}>VINTAGE</Text>
+            <View style={styles.cardBrandRule} />
+          </View>
+          <Image source={MARK} style={styles.cardMark} contentFit="contain" transition={0} accessibilityLabel="The VINTAGE mark" />
           <Text style={styles.cardEyebrow}>By invitation</Text>
-          <Text style={styles.cardWordmark}>VINTAGE</Text>
-          <View style={styles.cardRule} />
           <Text style={styles.cardLink} numberOfLines={2}>
             {inviteUrlLabel(slug)}
           </Text>
-        </EngravedCard>
+        </View>
 
         <View style={styles.actions}>
-          <Pressable style={styles.primary} onPress={send}>
-            <Feather name="send" size={14} color={colors.onShutter} />
-            <Text style={styles.primaryText}>Send invitation</Text>
+          <Pressable style={({ pressed }) => [styles.word, pressed && styles.pressed]} onPress={send} accessibilityRole="button">
+            <Text style={styles.wordText}>Send invitation</Text>
+            <View style={styles.wordRule} />
           </Pressable>
-          <Pressable style={styles.secondary} onPress={copy} accessibilityLabel="Copy link">
-            <Feather name={copied ? "check" : "copy"} size={14} color={colors.ink} />
-            <Text style={styles.secondaryText}>{copied ? "Copied" : "Copy"}</Text>
+          <Pressable
+            style={({ pressed }) => [styles.word, pressed && styles.pressed]}
+            onPress={copy}
+            accessibilityRole="button"
+            accessibilityLabel="Copy link"
+          >
+            <Text style={styles.wordText}>{copied ? "Copied" : "Copy"}</Text>
+            <View style={styles.wordRule} />
           </Pressable>
         </View>
 
@@ -201,11 +213,13 @@ export default function Invitations() {
             </Text>
             <View style={styles.editorActions}>
               <Pressable
-                style={[styles.update, (Boolean(problem) || unchanged) && styles.updateOff]}
+                style={[styles.word, (Boolean(problem) || unchanged) && styles.wordOff]}
                 disabled={Boolean(problem) || unchanged || rename.isPending}
                 onPress={() => rename.mutate(suffix.trim().toLowerCase())}
+                accessibilityRole="button"
               >
-                <Text style={styles.updateText}>Update address</Text>
+                <Text style={styles.wordText}>Update address</Text>
+                <View style={styles.wordRule} />
               </Pressable>
               <Pressable
                 style={styles.cancel}
@@ -239,35 +253,26 @@ export default function Invitations() {
 const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
-  // The card a member hands over, printed like the door: cream, ink, the
-  // wordmark tracked wide inside the engraved frame.
+  // The card a member hands over, printed like the door: the name small in
+  // the corner, the V, the address beneath. Cream on cream — no frame.
   card: {
     backgroundColor: colors.paperRaised,
-    paddingVertical: spacing.xxl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
     paddingHorizontal: spacing.xl,
     alignItems: "center",
   },
+  cardBrand: { alignSelf: "flex-start", alignItems: "center" },
+  cardBrandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, color: colors.ink },
+  cardBrandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3 },
+  cardMark: { width: 110, height: 121, marginTop: spacing.sm },
   cardEyebrow: {
     fontFamily: type.mono,
     fontSize: 9,
     letterSpacing: 2.6,
     textTransform: "uppercase",
     color: colors.inkFaint,
-  },
-  cardWordmark: {
-    fontFamily: type.serif,
-    fontSize: 30,
-    lineHeight: 40,
-    letterSpacing: 8,
-    color: colors.ink,
-    marginTop: spacing.sm,
-  },
-  cardRule: {
-    width: 24,
-    height: 1,
-    backgroundColor: colors.ink,
-    marginVertical: spacing.md,
-    opacity: 0.85,
+    marginTop: spacing.lg,
   },
   cardLink: {
     fontFamily: type.mono,
@@ -275,44 +280,22 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     color: colors.inkSoft,
     textAlign: "center",
+    marginTop: spacing.sm,
   },
 
-  actions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
-  primary: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.shutter,
-    paddingVertical: 13,
-    borderRadius: radii.sm,
-  },
-  primaryText: {
+  // Words with the short rule, as at the door.
+  actions: { flexDirection: "row", justifyContent: "center", gap: spacing.xxl, marginTop: spacing.md },
+  word: { alignItems: "center", paddingVertical: spacing.md, paddingHorizontal: spacing.sm },
+  wordOff: { opacity: 0.35 },
+  wordText: {
     fontFamily: type.mono,
     fontSize: 11,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: colors.onShutter,
-  },
-  secondary: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    paddingVertical: 13,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-  },
-  secondaryText: {
-    fontFamily: type.mono,
-    fontSize: 11,
-    letterSpacing: 2,
+    letterSpacing: 2.4,
     textTransform: "uppercase",
     color: colors.ink,
   },
+  wordRule: { width: 26, height: 1, backgroundColor: colors.ink, marginTop: 7, opacity: 0.8 },
+  pressed: { opacity: 0.75 },
 
   grow: { flex: 1 },
   codeRow: {
@@ -369,22 +352,6 @@ const styles = StyleSheet.create({
   },
   hint: { ...type.caption, fontSize: 12, color: colors.inkFaint, marginTop: spacing.sm, lineHeight: 17 },
   hintBad: { color: colors.danger },
-  update: {
-    flex: 1,
-    paddingVertical: 11,
-    alignItems: "center",
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.ink,
-  },
-  updateOff: { borderColor: colors.border },
-  updateText: {
-    fontFamily: type.mono,
-    fontSize: 11,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: colors.ink,
-  },
   editorActions: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.md },
   cancel: { paddingVertical: 11 },
   cancelText: { ...type.caption, color: colors.inkSoft },

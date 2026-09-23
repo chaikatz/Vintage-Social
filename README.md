@@ -614,8 +614,11 @@ this repo:
   tokens, type and measurements as `app/(gate)/landing.tsx` — and where the three prints lay, the
   centrepiece: the 3D VINTAGE mark made on Claude Design, the serif V from the app icon with its rule,
   cut in espresso, turning slowly. The stage is transparent until the scene draws, so the page never
-  flashes another colour. `tests/homePage.test.ts` holds it to that. The invitation page (`api/invite.ts`) turns the same V above "chai invited you to
-  VINTAGE." The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — `minimal` mode, no export
+  flashes another colour. `tests/homePage.test.ts` holds it to that. The invitation page (`api/invite.ts`) is set the same way — the name in the corner, the turning V, "chai
+  invited you to VINTAGE.", "Open VINTAGE" as words with the rule — and so are the two screens in the app
+  that carry an invitation (`app/(gate)/invite.tsx`, `app/invites.tsx`), which stand a still of the V
+  (`assets/brand/mark-v.png`) where the engraved card was. The link-preview card iMessage draws
+  (`public/invite-card.png`) is the same page at 1200×630. The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — `minimal` mode, no export
   toolbar, nothing sent to a parent window) and `mark.js` (the model; `fill` sets its size in the
   frame), and `vendor/` (three.js r184 and its orbit controls, served from this site — the front door
   depends on no one else's CDN). The two scripts are referenced with a version query (`?v=4`) so a

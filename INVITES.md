@@ -39,7 +39,7 @@ changing one environment variable.
 | `app/(gate)/invite.tsx` | the joining side, which names the inviter before you fill anything in |
 | `app/invite/[slug].tsx` | the `vintage://invite/<slug>` deep link |
 | `api/invite.ts` | the web page a stranger lands on, with real link-preview tags |
-| `public/invite-card.png` | the 1200×630 card that shows in iMessage |
+| `public/invite-card.png` | the 1200×630 card that shows in iMessage — cream, the name in the corner, the V, "By invitation" |
 | `api/aasa.ts` | the Apple association file, once there is a domain |
 
 ## Why the page is server-rendered

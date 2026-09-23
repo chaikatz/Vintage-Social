@@ -17,13 +17,16 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 
-// The invitation is set on the same cream paper as the landing page, under
-// the same turning V (public/3d), in the espresso ink the mark is cut from.
-const PAPER = "#F9F5EC";
-const INK = "#473D35";
-const INK_SOFT = "rgba(71, 61, 53, .62)";
-const INK_FAINT = "rgba(71, 61, 53, .42)";
-const LINE = "rgba(71, 61, 53, .28)";
+// The invitation is set exactly as the landing page is (public/home.html):
+// the light print of src/theme — cream, ink, the same two faces — under the
+// same turning V (public/3d), the name small in the corner, and the way in
+// as a line of capitals signed with the short rule.
+const PAPER = "#FAF6EF";
+const INK = "#2B2620";
+const INK_SOFT = "#6E655A";
+const INK_FAINT = "#9C927F";
+const SERIF = `Georgia, "Times New Roman", serif`;
+const MONO = `"Courier New", Courier, monospace`;
 
 /**
  * three.js for the mark, served from this site (public/3d/vendor, r184) —
@@ -152,42 +155,46 @@ ${THREE_IMPORT_MAP}
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; background: ${PAPER}; color: ${INK}; }
-  body { font: 400 17px/1.6 Georgia, "Times New Roman", serif; -webkit-font-smoothing: antialiased; }
+  body { font: 400 17px/1.6 ${SERIF}; -webkit-font-smoothing: antialiased; }
+  /* The landing page's wordmark at 36% — every measure scaled the same, the rule centred. */
+  .brand {
+    position: absolute; z-index: 2; left: 24px; top: calc(env(safe-area-inset-top) + 22px);
+    display: flex; flex-direction: column; align-items: center; text-decoration: none;
+    font: 400 15px/18px ${SERIF}; letter-spacing: 4px; text-indent: 4px; color: ${INK};
+  }
+  .brand span { width: 9px; height: 1px; background: ${INK}; opacity: .85; margin-top: 3px; }
   vintage-stage:not(:defined) { visibility: hidden; }
-  vintage-stage { display: block; width: 100vw; height: 46vh; }
-  main { max-width: 520px; margin: 0 auto; padding: 4px 28px max(40px, env(safe-area-inset-bottom)); text-align: center; }
-  .eyebrow {
-    font: 500 11px/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
-    letter-spacing: .28em; text-transform: uppercase; color: ${INK_SOFT};
+  vintage-stage { --stage-bg: ${PAPER}; --stage-ink: ${INK}; display: block; width: 100vw; height: 48vh; }
+  main { max-width: 430px; margin: 0 auto; padding: 0 40px max(32px, env(safe-area-inset-bottom)); text-align: center; }
+  .eyebrow { font: 400 10px/1 ${MONO}; letter-spacing: 3px; text-transform: uppercase; color: ${INK_FAINT}; }
+  h1 { font-weight: 400; font-size: clamp(20px, 2.4vw, 26px); line-height: 1.45; margin: 14px 0 22px; text-wrap: pretty; color: ${INK}; }
+  /* The way in: a line of capitals signed with the short rule, as at the door. */
+  .cta, .have {
+    display: inline-flex; flex-direction: column; align-items: center; text-decoration: none;
+    font: 400 11px/1 ${MONO}; letter-spacing: 2.4px; text-transform: uppercase; color: ${INK};
+    padding: 14px 10px; -webkit-tap-highlight-color: transparent;
   }
-  h1 { font-weight: 400; font-size: clamp(21px, 2.4vw, 27px); line-height: 1.45; margin: 18px 0 30px; text-wrap: pretty; }
-  .cta {
-    display: inline-block; text-decoration: none;
-    font: 500 13px/1 "Helvetica Neue", Helvetica, Arial, sans-serif;
-    letter-spacing: .14em; text-transform: uppercase;
-    color: ${PAPER}; background: ${INK}; border: 1px solid ${INK}; border-radius: 999px;
-    padding: 16px 28px; transition: background .25s ease, color .25s ease;
-  }
-  .cta:hover { background: transparent; color: ${INK}; }
-  .have { display: block; margin-top: 22px; color: ${INK_SOFT}; font-size: 15px; text-decoration: none; }
-  .have:hover { color: ${INK}; }
-  .note { color: ${INK_SOFT}; font-size: 15px; line-height: 1.6; margin: 26px 0 0; }
-  .code { display: block; margin-top: 10px; font-family: ui-monospace, Menlo, monospace;
-          color: ${INK}; font-size: 15px; letter-spacing: 1px;
+  .cta::after, .have::after { content: ""; width: 26px; height: 1px; background: ${INK}; opacity: .8; margin-top: 7px; }
+  .cta:active, .have:active { opacity: .8; }
+  .have { display: flex; margin: 2px auto 0; color: ${INK_SOFT}; }
+  .have::after { opacity: .5; }
+  .note { color: ${INK_SOFT}; font-size: 15px; line-height: 1.6; margin: 24px 0 0; }
+  .code { display: block; margin-top: 10px; font: 400 15px/1.4 ${MONO}; color: ${INK}; letter-spacing: 3px;
           /* A long suffix should wrap between characters rather than run off
              the page, but a short one must never be split mid-word. */
           overflow-wrap: anywhere; }
   .foot {
-    margin-top: 48px; padding-top: 22px; border-top: 1px solid ${LINE};
-    font: 500 10px/2 "Helvetica Neue", Helvetica, Arial, sans-serif;
-    letter-spacing: .24em; text-transform: uppercase; color: ${INK_FAINT};
+    margin-top: 44px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font: 400 9px/1.3 ${MONO}; letter-spacing: 2.5px; text-transform: uppercase; color: ${INK_FAINT};
   }
+  .foot::before { content: ""; width: 24px; height: 1px; background: ${INK}; opacity: .5; margin-bottom: 12px; }
   .foot a { color: inherit; text-decoration: none; }
   @media (max-width: 600px) { vintage-stage { height: 42vh; } }
 </style>
 </head>
 <body>
-  <vintage-stage background="#f9f5ec" ink="#473D35" minimal aria-label="The VINTAGE mark, a serif V, turning"></vintage-stage>
+  <a class="brand" href="/">VINTAGE<span></span></a>
+  <vintage-stage minimal aria-label="The VINTAGE mark, a serif V, turning"></vintage-stage>
   <main>
     <div class="eyebrow">By invitation</div>
     <h1>${heading}</h1>
@@ -204,12 +211,12 @@ ${THREE_IMPORT_MAP}
              </p>`
           : ""
     }
-    <div class="foot">Members only · Est. 2026<br><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></div>
+    <div class="foot"><span>Members only · Est. 2026</span><span><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span></div>
   </main>
   <script src="/3d/stage.js?v=4"></script>
   <script type="module">
     import { mountVintageMark } from '/3d/mark.js?v=4';
-    mountVintageMark(document.querySelector('vintage-stage'), { fill: 2.2 }).catch(() => {});
+    mountVintageMark(document.querySelector('vintage-stage'), { fill: 1.6 }).catch(() => {});
   </script>
 </body>
 </html>`;

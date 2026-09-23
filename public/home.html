@@ -59,7 +59,7 @@
      the app's wordmark at 36%: 42px/50px, tracked 11px, its 24px rule 8px
      beneath — every measure scaled the same, the rule still centred. */
   .top {
-    position: absolute; left: 24px; top: calc(env(safe-area-inset-top) + 22px);
+    position: absolute; z-index: 2; left: 24px; top: calc(env(safe-area-inset-top) + 22px);
     display: flex; flex-direction: column; align-items: center;
   }
   h1 {

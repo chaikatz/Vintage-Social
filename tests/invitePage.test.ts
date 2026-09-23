@@ -72,6 +72,14 @@ describe("the invitation page", () => {
     expect(body).not.toMatch(/Download (OBJ|GLB)/);
   });
 
+  it("is set as the landing page is: the name small in the corner, the way in as words", async () => {
+    const { body } = await get("chai");
+    expect(body).toContain('<a class="brand" href="/">VINTAGE<span></span></a>');
+    expect(body).toContain('"Courier New", Courier, monospace');
+    expect(body).not.toContain("Helvetica");
+    expect(body).not.toContain("border-radius: 999px");
+  });
+
   it("names the inviter, which is the reason to open it", async () => {
     const { status, body } = await get("chai-katz-photographs");
     expect(status).toBe(200);
