@@ -1,15 +1,12 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { colors, spacing, type } from "@/theme";
 import { ruleWidth } from "@/components/gate/rule";
+import { MarkStage } from "@/components/MarkStage";
 import { isDemoMode } from "@/lib/env";
-
-/** The mark, as it turns on vintagesocial.app — a still of the V. */
-const MARK = require("../../assets/brand/mark-v.png");
 
 /**
  * The front door — the same page as vintagesocial.app (public/home.html).
@@ -19,8 +16,8 @@ const MARK = require("../../assets/brand/mark-v.png");
  * feature list, no counting of members. The whole point of VINTAGE is
  * that not everyone is inside.
  *
- * The web page turns the V in three dimensions; here it stands still,
- * rendered from the same scene. Every measure below is the web page's:
+ * The V turns here as it does on the web — the same scene, carried in the
+ * app (MarkStage). Every measure below is the web page's:
  * the wordmark at 36%, the words at 11 and 12 points of the typewriter
  * face, the rule 26 points or as long as the word.
  */
@@ -33,8 +30,7 @@ export default function Landing() {
   // the page wide — so the V stands where the prints lay and the ways in
   // keep their place beneath it.
   const pw = Math.min(width * 0.31, 132);
-  const markHeight = Math.round(pw * 1.95);
-  const stage = markHeight + Math.round(pw * 0.6);
+  const stage = Math.round(pw * 2.55);
   // The page is divided the way the web page is: air above, the V a little
   // below the middle, the ways in the lower third. Flexible spacers carry
   // the proportions across tall and short phones.
@@ -52,15 +48,7 @@ export default function Landing() {
         <View style={[styles.space, { flex: short ? 0.5 : 1.1 }]} />
         <View style={[styles.space, { flex: short ? 0.4 : 0.8 }]} />
 
-        <View style={[styles.stage, { height: stage }]}>
-          <Image
-            source={MARK}
-            style={{ height: markHeight, width: Math.round(markHeight * 0.905) }}
-            contentFit="contain"
-            transition={0}
-            accessibilityLabel="The VINTAGE mark, a serif V"
-          />
-        </View>
+        <MarkStage height={stage} fill={1.3} style={styles.stage} />
 
         <View style={[styles.space, { flex: short ? 0.5 : 1 }]} />
         <View style={styles.actions}>
@@ -112,7 +100,8 @@ const styles = StyleSheet.create({
   brandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3 },
 
   space: { minHeight: 8 },
-  stage: { alignItems: "center", justifyContent: "center" },
+  // The mark may use the page's full width, as on the web page.
+  stage: { marginHorizontal: -40, width: undefined },
 
   actions: { alignItems: "center" },
   way: { height: 44, marginBottom: 10, paddingHorizontal: 10, alignItems: "center", justifyContent: "center" },

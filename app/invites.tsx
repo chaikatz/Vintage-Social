@@ -14,8 +14,8 @@ import * as Haptics from "expo-haptics";
 import { showAlert } from "@/utils/alert";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
-import { Image } from "expo-image";
 import { Screen } from "@/components/Screen";
+import { MarkStage } from "@/components/MarkStage";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchInviteLink, rotateInviteLink, setInviteSlug } from "@/api/membership";
 import {
@@ -43,8 +43,6 @@ import { ruleWidth } from "@/components/gate/rule";
  * actions are words with the short rule, as they are at the door.
  */
 
-/** The mark, as it stands on the landing page — a still of the turning V. */
-const MARK = require("../assets/brand/mark-v.png");
 export default function Invitations() {
   const queryClient = useQueryClient();
   const link = useQuery({ queryKey: ["invite-link"], queryFn: fetchInviteLink });
@@ -140,7 +138,7 @@ export default function Invitations() {
             <Text style={styles.cardBrandWord}>VINTAGE</Text>
             <View style={styles.cardBrandRule} />
           </View>
-          <Image source={MARK} style={styles.cardMark} contentFit="contain" transition={0} accessibilityLabel="The VINTAGE mark" />
+          <MarkStage height={140} fill={1.15} style={styles.cardMark} />
           <Text style={styles.cardEyebrow}>By invitation</Text>
           <Text style={styles.cardLink} numberOfLines={2}>
             {inviteUrlLabel(slug)}
@@ -267,7 +265,7 @@ const styles = StyleSheet.create({
   cardBrand: { alignSelf: "flex-start", alignItems: "center" },
   cardBrandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, color: colors.ink },
   cardBrandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3 },
-  cardMark: { width: 110, height: 121, marginTop: spacing.sm },
+  cardMark: { marginTop: spacing.sm },
   cardEyebrow: {
     fontFamily: type.mono,
     fontSize: 9,

@@ -306,10 +306,18 @@ elsewhere). The navigation header is hidden on all five; each carries its
 own back mark.
 
 The landing screen is the same page as vintagesocial.app: the name small in
-the corner, the V as the centrepiece (a still of the turning mark,
-`assets/brand/mark-v.png`), and three ways in as words alone, each signed
-with the short rule (`src/components/gate/rule.ts` keeps the rule to the
-word). There are no app screenshots, no feature list and no member count:
+the corner, the V turning as the centrepiece, and three ways in as words
+alone, each signed with the short rule (`src/components/gate/rule.ts` keeps
+the rule to the word). The V turns in the app the way it does on the web
+because it *is* the web scene: `MarkStage` (`src/components/MarkStage.tsx`)
+shows one self-contained page — three.js and the mark, bundled by
+`npm run build:mark` from `public/3d/app.js` into
+`src/brand/markHtml.generated.ts` — inside a transparent `react-native-webview`
+that fetches nothing and takes no touches. Until the scene draws (it says
+"ready"), and wherever WebGL is unavailable, a still of the same scene stands
+in (`assets/brand/mark-v.png`); the web build of the app keeps to the still
+(`MarkStage.web.tsx`). Change `public/3d/mark.js`, `app.js` or the vendored
+three.js and run `npm run build:mark`; the output is committed. There are no app screenshots, no feature list and no member count:
 the point of VINTAGE is that not everyone is inside, so the front door
 should read as a closed one.
 
@@ -618,8 +626,8 @@ this repo:
   cut in espresso, turning slowly. The stage is transparent until the scene draws, so the page never
   flashes another colour. `tests/homePage.test.ts` holds it to that. The invitation page (`api/invite.ts`) is set the same way — the name in the corner, the turning V, "chai
   invited you to VINTAGE.", "Open VINTAGE" as words with the rule — and so are the two screens in the app
-  that carry an invitation (`app/(gate)/invite.tsx`, `app/invites.tsx`), which stand a still of the V
-  (`assets/brand/mark-v.png`) where the engraved card was. The link-preview card iMessage draws
+  that carry an invitation (`app/(gate)/invite.tsx`, `app/invites.tsx`), which turn the same V (`MarkStage`, see
+  **The gate**) where the engraved card was. The link-preview card iMessage draws
   (`public/invite-card.png`) is the same page at 1200×630. The scene lives in `public/3d/`: `stage.js` (a trimmed viewer — `minimal` mode, no export
   toolbar, nothing sent to a parent window) and `mark.js` (the model; `fill` sets its size in the
   frame), and `vendor/` (three.js r184 and its orbit controls, served from this site — the front door

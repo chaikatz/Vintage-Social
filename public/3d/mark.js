@@ -16,7 +16,53 @@ export async function mountVintageMark(stage, options = {}) {
   const fill = options.fill ?? 2.2;
   const speed = options.speed ?? 0.35;
   const { THREE } = await stage.ready;
+  const group = buildVintageMark(THREE);
+  stage.setObject(group);
 
+  // Stand the camera back so the mark sits in the frame at the size asked for.
+  const cam = stage._camera, ctr = stage._controls;
+  const r = new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere()).radius;
+  const reframe = () => {
+    const aspect = (stage.clientWidth || 1) / (stage.clientHeight || 1);
+    const halfH = Math.max(fill * r, r / (0.45 * aspect));
+    const dist = halfH / Math.tan((cam.fov * Math.PI) / 360);
+    const dir = cam.position.clone().sub(ctr.target).normalize();
+    cam.position.copy(ctr.target).add(dir.multiplyScalar(dist));
+    cam.far = dist * 100;
+    cam.updateProjectionMatrix();
+    ctr.update();
+  };
+  reframe();
+  new ResizeObserver(reframe).observe(stage);
+  requestAnimationFrame(() => { stage.fit && stage.fit(); reframe(); });
+
+  spinVintageMark(group, speed, () => stage.isConnected);
+  return group;
+}
+
+/**
+ * Turn the mark about its own axis, unless the visitor has asked for reduced
+ * motion. `alive` says whether to keep turning; the loop stops when it is false.
+ */
+export function spinVintageMark(group, speed = 0.35, alive = () => true) {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let last = performance.now();
+  (function spin(t) {
+    if (!alive()) return;
+    const dt = Math.min((t - last) / 1000, 0.1);
+    last = t;
+    if (!reduce) group.rotation.y += dt * speed;
+    requestAnimationFrame(spin);
+  })(last);
+}
+
+/**
+ * The mark itself: the V and its rule as one group of two named meshes,
+ * centred on the origin, about 0.6 m tall. Shared by the web stage and the
+ * app's own copy of the scene (public/3d/app.js), so there is one V.
+ */
+export function buildVintageMark(THREE, options = {}) {
+  const color = options.color ?? 0x473d35;
   // Outline traced from the icon (image px, y down), converted to metres centred on the mark.
   const S = 1 / 1000, CX = 629, CY = 652;
   const P = (x, y) => [(x - CX) * S, (CY - y) * S];
@@ -48,7 +94,7 @@ export async function mountVintageMark(stage, options = {}) {
 
   const depth = 0.07;
   const opts = { depth, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.0015, bevelSegments: 3, curveSegments: 32 };
-  const ink = new THREE.MeshStandardMaterial({ name: 'espresso', color: 0x473d35, roughness: 0.45, metalness: 0.15 });
+  const ink = new THREE.MeshStandardMaterial({ name: 'espresso', color, roughness: 0.45, metalness: 0.15 });
 
   const group = new THREE.Group();
   group.name = 'vintage-mark';
@@ -59,34 +105,5 @@ export async function mountVintageMark(stage, options = {}) {
     m.name = name;
     group.add(m);
   }
-
-  stage.setObject(group);
-
-  // Stand the camera back so the mark sits in the frame at the size asked for.
-  const cam = stage._camera, ctr = stage._controls;
-  const r = new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere()).radius;
-  const reframe = () => {
-    const aspect = (stage.clientWidth || 1) / (stage.clientHeight || 1);
-    const halfH = Math.max(fill * r, r / (0.45 * aspect));
-    const dist = halfH / Math.tan((cam.fov * Math.PI) / 360);
-    const dir = cam.position.clone().sub(ctr.target).normalize();
-    cam.position.copy(ctr.target).add(dir.multiplyScalar(dist));
-    cam.far = dist * 100;
-    cam.updateProjectionMatrix();
-    ctr.update();
-  };
-  reframe();
-  new ResizeObserver(reframe).observe(stage);
-  requestAnimationFrame(() => { stage.fit && stage.fit(); reframe(); });
-
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let last = performance.now();
-  (function spin(t) {
-    const dt = Math.min((t - last) / 1000, 0.1);
-    last = t;
-    if (!reduce && stage.isConnected) group.rotation.y += dt * speed;
-    requestAnimationFrame(spin);
-  })(last);
-
   return group;
 }

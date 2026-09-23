@@ -8,7 +8,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { Image } from "expo-image";
 import { showAlert } from "@/utils/alert";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +15,7 @@ import { StatusBar } from "expo-status-bar";
 import Feather from "@expo/vector-icons/Feather";
 import { GateField } from "@/components/gate/GateField";
 import { GateButton } from "@/components/gate/GateButton";
+import { MarkStage } from "@/components/MarkStage";
 import { colors, spacing, type } from "@/theme";
 import {
   validateEmail,
@@ -25,9 +25,6 @@ import {
 import { checkUsernameAvailable, fetchInviteOwner, joinWithInvite } from "@/api/membership";
 import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
 import { useSession } from "@/providers/SessionProvider";
-
-/** The mark, as it stands on the landing page — a still of the turning V. */
-const MARK = require("../../assets/brand/mark-v.png");
 
 /**
  * The invitation.
@@ -143,7 +140,7 @@ export default function Invite() {
             </View>
           </View>
 
-          <Image source={MARK} style={styles.mark} contentFit="contain" transition={0} accessibilityLabel="The VINTAGE mark" />
+          <MarkStage height={200} fill={1.15} style={styles.mark} />
 
           <Text style={styles.eyebrow}>By invitation</Text>
           <Text style={styles.blurb}>
@@ -219,7 +216,7 @@ const styles = StyleSheet.create({
   brandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, color: colors.ink },
   brandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3 },
 
-  mark: { alignSelf: "center", width: 160, height: 176, marginTop: spacing.xxl },
+  mark: { marginTop: spacing.xxl },
 
   eyebrow: {
     fontFamily: type.mono,
