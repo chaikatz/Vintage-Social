@@ -13,12 +13,12 @@ import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
 
 const COPY: Record<string, { title: string; body: string }> = {
   applied: {
-    title: "Application received",
-    body: "An admin will review your application. We keep VINTAGE small on purpose, so this can take a little while.",
+    title: "APPLICATION RECEIVED",
+    body: "Membership is currently limited.\nWe’ll be in touch if a place becomes available.",
   },
   waitlisted: {
-    title: "You’re on the waitlist",
-    body: "We liked your application, but membership is limited right now. We’ll be in touch when a place opens.",
+    title: "APPLICATION RECEIVED",
+    body: "Membership is currently limited.\nWe’ll be in touch if a place becomes available.",
   },
   rejected: {
     title: "Not this time",
@@ -90,6 +90,12 @@ export default function Pending() {
         <View style={styles.rule} />
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.body}>{copy.body}</Text>
+        {status === "applied" || status === "waitlisted" ? (
+          <View style={styles.inviteNote}>
+            <Text style={styles.inviteLead}>Already know a member?</Text>
+            <Text style={styles.inviteBody}>An invitation grants access.</Text>
+          </View>
+        ) : null}
         {status === "suspended" && SUPPORT_EMAIL ? (
           <Text
             style={[styles.body, styles.link]}
@@ -134,6 +140,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     maxWidth: 290,
   },
+  inviteNote: { alignItems: "center", marginTop: spacing.xl },
+  inviteLead: { fontFamily: type.serif, fontSize: 14, color: colors.ink, textAlign: "center" },
+  inviteBody: { fontFamily: type.serif, fontSize: 14, lineHeight: 22, color: colors.inkSoft, textAlign: "center", marginTop: 3 },
   actions: { paddingBottom: spacing.md },
   gap: { marginTop: spacing.sm },
 });
