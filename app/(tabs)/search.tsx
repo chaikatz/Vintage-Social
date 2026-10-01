@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useDebounced } from "@/hooks/useDebounced";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
@@ -41,10 +42,14 @@ export default function Search() {
   const [focused, setFocused] = useState(false);
   const searching = q.trim().length >= 2;
 
+  // Asked a beat after typing stops, and the last answer stays up while
+  // the next one comes, so the list does not blank on every keystroke.
+  const settledQ = useDebounced(q, 250);
   const results = useQuery({
-    queryKey: ["search", q],
-    queryFn: () => searchProfiles(q),
-    enabled: searching,
+    queryKey: ["search", settledQ],
+    queryFn: () => searchProfiles(settledQ),
+    enabled: settledQ.trim().length >= 2,
+    placeholderData: keepPreviousData,
   });
 
   // One seed per visit; pull-to-refresh draws another. The set itself is

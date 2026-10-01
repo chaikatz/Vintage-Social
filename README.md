@@ -580,6 +580,22 @@ this repo:
   dropped connection three times (`src/utils/retry.ts`); a retry told the file or row already exists
   counts as success, since the id was chosen on the phone. Once the row is in, nothing that follows —
   tags, cache warming, the profile re-read — can turn into "Couldn't publish".
+- **A glitch pass over the app** (one read-only sweep, every finding verified in the code before it was
+  fixed): signing out from the waitlist screen no longer crashes (a hook declared after an early
+  return); a token refresh on a flaky connection no longer bounces an approved member to the waitlist
+  (the profile is re-read by member id, kept on a failed read, retried until it lands); a like is
+  written into every cached copy of the post once it lands, so counts no longer double after a refetch
+  and hearts hold across screens; hearts and comment previews no longer blink when the feed loads a
+  page; failed reads say "Couldn't load — try again" (`LoadFailed`) instead of "Member not found", "This
+  photograph is gone" or a quiet start; a conversation opens at its newest message and picks up replies
+  while open; a long grid's gallery no longer stays blank past the eightieth photograph; comment,
+  message, follow, request, un-tag and delete failures are said rather than swallowed; your own counts
+  refresh on follow and on pull; sign-out works offline and clears the cache for the next account on
+  the phone; sharing to several members never sends twice; a second tap on the Create tab no longer
+  opens the darkroom twice; search keeps its results between keystrokes; a video memory shows its
+  poster; the viewer opens on the tapped photograph from the first frame; the heart and sound marks
+  are legible on the dark print. The query client retries transient failures, refetches on return from
+  the background and resumes when the signal returns (`@react-native-community/netinfo`).
 - **Photographs are posted at their own shape**, between 4:5 and 1.91:1 like a photo feed, not cropped
   square. The square came from the system photo editor, which on iOS crops to a square whatever
   aspect is asked for; the picker no longer opens it for photographs (the darkroom frames the picture

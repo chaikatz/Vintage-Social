@@ -62,6 +62,7 @@ export default function LibraryPicker() {
   }, [photos.data]);
 
   const choose = async (photo: LibraryPhoto) => {
+    if (opening) return; // one tap, one darkroom
     setOpening(photo.id);
     try {
       const params = await composeParamsFor(photo);

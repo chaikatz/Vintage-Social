@@ -6,6 +6,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { PostSkeleton } from "@/components/Skeleton";
 import { FEED_PAGE_SIZE, fetchFeedPage } from "@/api/posts";
 import { usePostActions } from "@/hooks/usePostActions";
@@ -107,6 +108,8 @@ export default function Home() {
               <PostSkeleton />
               <PostSkeleton ratio={1} />
             </>
+          ) : feed.isError ? (
+            <LoadFailed what="your feed" onRetry={() => feed.refetch()} />
           ) : (
             <EmptyState
               title="A quiet start"

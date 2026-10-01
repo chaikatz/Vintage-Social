@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "expo-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { rewritePostEverywhere } from "@/utils/postCache";
 import { showAlert } from "@/utils/alert";
 import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
 import { blockMember } from "@/api/blocks";
@@ -25,12 +26,16 @@ export function usePostActions(userId: string, postIds: string[]) {
     queryKey: ["my-likes", userId, postIds.join(",")],
     queryFn: () => fetchMyLikes(userId, postIds),
     enabled: Boolean(userId) && postIds.length > 0,
+    // A new page means a new key; the hearts already drawn keep their state
+    // while the wider answer arrives instead of blinking to outline.
+    placeholderData: keepPreviousData,
   });
 
   const previewsQuery = useQuery({
     queryKey: ["comment-previews", postIds.join(",")],
     queryFn: () => fetchCommentPreviews(postIds, INLINE_COMMENTS),
     enabled: postIds.length > 0,
+    placeholderData: keepPreviousData,
   });
 
   const commentsFor = useCallback(
@@ -86,19 +91,38 @@ export function usePostActions(userId: string, postIds: string[]) {
     [deltas],
   );
 
+  // The delta carries the like only while the write is in flight. Once it
+  // lands, the count is written into every cached copy of the post and the
+  // delta is dropped — otherwise the next refetch, whose count already
+  // includes the like, had the delta added on top and showed one too many.
+  // The set of liked ids is rewritten the same way, so the heart holds on
+  // every screen that shows this post.
   const toggleLike = useCallback(
     async (post: PostWithAuthor, next: boolean) => {
+      const step = next ? 1 : -1;
       setOverrides((o) => ({ ...o, [post.id]: next }));
-      setDeltas((d) => ({ ...d, [post.id]: (d[post.id] ?? 0) + (next ? 1 : -1) }));
+      setDeltas((d) => ({ ...d, [post.id]: (d[post.id] ?? 0) + step }));
       try {
         if (next) await likePost(userId, post.id);
         else await unlikePost(userId, post.id);
+        rewritePostEverywhere<PostWithAuthor>(queryClient, post.id, (p) => ({
+          ...p,
+          like_count: Math.max(0, p.like_count + step),
+        }));
+        queryClient.setQueriesData<Set<string>>({ queryKey: ["my-likes", userId] }, (liked) => {
+          if (!liked) return liked;
+          const copy = new Set(liked);
+          if (next) copy.add(post.id);
+          else copy.delete(post.id);
+          return copy;
+        });
+        setDeltas((d) => ({ ...d, [post.id]: (d[post.id] ?? 0) - step }));
       } catch {
         setOverrides((o) => ({ ...o, [post.id]: !next }));
-        setDeltas((d) => ({ ...d, [post.id]: (d[post.id] ?? 0) + (next ? -1 : 1) }));
+        setDeltas((d) => ({ ...d, [post.id]: (d[post.id] ?? 0) - step }));
       }
     },
-    [userId],
+    [userId, queryClient],
   );
 
   /**
@@ -120,11 +144,16 @@ export function usePostActions(userId: string, postIds: string[]) {
             text: "Delete post",
             style: "destructive",
             onPress: async () => {
-              await deleteOwnPost(post.id);
+              try {
+                await deleteOwnPost(post.id);
+              } catch (err) {
+                showAlert("Couldn’t delete", err instanceof Error ? err.message : String(err));
+                return;
+              }
               queryClient.invalidateQueries({ queryKey: ["feed"] });
               queryClient.invalidateQueries({ queryKey: ["user-posts"] });
               queryClient.invalidateQueries({ queryKey: ["explore"] });
-              await refreshProfile();
+              refreshProfile().catch(() => undefined);
               afterDelete?.();
             },
           },

@@ -142,7 +142,7 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
         },
       ]}
     >
-      <MaterialCommunityIcons name="heart" size={92} color={colors.paperRaised} />
+      <MaterialCommunityIcons name="heart" size={92} color="#F6F1E8" />
     </Animated.View>
   );
 
@@ -279,7 +279,8 @@ function VideoMedia({
         style={styles.sound}
         accessibilityLabel={muted ? "Turn sound on" : "Turn sound off"}
       >
-        <Feather name={muted ? "volume-x" : "volume-2"} size={15} color={colors.onShutter} />
+        {/* Fixed cream: the disc beneath is always dark, whichever print the page is. */}
+        <Feather name={muted ? "volume-x" : "volume-2"} size={15} color="#F6F1E8" />
       </Pressable>
     </View>
   );

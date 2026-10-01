@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Keyboard,
@@ -24,6 +24,7 @@ import {
   sendMessage,
 } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
+import { showAlert } from "@/utils/alert";
 import { postAge } from "@/utils/time";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
@@ -55,7 +56,13 @@ export default function Thread() {
     queryKey: ["messages", id],
     queryFn: () => fetchMessages(id ?? ""),
     enabled: Boolean(id),
+    // A reply that arrives while the thread is open shows up on its own.
+    refetchInterval: 5000,
   });
+  // Newest at the bottom, and the list opens there: an inverted list is
+  // laid out from its end, so the latest message and anything sent or
+  // received lands on screen rather than below it.
+  const newestFirst = useMemo(() => [...(messagesQ.data ?? [])].reverse(), [messagesQ.data]);
 
   // Opening the thread is what marks it read.
   useEffect(() => {
@@ -74,6 +81,7 @@ export default function Thread() {
       queryClient.invalidateQueries({ queryKey: ["messages", id] });
       queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
     },
+    onError: (err) => showAlert("Couldn’t send", err instanceof Error ? err.message : String(err)),
   });
 
   return (
@@ -84,7 +92,8 @@ export default function Thread() {
     >
       <Stack.Screen options={{ title: peerQ.data?.username ?? "" }} />
       <FlatList
-        data={messagesQ.data ?? []}
+        data={newestFirst}
+        inverted
         keyExtractor={(m) => m.id}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
@@ -196,7 +205,7 @@ const styles = StyleSheet.create({
   body: { ...type.body, fontSize: 14 },
   textMine: { color: colors.onShutter },
   age: { fontSize: 10, color: colors.inkFaint, marginTop: 4, textAlign: "right" },
-  ageMine: { color: "rgba(242, 235, 221, 0.55)" },
+  ageMine: { color: colors.onShutter, opacity: 0.6 },
   shared: { marginBottom: spacing.xs + 2 },
   sharedImage: {
     width: 180,

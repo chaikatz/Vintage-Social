@@ -26,6 +26,9 @@ import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 export default function Create() {
   const router = useRouter();
   const [finding, setFinding] = useState(false);
+  // Reading the capture date and decoding the photograph take a moment;
+  // without a guard a second tap in that moment opened the darkroom twice.
+  const [opening, setOpening] = useState(false);
 
   // One photograph from further back than you were going to look. It is
   // the same darkroom as any other post; only the choosing is different.
@@ -53,6 +56,16 @@ export default function Create() {
   };
 
   const openCompose = async (asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video") => {
+    if (opening) return;
+    setOpening(true);
+    try {
+      await openComposeNow(asset, mediaType);
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  const openComposeNow = async (asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video") => {
     // EXIF first, then the photo library — video carries no EXIF at all, so
     // the library is the only place its real date exists.
     const takenAt = await captureDateForAsset(asset);
@@ -87,6 +100,7 @@ export default function Create() {
   };
 
   const pick = async (mediaType: "photo" | "video") => {
+    if (opening) return;
     const isVideo = mediaType === "video";
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: isVideo ? ["videos"] : ["images"],
@@ -115,6 +129,7 @@ export default function Create() {
   };
 
   const takePhoto = async () => {
+    if (opening) return;
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       showAlert("Camera is off", "VINTAGE can only take a photograph if it may use the camera. You can allow this in Settings.");
@@ -145,6 +160,7 @@ export default function Create() {
           body="A photograph you've already taken"
           onPress={() => pick("photo")}
           primary
+          busy={opening}
         />
         {native ? (
           <>

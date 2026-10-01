@@ -45,6 +45,14 @@ export default function Pending() {
   // screen stays on top of the stack with no session behind it, and the
   // applicant is stranded on "Application received" with no way back to the
   // door — the tab layout's guard never runs, because this is not a tab.
+  // Somebody on the waitlist who is then handed an invitation should not
+  // have to make a second account. The code goes in here, with the account
+  // they already have; the database grants membership, or says why not.
+  // (Declared above the redirect below: a hook after an early return is
+  // rendered on some passes and not others, and React throws — which was
+  // "Sign out crashes the waitlist screen".)
+  const [redeeming, setRedeeming] = React.useState(false);
+
   if (session === null) return <Redirect href="/(gate)/landing" />;
 
   const status = profile?.status ?? "applied";
@@ -55,10 +63,6 @@ export default function Pending() {
     router.replace("/");
   };
 
-  // Somebody on the waitlist who is then handed an invitation should not
-  // have to make a second account. The code goes in here, with the account
-  // they already have; the database grants membership, or says why not.
-  const [redeeming, setRedeeming] = React.useState(false);
   const enterInvitation = () =>
     showPrompt(
       "Your invitation",

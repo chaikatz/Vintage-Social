@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideFollowRequest, fetchPendingRequests } from "@/api/profiles";
 import { useSession } from "@/providers/SessionProvider";
+import { showAlert } from "@/utils/alert";
 
 /**
  * Who has asked to follow you, while your account is private. Each one is a
@@ -17,7 +18,7 @@ import { useSession } from "@/providers/SessionProvider";
 export default function Requests() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { session } = useSession();
+  const { session, refreshProfile } = useSession();
   const userId = session?.user?.id ?? "";
 
   const requests = useQuery({
@@ -33,7 +34,9 @@ export default function Requests() {
       queryClient.invalidateQueries({ queryKey: ["follow-requests", userId] });
       queryClient.invalidateQueries({ queryKey: ["activity", userId] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
+      refreshProfile().catch(() => undefined);
     },
+    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
   });
 
   return (

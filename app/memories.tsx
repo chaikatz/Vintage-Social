@@ -84,7 +84,11 @@ export default function Memories() {
         ) : null}
 
         {memories.map((m) => {
-          const thumb = mediaUrl("media", m.post.media_path);
+          // A film's file is a movie, which an <Image> cannot draw; its poster frame can be.
+          const thumb =
+            m.post.media_type === "video"
+              ? mediaUrl("thumbnails", m.post.thumb_path)
+              : mediaUrl("thumbnails", m.post.thumb_path) ?? mediaUrl("media", m.post.media_path);
           return (
             <Pressable key={m.post.id} style={styles.memory} onPress={() => openPost(m.post)}>
               {thumb ? <Image source={thumb} style={styles.memoryImage} contentFit="cover" cachePolicy="memory-disk" /> : null}

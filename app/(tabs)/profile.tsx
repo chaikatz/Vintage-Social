@@ -27,7 +27,7 @@ import { useSession } from "@/providers/SessionProvider";
  */
 export default function OwnProfile() {
   const router = useRouter();
-  const { session, profile, isAdmin } = useSession();
+  const { session, profile, isAdmin, refreshProfile } = useSession();
   const userId = session?.user?.id ?? "";
   const [view, setView] = useState<ProfileView>("posted");
   // The two grids share a sort; the timeline and map read by date and place.
@@ -126,6 +126,7 @@ export default function OwnProfile() {
           onRefresh={() => {
             posts.refetch();
             tagged.refetch();
+            refreshProfile().catch(() => undefined);
           }}
           empty={
             posts.isFetched ? (

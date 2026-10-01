@@ -44,10 +44,15 @@ const MAX_ZOOM = 5;
  */
 export function PhotoInspector({ posts, index, onClose, onOpenPost }: Props) {
   const { width, height } = useWindowDimensions();
+  // Opened on the tapped photograph from the very first frame: the page
+  // index is adopted during render when it changes, not an effect later,
+  // so the caption and count never flash the wrong picture's.
   const [current, setCurrent] = useState(index ?? 0);
-  useEffect(() => {
+  const [seenIndex, setSeenIndex] = useState(index);
+  if (index !== seenIndex) {
+    setSeenIndex(index);
     if (index != null) setCurrent(index);
-  }, [index]);
+  }
 
   if (index == null || posts.length === 0) return null;
   const post = posts[Math.min(Math.max(current, 0), posts.length - 1)];

@@ -23,7 +23,7 @@ import type { FollowStatus, ProfileRow } from "@/types/db";
 export default function Follows() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { session } = useSession();
+  const { session, refreshProfile } = useSession();
   const myId = session?.user?.id ?? "";
   const { userId, kind, username } = useLocalSearchParams<{
     userId: string;
@@ -61,6 +61,7 @@ export default function Follows() {
       queryClient.invalidateQueries({ queryKey: ["following", myId] });
       queryClient.invalidateQueries({ queryKey: ["follow-state", myId, target.id] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
+      refreshProfile().catch(() => undefined);
       queryClient.invalidateQueries({ queryKey: ["feed"] });
     },
   });

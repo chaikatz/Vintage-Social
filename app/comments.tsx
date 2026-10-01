@@ -18,6 +18,7 @@ import { showAlert } from "@/utils/alert";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, spacing, type } from "@/theme";
 import { addComment, deleteOwnComment, fetchComments, fetchPost } from "@/api/posts";
 import { removeComment } from "@/api/moderation";
@@ -68,6 +69,7 @@ export default function Comments() {
       queryClient.invalidateQueries({ queryKey: ["post", postId] });
       queryClient.invalidateQueries({ queryKey: ["feed"] });
     },
+    onError: (err) => showAlert("Couldn’t post the comment", err instanceof Error ? err.message : String(err)),
   });
 
   const onCommentLongPress = (comment: CommentWithAuthor) => {
@@ -78,10 +80,18 @@ export default function Comments() {
           text: own ? "Delete comment" : "Remove comment (admin)",
           style: "destructive",
           onPress: async () => {
-            if (own) await deleteOwnComment(comment.id);
-            else await removeComment(comment.id, "Removed from the comments view");
+            try {
+              if (own) await deleteOwnComment(comment.id);
+              else await removeComment(comment.id, "Removed from the comments view");
+            } catch (err) {
+              showAlert("Couldn’t remove the comment", err instanceof Error ? err.message : String(err));
+              return;
+            }
             queryClient.invalidateQueries({ queryKey: ["comments", postId] });
             queryClient.invalidateQueries({ queryKey: ["comment-previews"] });
+            // The count under the photograph lives on the post row.
+            queryClient.invalidateQueries({ queryKey: ["post", postId] });
+            queryClient.invalidateQueries({ queryKey: ["feed"] });
           },
         },
         { text: "Cancel", style: "cancel" },
@@ -103,7 +113,15 @@ export default function Comments() {
   };
 
   if (!post) {
-    return <Screen>{postQ.isFetched ? <EmptyState title="This photograph is gone" /> : null}</Screen>;
+    return (
+      <Screen>
+        {postQ.isError ? (
+          <LoadFailed what="the comments" onRetry={() => postQ.refetch()} />
+        ) : postQ.isFetched ? (
+          <EmptyState title="This photograph is gone" />
+        ) : null}
+      </Screen>
+    );
   }
 
   return (

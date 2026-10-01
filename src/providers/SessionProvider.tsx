@@ -9,6 +9,8 @@ import React, {
 import { router } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { queryClient } from "@/lib/queryClient";
+import { withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
@@ -97,31 +99,59 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Keyed on who is signed in, not on the session object: a token refresh
+  // hands over a new object for the same member, and re-reading the
+  // profile for that used to drop `profileLoaded` — and, on a flaky
+  // connection, the profile itself — which sent an approved member to the
+  // waitlist screen.
+  const userId = session?.user?.id ?? null;
+  const restoring = session === undefined;
+
   const refreshProfile = useCallback(async () => {
-    const userId = session?.user?.id;
     if (!userId) {
       setProfile(null);
-      setProfileLoaded(session !== undefined);
+      setProfileLoaded(!restoring);
       return;
     }
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .maybeSingle();
-    setProfile((data as ProfileRow | null) ?? null);
-    setProfileLoaded(true);
-  }, [session]);
+    try {
+      const data = await withRetry(async () => {
+        const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+        if (error) throw error;
+        return data as ProfileRow | null;
+      });
+      setProfile(data);
+      setProfileLoaded(true);
+    } catch {
+      // The read failed, not the membership. Keep what we knew; a member
+      // with no profile yet stays on the splash until a read succeeds.
+      setProfile((p) => {
+        if (p) setProfileLoaded(true);
+        return p;
+      });
+    }
+  }, [userId, restoring]);
 
   useEffect(() => {
     setProfileLoaded(false);
     refreshProfile();
   }, [refreshProfile]);
 
+  // No profile yet and the read keeps failing: try again until it lands.
+  useEffect(() => {
+    if (!userId || profileLoaded) return;
+    const t = setInterval(() => refreshProfile(), 6000);
+    return () => clearInterval(t);
+  }, [userId, profileLoaded, refreshProfile]);
+
   const signOut = useCallback(async () => {
     // While still signed in, so the row can be deleted under RLS.
     await forgetPushToken();
-    await supabase.auth.signOut();
+    // Signing out everywhere needs the network; without it, the session
+    // must still leave this phone, or "Sign out" leaves you signed in.
+    const { error } = await supabase.auth.signOut();
+    if (error) await supabase.auth.signOut({ scope: "local" });
+    // Nothing of this member stays for the next one to sign in on this phone.
+    queryClient.clear();
     await leaveToLanding();
   }, []);
 

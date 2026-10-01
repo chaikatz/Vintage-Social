@@ -89,11 +89,23 @@ export default function Gallery() {
 
   const settle = useCallback(() => {
     if (settled.current || posts.length === 0) return;
-    let offset = LIST_PADDING;
-    for (let i = 0; i < startIndex; i++) {
+    // Cards past the render cap are never laid out, so their heights are
+    // estimated from the ones that were; otherwise a photograph deep in a
+    // long grid left the gallery blank forever, waiting on a measurement
+    // that could not come.
+    const measurable = Math.min(startIndex, MEASURE_LIMIT - 3);
+    let measuredSum = 0;
+    let measuredCount = 0;
+    for (let i = 0; i < measurable; i++) {
       const h = heights.current.get(posts[i].id);
       if (h == null) return; // not every card above has been measured yet
-      offset += h;
+      measuredSum += h;
+      measuredCount++;
+    }
+    const typical = measuredCount > 0 ? measuredSum / measuredCount : 0;
+    let offset = LIST_PADDING;
+    for (let i = 0; i < startIndex; i++) {
+      offset += heights.current.get(posts[i].id) ?? typical;
     }
     settled.current = true;
     if (offset > LIST_PADDING) {

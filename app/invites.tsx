@@ -15,6 +15,8 @@ import { showAlert } from "@/utils/alert";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
+import { useSession } from "@/providers/SessionProvider";
+import { LoadFailed } from "@/components/LoadFailed";
 import { MarkStage } from "@/components/MarkStage";
 import { Wordmark } from "@/components/Wordmark";
 import { colors, radii, spacing, type } from "@/theme";
@@ -46,7 +48,10 @@ import { ruleWidth } from "@/components/gate/rule";
 
 export default function Invitations() {
   const queryClient = useQueryClient();
-  const link = useQuery({ queryKey: ["invite-link"], queryFn: fetchInviteLink });
+  // Keyed to the member: on a shared phone the next account must never see this one's link.
+  const { session } = useSession();
+  const myId = session?.user?.id ?? "";
+  const link = useQuery({ queryKey: ["invite-link", myId], queryFn: fetchInviteLink, enabled: Boolean(myId) });
 
   const [suffix, setSuffix] = useState("");
   const [copied, setCopied] = useState(false);
@@ -64,7 +69,7 @@ export default function Invitations() {
     if (link.data?.slug) setSuffix(link.data.slug);
   }, [link.data?.slug]);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["invite-link"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["invite-link", myId] });
   const fail = (err: unknown) =>
     showAlert("That didn't work", err instanceof Error ? err.message : String(err));
 
@@ -81,7 +86,11 @@ export default function Invitations() {
   if (link.isLoading || !link.data) {
     return (
       <Screen>
-        <ActivityIndicator style={{ marginTop: spacing.xxl }} color={colors.inkFaint} />
+        {link.isError ? (
+          <LoadFailed what="your invitation" onRetry={() => link.refetch()} />
+        ) : (
+          <ActivityIndicator style={{ marginTop: spacing.xxl }} color={colors.inkFaint} />
+        )}
       </Screen>
     );
   }
@@ -132,7 +141,7 @@ export default function Invitations() {
 
   return (
     <Screen padded={false}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         {/* What the other person receives, shown to the person sending it. */}
         <View style={styles.card}>
           <Wordmark style={styles.cardBrand} />

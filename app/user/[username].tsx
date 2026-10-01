@@ -11,6 +11,7 @@ import { PostMap } from "@/components/PostMap";
 import { PlaceGroups } from "@/components/PlaceGroups";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
 import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
 import { Timeline } from "@/components/Timeline";
@@ -26,7 +27,7 @@ import { useSession } from "@/providers/SessionProvider";
 export default function UserProfile() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { session } = useSession();
+  const { session, refreshProfile } = useSession();
   const { username } = useLocalSearchParams<{ username: string }>();
   const myId = session?.user?.id ?? "";
   const [view, setView] = useState<ProfileView>("posted");
@@ -88,7 +89,10 @@ export default function UserProfile() {
       queryClient.invalidateQueries({ queryKey: ["following", myId] });
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["explore"] });
+      // Your own following count lives on your profile row.
+      refreshProfile().catch(() => undefined);
     },
+    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
   });
 
   const message = async () => {
@@ -126,7 +130,9 @@ export default function UserProfile() {
     return (
       <Screen padded={false}>
         <Stack.Screen options={{ title: username ?? "" }} />
-        {profileQ.isFetched ? (
+        {profileQ.isError ? (
+          <LoadFailed what="this member" onRetry={() => profileQ.refetch()} />
+        ) : profileQ.isFetched ? (
           <EmptyState title="Member not found" />
         ) : (
           <>

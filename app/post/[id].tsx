@@ -10,6 +10,7 @@ import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { PostMedia } from "@/components/PostMedia";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { PostSkeleton } from "@/components/Skeleton";
 import { Byline, INLINE_COMMENTS } from "@/components/PostCard";
 import { colors, spacing, type } from "@/theme";
@@ -18,6 +19,7 @@ import { fetchPostTags, removeTag } from "@/api/tags";
 import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
+import { showAlert } from "@/utils/alert";
 
 /**
  * One photograph on its own.
@@ -51,6 +53,7 @@ export default function PostDetail() {
       queryClient.invalidateQueries({ queryKey: ["post-tags", id] });
       queryClient.invalidateQueries({ queryKey: ["tagged-posts", userId] });
     },
+    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
   });
 
   const postQ = useQuery({
@@ -83,7 +86,13 @@ export default function PostDetail() {
     return (
       <Screen padded={false}>
         <Stack.Screen options={{ title: "" }} />
-        {postQ.isFetched ? <EmptyState title="This photograph is gone" /> : <PostSkeleton />}
+        {postQ.isError ? (
+          <LoadFailed what="this photograph" onRetry={() => postQ.refetch()} />
+        ) : postQ.isFetched ? (
+          <EmptyState title="This photograph is gone" />
+        ) : (
+          <PostSkeleton />
+        )}
       </Screen>
     );
   }

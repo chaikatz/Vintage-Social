@@ -59,11 +59,18 @@ export default function Share() {
     if (!postId || selected.length === 0) return;
     setBusy(true);
     try {
-      await sharePostWith(userId, selected, postId, note);
+      // One at a time, each taken off the list as it lands, so a failure
+      // on the third leaves the first two sent and the retry reaches only
+      // the one who has not had it.
+      for (const peerId of [...selected]) {
+        await sharePostWith(userId, [peerId], postId, note);
+        setSelected((s) => s.filter((x) => x !== peerId));
+      }
       queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
       router.back();
     } catch (err) {
-      showAlert("Couldn’t send", err instanceof Error ? err.message : String(err));
+      queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
+      showAlert("Couldn’t send to everyone", `${err instanceof Error ? err.message : String(err)}\n\nThe members still ticked have not had it; send again to reach them.`);
     } finally {
       setBusy(false);
     }
