@@ -263,8 +263,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cardBrand: { alignSelf: "flex-start", alignItems: "center" },
-  cardBrandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, color: colors.ink },
-  cardBrandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3 },
+  cardBrandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, marginRight: -4, color: colors.ink },
+  cardBrandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3, transform: [{ translateX: -2.1 }] },
   cardMark: { marginTop: spacing.sm },
   cardEyebrow: {
     fontFamily: type.mono,
@@ -291,6 +291,7 @@ const styles = StyleSheet.create({
     fontFamily: type.mono,
     fontSize: 11,
     letterSpacing: 2.4,
+    marginRight: -2.4,
     textTransform: "uppercase",
     color: colors.ink,
   },

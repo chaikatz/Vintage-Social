@@ -122,13 +122,14 @@ export default function Pending() {
 const styles = StyleSheet.create({
   link: { textDecorationLine: "underline", marginTop: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  wordmark: { fontFamily: type.serif, fontSize: 34, lineHeight: 44, letterSpacing: 9, color: colors.ink },
+  wordmark: { fontFamily: type.serif, fontSize: 34, lineHeight: 44, letterSpacing: 9, marginRight: -9, color: colors.ink },
   rule: {
     width: 24,
     height: 1,
     backgroundColor: colors.ink,
     opacity: 0.85,
     marginVertical: spacing.lg,
+    transform: [{ translateX: -4.8 }], // under the T, as in GateHeading
   },
   title: { fontFamily: type.serif, fontSize: 19, color: colors.ink },
   body: {

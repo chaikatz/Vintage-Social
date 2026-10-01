@@ -65,6 +65,7 @@ const styles = StyleSheet.create({
     fontFamily: type.mono,
     fontSize: 11,
     letterSpacing: 2.4,
+    marginRight: -2.4, // tracked type's trailing space, so the rule beneath centres on the letters
     textTransform: "uppercase",
     color: colors.ink,
   },

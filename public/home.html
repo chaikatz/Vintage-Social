@@ -67,7 +67,8 @@
     color: var(--ink);
   }
   .rule { width: 24px; height: 1px; background: var(--ink); opacity: .85; margin-top: 8px; }
-  .top .rule { width: 9px; margin-top: 3px; }
+  /* Under the T: in Georgia VIN is narrower than AGE, so the word's centre is 0.14em right of the T's. */
+  .top .rule { width: 9px; margin-top: 3px; position: relative; left: -2.1px; }
 
   vintage-stage:not(:defined) { visibility: hidden; }
   vintage-stage {
@@ -82,7 +83,7 @@
   .button {
     height: 44px; margin-bottom: 10px; padding: 0 10px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    font: 400 11px/1 var(--mono); letter-spacing: 2.4px; text-transform: uppercase;
+    font: 400 11px/1 var(--mono); letter-spacing: 2.4px; text-indent: 2.4px; text-transform: uppercase;
     color: var(--ink); text-decoration: none; -webkit-tap-highlight-color: transparent;
   }
   .button:active, .sign-in:active { opacity: .8; }
@@ -90,7 +91,7 @@
   .sign-in {
     margin-top: 12px; padding: 4px 10px;
     display: flex; flex-direction: column; align-items: center;
-    font: 400 12px/1 var(--mono); letter-spacing: 3px; text-transform: uppercase;
+    font: 400 12px/1 var(--mono); letter-spacing: 3px; text-indent: 3px; text-transform: uppercase;
     color: var(--ink); text-decoration: none;
   }
   .sign-in .rule { width: 26px; margin-top: 7px; opacity: .8; }

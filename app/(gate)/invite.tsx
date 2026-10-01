@@ -213,8 +213,8 @@ const styles = StyleSheet.create({
   back: { paddingVertical: spacing.xs },
   // The landing page's wordmark at 36% — every measure scaled the same.
   brand: { alignItems: "center" },
-  brandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, color: colors.ink },
-  brandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3 },
+  brandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, marginRight: -4, color: colors.ink },
+  brandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3, transform: [{ translateX: -2.1 }] },
 
   mark: { marginTop: spacing.xxl },
 

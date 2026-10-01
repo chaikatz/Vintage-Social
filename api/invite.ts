@@ -162,7 +162,8 @@ ${THREE_IMPORT_MAP}
     display: flex; flex-direction: column; align-items: center; text-decoration: none;
     font: 400 15px/18px ${SERIF}; letter-spacing: 4px; text-indent: 4px; color: ${INK};
   }
-  .brand span { width: 9px; height: 1px; background: ${INK}; opacity: .85; margin-top: 3px; }
+  /* Under the T: in Georgia VIN is narrower than AGE, so the word's centre is 0.14em right of the T's. */
+  .brand span { width: 9px; height: 1px; background: ${INK}; opacity: .85; margin-top: 3px; position: relative; left: -2.1px; }
   vintage-stage:not(:defined) { visibility: hidden; }
   vintage-stage { --stage-bg: ${PAPER}; --stage-ink: ${INK}; display: block; width: 100vw; height: 48vh; }
   main { max-width: 430px; margin: 0 auto; padding: 0 40px max(32px, env(safe-area-inset-bottom)); text-align: center; }
@@ -171,7 +172,7 @@ ${THREE_IMPORT_MAP}
   /* The way in: a line of capitals signed with the short rule, as at the door. */
   .cta, .have {
     display: inline-flex; flex-direction: column; align-items: center; text-decoration: none;
-    font: 400 11px/1 ${MONO}; letter-spacing: 2.4px; text-transform: uppercase; color: ${INK};
+    font: 400 11px/1 ${MONO}; letter-spacing: 2.4px; text-indent: 2.4px; text-transform: uppercase; color: ${INK};
     padding: 14px 10px; -webkit-tap-highlight-color: transparent;
   }
   .cta::after, .have::after { content: ""; width: 26px; height: 1px; background: ${INK}; opacity: .8; margin-top: 7px; }

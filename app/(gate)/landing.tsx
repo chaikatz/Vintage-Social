@@ -96,8 +96,9 @@ const styles = StyleSheet.create({
 
   // The landing page's wordmark at 36% — every measure scaled the same, the rule centred.
   brand: { position: "absolute", left: 24, alignItems: "center", zIndex: 2 },
-  brandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, color: colors.ink },
-  brandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3 },
+  brandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, marginRight: -4, color: colors.ink },
+  // Under the T: in Georgia VIN is narrower than AGE, so the word's centre is 0.14em right of the T's.
+  brandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3, transform: [{ translateX: -2.1 }] },
 
   space: { minHeight: 8 },
   // The mark may use the page's full width, as on the web page.
@@ -111,10 +112,11 @@ const styles = StyleSheet.create({
     fontFamily: type.mono,
     fontSize: 11,
     letterSpacing: 2.4,
+    marginRight: -2.4,
     textTransform: "uppercase",
     color: colors.ink,
   },
-  wayLabelSignIn: { fontSize: 12, letterSpacing: 3 },
+  wayLabelSignIn: { fontSize: 12, letterSpacing: 3, marginRight: -3 },
   wayRule: { height: 1, backgroundColor: colors.ink, marginTop: 7, opacity: 0.8 },
 
   foot: { alignItems: "center", gap: 6 },

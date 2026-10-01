@@ -96,7 +96,8 @@ export function GateHeading({
     <View style={styles.heading}>
       {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
       <Text style={script ? styles.script : styles.title}>{script ? title.toUpperCase() : title}</Text>
-      <View style={styles.rule} />
+      {/* Under the wordmark's T: in Georgia VIN is narrower than AGE, so the word's centre is 0.14em right of the T's. */}
+      <View style={[styles.rule, script && styles.ruleUnderT]} />
       {blurb ? <Text style={styles.blurb}>{blurb}</Text> : null}
     </View>
   );
@@ -122,6 +123,7 @@ const styles = StyleSheet.create({
     fontSize: 34,
     lineHeight: 44,
     letterSpacing: 9,
+    marginRight: -9, // tracked type's trailing space, so the rule beneath centres on the letters
     color: colors.ink,
     marginTop: spacing.sm,
     textAlign: "center",
@@ -140,6 +142,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
     marginTop: spacing.md,
   },
+  ruleUnderT: { transform: [{ translateX: -4.8 }] },
   blurb: {
     fontFamily: type.serif,
     fontSize: 14,
