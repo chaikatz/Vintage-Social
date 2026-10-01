@@ -4,6 +4,7 @@ import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { GateLayout } from "@/components/gate/GateLayout";
 import { GateButton } from "@/components/gate/GateButton";
+import { Wordmark } from "@/components/Wordmark";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { describeRedeem, fetchMyApplication, redeemInviteLink } from "@/api/membership";
@@ -86,8 +87,7 @@ export default function Pending() {
   return (
     <GateLayout back={false} scroll={false}>
       <View style={styles.center}>
-        <Text style={styles.wordmark}>VINTAGE</Text>
-        <View style={styles.rule} />
+        <Wordmark size={34} lineHeight={44} tracking={9} rule={24} gap={spacing.lg} style={styles.wordmark} />
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.body}>{copy.body}</Text>
         {status === "applied" || status === "waitlisted" ? (
@@ -122,15 +122,7 @@ export default function Pending() {
 const styles = StyleSheet.create({
   link: { textDecorationLine: "underline", marginTop: 0 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  wordmark: { fontFamily: type.serif, fontSize: 34, lineHeight: 44, letterSpacing: 9, marginRight: -9, color: colors.ink },
-  rule: {
-    width: 24,
-    height: 1,
-    backgroundColor: colors.ink,
-    opacity: 0.85,
-    marginVertical: spacing.lg,
-    transform: [{ translateX: -4.8 }], // under the T, as in GateHeading
-  },
+  wordmark: { marginBottom: spacing.lg },
   title: { fontFamily: type.serif, fontSize: 19, color: colors.ink },
   body: {
     fontFamily: type.serif,

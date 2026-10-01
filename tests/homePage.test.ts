@@ -10,7 +10,8 @@ const html = readFileSync(decodeURIComponent(new URL("../public/home.html", impo
  */
 describe("the landing page", () => {
   it("is the app's front door: wordmark, three ways in, footer", () => {
-    expect(html).toContain("<h1>VINTAGE</h1>");
+    // The wordmark, its rule hung from the T itself.
+    expect(html).toContain('<h1>VIN<span class="t">T</span>AGE</h1>');
     expect(html).toContain('href="/apply"');
     expect(html).toContain('href="/invite"');
     expect(html).toContain('href="/sign-in"');

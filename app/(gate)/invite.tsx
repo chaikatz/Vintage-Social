@@ -16,6 +16,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { GateField } from "@/components/gate/GateField";
 import { GateButton } from "@/components/gate/GateButton";
 import { MarkStage } from "@/components/MarkStage";
+import { Wordmark } from "@/components/Wordmark";
 import { colors, spacing, type } from "@/theme";
 import {
   validateEmail,
@@ -134,10 +135,7 @@ export default function Invite() {
             <Pressable hitSlop={14} onPress={() => router.back()} accessibilityLabel="Back" style={styles.back}>
               <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />
             </Pressable>
-            <View style={styles.brand}>
-              <Text style={styles.brandWord}>VINTAGE</Text>
-              <View style={styles.brandRule} />
-            </View>
+            <Wordmark />
           </View>
 
           <MarkStage height={200} fill={1.15} style={styles.mark} />
@@ -212,9 +210,6 @@ const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginLeft: -spacing.xl },
   back: { paddingVertical: spacing.xs },
   // The landing page's wordmark at 36% — every measure scaled the same.
-  brand: { alignItems: "center" },
-  brandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, marginRight: -4, color: colors.ink },
-  brandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3, transform: [{ translateX: -2.1 }] },
 
   mark: { marginTop: spacing.xxl },
 

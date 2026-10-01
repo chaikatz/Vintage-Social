@@ -57,19 +57,17 @@
   }
   /* The name, small, in the corner — the V is the centrepiece. The logo is
      the app's wordmark at 36%: 42px/50px, tracked 11px, its 24px rule 8px
-     beneath — every measure scaled the same, the rule still centred. */
-  .top {
-    position: absolute; z-index: 2; left: 24px; top: calc(env(safe-area-inset-top) + 22px);
-    display: flex; flex-direction: column; align-items: center;
-  }
-  h1 {
-    margin: 0; font: 400 15px/18px var(--serif); letter-spacing: 4px; text-indent: 4px;
-    color: var(--ink);
+     beneath — every measure scaled the same. The rule hangs from the T
+     itself, so it is centred under that letter in any font. */
+  .top { position: absolute; z-index: 2; left: 24px; top: calc(env(safe-area-inset-top) + 22px); }
+  h1 { margin: 0; font: 400 15px/18px var(--serif); letter-spacing: 4px; color: var(--ink); }
+  h1 .t { position: relative; display: inline-block; }
+  h1 .t::after {
+    content: ""; position: absolute; top: 100%; margin-top: 3px;
+    left: calc((100% - 4px) / 2); transform: translateX(-50%); /* the T's advance carries 4px of tracking after it */
+    width: 9px; height: 1px; background: var(--ink); opacity: .85;
   }
   .rule { width: 24px; height: 1px; background: var(--ink); opacity: .85; margin-top: 8px; }
-  /* Under the T: in Georgia VIN is narrower than AGE, so the word's centre is 0.14em right of the T's. */
-  .top .rule { width: 9px; margin-top: 3px; position: relative; left: -2.1px; }
-
   vintage-stage:not(:defined) { visibility: hidden; }
   vintage-stage {
     --stage-bg: var(--paper); --stage-ink: var(--ink);
@@ -108,8 +106,7 @@
 <div class="page">
   <div class="space a"></div>
   <div class="top">
-    <h1>VINTAGE</h1>
-    <div class="rule"></div>
+    <h1>VIN<span class="t">T</span>AGE</h1>
   </div>
   <div class="space b"></div>
 

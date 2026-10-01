@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { MarkStage } from "@/components/MarkStage";
+import { Wordmark } from "@/components/Wordmark";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchInviteLink, rotateInviteLink, setInviteSlug } from "@/api/membership";
 import {
@@ -134,10 +135,7 @@ export default function Invitations() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* What the other person receives, shown to the person sending it. */}
         <View style={styles.card}>
-          <View style={styles.cardBrand}>
-            <Text style={styles.cardBrandWord}>VINTAGE</Text>
-            <View style={styles.cardBrandRule} />
-          </View>
+          <Wordmark style={styles.cardBrand} />
           <MarkStage height={140} fill={1.15} style={styles.cardMark} />
           <Text style={styles.cardEyebrow}>By invitation</Text>
           <Text style={styles.cardLink} numberOfLines={2}>
@@ -262,9 +260,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     alignItems: "center",
   },
-  cardBrand: { alignSelf: "flex-start", alignItems: "center" },
-  cardBrandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, marginRight: -4, color: colors.ink },
-  cardBrandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3, transform: [{ translateX: -2.1 }] },
+  cardBrand: { alignSelf: "flex-start" },
   cardMark: { marginTop: spacing.sm },
   cardEyebrow: {
     fontFamily: type.mono,

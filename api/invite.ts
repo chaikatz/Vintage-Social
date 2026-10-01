@@ -156,14 +156,17 @@ ${THREE_IMPORT_MAP}
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; background: ${PAPER}; color: ${INK}; }
   body { font: 400 17px/1.6 ${SERIF}; -webkit-font-smoothing: antialiased; }
-  /* The landing page's wordmark at 36% — every measure scaled the same, the rule centred. */
+  /* The landing page's wordmark at 36% — every measure scaled the same; the rule hangs from the T itself. */
   .brand {
     position: absolute; z-index: 2; left: 24px; top: calc(env(safe-area-inset-top) + 22px);
-    display: flex; flex-direction: column; align-items: center; text-decoration: none;
-    font: 400 15px/18px ${SERIF}; letter-spacing: 4px; text-indent: 4px; color: ${INK};
+    text-decoration: none; font: 400 15px/18px ${SERIF}; letter-spacing: 4px; color: ${INK};
   }
-  /* Under the T: in Georgia VIN is narrower than AGE, so the word's centre is 0.14em right of the T's. */
-  .brand span { width: 9px; height: 1px; background: ${INK}; opacity: .85; margin-top: 3px; position: relative; left: -2.1px; }
+  .brand .t { position: relative; display: inline-block; }
+  .brand .t::after {
+    content: ""; position: absolute; top: 100%; margin-top: 3px;
+    left: calc((100% - 4px) / 2); transform: translateX(-50%);
+    width: 9px; height: 1px; background: ${INK}; opacity: .85;
+  }
   vintage-stage:not(:defined) { visibility: hidden; }
   vintage-stage { --stage-bg: ${PAPER}; --stage-ink: ${INK}; display: block; width: 100vw; height: 48vh; }
   main { max-width: 430px; margin: 0 auto; padding: 0 40px max(32px, env(safe-area-inset-bottom)); text-align: center; }
@@ -194,7 +197,7 @@ ${THREE_IMPORT_MAP}
 </style>
 </head>
 <body>
-  <a class="brand" href="/">VINTAGE<span></span></a>
+  <a class="brand" href="/">VIN<span class="t">T</span>AGE</a>
   <vintage-stage minimal aria-label="The VINTAGE mark, a serif V, turning"></vintage-stage>
   <main>
     <div class="eyebrow">By invitation</div>

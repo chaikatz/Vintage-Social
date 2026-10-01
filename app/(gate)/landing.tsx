@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { colors, spacing, type } from "@/theme";
 import { ruleWidth } from "@/components/gate/rule";
 import { MarkStage } from "@/components/MarkStage";
+import { Wordmark } from "@/components/Wordmark";
 import { isDemoMode } from "@/lib/env";
 
 /**
@@ -40,10 +41,7 @@ export default function Landing() {
     <View style={styles.root}>
       <StatusBar style="auto" />
       <View style={[styles.content, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
-        <View style={[styles.brand, { top: insets.top + 22 }]} accessibilityRole="header">
-          <Text style={styles.brandWord}>VINTAGE</Text>
-          <View style={styles.brandRule} />
-        </View>
+        <Wordmark style={{ ...styles.brand, top: insets.top + 22 }} />
 
         <View style={[styles.space, { flex: short ? 0.5 : 1.1 }]} />
         <View style={[styles.space, { flex: short ? 0.4 : 0.8 }]} />
@@ -94,11 +92,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { flex: 1, paddingHorizontal: 40 },
 
-  // The landing page's wordmark at 36% — every measure scaled the same, the rule centred.
-  brand: { position: "absolute", left: 24, alignItems: "center", zIndex: 2 },
-  brandWord: { fontFamily: type.serif, fontSize: 15, lineHeight: 18, letterSpacing: 4, marginRight: -4, color: colors.ink },
-  // Under the T: in Georgia VIN is narrower than AGE, so the word's centre is 0.14em right of the T's.
-  brandRule: { width: 9, height: 1, backgroundColor: colors.ink, opacity: 0.85, marginTop: 3, transform: [{ translateX: -2.1 }] },
+  // The landing page's wordmark at 36%, the rule under the T (Wordmark).
+  brand: { position: "absolute", left: 24, zIndex: 2 },
 
   space: { minHeight: 8 },
   // The mark may use the page's full width, as on the web page.
