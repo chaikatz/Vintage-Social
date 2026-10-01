@@ -109,11 +109,21 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         fy: (a.pageY + b.pageY) / 2 - rootTop.current,
       };
     };
+    // A pinch is claimed only when both fingers are on the line itself —
+    // the rows below the profile header. Fingers on the header, the counts
+    // or the view switch are left to the page: a pinch that began there
+    // used to zoom the line and jump the page beneath the profile.
+    const onTheLine = (e: GestureResponderEvent) => {
+      if (!twoFingers(e)) return false;
+      const [a, b] = e.nativeEvent.touches;
+      const top = Math.min(a.pageY, b.pageY) - rootTop.current + scrollY.current;
+      return top >= blockTop.current;
+    };
     return PanResponder.create({
-      // Two fingers are a pinch and are claimed before the page can scroll
-      // with them; one finger is left entirely to the page.
-      onStartShouldSetPanResponderCapture: twoFingers,
-      onMoveShouldSetPanResponderCapture: twoFingers,
+      // Two fingers on the line are a pinch and are claimed before the page
+      // can scroll with them; one finger is left entirely to the page.
+      onStartShouldSetPanResponderCapture: onTheLine,
+      onMoveShouldSetPanResponderCapture: onTheLine,
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (e) => {
         const t = read(e);

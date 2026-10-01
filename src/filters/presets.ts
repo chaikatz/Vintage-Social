@@ -1,4 +1,4 @@
-import type { FilterSpec } from "./types";
+import { NEUTRAL_ADJUSTMENTS, NO_ARTIFACTS, type FilterSpec } from "./types";
 
 /**
  * The proprietary VINTAGE filters.
@@ -10,7 +10,25 @@ import type { FilterSpec } from "./types";
  * Every filter can carry the amber date stamp; `dateStampDefault` only decides
  * whether the toggle starts on.
  */
+/** The id of the one stock that is no stock at all. */
+export const NO_FILTER_ID = "none";
+
+/** Whether this id means the photograph is left exactly as it was taken. */
+export function isNoFilter(id: string): boolean {
+  return id === NO_FILTER_ID;
+}
+
 export const FILTERS: readonly FilterSpec[] = [
+  {
+    // First in the tray and the default: the photograph as it was taken.
+    // Neutral adjustments and no artifacts make the shader an identity, so
+    // a "none" photograph bakes to itself and a "none" clip needs no bake.
+    id: NO_FILTER_ID,
+    name: "None",
+    description: "The photograph as it was taken — no film.",
+    adjustments: NEUTRAL_ADJUSTMENTS,
+    artifacts: NO_ARTIFACTS,
+  },
   {
     id: "archive-bw",
     name: "Archive",

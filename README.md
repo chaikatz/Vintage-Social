@@ -580,6 +580,13 @@ this repo:
   dropped connection three times (`src/utils/retry.ts`); a retry told the file or row already exists
   counts as success, since the id was chosen on the phone. Once the row is in, nothing that follows —
   tags, cache warming, the profile re-read — can turn into "Couldn't publish".
+- **No film is a choice.** The tray begins with "None" — the photograph as it was taken — and starts
+  there. It is a real stock in `presets.ts` (`NO_FILTER_ID`, neutral adjustments, no artifacts), so the
+  shader is an identity and a "none" photograph bakes to itself; a "none" clip skips the bake and is
+  posted as recorded, marked baked.
+- **The timeline's pinch belongs to the line.** It is claimed only when both fingers are on the rows
+  below the profile header; a pinch that began on the header, the counts or the view switch is left to
+  the page, where it used to zoom the line and jump the page beneath the profile.
 - **A glitch pass over the app** (one read-only sweep, every finding verified in the code before it was
   fixed): signing out from the waitlist screen no longer crashes (a hook declared after an early
   return); a token refresh on a flaky connection no longer bounces an approved member to the waitlist

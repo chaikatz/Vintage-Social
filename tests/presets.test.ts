@@ -1,10 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { FILTERS, dateStampStartsOn, getFilter } from "@/filters/presets";
+import { FILTERS, NO_FILTER_ID, dateStampStartsOn, getFilter, isNoFilter } from "@/filters/presets";
 import { applyMatrix, buildColorMatrix } from "@/filters/colorMatrix";
 
 describe("VINTAGE filter presets", () => {
-  it("ships fourteen filters", () => {
-    expect(FILTERS).toHaveLength(14);
+  it("ships no film and fourteen films, no film first", () => {
+    expect(FILTERS).toHaveLength(15);
+    expect(FILTERS[0].id).toBe(NO_FILTER_ID);
+    expect(isNoFilter(FILTERS[0].id)).toBe(true);
+    expect(isNoFilter("seventy")).toBe(false);
+  });
+
+  it("leaves a photograph untouched under no film", () => {
+    const none = getFilter(NO_FILTER_ID);
+    const m = buildColorMatrix(none.adjustments, none.monochrome);
+    for (const px of [[0.8, 0.2, 0.4, 1], [0, 0, 0, 1], [1, 1, 1, 1]] as const) {
+      const out = applyMatrix(m, [...px]);
+      px.forEach((c, i) => expect(Math.abs(out[i] - c)).toBeLessThan(1e-6));
+    }
+    expect(none.artifacts.fade).toBe(0);
+    expect(none.artifacts.vignette).toBe(0);
+    expect(none.artifacts.grain).toBe(0);
   });
 
   it("has unique, stable ids", () => {
@@ -12,6 +27,7 @@ describe("VINTAGE filter presets", () => {
     expect(new Set(ids).size).toBe(ids.length);
     // Ids are stored on posts — renaming any of these is a breaking change.
     expect(ids).toEqual([
+      "none",
       "archive-bw",
       "seventy",
       "alpine",

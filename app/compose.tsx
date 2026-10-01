@@ -23,6 +23,7 @@ import { TextField } from "@/components/TextField";
 import { DateStamp } from "@/components/DateStamp";
 import { colors, hairline, radii, spacing, type } from "@/theme";
 import { FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters";
+import { isNoFilter } from "@/filters/presets";
 import type { FilteredImageHandle, FilterSpec } from "@/filters";
 import { FilterOverlay } from "@/components/FilterOverlay";
 import { cssFilterFor } from "@/filters/cssFilter";
@@ -153,7 +154,10 @@ export default function Compose() {
         // simply plays it. If the bake fails the footage goes up as
         // recorded and the look is applied at play time, as it always was.
         let source = uri;
-        if (bakes && !isDemoMode()) {
+        if (isNoFilter(filterId)) {
+          // Nothing to bake into the footage; the file as recorded is the post.
+          baked = true;
+        } else if (bakes && !isDemoMode()) {
           setStage("Applying the film to the clip…");
           try {
             const out = await publishStep("render", () => bakeVideo(uri, filter));
@@ -358,9 +362,12 @@ export default function Compose() {
             />
           )}
           {stampOn ? <DateStamp iso={stampIso} /> : null}
-          <View pointerEvents="none" style={styles.previewFilm}>
-            <Text style={styles.previewFilmText}>{filter.name}</Text>
-          </View>
+          {/* The stock, written on the sleeve — nothing written when there is none. */}
+          {!isNoFilter(filterId) ? (
+            <View pointerEvents="none" style={styles.previewFilm}>
+              <Text style={styles.previewFilmText}>{filter.name}</Text>
+            </View>
+          ) : null}
           {isVideo ? (
             <View style={styles.previewControls}>
               {bakes && poster ? (
