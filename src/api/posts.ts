@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import type { CommentWithAuthor, PostRow, PostWithAuthor } from "@/types/db";
+import { withRetry } from "@/utils/retry";
 
 export const FEED_PAGE_SIZE = 12;
 
@@ -124,8 +125,15 @@ export async function createPost(post: NewPost): Promise<void> {
     demo.demoCreatePost(post);
     return;
   }
-  const { error } = await supabase.from("posts").insert(post);
-  if (error) throw error;
+  // Tried again on a dropped connection. The id is chosen on the phone, so
+  // if the first attempt landed and only the reply was lost, the second is
+  // refused as a duplicate — which is the post being there.
+  await withRetry(async (attempt) => {
+    const { error } = await supabase.from("posts").insert(post);
+    if (!error) return;
+    if (attempt > 1 && error.code === "23505") return;
+    throw error;
+  });
 }
 
 /**

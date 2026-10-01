@@ -75,12 +75,11 @@ Connect → App Review Information.
    accurate; the framing is a draft.
 4. **Build and upload** a binary containing this commit (full EAS build; the
    compliance screens are JavaScript but native packages changed earlier).
-5. **Run migration `supabase/migrations/0019_shares.sql` on production** (SQL
-   editor, whole file). It has been applied to staging and tested there; it
-   has NOT been applied to production. Without it the Story share still
-   exports the print but no link is copied. The file is idempotent (every
-   statement is `if not exists` / `drop if exists` / `create or replace`),
-   so running it twice is harmless. Then:
+5. **Run migration `supabase/migrations/0020_photos_baked.sql` on production**
+   (SQL editor, whole file) before shipping the build that posts a photograph
+   unbaked when the renderer fails. One idempotent statement; without it every
+   existing photograph would wear its film twice on screen. `0019_shares.sql`
+   is applied to production already. For the share key, once:
    - make a key on your Mac (`openssl rand -hex 32`);
    - in Vercel → Settings → Environment Variables add **`SHARE_MEDIA_KEY`**
      with that value for Production (and Preview) — server-only, no

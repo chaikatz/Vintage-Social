@@ -56,10 +56,12 @@ export default function Create() {
     // EXIF first, then the photo library — video carries no EXIF at all, so
     // the library is the only place its real date exists.
     const takenAt = await captureDateForAsset(asset);
-    // The editor hands over a JPEG. Anything else — a HEIC that skipped the
-    // editor, say — is decoded properly first, or the renderer shows black.
+    // A photograph arrives as the picker found it — HEIC or JPEG, perhaps
+    // stored on its side — so it is decoded properly first: orientation
+    // applied, longest side capped, saved as JPEG the renderer can read.
+    // The size that comes back is the upright one the darkroom frames by.
     let { uri, width, height } = asset;
-    if (mediaType === "photo" && !/\.(jpe?g|png)$/i.test(uri.split("?")[0])) {
+    if (mediaType === "photo") {
       try {
         const ready = await prepareForDarkroom(uri);
         uri = ready.uri;
@@ -88,11 +90,13 @@ export default function Create() {
     const isVideo = mediaType === "video";
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: isVideo ? ["videos"] : ["images"],
-      // Videos open the system trimmer so a long clip can be cut down to
-      // length here, instead of being picked and then refused. iOS only —
-      // on Android and web the editor handles images alone.
-      allowsEditing: !isVideo || Platform.OS === "ios",
-      aspect: [4, 5],
+      // Photographs are not put through the system editor: on iOS it crops
+      // to a square whatever aspect is asked for, which is what squeezed
+      // every portrait into a box. The darkroom frames the picture itself,
+      // at its own shape between 4:5 and 1.91:1, as a photo feed does.
+      // Videos still open the system trimmer on iOS so a long clip can be
+      // cut to length here instead of being picked and then refused.
+      allowsEditing: isVideo && Platform.OS === "ios",
       quality: 1,
       // Only honoured alongside allowsEditing; it caps the trimmer.
       videoMaxDuration: MAX_VIDEO_SECONDS,
@@ -118,8 +122,7 @@ export default function Create() {
     }
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [4, 5],
+      allowsEditing: false, // the darkroom frames it; the system editor would crop it square
       quality: 1,
       exif: true,
     });

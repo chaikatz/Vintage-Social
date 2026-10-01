@@ -5,8 +5,12 @@ import { DEMO_PREFIX } from "@/demo/photos";
  *
  * A photograph published through VINTAGE is baked at compose time — the
  * filter ends up in the pixels — so applying it again on screen would
- * double it. Three kinds are not baked:
+ * double it. Four kinds are not baked:
  *
+ *   * a photograph the darkroom could not bake — the renderer was not
+ *     ready, or lost its context — and posted as it is rather than not at
+ *     all. `filter_baked` is false for it (migration 0020 marks every
+ *     photograph from before that path existed as baked, since they were);
  *   * video that was not baked — every clip posted before the phone could
  *     bake one, and any posted from a build that cannot. `filter_baked`
  *     is the record of which it was;
@@ -29,6 +33,7 @@ export function needsDisplayFilter(post: {
   filter_baked?: boolean;
 }): boolean {
   if (post.media_type === "video") return !post.filter_baked;
+  if (post.filter_baked === false) return true;
   if (post.media_path.startsWith(DEMO_PREFIX)) return true;
   return /^https?:/i.test(post.media_path);
 }

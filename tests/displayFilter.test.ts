@@ -31,6 +31,15 @@ describe("which media still needs filtering on screen", () => {
     ).toBe(false);
   });
 
+  it("filters a photograph the darkroom could not bake and posted as it is", () => {
+    expect(
+      needsDisplayFilter({ media_type: "photo", media_path: "uid/plain.jpg", filter_baked: false }),
+    ).toBe(true);
+    expect(
+      needsDisplayFilter({ media_type: "photo", media_path: "uid/baked.jpg", filter_baked: true }),
+    ).toBe(false);
+  });
+
   it("filters the bundled demo library", () => {
     expect(
       needsDisplayFilter({ media_type: "photo", media_path: `${DEMO_PREFIX}dunes` }),

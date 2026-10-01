@@ -4,6 +4,7 @@ import { File } from "expo-file-system";
 import { supabase } from "@/lib/supabase";
 import { DEMO_PREFIX } from "@/demo/photos";
 import { PHOTOS } from "@/demo/photoAssets";
+import { isTransient, withRetry } from "@/utils/retry";
 
 export { ownedPath } from "@/utils/storagePath";
 
@@ -114,12 +115,26 @@ export async function uploadFile(
     // by a third, and decoded again before a single byte left the phone.
     body = await new File(localUri).bytes();
   }
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(path, body, { contentType, upsert });
-  if (error) throw error;
+  // A dropped connection is tried again. If the first attempt did land on
+  // the server before the reply was lost, the second is told the object
+  // already exists — which, for a fresh key, is success.
+  await withRetry(async (attempt) => {
+    const { error } = await supabase.storage.from(bucket).upload(path, body, { contentType, upsert });
+    if (!error) return;
+    if (attempt > 1 && !upsert && isAlreadyThere(error)) return;
+    throw error;
+  });
   return path;
 }
+
+function isAlreadyThere(err: unknown): boolean {
+  const e = err as { statusCode?: unknown; status?: unknown; message?: unknown; error?: unknown };
+  const status = Number(e.statusCode ?? e.status ?? NaN);
+  const text = `${String(e.message ?? "")} ${String(e.error ?? "")}`.toLowerCase();
+  return status === 409 || /already exists|duplicate/.test(text);
+}
+
+export { isTransient };
 
 
 

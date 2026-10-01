@@ -201,24 +201,36 @@ export default function Compose() {
             : null;
         }
       } else {
-        if (renderFailed) {
-          throw new Error("This photograph couldn’t be read. Try choosing it again from your library.");
+        // Photographs are baked through the GL renderer: the filter ends up
+        // in the pixels. But a bake that cannot happen — the renderer never
+        // read the file, lost its context in the background, or is still
+        // loading a very large photograph — must not cost the post. Then
+        // the photograph goes up as it is, marked unbaked, and wears its
+        // film on screen the way an unbaked video does. Posting never
+        // fails because of the darkroom.
+        let source = uri;
+        if (!renderFailed) {
+          setStage("Baking the film in…");
+          try {
+            const shot = await publishStep("render", async () => {
+              const rendered = await filteredRef.current?.snapshot();
+              if (!rendered) throw new Error("The filter renderer isn’t ready yet");
+              return rendered;
+            });
+            source = shot.uri;
+          } catch {
+            baked = false;
+          }
+        } else {
+          baked = false;
         }
-        // Photos are always baked through the GL renderer, on every platform:
-        // the filter has to end up in the pixels, not just in the metadata.
-        setStage("Baking the film in…");
-        const shot = await publishStep("render", async () => {
-          const rendered = await filteredRef.current?.snapshot();
-          if (!rendered) throw new Error("The filter renderer isn’t ready yet — try again.");
-          return rendered;
-        });
-        const feedImage = await publishStep("resize", () => prepareFeedImage(shot.uri));
+        const feedImage = await publishStep("resize", () => prepareFeedImage(source));
         finalWidth = feedImage.width;
         finalHeight = feedImage.height;
         if (isDemoMode()) {
-          mediaPath = feedImage.uri; // keep the baked file locally, no upload
+          mediaPath = feedImage.uri; // keep the file locally, no upload
         } else {
-          const thumb = await publishStep("resize", () => prepareThumbnail(shot.uri));
+          const thumb = await publishStep("resize", () => prepareThumbnail(source));
           setStage("Uploading…");
           mediaPath = await publishStep("media-upload", () =>
             uploadFile("media", ownedPath(userId, `${postId}.jpg`), feedImage.uri, "image/jpeg"),
@@ -255,6 +267,10 @@ export default function Compose() {
         }),
       );
 
+      // From here the post exists. Nothing below may turn into "Couldn't
+      // publish": the tags, the cache, the counts are each best-effort.
+      setPublished(true);
+
       // The tags ride behind the post. Their failure is worth a word but
       // never the photograph: it is already up.
       if (tags.length > 0) {
@@ -286,8 +302,9 @@ export default function Compose() {
       queryClient.invalidateQueries({ queryKey: ["explore"] });
       // post_count lives on the profile row and is bumped by a trigger, so
       // the number on your own grid only moves when the profile is re-read.
-      await refreshProfile();
-      setPublished(true);
+      // It is re-read again on the next screen anyway; a slow answer here
+      // must not hold the darkroom open.
+      await Promise.race([refreshProfile().catch(() => undefined), new Promise((r) => setTimeout(r, 2500))]);
       router.dismissAll();
       router.replace("/(tabs)");
     } catch (err) {
@@ -410,8 +427,8 @@ export default function Compose() {
           </Text>
         ) : renderFailed ? (
           <Text style={styles.videoNote}>
-            This photograph couldn’t be read by the filter renderer. Go back and choose it again — if it
-            keeps happening, pick it from the library instead.
+            The filter renderer couldn’t read this photograph, so the preview shows it plain. You can still
+            post it — the film is applied on screen — or go back and choose it again.
           </Text>
         ) : null}
 

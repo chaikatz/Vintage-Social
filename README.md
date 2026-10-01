@@ -568,11 +568,25 @@ this repo:
   branded natively by `modules/vintage-video` (`brand`) — the same paper and label painted around the
   moving picture with Core Animation, sound kept — then handed to the system share sheet
   (`expo-sharing`). VINTAGE posts nothing itself. Both packages are native: full EAS build required.
-- **Migration `0019_shares.sql` — applied to STAGING ONLY. NOT YET APPLIED TO PRODUCTION.** Run it on
-  production (SQL editor, whole file) before shipping the build that carries the Story link, then run
-  `supabase/production/11_share_media_key.sql` with a fresh key (see below); until both are done the
-  app's "Share outside VINTAGE" still exports prints, but the Story link quietly fails to mint and no
-  link is copied. It adds `post_shares` (one 32-hex token per shared post, minted by the database from
+- **Migration `0020_photos_baked.sql` — applied to STAGING. NOT YET APPLIED TO PRODUCTION.** One
+  statement, idempotent: it marks every photograph posted so far as `filter_baked = true`, which they
+  all were (the darkroom has always baked a photograph before upload; the column was added for video
+  and defaulted to false). It matters now because the darkroom can post a photograph *unbaked* when
+  the filter renderer fails on the phone — never ready, context lost in the background — instead of
+  refusing the post; such a photograph is `filter_baked = false` and wears its film on screen
+  (`needsDisplayFilter`). Until 0020 runs on production, the build that carries this would apply the
+  film a second time to every existing photograph. Run it (SQL editor, whole file) before shipping.
+- **Posting never fails because of the darkroom or the network.** Uploads and the post insert retry a
+  dropped connection three times (`src/utils/retry.ts`); a retry told the file or row already exists
+  counts as success, since the id was chosen on the phone. Once the row is in, nothing that follows —
+  tags, cache warming, the profile re-read — can turn into "Couldn't publish".
+- **Photographs are posted at their own shape**, between 4:5 and 1.91:1 like a photo feed, not cropped
+  square. The square came from the system photo editor, which on iOS crops to a square whatever
+  aspect is asked for; the picker no longer opens it for photographs (the darkroom frames the picture
+  itself, cover-fit into the clamped frame) and every photograph is decoded upright through
+  `prepareForDarkroom` first. The profile grid still shows square tiles; the feed, the post page, the
+  gallery and the timeline show the frame the photograph was posted in.
+- **Migration `0019_shares.sql` — applied to staging and production.** It adds `post_shares` (one 32-hex token per shared post, minted by the database from
   a UUID, author-only, revocable), `share_events` (the loop counted: `share_started`, `link_created`,
   `page_opened`, `membership_requested`), and five functions: `create_post_share` / `revoke_post_share`
   (members, own posts only), `live_share_post` (internal: the one rule — live share, live post,

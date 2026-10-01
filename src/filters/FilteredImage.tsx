@@ -176,8 +176,9 @@ export const FilteredImage = forwardRef<FilteredImageHandle, Props>(
     useImperativeHandle(ref, () => ({
       async snapshot() {
         // The texture is still arriving on a big photograph; give it a
-        // moment rather than refusing the post outright.
-        for (let waited = 0; !stateRef.current && waited < 4000; waited += 100) {
+        // while rather than refusing the post outright. (The compose screen
+        // posts the photograph unbaked if this still is not enough.)
+        for (let waited = 0; !stateRef.current && waited < 12_000; waited += 100) {
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
         const view = glViewRef.current;
