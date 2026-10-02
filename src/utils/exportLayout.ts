@@ -1,5 +1,5 @@
 import { signatureDate } from "./time";
-import { formatMemberNumber, isFoundingMember } from "./membership";
+import { formatMemberNumber } from "./membership";
 
 /**
  * The geometry of an exported print.
@@ -64,7 +64,7 @@ export interface ExportLabelText {
   placeLines: 0 | 1 | 2;
   /** `SEPTEMBER 15, 2026`. */
   date: string;
-  /** `@chai · MEMBER NO. 00027`, `@chai · FOUNDING MEMBER NO. 00002`, or just `@chai`. */
+  /** `@chai · MEMBER NO. 00027`, or just `@chai`. The founding designation stays on the profile; the print says member. */
   credit: string;
 }
 
@@ -97,7 +97,7 @@ export function memberCredit(username: string, memberNo: number | null | undefin
   const name = `@${username.trim().replace(/^@+/, "")}`;
   if (typeof memberNo !== "number" || memberNo < 1) return name;
   const number = formatMemberNumber(memberNo);
-  return isFoundingMember(memberNo) ? `${name} · FOUNDING MEMBER ${number}` : `${name} · MEMBER ${number}`;
+  return `${name} · MEMBER ${number}`;
 }
 
 /**

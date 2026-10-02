@@ -580,6 +580,13 @@ this repo:
   dropped connection three times (`src/utils/retry.ts`); a retry told the file or row already exists
   counts as success, since the id was chosen on the phone. Once the row is in, nothing that follows —
   tags, cache warming, the profile re-read — can turn into "Couldn't publish".
+- **The darkroom's keyboard goes away with a drag** down the page (`keyboardDismissMode="interactive"`),
+  and the caption is kept above it while it is up; the Done bar remains. **A new portrait shows at once
+  everywhere**: it is uploaded under a fresh key (`{uid}/avatar-{time}.jpg`) rather than overwritten in
+  place, so no cache between the bucket and the screen can hold the old face; the previous file is
+  removed best-effort. **The print's credit says MEMBER** for every number (`@chai · MEMBER NO. 00027`);
+  the founding designation stays on the profile. **The timeline's pinch never moves the page**: the line
+  grows from its top and about the fingers sideways only, so the profile and its counts stay put.
 - **No film is a choice.** The tray begins with "None" — the photograph as it was taken — and starts
   there. It is a real stock in `presets.ts` (`NO_FILTER_ID`, neutral adjustments, no artifacts), so the
   shader is an identity and a "none" photograph bakes to itself; a "none" clip skips the bake and is

@@ -330,6 +330,10 @@ export default function Compose() {
         style={styles.root}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        // Pulling the page down puts the keyboard away with the same
+        // gesture, and the caption field is kept above it while it is up.
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
       >
         {/* The frame, full bleed, with the film stock struck across the
             bottom-left the way a lab writes it on the sleeve. */}

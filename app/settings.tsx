@@ -13,6 +13,7 @@ import { colors, radii, spacing, type } from "@/theme";
 import { fetchPendingRequests, updateOwnProfile } from "@/api/profiles";
 import { mediaUrl, prepareAvatar, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
+import { supabase } from "@/lib/supabase";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
 import { loadAppearance, setAppearance, type AppearanceChoice } from "@/utils/appearance";
@@ -96,9 +97,16 @@ export default function Settings() {
         avatarPath = newAvatarUri; // demo mode: keep the local uri, no upload
       } else if (newAvatarUri) {
         const prepared = await prepareAvatar(newAvatarUri);
-        avatarPath = await uploadFile("avatars", `${userId}/avatar.jpg`, prepared.uri, "image/jpeg", {
-          upsert: true,
-        });
+        // A new key for every portrait. The old one was overwritten in place
+        // under a fixed name, and every cache between the bucket and the
+        // screen — the CDN's, the image library's — went on serving the old
+        // face for as long as it liked. A new address is new everywhere at
+        // once; the previous file is cleared away afterwards, best-effort.
+        avatarPath = await uploadFile("avatars", `${userId}/avatar-${Date.now()}.jpg`, prepared.uri, "image/jpeg");
+        const previous = profile?.avatar_url;
+        if (previous && previous.startsWith(`${userId}/`) && previous !== avatarPath) {
+          supabase.storage.from("avatars").remove([previous]).catch(() => undefined);
+        }
       }
       await updateOwnProfile(userId, {
         full_name: fullName.trim(),

@@ -53,7 +53,8 @@ const DOUBLE_TAP_MS = 280;
  * photographs is said out loud.
  *
  * Pinch magnifies the line, or shrinks it to survey more of it, about the
- * point between your fingers; the profile above it is not touched. It is
+ * point between your fingers sideways and from the top of the line down;
+ * the page is never scrolled by it, so the profile above is not touched. It is
  * a transform on the block of rows, nothing more: no row is laid out
  * again, and no native scroll view is ever zoomed. The last point matters
  * — the platform recycles scroll views between screens, and one left at a
@@ -94,7 +95,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const scale = useRef(new Animated.Value(1)).current;
   const shift = useRef(new Animated.Value(0)).current;
   const live = useRef({ scale: 1, shift: 0 }).current;
-  const pinch = useRef({ distance: 0, scale: 1, cx: 0, cy: 0 }).current;
+  const pinch = useRef({ distance: 0, scale: 1, cx: 0 }).current;
   const [pinching, setPinching] = useState(false);
   const [zoomed, setZoomed] = useState(false);
 
@@ -130,10 +131,12 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         if (!t) return;
         pinch.distance = t.distance;
         pinch.scale = live.scale;
-        // The point of the line under the fingers, in the block's own
-        // unscaled coordinates — it stays under them as the scale changes.
+        // The point of the line under the fingers, sideways, in the block's
+        // own unscaled coordinates — it stays under them as the scale
+        // changes. Up and down nothing follows: the block grows from its
+        // top, and the page is never scrolled by a pinch, so the profile
+        // above the line stays exactly where it is.
         pinch.cx = (t.fx - width / 2 - live.shift) / live.scale;
-        pinch.cy = (scrollY.current + t.fy - blockTop.current) / live.scale;
         setPinching(true);
       },
       onPanResponderMove: (e) => {
@@ -147,9 +150,6 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         live.shift = nextShift;
         scale.setValue(next);
         shift.setValue(nextShift);
-        // Up and down: the page scrolls so the same point stays under the fingers.
-        const y = Math.max(0, blockTop.current + pinch.cy * next - t.fy);
-        scroll.current?.scrollTo({ y, animated: false });
       },
       onPanResponderRelease: () => {
         setPinching(false);

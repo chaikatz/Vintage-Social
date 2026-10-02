@@ -110,7 +110,7 @@ describe("the label's words", () => {
     expect(words.place).toBe("THE METROPOLITAN MUSEUM OF ART");
     expect(words.placeLines).toBe(2);
     expect(words.date).toBe("SEPTEMBER 15, 2026");
-    expect(words.credit).toBe("@chai · FOUNDING MEMBER NO. 00001");
+    expect(words.credit).toBe("@chai · MEMBER NO. 00001");
   });
 
   it("leaves out what is not there and never invents a number", () => {
@@ -124,14 +124,14 @@ describe("the label's words", () => {
     expect(none.place.height).toBe(0);
   });
 
-  it("keeps founding-member semantics and formats any length of number", () => {
-    expect(memberCredit("chai", 27)).toBe("@chai · FOUNDING MEMBER NO. 00027");
+  it("says member, whatever the number, and formats any length of it", () => {
+    expect(memberCredit("chai", 27)).toBe("@chai · MEMBER NO. 00027");
     expect(memberCredit("chai", 10_001)).toBe("@chai · MEMBER NO. 10001");
-    expect(memberCredit("a_very_long_username_indeed", 3)).toBe("@a_very_long_username_indeed · FOUNDING MEMBER NO. 00003");
+    expect(memberCredit("a_very_long_username_indeed", 3)).toBe("@a_very_long_username_indeed · MEMBER NO. 00003");
     expect(memberCredit("chai", null)).toBe("@chai");
     expect(memberCredit("chai", 0)).toBe("@chai");
     // One @, however the name arrives.
-    expect(memberCredit("@chai", 27)).toBe("@chai · FOUNDING MEMBER NO. 00027");
+    expect(memberCredit("@chai", 27)).toBe("@chai · MEMBER NO. 00027");
   });
 });
 
