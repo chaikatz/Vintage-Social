@@ -43,6 +43,8 @@ export interface BrandOptions {
   photo: BrandRect;
   rule: BrandRect;
   wordmark: BrandTextBox;
+  /** "Members only", italic and faint, under the wordmark. */
+  tagline: BrandTextBox;
   /** Where it was taken; may be two lines tall, or zero-height when there is no place. */
   place: BrandTextBox;
   byline: BrandTextBox;
@@ -58,6 +60,7 @@ export interface BrandOptions {
   inkFaint: string;
   ruleColor: string;
   wordmarkText: string;
+  taglineText: string;
   placeText: string;
   bylineText: string;
   creditText: string;

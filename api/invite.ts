@@ -167,6 +167,8 @@ ${THREE_IMPORT_MAP}
     left: calc((100% - 4px) / 2); transform: translateX(-50%);
     width: 9px; height: 1px; background: ${INK}; opacity: .85;
   }
+  /* Said quietly beneath the name: thin, italic, faint, left-aligned with it. */
+  .brand em { display: block; margin-top: 7px; font: italic 300 12px/1 ${SERIF}; letter-spacing: .3px; text-indent: 0; color: ${INK_FAINT}; }
   vintage-stage:not(:defined) { visibility: hidden; }
   vintage-stage { --stage-bg: ${PAPER}; --stage-ink: ${INK}; display: block; width: 100vw; height: 48vh; }
   main { max-width: 430px; margin: 0 auto; padding: 0 40px max(32px, env(safe-area-inset-bottom)); text-align: center; }
@@ -197,7 +199,7 @@ ${THREE_IMPORT_MAP}
 </style>
 </head>
 <body>
-  <a class="brand" href="/">VIN<span class="t">T</span>AGE</a>
+  <a class="brand" href="/">VIN<span class="t">T</span>AGE<em>Members only</em></a>
   <vintage-stage minimal aria-label="The VINTAGE mark, a serif V, turning"></vintage-stage>
   <main>
     <div class="eyebrow">By invitation</div>

@@ -80,6 +80,7 @@ struct BrandOptions: Record {
   @Field var photo: BrandRect = BrandRect()
   @Field var rule: BrandRect = BrandRect()
   @Field var wordmark: BrandTextBox = BrandTextBox()
+  @Field var tagline: BrandTextBox = BrandTextBox()
   @Field var place: BrandTextBox = BrandTextBox()
   @Field var byline: BrandTextBox = BrandTextBox()
   @Field var credit: BrandTextBox = BrandTextBox()
@@ -93,6 +94,7 @@ struct BrandOptions: Record {
   @Field var inkFaint: String = "#9C927F"
   @Field var ruleColor: String = "#D5CBB8"
   @Field var wordmarkText: String = "VINTAGE"
+  @Field var taglineText: String = ""
   @Field var placeText: String = ""
   @Field var bylineText: String = ""
   @Field var creditText: String = ""
@@ -194,6 +196,14 @@ private final class Brander {
         color: options.ink, alignment: .left
       ))
     }
+    if !options.taglineText.isEmpty && options.tagline.height > 0 {
+      // Faint and italic, left-aligned under the wordmark.
+      parent.addSublayer(Brander.text(
+        options.taglineText, box: options.tagline, in: H,
+        font: Brander.font("Georgia-Italic", size: options.tagline.size),
+        color: options.inkFaint, alignment: .left
+      ))
+    }
     if !options.placeText.isEmpty && options.place.height > 0 {
       // A long place runs to a second line rather than being cut off.
       parent.addSublayer(Brander.text(
@@ -235,13 +245,25 @@ private final class Brander {
     if options.icon.width > 0, options.icon.height > 0,
        let iconURL = Baker.fileURL(from: options.iconUri),
        let image = UIImage(contentsOfFile: iconURL.path)?.cgImage {
+      // A faint shadow around it, so it reads as an app icon and not a
+      // square of paper: the shadow on an outer layer, the rounding and
+      // clipping on the inner one, since a layer that clips cannot cast.
+      let frame = Brander.flip(Brander.rect(options.icon), in: H)
+      let shadow = CALayer()
+      shadow.frame = frame
+      shadow.shadowColor = UIColor.black.cgColor
+      shadow.shadowOpacity = 0.22
+      shadow.shadowRadius = CGFloat(options.icon.width * 0.14)
+      shadow.shadowOffset = CGSize(width: 0, height: 1)
+      shadow.shadowPath = UIBezierPath(roundedRect: shadow.bounds, cornerRadius: CGFloat(options.icon.width * 0.22)).cgPath
       let icon = CALayer()
-      icon.frame = Brander.flip(Brander.rect(options.icon), in: H)
+      icon.frame = shadow.bounds
       icon.contents = image
       icon.contentsGravity = .resizeAspectFill
       icon.cornerRadius = CGFloat(options.icon.width * 0.22)
       icon.masksToBounds = true
-      parent.addSublayer(icon)
+      shadow.addSublayer(icon)
+      parent.addSublayer(shadow)
     }
 
     composition.animationTool = AVVideoCompositionCoreAnimationTool(
@@ -449,7 +471,15 @@ private final class Baker {
     composition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
     composition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
 
-    guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+    // HEVC carries noticeably more picture per byte than H.264 at the same
+    // size, which is what "the film looks a little soft" came down to once
+    // a clip had to fit under the storage cap. Every iPhone that runs this
+    // app plays it; a device that cannot encode it falls back to H.264.
+    let presets = AVAssetExportSession.exportPresets(compatibleWith: asset)
+    let preset = presets.contains(AVAssetExportPresetHEVCHighestQuality)
+      ? AVAssetExportPresetHEVCHighestQuality
+      : AVAssetExportPresetHighestQuality
+    guard let export = AVAssetExportSession(asset: asset, presetName: preset) else {
       promise.reject("E_BAKE_EXPORT", "This video cannot be exported")
       return
     }
@@ -462,7 +492,7 @@ private final class Baker {
     // Storage refuses anything past ~50 MB, which is what "too long to
     // post" was. The exporter lowers the bitrate to fit under this; a
     // short clip is untouched, a full-length one is spent evenly.
-    export.fileLengthLimit = 40 * 1024 * 1024
+    export.fileLengthLimit = 48 * 1024 * 1024
 
     export.exportAsynchronously {
       switch export.status {

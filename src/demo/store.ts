@@ -23,7 +23,6 @@ import type {
   ReportStatus,
   TagStatus,
 } from "@/types/db";
-import { FOUNDING_MEMBER_LIMIT } from "@/utils/membership";
 import {
   DEMO_APPLICATIONS,
   DEMO_COMMENTS,
@@ -302,6 +301,15 @@ export function demoFetchMyLikes(userId: string, postIds: string[]): Set<string>
   );
 }
 
+export function demoFetchLikers(postId: string): ProfileRow[] {
+  return state.likes
+    .filter((l) => l.post_id === postId)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .map((l) => state.profiles.find((p) => p.id === l.user_id))
+    .filter((p): p is ProfileRow => Boolean(p))
+    .map(clone);
+}
+
 export function demoLike(userId: string, postId: string): void {
   if (state.likes.some((l) => l.user_id === userId && l.post_id === postId)) return;
   state.likes.push({ post_id: postId, user_id: userId, created_at: new Date().toISOString() });
@@ -563,9 +571,7 @@ function note(recipientId: string, message: string, actorId: string | null = nul
 /** The welcome note the database writes when someone is let in. */
 function welcomeMessage(memberNo: number): string {
   const printed = `no. ${String(memberNo).padStart(5, "0")}`;
-  return memberNo <= FOUNDING_MEMBER_LIMIT
-    ? `Welcome to VINTAGE. You are founding member ${printed}.`
-    : `Welcome to VINTAGE. You are member ${printed}.`;
+  return `Welcome to VINTAGE. You are member ${printed}.`;
 }
 
 export function demoUsernameAvailable(username: string): boolean {

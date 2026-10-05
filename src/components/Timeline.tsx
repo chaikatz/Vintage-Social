@@ -23,6 +23,7 @@ import { needsDisplayFilter } from "@/utils/displayFilter";
 import { shortDate } from "@/utils/time";
 import { buildTimeline, type TimelineRow } from "@/utils/timeline";
 import { aspectRatio } from "./PostMedia";
+import { holdTabSwipe } from "@/utils/tabSwipe";
 import { PhotoInspector } from "./PhotoInspector";
 import type { PostRow } from "@/types/db";
 
@@ -96,8 +97,25 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const shift = useRef(new Animated.Value(0)).current;
   const live = useRef({ scale: 1, shift: 0 }).current;
   const pinch = useRef({ distance: 0, scale: 1, cx: 0 }).current;
+  // One finger across a zoomed line drags it sideways; this is where it began.
+  const drag = useRef({ active: false, shift: 0 }).current;
   const [pinching, setPinching] = useState(false);
   const [zoomed, setZoomed] = useState(false);
+
+  // The tab pager reads any sideways movement as a swipe to the next tab,
+  // and took the pinch's with it: the whole screen shifted and sometimes
+  // changed tabs. While the line is on screen the pager is held still, so
+  // every gesture here belongs to the line alone.
+  React.useEffect(() => {
+    if (rows.length === 0) return;
+    return holdTabSwipe();
+  }, [rows.length]);
+
+  const sidewaysRoom = (atScale: number) => Math.max(0, (width * atScale - width) / 2);
+  const clampShift = (value: number, atScale: number) => {
+    const room = sidewaysRoom(atScale);
+    return Math.min(room, Math.max(-room, value));
+  };
 
   const responder = useMemo(() => {
     const twoFingers = (e: GestureResponderEvent) => e.nativeEvent.touches.length === 2;
@@ -115,18 +133,38 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
     // or the view switch are left to the page: a pinch that began there
     // used to zoom the line and jump the page beneath the profile.
     const onTheLine = (e: GestureResponderEvent) => {
-      if (!twoFingers(e)) return false;
-      const [a, b] = e.nativeEvent.touches;
-      const top = Math.min(a.pageY, b.pageY) - rootTop.current + scrollY.current;
+      const touches = e.nativeEvent.touches;
+      if (touches.length === 0) return false;
+      const top = Math.min(...touches.map((t) => t.pageY)) - rootTop.current + scrollY.current;
       return top >= blockTop.current;
     };
+    const pinchStart = (e: GestureResponderEvent) => twoFingers(e) && onTheLine(e);
+    // A zoomed line is dragged sideways with one finger — a drag that is
+    // clearly across rather than down the page, so scrolling stays the page's.
+    const dragStart = (e: GestureResponderEvent, g: { dx: number; dy: number }) =>
+      e.nativeEvent.touches.length === 1 &&
+      live.scale > 1.02 &&
+      Math.abs(g.dx) > 6 &&
+      Math.abs(g.dx) > Math.abs(g.dy) * 1.3 &&
+      onTheLine(e);
     return PanResponder.create({
       // Two fingers on the line are a pinch and are claimed before the page
-      // can scroll with them; one finger is left entirely to the page.
-      onStartShouldSetPanResponderCapture: onTheLine,
-      onMoveShouldSetPanResponderCapture: onTheLine,
+      // can scroll with them; one finger is the page's, unless the line is
+      // zoomed and the finger is plainly moving across it.
+      onStartShouldSetPanResponderCapture: pinchStart,
+      onMoveShouldSetPanResponderCapture: (e, g) => pinchStart(e) || dragStart(e, g),
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (e) => {
+        shift.stopAnimation((v: number) => {
+          live.shift = v;
+        });
+        if (!twoFingers(e)) {
+          drag.active = true;
+          drag.shift = live.shift;
+          setPinching(true);
+          return;
+        }
+        drag.active = false;
         const t = read(e);
         if (!t) return;
         pinch.distance = t.distance;
@@ -139,28 +177,42 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         pinch.cx = (t.fx - width / 2 - live.shift) / live.scale;
         setPinching(true);
       },
-      onPanResponderMove: (e) => {
+      onPanResponderMove: (e, g) => {
+        if (drag.active) {
+          if (e.nativeEvent.touches.length !== 1) return;
+          live.shift = clampShift(drag.shift + g.dx, live.scale);
+          shift.setValue(live.shift);
+          return;
+        }
         const t = read(e);
         if (!t || !pinch.distance) return;
         const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, (pinch.scale * t.distance) / pinch.distance));
         // Sideways: only as far as the line has grown past the page edges.
-        const room = Math.max(0, (width * next - width) / 2);
-        const nextShift = Math.min(room, Math.max(-room, t.fx - width / 2 - pinch.cx * next));
+        const nextShift = clampShift(t.fx - width / 2 - pinch.cx * next, next);
         live.scale = next;
         live.shift = nextShift;
         scale.setValue(next);
         shift.setValue(nextShift);
       },
-      onPanResponderRelease: () => {
+      onPanResponderRelease: (_e, g) => {
+        if (drag.active) {
+          drag.active = false;
+          // Let go with a flick and the line carries on a little, settling
+          // inside its room rather than stopping dead under the finger.
+          const target = clampShift(live.shift + g.vx * 160, live.scale);
+          live.shift = target;
+          Animated.spring(shift, { toValue: target, velocity: g.vx, damping: 26, stiffness: 180, mass: 0.9, useNativeDriver: false }).start();
+        }
         setPinching(false);
         setZoomed(Math.abs(live.scale - 1) > 0.02);
       },
       onPanResponderTerminate: () => {
+        drag.active = false;
         setPinching(false);
         setZoomed(Math.abs(live.scale - 1) > 0.02);
       },
     });
-  }, [width, base, scale, shift, live, pinch]);
+  }, [width, base, scale, shift, live, pinch, drag]);
 
   const actualSize = () => {
     live.scale = 1;
@@ -195,6 +247,9 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         style={styles.root}
         contentContainerStyle={[styles.list, rows.length > 0 && styles.listWithRows]}
         scrollEnabled={!pinching}
+        directionalLockEnabled
+        alwaysBounceHorizontal={false}
+        horizontal={false}
         onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
           scrollY.current = e.nativeEvent.contentOffset.y;
         }}

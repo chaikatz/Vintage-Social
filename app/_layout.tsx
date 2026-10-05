@@ -70,6 +70,7 @@ export default function RootLayout() {
           />
           <Stack.Screen name="post/[id]" options={{ title: "" }} />
           <Stack.Screen name="follows" options={{ title: "" }} />
+          <Stack.Screen name="likes" options={{ title: "Likes" }} />
           <Stack.Screen name="memories" options={{ title: "On this day" }} />
           <Stack.Screen name="library-picker" options={{ title: "" }} />
           <Stack.Screen name="gallery" options={{ title: "" }} />

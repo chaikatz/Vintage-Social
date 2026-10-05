@@ -32,8 +32,8 @@ describe("membership numbers", () => {
   });
 
   it("writes the profile line", () => {
-    expect(membershipLine(27)).toBe("FOUNDING MEMBER · NO. 00027");
-    expect(membershipLine(FOUNDING_MEMBER_LIMIT + 1)).toBe("NO. 10001");
+    expect(membershipLine(27)).toBe("MEMBER · NO. 00027");
+    expect(membershipLine(FOUNDING_MEMBER_LIMIT + 1)).toBe("MEMBER · NO. 10001");
     expect(membershipLine(null)).toBeNull();
   });
 });

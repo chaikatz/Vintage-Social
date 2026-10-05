@@ -135,7 +135,7 @@ export default function Invite() {
             <Pressable hitSlop={14} onPress={() => router.back()} accessibilityLabel="Back" style={styles.back}>
               <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />
             </Pressable>
-            <Wordmark />
+            <Wordmark tagline="Members only" />
           </View>
 
           <MarkStage height={200} fill={1.15} style={styles.mark} />

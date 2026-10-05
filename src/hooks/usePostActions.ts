@@ -69,6 +69,16 @@ export function usePostActions(userId: string, postIds: string[]) {
     [router, seed],
   );
 
+  // The names behind the count, for your own photographs only. On anyone
+  // else's the count stays a number.
+  const onOpenLikes = useCallback(
+    (post: PostWithAuthor) => {
+      if (post.author_id !== userId) return;
+      router.push({ pathname: "/likes", params: { postId: post.id, authorId: post.author_id } });
+    },
+    [router, userId],
+  );
+
   const onOpenPost = useCallback(
     (post: PostWithAuthor) => {
       seed(post);
@@ -198,5 +208,5 @@ export function usePostActions(userId: string, postIds: string[]) {
     [userId, router, queryClient, refreshProfile, seed],
   );
 
-  return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenPost, commentsFor };
+  return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenPost, onOpenLikes, commentsFor };
 }

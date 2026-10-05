@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
-import type { CommentWithAuthor, PostRow, PostWithAuthor } from "@/types/db";
+import type { CommentWithAuthor, PostRow, PostWithAuthor, ProfileRow } from "@/types/db";
 import { withRetry } from "@/utils/retry";
 
 export const FEED_PAGE_SIZE = 12;
@@ -166,6 +166,22 @@ export async function deleteOwnPost(postId: string): Promise<void> {
 }
 
 /** Which of these posts has the viewer liked? Returns a set of post ids. */
+/** Who liked a post, newest first. Shown only for your own posts (app/likes.tsx). */
+export async function fetchLikers(postId: string): Promise<Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">[]> {
+  if (!postId) return [];
+  if (isDemoMode()) return demo.demoFetchLikers(postId);
+  const { data, error } = await supabase
+    .from("likes")
+    .select("created_at, liker:profiles!likes_user_id_fkey(id, username, full_name, avatar_url)")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) throw error;
+  return (data ?? [])
+    .map((row) => (row as unknown as { liker: Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url"> | null }).liker)
+    .filter((p): p is Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url"> => Boolean(p));
+}
+
 export async function fetchMyLikes(userId: string, postIds: string[]): Promise<Set<string>> {
   if (postIds.length === 0) return new Set();
   if (isDemoMode()) return demo.demoFetchMyLikes(userId, postIds);

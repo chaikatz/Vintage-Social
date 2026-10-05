@@ -136,7 +136,7 @@ export default function Gallery() {
   );
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
 
   // Only the card on screen plays its video — see PostMedia for why. The
@@ -185,6 +185,7 @@ export default function Gallery() {
               onOpenComments={onOpenComments}
               onOpenProfile={(username) => router.push(`/user/${username}`)}
               onShare={onShare}
+        onOpenLikes={onOpenLikes}
               comments={commentsFor(item)}
               onMore={(p) => onMore(p, () => router.back())}
               active={ready && focused && item.id === visibleId}

@@ -22,7 +22,7 @@ export function Avatar({ path, username, size = 36 }: Props) {
       </View>
     );
   }
-  return <Image source={url} style={[styles.image, round]} transition={80} />;
+  return <Image source={url} style={[styles.image, round]} transition={80} recyclingKey={String(url)} cachePolicy="memory-disk" />;
 }
 
 const styles = StyleSheet.create({

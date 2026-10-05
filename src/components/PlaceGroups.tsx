@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions
 import { colors, spacing, type } from "@/theme";
 import { hasPlace } from "@/utils/geo";
 import { geocodeMissing, type Point } from "@/utils/geocode";
-import { reverseGeocodeCells } from "@/utils/reverseGeocode";
+import { knownLabels, reverseGeocodeCells } from "@/utils/reverseGeocode";
 import { cellKey, groupByPlace, type PlaceGroup, type PlaceLabel } from "@/utils/placeGroups";
 import { GRID_GAP, PhotoTile, type GridPost } from "./PhotoGrid";
 
@@ -36,9 +36,12 @@ export function PlaceGroups({ posts, onOpenPost, header, empty, onRefresh, refre
 
   // Points for older posts that were made before places were looked up.
   const [found, setFound] = useState<Record<string, Point>>({});
-  // Town names, by cell.
-  const [labels, setLabels] = useState<Record<string, PlaceLabel | null>>({});
-  const [settled, setSettled] = useState(false);
+  // Town names, by cell — opened on everything the session already knows,
+  // so coming back to this view shows the places at once rather than
+  // "Placing your photographs…" again.
+  const known = knownLabels(posts.filter(hasPlace).map((p) => ({ lat: p.lat, lng: p.lng })));
+  const [labels, setLabels] = useState<Record<string, PlaceLabel | null>>(known.labels);
+  const [settled, setSettled] = useState(known.complete);
 
   useEffect(() => {
     let alive = true;

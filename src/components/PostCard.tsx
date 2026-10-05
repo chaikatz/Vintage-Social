@@ -22,6 +22,8 @@ interface Props {
   onMore: (post: PostWithAuthor) => void;
   /** Send this photograph to a member. Omitted where sharing makes no sense. */
   onShare?: (post: PostWithAuthor) => void;
+  /** The names behind the count — the hook shows them for your own posts only. */
+  onOpenLikes?: (post: PostWithAuthor) => void;
   /** The newest comments, shown under the caption. */
   comments?: CommentWithAuthor[];
   /** Whether this card is the one on screen; gates video playback. */
@@ -36,6 +38,7 @@ export function PostCard({
   onOpenProfile,
   onMore,
   onShare,
+  onOpenLikes,
   comments,
   active = true,
 }: Props) {
@@ -95,9 +98,11 @@ export function PostCard({
       </View>
 
       {post.like_count > 0 ? (
-        <Text style={styles.likes}>
-          {post.like_count} {post.like_count === 1 ? "like" : "likes"}
-        </Text>
+        <Pressable onPress={() => onOpenLikes?.(post)} disabled={!onOpenLikes} hitSlop={6}>
+          <Text style={styles.likes}>
+            {post.like_count} {post.like_count === 1 ? "like" : "likes"}
+          </Text>
+        </Pressable>
       ) : null}
 
       {post.caption ? (

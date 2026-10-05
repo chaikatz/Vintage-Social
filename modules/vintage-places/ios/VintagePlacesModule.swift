@@ -10,6 +10,13 @@ import MapKit
 /// its address to tell it from another of the same name, and a point that
 /// is the place's own — never the phone's location, which is not asked for.
 /// No key, no account, no quota beyond the system's own.
+///
+/// Two searches run for every query. The completer is what Maps itself
+/// types ahead with: it matches the first letters of a name, so "bar pi"
+/// already offers Bar Pitti. The full search ranks by relevance to whole
+/// words. Their answers are merged, completions first, with the same place
+/// never listed twice — so a member sees what they mean as they type it,
+/// not only once they have spelled it exactly.
 public class VintagePlacesModule: Module {
   public func definition() -> ModuleDefinition {
     Name("VintagePlaces")
@@ -20,30 +27,8 @@ public class VintagePlacesModule: Module {
         promise.resolve([[String: Any]]())
         return
       }
-      let request = MKLocalSearch.Request()
-      request.naturalLanguageQuery = trimmed
-      request.resultTypes = [.pointOfInterest, .address]
-      // The whole world, so "Bar Pitti" is found from anywhere. Apple
-      // ranks by relevance to the words, not by distance, when no region
-      // is given — which is what a place written on a photograph wants.
-      let search = MKLocalSearch(request: request)
-      search.start { response, error in
-        if let error = error {
-          // "No results" arrives as an error on some OS versions; an empty
-          // list is the honest answer to that, not a failure.
-          let code = (error as NSError).code
-          if code == MKError.placemarkNotFound.rawValue {
-            promise.resolve([[String: Any]]())
-          } else {
-            promise.reject("E_PLACES", error.localizedDescription)
-          }
-          return
-        }
-        let items = response?.mapItems ?? []
-        let results: [[String: Any]] = items.prefix(20).compactMap { item in
-          VintagePlacesModule.describe(item)
-        }
-        promise.resolve(results)
+      DispatchQueue.main.async {
+        PlaceFinder(query: trimmed).run { results in promise.resolve(results) }
       }
     }
   }
@@ -93,5 +78,110 @@ public class VintagePlacesModule: Module {
       "lng": coordinate.longitude,
       "category": item.pointOfInterestCategory?.rawValue ?? ""
     ]
+  }
+}
+
+/// One query's two searches, merged. Lives on the main thread (the
+/// completer's delegate requires it) and keeps itself alive until done.
+private final class PlaceFinder: NSObject, MKLocalSearchCompleterDelegate {
+  private let query: String
+  private let completer = MKLocalSearchCompleter()
+  private var completions: [MKMapItem] = []
+  private var fullSearch: [MKMapItem] = []
+  private var completionsDone = false
+  private var fullSearchDone = false
+  private var finished = false
+  private var done: (([[String: Any]]) -> Void)?
+  private var keepAlive: PlaceFinder?
+
+  /// How many type-ahead completions are resolved to real places.
+  private static let completionsResolved = 6
+
+  init(query: String) {
+    self.query = query
+    super.init()
+    keepAlive = self
+  }
+
+  func run(_ done: @escaping ([[String: Any]]) -> Void) {
+    self.done = done
+
+    // The whole world, so "Bar Pitti" is found from anywhere. Apple ranks
+    // by relevance to the words, not by distance, when no region is given
+    // — which is what a place written on a photograph wants.
+    let request = MKLocalSearch.Request()
+    request.naturalLanguageQuery = query
+    request.resultTypes = [.pointOfInterest, .address]
+    MKLocalSearch(request: request).start { [weak self] response, _ in
+      // "No results" arrives as an error on some systems; an empty list is
+      // the honest answer to that, not a failure.
+      self?.fullSearch = response?.mapItems ?? []
+      self?.fullSearchDone = true
+      self?.finishIfReady()
+    }
+
+    completer.delegate = self
+    completer.resultTypes = [.pointOfInterest, .address, .query]
+    completer.queryFragment = query
+
+    // Neither search may hold the picker for long; whatever has arrived by
+    // then is the answer.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+      self?.completionsDone = true
+      self?.fullSearchDone = true
+      self?.finishIfReady()
+    }
+  }
+
+  func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+    resolve(Array(completer.results.prefix(PlaceFinder.completionsResolved)))
+  }
+
+  func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+    completionsDone = true
+    finishIfReady()
+  }
+
+  /// Each completion is a suggestion, not yet a place: ask Maps for the
+  /// place behind it, keeping the order the completer gave.
+  private func resolve(_ results: [MKLocalSearchCompletion]) {
+    if results.isEmpty {
+      completionsDone = true
+      finishIfReady()
+      return
+    }
+    var slots = [MKMapItem?](repeating: nil, count: results.count)
+    let group = DispatchGroup()
+    for (i, completion) in results.enumerated() {
+      group.enter()
+      MKLocalSearch(request: MKLocalSearch.Request(completion: completion)).start { response, _ in
+        slots[i] = response?.mapItems.first
+        group.leave()
+      }
+    }
+    group.notify(queue: .main) { [weak self] in
+      self?.completions = slots.compactMap { $0 }
+      self?.completionsDone = true
+      self?.finishIfReady()
+    }
+  }
+
+  private func finishIfReady() {
+    guard !finished, completionsDone, fullSearchDone else { return }
+    finished = true
+    var seen = Set<String>()
+    var out: [[String: Any]] = []
+    for item in completions + fullSearch {
+      guard let described = VintagePlacesModule.describe(item), let id = described["id"] as? String else { continue }
+      // The same place from both searches, or two entries for one spot.
+      let key = id + "|" + ((described["name"] as? String) ?? "").lowercased()
+      if seen.contains(key) { continue }
+      seen.insert(key)
+      out.append(described)
+      if out.count >= 20 { break }
+    }
+    done?(out)
+    done = nil
+    keepAlive = nil
   }
 }

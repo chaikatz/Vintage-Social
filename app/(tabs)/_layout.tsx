@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { fetchUnreadMessageCount } from "@/api/messages";
 import { SwipeTabs } from "@/navigation/SwipeTabs";
+import { useTabSwipeEnabled } from "@/utils/tabSwipe";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { emitHomeAgain } from "@/utils/homeRefresh";
@@ -21,6 +22,8 @@ import { usePushRegistration } from "@/utils/push";
 export default function TabsLayout() {
   const { session, profile, profileLoaded } = useSession();
   const insets = useSafeAreaInsets();
+  // Held still while a screen owns a pinch or a sideways drag of its own (the timeline).
+  const swipeEnabled = useTabSwipeEnabled();
   // An approved member on a real phone: ask once, file the token.
   usePushRegistration(session?.user?.id, profileLoaded && profile?.status === "approved");
 
@@ -37,6 +40,7 @@ export default function TabsLayout() {
         // Screens mount as they are first reached; neighbours preload so a
         // swipe never lands on an empty page.
         screenOptions={{
+          swipeEnabled,
           lazy: true,
           lazyPreloadDistance: 1,
           tabBarShowLabel: false,

@@ -44,6 +44,8 @@ export interface ExportLayout {
   /** The hairline above the label. */
   rule: Rect;
   wordmark: TextBox;
+  /** "Members only", faint and italic, left-aligned under the wordmark. */
+  tagline: TextBox;
   /** Where it was taken; one or two lines, or nothing (height 0). */
   place: TextBox;
   /** When it was taken. */
@@ -167,13 +169,25 @@ export function exportLayout(
   const rule: Rect = { x: margin, y: labelTop, width: W - 2 * margin, height: Math.max(1, r2(W * 0.002)) };
 
   const wordmarkHeight = r2(wordmarkSize * 1.3);
+  const taglineSize = r2(W * 0.016);
+  const taglineHeight = r2(taglineSize * 1.3);
+  // The wordmark and its tagline together sit on the label's line.
+  const brandBlock = wordmarkHeight + taglineHeight;
   const wordmark: TextBox = {
     x: margin,
-    y: r2(centerY - wordmarkHeight / 2),
+    y: r2(centerY - brandBlock / 2),
     width: r((W - 2 * margin) * 0.42),
     height: wordmarkHeight,
     size: wordmarkSize,
     spacing: r2(wordmarkSize * 0.2),
+  };
+  const tagline: TextBox = {
+    x: margin,
+    y: r2(wordmark.y + wordmarkHeight),
+    width: wordmark.width,
+    height: taglineHeight,
+    size: taglineSize,
+    spacing: r2(taglineSize * 0.04),
   };
 
   // The right-hand block, stacked and centred on the same line as the wordmark.
@@ -230,7 +244,7 @@ export function exportLayout(
     height: iconSize,
   };
 
-  return { width: W, height, margin, photo, rule, wordmark, place, byline, credit, stamp, icon };
+  return { width: W, height, margin, photo, rule, wordmark, tagline, place, byline, credit, stamp, icon };
 }
 
 /** The label's one-line form, kept for anything that wants `NYC · Jan 23, 2003`. */

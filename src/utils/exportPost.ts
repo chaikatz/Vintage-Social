@@ -4,7 +4,7 @@ import { Directory, File, Paths } from "expo-file-system";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import { Asset } from "expo-asset";
-import { EXPORT_ICON, exportPalette } from "@/components/ExportCard";
+import { TAGLINE, EXPORT_ICON, exportPalette } from "@/components/ExportCard";
 import { dateStampText } from "@/utils/time";
 import { exportLabelText, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
 import type { BrandOptions, VintageVideoModule } from "../../modules/vintage-video";
@@ -76,6 +76,7 @@ export async function brandVideo(
     photo: L.photo,
     rule: L.rule,
     wordmark: L.wordmark,
+    tagline: L.tagline,
     place: L.place,
     byline: L.byline,
     credit: L.credit,
@@ -89,6 +90,7 @@ export async function brandVideo(
     inkFaint: c.inkFaint,
     ruleColor: c.rule,
     wordmarkText: "VINTAGE",
+    taglineText: TAGLINE,
     placeText: words.place ?? "",
     bylineText: words.date,
     creditText: words.credit,

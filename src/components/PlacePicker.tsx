@@ -59,7 +59,7 @@ export function PlacePicker({ visible, value, onChange, onClose }: Props) {
           setFailed(true);
           setSearching(false);
         });
-    }, 280);
+    }, 180);
     return () => {
       live = false;
       clearTimeout(t);

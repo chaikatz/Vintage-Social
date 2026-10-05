@@ -24,6 +24,7 @@ export function Wordmark({
   rule = 9,
   gap = 3,
   color = colors.ink,
+  tagline,
   style,
 }: {
   size?: number;
@@ -35,11 +36,13 @@ export function Wordmark({
   /** Space between the letters and the rule. */
   gap?: number;
   color?: ColorValue;
+  /** A faint italic line under the word, left-aligned with it: "Members only". */
+  tagline?: string;
   style?: ViewStyle;
 }) {
   const letters = { fontFamily: type.serif, fontSize: size, lineHeight, letterSpacing: tracking, color };
-  return (
-    <View style={[styles.row, style]} accessible accessibilityRole="header" accessibilityLabel="VINTAGE">
+  const word = (
+    <View style={styles.row} accessible accessibilityRole="header" accessibilityLabel={tagline ? `VINTAGE, ${tagline}` : "VINTAGE"}>
       <Text style={letters}>VIN</Text>
       <View style={[styles.t, { marginRight: tracking }]}>
         <Text style={[letters, { marginRight: -tracking }]}>T</Text>
@@ -48,9 +51,19 @@ export function Wordmark({
       <Text style={[letters, { marginRight: -tracking }]}>AGE</Text>
     </View>
   );
+  if (!tagline) return <View style={style}>{word}</View>;
+  return (
+    <View style={[styles.column, style]}>
+      {word}
+      <Text style={[styles.tagline, { fontSize: Math.round(size * 0.8), marginTop: gap + 2 }]}>{tagline}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "flex-start" },
+  column: { alignItems: "flex-start" },
   t: { alignItems: "center" },
+  // Thin, italic and faint: said quietly, not announced.
+  tagline: { fontFamily: type.serif, fontStyle: "italic", fontWeight: "300", color: colors.inkFaint, letterSpacing: 0.3 },
 });

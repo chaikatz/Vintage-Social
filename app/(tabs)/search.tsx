@@ -3,6 +3,8 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-na
 import { useRouter } from "expo-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useDebounced } from "@/hooks/useDebounced";
+import { rankSearch } from "@/utils/searchRank";
+import { fetchFollowers, fetchFollowing } from "@/api/profiles";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
@@ -71,6 +73,20 @@ export default function Search() {
     setRecent(loadRecent());
   }, []);
 
+  // The people closest to you come first in any search: who you were just
+  // looking at, who you follow, who follows you. Read once and kept.
+  const followingQ = useQuery({ queryKey: ["follows", userId, "following"], queryFn: () => fetchFollowing(userId), enabled: Boolean(userId), staleTime: 5 * 60_000 });
+  const followersQ = useQuery({ queryKey: ["follows", userId, "followers"], queryFn: () => fetchFollowers(userId), enabled: Boolean(userId), staleTime: 5 * 60_000 });
+  const ranked = useMemo(
+    () =>
+      rankSearch(results.data ?? [], {
+        recentIds: new Set(recent.map((r) => r.id)),
+        followingIds: new Set((followingQ.data ?? []).map((p) => p.id)),
+        followerIds: new Set((followersQ.data ?? []).map((p) => p.id)),
+      }),
+    [results.data, recent, followingQ.data, followersQ.data],
+  );
+
   const openMember = (member: RecentSearch) => {
     setRecent(rememberRecent(member));
     router.push(`/user/${member.username}`);
@@ -105,7 +121,7 @@ export default function Search() {
       <Screen padded={false}>
         {field}
         <FlatList
-          data={results.data ?? []}
+          data={ranked}
           keyExtractor={(p) => p.id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"

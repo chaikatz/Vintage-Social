@@ -21,6 +21,18 @@ export interface Point {
 
 const cache = new Map<string, PlaceLabel | null>();
 
+/** What is already known for these points, cell by cell — and whether that is all of them. */
+export function knownLabels(points: readonly Point[]): { labels: Record<string, PlaceLabel | null>; complete: boolean } {
+  const labels: Record<string, PlaceLabel | null> = {};
+  let complete = true;
+  for (const p of points) {
+    const k = cellKey(p.lat, p.lng);
+    if (cache.has(k)) labels[k] = cache.get(k) ?? null;
+    else complete = false;
+  }
+  return { labels, complete };
+}
+
 async function lookup(point: Point, timeoutMs: number): Promise<PlaceLabel | null> {
   if (Platform.OS === "web") return null;
   const ask = Location.reverseGeocodeAsync({ latitude: point.lat, longitude: point.lng })

@@ -580,6 +580,23 @@ this repo:
   dropped connection three times (`src/utils/retry.ts`); a retry told the file or row already exists
   counts as success, since the id was chosen on the phone. Once the row is in, nothing that follows —
   tags, cache warming, the profile re-read — can turn into "Couldn't publish".
+- **A long pass of small things, each verified.** The profile line says `MEMBER · NO. 00027` for every
+  number (the word is the same for everyone; the number says how early). The timeline's pinch and, once
+  zoomed, a one-finger sideways drag with a flick belong to the line alone: the tab pager is held still
+  while the line is on screen (`src/utils/tabSwipe.ts`, read by the tabs' `swipeEnabled`), so a gesture
+  never shifts the screen or changes tabs, and the page is never scrolled by a pinch, so the profile
+  above does not move. Places opens on the towns the session already knows instead of placing again. The
+  view switch is labelled "Profile view:". Baked films are HEVC where the device can encode it, with
+  more room before the bitrate is lowered, so a long clip is no longer soft; a clip that will not start
+  is asked again when the player says it is ready, given one more try on an error, and shows a play mark
+  a beat later — one tap starts it. The invitation card on Invitations is ruled around in ink. "Members
+  only", thin, italic and faint, sits under the wordmark on the invitation card, the invitation screen,
+  the web invitation page and every exported print (`tagline` in `exportLayout`, drawn on screen and on
+  film), and the print's app icon carries a faint shadow so it reads as an icon. Place search merges
+  Apple's type-ahead completions with the full search, so "bar pi" already offers Bar Pitti. Pinch a
+  photograph in the feed or on its page to look closer; it springs back. The count under your own
+  photograph opens who liked it (`app/likes.tsx`), on your own posts only. Member search puts the people
+  you were just looking at first, then who you follow, then who follows you (`src/utils/searchRank.ts`).
 - **The darkroom's keyboard goes away with a drag** down the page (`keyboardDismissMode="interactive"`),
   and the caption is kept above it while it is up; the Done bar remains. **A new portrait shows at once
   everywhere**: it is uploaded under a fresh key (`{uid}/avatar-{time}.jpg`) rather than overwritten in

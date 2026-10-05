@@ -33,12 +33,11 @@ export function isFoundingMember(memberNo: number | null | undefined): boolean {
 }
 
 /**
- * The line shown on a profile: `FOUNDING MEMBER · NO. 00027`, or just the
- * number once the founding run is over. Null for anyone who has not been
- * approved yet — an applicant has no number.
+ * The line shown on a profile: `MEMBER · NO. 00027`. The number itself
+ * says how early someone came; the word is the same for everyone. Null
+ * for anyone who has not been approved yet — an applicant has no number.
  */
 export function membershipLine(memberNo: number | null | undefined): string | null {
   if (typeof memberNo !== "number" || memberNo < 1) return null;
-  const number = formatMemberNumber(memberNo);
-  return isFoundingMember(memberNo) ? `FOUNDING MEMBER · ${number}` : number;
+  return `MEMBER · ${formatMemberNumber(memberNo)}`;
 }

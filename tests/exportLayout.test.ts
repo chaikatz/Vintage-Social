@@ -18,8 +18,8 @@ describe("the app icon in the corner", () => {
     expect(L.icon.x).toBeLessThan(L.margin);
     expect(L.icon.y + L.icon.height).toBeLessThan(L.height);
     expect(L.icon.y + L.icon.height).toBeGreaterThan(L.height - L.margin);
-    // Clear of the wordmark, which sits on the label line above.
-    expect(L.icon.y).toBeGreaterThan(L.wordmark.y + L.wordmark.height);
+    // Clear of the wordmark and its tagline, which sit on the label line above.
+    expect(L.icon.y).toBeGreaterThan(L.tagline.y + L.tagline.height);
   });
 
   it("is raised clear of Instagram's reply bar on a story", () => {
@@ -53,6 +53,11 @@ describe("the shape of a print", () => {
     // Words on the left, words on the right, never overlapping; the right
     // block reads top to bottom: place, date, member.
     expect(L.wordmark.x + L.wordmark.width).toBeLessThanOrEqual(L.byline.x);
+    // "Members only" sits directly under the wordmark, left-aligned with it, smaller and within the card.
+    expect(L.tagline.x).toBe(L.wordmark.x);
+    expect(L.tagline.y).toBeCloseTo(L.wordmark.y + L.wordmark.height, 1);
+    expect(L.tagline.size).toBeLessThan(L.wordmark.size);
+    expect(L.tagline.y + L.tagline.height).toBeLessThanOrEqual(L.height - L.margin / 2);
     expect(L.byline.x + L.byline.width).toBe(PRINT_WIDTH - L.margin);
     expect(L.place.y).toBeLessThan(L.byline.y);
     expect(L.byline.y).toBeLessThan(L.credit.y);

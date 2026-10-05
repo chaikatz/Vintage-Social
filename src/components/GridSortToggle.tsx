@@ -21,6 +21,8 @@ export type ProfileView = GridSort | "timeline" | "map" | "places";
 export function GridSortToggle({ value, onChange }: { value: ProfileView; onChange: (next: ProfileView) => void }) {
   return (
     <View style={styles.row} accessibilityRole="radiogroup">
+      <Text style={styles.label}>Profile view:</Text>
+      <View style={styles.spacer} />
       <Option label="Posted" active={value === "posted"} onPress={() => onChange("posted")} />
       <Text style={styles.divider}>·</Text>
       <Option label="Taken" active={value === "taken"} onPress={() => onChange("taken")} />
@@ -52,6 +54,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     backgroundColor: colors.paper,
   },
+  label: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 1.8,
+    textTransform: "uppercase",
+    color: colors.inkFaint,
+  },
+  spacer: { flex: 1 },
   option: {
     fontFamily: type.mono,
     fontSize: 10,

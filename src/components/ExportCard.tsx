@@ -87,6 +87,23 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
       >
         VINTAGE
       </Text>
+      <Text
+        style={[
+          styles.abs,
+          rect(L.tagline),
+          {
+            fontFamily: type.serif,
+            fontStyle: "italic",
+            fontSize: L.tagline.size,
+            lineHeight: L.tagline.height,
+            letterSpacing: L.tagline.spacing,
+            color: c.inkFaint,
+          },
+        ]}
+        numberOfLines={1}
+      >
+        {TAGLINE}
+      </Text>
       {words.place ? (
         <Text
           style={[
@@ -140,15 +157,21 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
       >
         {words.credit}
       </Text>
-      <Image
-        source={EXPORT_ICON}
-        style={[styles.abs, rect(L.icon), { borderRadius: iconRadius(L.icon.width) }]}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-      />
+      {/* A faint shadow around the icon, so it reads as an app icon rather than a square of paper. */}
+      <View style={[styles.abs, rect(L.icon), styles.iconShadow, { borderRadius: iconRadius(L.icon.width), shadowRadius: L.icon.width * 0.14 }]}>
+        <Image
+          source={EXPORT_ICON}
+          style={[StyleSheet.absoluteFill, { borderRadius: iconRadius(L.icon.width) }]}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+        />
+      </View>
     </View>
   );
 }
+
+/** The words under the wordmark on every print. */
+export const TAGLINE = "Members only";
 
 /** The app icon, as the card carries it. Shared with the film branding, which loads the same file. */
 export const EXPORT_ICON = require("../../assets/icon.png");
@@ -163,6 +186,7 @@ function rect(r: { x: number; y: number; width: number; height: number }) {
 }
 
 const styles = StyleSheet.create({
+  iconShadow: { shadowColor: "#000", shadowOpacity: 0.22, shadowOffset: { width: 0, height: 1 }, elevation: 3 },
   abs: { position: "absolute" },
   right: { textAlign: "right" },
   stamp: {

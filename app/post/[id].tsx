@@ -63,7 +63,7 @@ export default function PostDetail() {
   });
 
   const postIds = useMemo(() => (id ? [id] : []), [id]);
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
 
   const post = postQ.data;
@@ -180,9 +180,11 @@ export default function PostDetail() {
       </View>
 
       {likes > 0 ? (
-        <Text style={styles.likes}>
-          {likes} {likes === 1 ? "like" : "likes"}
-        </Text>
+        <Pressable onPress={() => onOpenLikes(post)} disabled={!own} hitSlop={6}>
+          <Text style={styles.likes}>
+            {likes} {likes === 1 ? "like" : "likes"}
+          </Text>
+        </Pressable>
       ) : null}
 
       {post.caption ? (

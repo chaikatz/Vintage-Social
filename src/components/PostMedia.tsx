@@ -1,5 +1,7 @@
 import React from "react";
-import { Animated, Easing, Pressable, StyleSheet, View } from "react-native";
+import { Animated, Easing, PanResponder, Pressable, StyleSheet, View, type GestureResponderEvent } from "react-native";
+import { useEvent } from "expo";
+import { holdTabSwipe } from "@/utils/tabSwipe";
 import { Image } from "expo-image";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Feather from "@expo/vector-icons/Feather";
@@ -148,6 +150,59 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
 
   const frame = [styles.media, bare && styles.bare, { aspectRatio: ratio }];
 
+  // Pinch a photograph to look closer. It grows about the point between
+  // the fingers and springs back when they lift — a look, not a mode. Two
+  // fingers are claimed before the list can scroll with them, and the tab
+  // pager is held still so the pinch never shifts the screen sideways.
+  const zoom = React.useRef(new Animated.Value(1)).current;
+  const focus = React.useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const pinchRef = React.useRef({ distance: 0, release: null as null | (() => void) });
+  const box = React.useRef({ w: 1, h: 1 });
+  const pinchResponder = React.useMemo(() => {
+    const two = (e: GestureResponderEvent) => e.nativeEvent.touches.length === 2;
+    const read = (e: GestureResponderEvent) => {
+      const [a, b] = e.nativeEvent.touches;
+      return { d: Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY), x: (a.locationX + b.locationX) / 2, y: (a.locationY + b.locationY) / 2 };
+    };
+    return PanResponder.create({
+      onStartShouldSetPanResponderCapture: two,
+      onMoveShouldSetPanResponderCapture: two,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (e) => {
+        if (!two(e)) return;
+        const t = read(e);
+        pinchRef.current.distance = t.d;
+        pinchRef.current.release = holdTabSwipe();
+        // Scale about the fingers: move the picture's origin to the pinch.
+        focus.setValue({ x: t.x - box.current.w / 2, y: t.y - box.current.h / 2 });
+      },
+      onPanResponderMove: (e) => {
+        if (!two(e) || !pinchRef.current.distance) return;
+        const t = read(e);
+        zoom.setValue(Math.min(3, Math.max(1, t.d / pinchRef.current.distance)));
+      },
+      onPanResponderRelease: () => {
+        pinchRef.current.release?.();
+        pinchRef.current.release = null;
+        Animated.spring(zoom, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220 }).start();
+      },
+      onPanResponderTerminate: () => {
+        pinchRef.current.release?.();
+        pinchRef.current.release = null;
+        Animated.spring(zoom, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220 }).start();
+      },
+    });
+  }, [zoom, focus]);
+  const zoomStyle = {
+    transform: [
+      { translateX: focus.x },
+      { translateY: focus.y },
+      { scale: zoom },
+      { translateX: Animated.multiply(focus.x, -1) },
+      { translateY: Animated.multiply(focus.y, -1) },
+    ],
+  };
+
   if (isVideo) {
     return (
       <View style={frame}>
@@ -168,21 +223,30 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
   const url = mediaUrl("media", post.media_path);
   const thumb = mediaUrl("thumbnails", post.thumb_path);
   return (
-    <Pressable onPress={handlePress} style={frame}>
+    <Pressable
+      onPress={handlePress}
+      style={frame}
+      onLayout={(e) => {
+        box.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
+      }}
+      {...pinchResponder.panHandlers}
+    >
       {url ? (
-        <Image
-          source={url}
-          // The grid's small square is almost always already on disk, so
-          // it stands in while the full frame arrives instead of a blank.
-          placeholder={thumb && thumb !== url ? thumb : undefined}
-          placeholderContentFit="cover"
-          style={[StyleSheet.absoluteFill, live ? ({ filter: live.filter } as object) : null]}
-          contentFit="cover"
-          transition={120}
-          priority={priority}
-          cachePolicy="memory-disk"
-          recyclingKey={post.media_path}
-        />
+        <Animated.View style={[StyleSheet.absoluteFill, zoomStyle]}>
+          <Image
+            source={url}
+            // The grid's small square is almost always already on disk, so
+            // it stands in while the full frame arrives instead of a blank.
+            placeholder={thumb && thumb !== url ? thumb : undefined}
+            placeholderContentFit="cover"
+            style={[StyleSheet.absoluteFill, live ? ({ filter: live.filter } as object) : null]}
+            contentFit="cover"
+            transition={120}
+            priority={priority}
+            cachePolicy="memory-disk"
+            recyclingKey={post.media_path}
+          />
+        </Animated.View>
       ) : null}
       {live ? <FilterOverlay filter={filter} /> : null}
       {stamp}
@@ -251,6 +315,31 @@ function VideoMedia({
     else player.pause();
   }, [player, active]);
 
+  // A play() asked for before the file has loaded is sometimes lost on the
+  // way, and the card sat on its poster. So the player is asked again the
+  // moment it says it is ready, a failed load is given one more try, and
+  // a clip that still has not started a beat after it should have shows a
+  // play mark — one tap starts it.
+  const { status, error } = useEvent(player, "statusChange", { status: player.status, error: undefined });
+  const { isPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
+  const retried = React.useRef(false);
+  React.useEffect(() => {
+    if (status === "readyToPlay" && active && !player.playing) player.play();
+    if (status === "error" && !retried.current && url) {
+      retried.current = true;
+      player.replaceAsync(url).then(() => active && player.play()).catch(() => undefined);
+    }
+  }, [status, error, active, player, url]);
+  const [stalled, setStalled] = React.useState(false);
+  React.useEffect(() => {
+    if (!active || isPlaying) {
+      setStalled(false);
+      return;
+    }
+    const t = setTimeout(() => setStalled(true), 2500);
+    return () => clearTimeout(t);
+  }, [active, isPlaying, status]);
+
   const posterUrl = mediaUrl("thumbnails", poster);
 
   return (
@@ -263,7 +352,17 @@ function VideoMedia({
           cachePolicy="memory-disk"
         />
       ) : null}
-      <Pressable onPress={onPress} style={StyleSheet.absoluteFill}>
+      <Pressable
+        onPress={() => {
+          if (stalled) {
+            player.play();
+            setStalled(false);
+            return;
+          }
+          onPress();
+        }}
+        style={StyleSheet.absoluteFill}
+      >
         <VideoView
           player={player}
           style={[StyleSheet.absoluteFill, cssFilter ? ({ filter: cssFilter } as object) : null]}
@@ -271,6 +370,11 @@ function VideoMedia({
           nativeControls={false}
         />
       </Pressable>
+      {stalled ? (
+        <View pointerEvents="none" style={styles.playMark}>
+          <Feather name="play" size={22} color="#F6F1E8" />
+        </View>
+      ) : null}
       {/* Sound is off until asked for, and the control says so rather than
           leaving people to guess that a tap somewhere might do it. */}
       <Pressable
@@ -305,6 +409,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.28,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 2 },
+  },
+  playMark: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    marginLeft: -26,
+    marginTop: -26,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(28, 25, 21, 0.55)",
   },
   sound: {
     position: "absolute",

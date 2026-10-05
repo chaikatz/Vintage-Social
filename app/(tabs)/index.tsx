@@ -35,7 +35,7 @@ export default function Home() {
   const posts = useMemo(() => (feed.data?.pages ?? []).flat(), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
 
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, commentsFor } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
 
   // Leaving the feed — another tab, a profile, a single post — pauses it.
@@ -81,12 +81,13 @@ export default function Home() {
         onOpenComments={onOpenComments}
         onOpenProfile={(username) => router.push(`/user/${username}`)}
         onShare={onShare}
+        onOpenLikes={onOpenLikes}
         comments={commentsFor(item)}
         onMore={(p) => onMore(p)}
         active={focused && item.id === visibleId}
       />
     ),
-    [likeCountFor, isLiked, toggleLike, onOpenComments, onShare, commentsFor, onMore, router, visibleId, focused],
+    [likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onMore, router, visibleId, focused],
   );
 
   return (

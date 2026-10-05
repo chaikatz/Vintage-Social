@@ -144,7 +144,7 @@ export default function Invitations() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         {/* What the other person receives, shown to the person sending it. */}
         <View style={styles.card}>
-          <Wordmark style={styles.cardBrand} />
+          <Wordmark style={styles.cardBrand} tagline="Members only" />
           <MarkStage height={140} fill={1.15} style={styles.cardMark} />
           <Text style={styles.cardEyebrow}>By invitation</Text>
           <Text style={styles.cardLink} numberOfLines={2}>
@@ -262,8 +262,11 @@ const styles = StyleSheet.create({
   // The card a member hands over, printed like the door: the name small in
   // the corner, the V, the address beneath. The same cream as the page — no
   // frame, no panel; the card is the page.
+  // A thin rule around it: this is the invitation, the thing that is sent.
   card: {
     backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.ink,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.xl,
