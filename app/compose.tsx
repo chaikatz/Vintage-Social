@@ -12,6 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { showAlert } from "@/utils/alert";
+import { rememberPlace } from "@/utils/reverseGeocode";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -274,6 +275,12 @@ export default function Compose() {
       // From here the post exists. Nothing below may turn into "Couldn't
       // publish": the tags, the cache, the counts are each best-effort.
       setPublished(true);
+
+      // The town this was taken in, learned now so the places view on the
+      // profile already knows where the photograph goes.
+      if (chosen?.lat != null && chosen?.lng != null) {
+        rememberPlace({ lat: chosen.lat, lng: chosen.lng }).catch(() => undefined);
+      }
 
       // The tags ride behind the post. Their failure is worth a word but
       // never the photograph: it is already up.

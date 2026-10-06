@@ -23,7 +23,7 @@ import { needsDisplayFilter } from "@/utils/displayFilter";
 import { shortDate } from "@/utils/time";
 import { buildTimeline, type TimelineRow } from "@/utils/timeline";
 import { aspectRatio } from "./PostMedia";
-import { holdTabSwipe } from "@/utils/tabSwipe";
+import { holdTabSwipe, shouldHoldTabSwipe } from "@/utils/tabSwipe";
 import { useIsFocused } from "@react-navigation/native";
 import { PhotoInspector } from "./PhotoInspector";
 import type { PostRow } from "@/types/db";
@@ -62,8 +62,10 @@ const DOUBLE_TAP_MS = 280;
  * — the platform recycles scroll views between screens, and one left at a
  * zoom other than 1 carried that zoom into the grid, the send sheet and
  * anywhere else a list was drawn next. Letting go leaves the line where it
- * is until you pinch back or tap "Actual size". Tap a photograph to see
- * it close, and swipe on from there to the next one along the line.
+ * is until you pinch back or tap "Actual size". While it is magnified a
+ * finger drags it, and the tabs do not swipe; at actual size they do. Tap
+ * a photograph to see it close, and swipe on from there to the next one
+ * along the line.
  */
 export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
   const { width } = useWindowDimensions();
@@ -110,18 +112,22 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const [pinching, setPinching] = useState(false);
   const [zoomed, setZoomed] = useState(false);
 
-  // The tab pager reads any sideways movement as a swipe to the next tab,
-  // and took the pinch's with it: the whole screen shifted and sometimes
-  // changed tabs. While the line is on screen the pager is held still, so
-  // every gesture here belongs to the line alone.
+  // The tab pager reads sideways movement as a swipe to the next tab. Two
+  // fingers never reach it (the native side keeps it to one finger), but a
+  // magnified line is dragged sideways with one, and that is the pager's
+  // gesture too — so while the line is magnified, or being pinched, the
+  // pager is held still and every gesture here belongs to the line. At
+  // actual size the page swipes between tabs as anywhere else.
   // Held only while this screen is the one on view: tab screens stay
   // mounted after they are left, and a lock held from an unfocused profile
   // would have stopped swiping everywhere.
   const focused = useIsFocused();
+  const [magnified, setMagnified] = useState(false);
+  const hold = shouldHoldTabSwipe({ focused, pinching, magnified });
   React.useEffect(() => {
-    if (!focused || rows.length === 0) return;
+    if (!hold) return;
     return holdTabSwipe();
-  }, [focused, rows.length]);
+  }, [hold]);
 
   const sidewaysRoom = (atScale: number) => Math.max(0, (width * atScale - width) / 2);
   const clampShift = (value: number, atScale: number) => {
@@ -236,11 +242,13 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         }
         setPinching(false);
         setZoomed(Math.abs(live.scale - 1) > 0.02);
+        setMagnified(live.scale > 1.02);
       },
       onPanResponderTerminate: () => {
         drag.active = false;
         setPinching(false);
         setZoomed(Math.abs(live.scale - 1) > 0.02);
+        setMagnified(live.scale > 1.02);
       },
     });
   }, [width, base, scale, shift, lift, live, pinch, drag]);
@@ -255,6 +263,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
       Animated.timing(lift, { toValue: 0, duration: 220, useNativeDriver: false }),
     ]).start();
     setZoomed(false);
+    setMagnified(false);
   };
 
   // The scaled block keeps the page the right length: its wrapper is as

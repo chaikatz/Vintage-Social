@@ -52,6 +52,26 @@ async function leaveToLanding(): Promise<void> {
   router.replace("/(gate)/landing");
 }
 
+/**
+ * Go in, once signed in or let in.
+ *
+ * The door's screens — landing, sign in, the invitation card, the waitlist —
+ * are pushed on the root stack, and the tabs used to be pushed on top of
+ * them. For a while after signing in the whole stack was still there under
+ * the tabs, and a swipe from the left edge on any tab popped back to the
+ * sign-in screen with the member still signed in. Unwind the door first,
+ * then replace what is left with the root, which sends an approved member
+ * to the tabs with nothing underneath.
+ */
+export async function enterApp(): Promise<void> {
+  try {
+    router.dismissAll();
+  } catch {
+    // Nothing pushed — already at the root of the stack.
+  }
+  router.replace("/");
+}
+
 /** A minimal fake Session so route gates behave identically in demo mode. */
 function demoSession(profile: ProfileRow): Session {
   return {

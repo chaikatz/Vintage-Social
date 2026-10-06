@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as Location from "expo-location";
 import { cellKey, labelFromAddress, type PlaceLabel } from "./placeGroups";
+import { makeLazyWriter, readDiskCache, writeDiskCache } from "./diskCache";
 
 /**
  * From a point back to the name of the town.
@@ -8,10 +9,14 @@ import { cellKey, labelFromAddress, type PlaceLabel } from "./placeGroups";
  * The places view files photographs under the town they were taken in.
  * A post carries the point of the spot its author chose ("Bar Pitti"),
  * not the town, so the town is asked of the system geocoder — Apple's on
- * iOS, no permission needed — once per five-kilometre cell and remembered
- * for the session. Nothing is written back. Where there is no geocoder
- * (the browser) every cell answers with nothing and the words on the
- * post stand in for the town.
+ * iOS, no permission needed — once per five-kilometre cell and remembered:
+ * for the session, and in a small file on the phone, so the places are
+ * known the moment the view opens on every launch after the first. The
+ * names are asked for as soon as a profile's photographs load, and for a
+ * new photograph as it is posted, so by the time anyone taps "Places" the
+ * answer is already there. Nothing is written back to the database. Where
+ * there is no geocoder (the browser) every cell answers with nothing and
+ * the words on the post stand in for the town.
  */
 
 export interface Point {
@@ -19,10 +24,49 @@ export interface Point {
   lng: number;
 }
 
+const FILE = "place-names.json";
+const KEY = "vintage.place-names";
+
 const cache = new Map<string, PlaceLabel | null>();
+let loaded = false;
+
+/** The stored names, checked field by field: a file from another build is not trusted blindly. */
+export function parseStoredLabels(raw: unknown): Record<string, PlaceLabel | null> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out: Record<string, PlaceLabel | null> = {};
+  const text = (v: unknown) => (typeof v === "string" ? v : null);
+  for (const [cell, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (value === null) {
+      out[cell] = null;
+      continue;
+    }
+    if (!value || typeof value !== "object") continue;
+    const v = value as Record<string, unknown>;
+    out[cell] = { city: text(v.city), region: text(v.region), country: text(v.country) };
+  }
+  return out;
+}
+
+function load() {
+  if (loaded) return;
+  loaded = true;
+  const stored = readDiskCache(FILE, KEY, parseStoredLabels);
+  if (!stored) return;
+  for (const [cell, label] of Object.entries(stored)) {
+    if (!cache.has(cell)) cache.set(cell, label);
+  }
+}
+
+const persist = makeLazyWriter(() => writeDiskCache(FILE, KEY, Object.fromEntries(cache)));
+
+function remember(cell: string, label: PlaceLabel | null) {
+  cache.set(cell, label);
+  persist();
+}
 
 /** What is already known for these points, cell by cell — and whether that is all of them. */
 export function knownLabels(points: readonly Point[]): { labels: Record<string, PlaceLabel | null>; complete: boolean } {
+  load();
   const labels: Record<string, PlaceLabel | null> = {};
   let complete = true;
   for (const p of points) {
@@ -56,6 +100,7 @@ export async function reverseGeocodeCells(
   onDone?: () => void,
   limit = 60,
 ): Promise<void> {
+  load();
   const cells = new Map<string, Point>();
   for (const p of points) {
     const k = cellKey(p.lat, p.lng);
@@ -73,9 +118,22 @@ export async function reverseGeocodeCells(
     const label = await lookup(point, 2500);
     // Remember a real answer — and a real "nothing here" — but not a timeout,
     // so a quieter moment can ask again.
-    if (label !== null || Platform.OS === "web") cache.set(cell, label);
+    if (label !== null || Platform.OS === "web") remember(cell, label);
     if (isAlive()) onLabel(cell, label);
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
   if (isAlive()) onDone?.();
+}
+
+/**
+ * Learn the town for one point now — a photograph just posted — so the
+ * places view already knows where it goes. Best-effort; never awaited by
+ * the publish.
+ */
+export async function rememberPlace(point: Point): Promise<void> {
+  load();
+  const cell = cellKey(point.lat, point.lng);
+  if (cache.has(cell)) return;
+  const label = await lookup(point, 4000);
+  if (label !== null || Platform.OS === "web") remember(cell, label);
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { colors, spacing, type } from "@/theme";
 import { hasPlace } from "@/utils/geo";
-import { geocodeMissing, type Point } from "@/utils/geocode";
+import { geocodeMissing, knownPoints, type Point } from "@/utils/geocode";
 import { knownLabels, reverseGeocodeCells } from "@/utils/reverseGeocode";
 import { cellKey, groupByPlace, type PlaceGroup, type PlaceLabel } from "@/utils/placeGroups";
 import { GRID_GAP, PhotoTile, type GridPost } from "./PhotoGrid";
@@ -35,7 +35,7 @@ export function PlaceGroups({ posts, onOpenPost, header, empty, onRefresh, refre
   const size = (width - GRID_GAP * 2) / 3;
 
   // Points for older posts that were made before places were looked up.
-  const [found, setFound] = useState<Record<string, Point>>({});
+  const [found, setFound] = useState<Record<string, Point>>(() => knownPoints(posts));
   // Town names, by cell — opened on everything the session already knows,
   // so coming back to this view shows the places at once rather than
   // "Placing your photographs…" again.

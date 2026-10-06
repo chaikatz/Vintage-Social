@@ -30,6 +30,24 @@ export function holdTabSwipe(): () => void {
   };
 }
 
+/**
+ * Whether the timeline should hold the pager right now. Only while it is
+ * on the screen in view and either being pinched or left magnified: a
+ * magnified line is dragged sideways with one finger, which is the pager's
+ * gesture too, so the pager waits. At actual size, or shrunk, one finger
+ * is the page's and a swipe changes tabs as anywhere else. Two fingers never
+ * swipe the pager in any case — the native side sees to that — so the hold
+ * here is for the one-finger drag, and a second line of defence for the pinch.
+ */
+export function shouldHoldTabSwipe(state: { focused: boolean; pinching: boolean; magnified: boolean }): boolean {
+  return state.focused && (state.pinching || state.magnified);
+}
+
+/** For tests: how many holds are outstanding. */
+export function tabSwipeHolds(): number {
+  return holders;
+}
+
 export function useTabSwipeEnabled(): boolean {
   return useSyncExternalStore(
     (l) => {

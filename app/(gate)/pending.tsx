@@ -1,12 +1,12 @@
 import React from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { AppState, Linking, StyleSheet, Text, View } from "react-native";
+import { Redirect } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { GateLayout } from "@/components/gate/GateLayout";
 import { GateButton } from "@/components/gate/GateButton";
 import { Wordmark } from "@/components/Wordmark";
 import { colors, spacing, type } from "@/theme";
-import { useSession } from "@/providers/SessionProvider";
+import { enterApp, useSession } from "@/providers/SessionProvider";
 import { describeRedeem, fetchMyApplication, redeemInviteLink } from "@/api/membership";
 import { slugFromInput } from "@/utils/inviteLink";
 import { showAlert, showPrompt } from "@/utils/alert";
@@ -32,7 +32,6 @@ const COPY: Record<string, { title: string; body: string }> = {
 };
 
 export default function Pending() {
-  const router = useRouter();
   const { session, profile, refreshProfile, signOut } = useSession();
 
   useQuery({
@@ -62,8 +61,23 @@ export default function Pending() {
   const [checkFailed, setCheckFailed] = React.useState(false);
   const approved = profile?.status === "approved";
   React.useEffect(() => {
-    if (approved) router.replace("/");
-  }, [approved, router]);
+    if (approved) enterApp();
+  }, [approved]);
+
+  // The screen also checks by itself: each time the app comes back to the
+  // front, and every half minute while it is open. An applicant who is let
+  // in while looking at this walks in without touching anything.
+  React.useEffect(() => {
+    if (!session) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshProfile().catch(() => undefined);
+    });
+    const t = setInterval(() => refreshProfile().catch(() => undefined), 30_000);
+    return () => {
+      sub.remove();
+      clearInterval(t);
+    };
+  }, [session, refreshProfile]);
 
   if (session === null) return <Redirect href="/(gate)/landing" />;
 
@@ -97,7 +111,7 @@ export default function Pending() {
             return;
           }
           await refreshProfile();
-          router.replace("/");
+          await enterApp();
         } catch (err) {
           showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
         } finally {
@@ -136,8 +150,8 @@ export default function Pending() {
             {checkedAt ? (
               <Text style={styles.checked}>
                 {checkFailed
-                  ? "Couldn’t check just now — try again in a moment."
-                  : `Checked at ${checkedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — still being read. We’ll let you know.`}
+                  ? "Couldn’t reach VINTAGE just now. Check your connection and try again."
+                  : `Still waiting · checked ${checkedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. The moment a member lets you in, this screen opens the door.`}
               </Text>
             ) : null}
           </>

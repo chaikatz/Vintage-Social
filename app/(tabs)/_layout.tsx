@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Redirect, useRouter, useSegments } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,6 +7,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { fetchUnreadMessageCount } from "@/api/messages";
 import { SwipeTabs } from "@/navigation/SwipeTabs";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
+import { keepPagerToOneFinger } from "@/utils/pagerTouches";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { emitHomeAgain } from "@/utils/homeRefresh";
@@ -22,8 +23,12 @@ import { usePushRegistration } from "@/utils/push";
 export default function TabsLayout() {
   const { session, profile, profileLoaded } = useSession();
   const insets = useSafeAreaInsets();
-  // Held still while a screen owns a pinch or a sideways drag of its own (the timeline).
+  // Held still while a screen owns a sideways drag of its own (a magnified timeline).
   const swipeEnabled = useTabSwipeEnabled();
+  // Two fingers are a pinch, never a swipe: the pager is told so as soon as
+  // it is on screen, before any pinch can begin. See src/utils/pagerTouches.
+  const root = useRef<View>(null);
+  const toldPager = useRef(false);
   // An approved member on a real phone: ask once, file the token.
   usePushRegistration(session?.user?.id, profileLoaded && profile?.status === "approved");
 
@@ -33,7 +38,18 @@ export default function TabsLayout() {
   }
 
   return (
-    <View style={styles.root}>
+    <View
+      ref={root}
+      style={styles.root}
+      onLayout={() => {
+        if (toldPager.current) return;
+        toldPager.current = true;
+        keepPagerToOneFinger(root.current).then((told) => {
+          // Not found yet: let the next layout try again.
+          if (!told) toldPager.current = false;
+        });
+      }}
+    >
       <TabHeader username={profile?.username} userId={session?.user?.id ?? ""} />
       <SwipeTabs
         tabBarPosition="bottom"

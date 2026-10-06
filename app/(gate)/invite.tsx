@@ -25,7 +25,7 @@ import {
 } from "@/utils/validation";
 import { checkUsernameAvailable, fetchInviteOwner, joinWithInvite } from "@/api/membership";
 import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
-import { useSession } from "@/providers/SessionProvider";
+import { enterApp, useSession } from "@/providers/SessionProvider";
 
 /**
  * The invitation.
@@ -107,7 +107,7 @@ export default function Invite() {
         code: slugFromInput(code),
       });
       await refreshProfile();
-      router.replace("/");
+      await enterApp();
     } catch (err) {
       showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
     } finally {

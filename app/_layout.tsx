@@ -46,18 +46,26 @@ export default function RootLayout() {
             fullScreenGestureEnabled: true,
           }}
         >
-          <Stack.Screen name="index" options={{ headerShown: false }} />
+          {/* The root and the door's resting screens are not "back" from
+              anywhere: a swipe on them goes nowhere. */}
+          <Stack.Screen name="index" options={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false }} />
           {/* The whole signed-out world is a printed object, not a form in
               a frame: no navigation header on any of it. Each screen carries
               its own back mark. */}
-          <Stack.Screen name="(gate)/landing" options={{ headerShown: false }} />
+          <Stack.Screen name="(gate)/landing" options={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false }} />
           <Stack.Screen name="(gate)/apply" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/invite" options={{ headerShown: false }} />
           {/* Carries a tapped invitation's suffix through to the card. */}
           <Stack.Screen name="invite/[slug]" options={{ headerShown: false }} />
           <Stack.Screen name="(gate)/sign-in" options={{ headerShown: false }} />
-          <Stack.Screen name="(gate)/pending" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "Home" }} />
+          <Stack.Screen name="(gate)/pending" options={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false }} />
+          {/* The tabs are the floor of the signed-in app. Nothing is "back"
+              from them — the door is not — so the back swipe is off here;
+              the pager's own swipe moves between the tabs. */}
+          <Stack.Screen
+            name="(tabs)"
+            options={{ headerShown: false, title: "Home", gestureEnabled: false, fullScreenGestureEnabled: false }}
+          />
           {/* Composing is the one screen a stray swipe must not throw away:
               the back gesture is off here, so leaving is a deliberate tap. */}
           <Stack.Screen
@@ -68,12 +76,16 @@ export default function RootLayout() {
               fullScreenGestureEnabled: false,
             }}
           />
-          <Stack.Screen name="post/[id]" options={{ title: "" }} />
+          {/* Screens with sideways gestures of their own — a pinch on a
+              photograph, a magnified timeline dragged with a finger — keep
+              the back swipe to the left edge. A pan from anywhere else used to
+              take the pinch's fingers as a swipe back and cancel the pinch. */}
+          <Stack.Screen name="post/[id]" options={{ title: "", fullScreenGestureEnabled: false }} />
           <Stack.Screen name="follows" options={{ title: "" }} />
           <Stack.Screen name="likes" options={{ title: "Likes" }} />
           <Stack.Screen name="memories" options={{ title: "On this day" }} />
           <Stack.Screen name="library-picker" options={{ title: "" }} />
-          <Stack.Screen name="gallery" options={{ title: "" }} />
+          <Stack.Screen name="gallery" options={{ title: "", fullScreenGestureEnabled: false }} />
           <Stack.Screen name="comments" options={{ title: "Comments" }} />
           <Stack.Screen name="edit-caption" options={{ presentation: "modal", title: "Edit caption" }} />
           <Stack.Screen name="messages/index" options={{ title: "Messages" }} />
@@ -81,7 +93,7 @@ export default function RootLayout() {
           <Stack.Screen name="share" options={{ presentation: "modal", title: "Send to" }} />
           <Stack.Screen name="export" options={{ presentation: "modal", title: "Share outside" }} />
           <Stack.Screen name="requests" options={{ title: "Requests" }} />
-          <Stack.Screen name="user/[username]" options={{ title: "" }} />
+          <Stack.Screen name="user/[username]" options={{ title: "", fullScreenGestureEnabled: false }} />
           <Stack.Screen name="settings" options={{ title: "Settings" }} />
           <Stack.Screen name="blocked" options={{ title: "Blocked members" }} />
           <Stack.Screen name="legal/[doc]" options={{ title: "" }} />

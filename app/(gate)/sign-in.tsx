@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import { demoSignIn } from "@/demo/store";
 import { showAlert } from "@/utils/alert";
+import { enterApp } from "@/providers/SessionProvider";
 
 /** Coming back to a place you already belong to. Two lines and a key. */
 export default function SignIn() {
@@ -29,7 +30,7 @@ export default function SignIn() {
         });
         if (error) throw error;
       }
-      router.replace("/");
+      await enterApp();
     } catch (err) {
       showAlert("Sign in failed", err instanceof Error ? err.message : String(err));
     } finally {

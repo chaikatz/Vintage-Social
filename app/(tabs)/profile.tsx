@@ -18,6 +18,7 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
 import { sortByTaken } from "@/utils/memories";
 import { useSession } from "@/providers/SessionProvider";
+import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 
 /**
  * Your own page: the grid, the same photographs by the day they were
@@ -49,6 +50,8 @@ export default function OwnProfile() {
     const all = [...mine, ...theirs].sort((a, b) => b.created_at.localeCompare(a.created_at));
     return sort === "taken" ? sortByTaken(all) : all;
   }, [posts.data, tagged.data, sort]);
+  // The towns are looked up as the photographs arrive, so "Places" opens placed.
+  usePlaceWarmup(posts.data ?? []);
 
   if (!profile) {
     return (

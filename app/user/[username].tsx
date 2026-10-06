@@ -23,6 +23,8 @@ import { openConversation } from "@/api/messages";
 import { blockMember, fetchBlockedIds, unblockMember } from "@/api/blocks";
 import { sortByTaken } from "@/utils/memories";
 import { useSession } from "@/providers/SessionProvider";
+import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
+import { useTabSwipeEnabled } from "@/utils/tabSwipe";
 
 export default function UserProfile() {
   const router = useRouter();
@@ -77,6 +79,11 @@ export default function UserProfile() {
     const all = [...theirs, ...taggedIn].sort((a, b) => b.created_at.localeCompare(a.created_at));
     return sort === "taken" ? sortByTaken(all) : all;
   }, [postsQ.data, taggedQ.data, sort]);
+  // The towns are looked up as the photographs arrive, so "Places" opens placed.
+  usePlaceWarmup(postsQ.data ?? []);
+  // A magnified timeline is dragged with one finger; while it is, the
+  // stack's back swipe waits, as the tab pager does on your own profile.
+  const swipeFree = useTabSwipeEnabled();
 
   const toggleFollow = useMutation({
     mutationFn: async (next: boolean) => {
@@ -254,7 +261,7 @@ export default function UserProfile() {
 
   return (
     <Screen padded={false}>
-      <Stack.Screen options={{ title: profile.username }} />
+      <Stack.Screen options={{ title: profile.username, gestureEnabled: swipeFree }} />
       {view === "map" && !locked ? (
         <PostMap posts={shown} onOpenPost={openPost} header={header} />
       ) : view === "places" && !locked ? (

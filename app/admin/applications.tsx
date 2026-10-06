@@ -8,7 +8,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideApplication, fetchApplications } from "@/api/moderation";
 import { postAge } from "@/utils/time";
-import type { ApplicationStatus } from "@/types/db";
+import type { ApplicationRow, ApplicationStatus } from "@/types/db";
+import { showAlert } from "@/utils/alert";
 
 const TABS: ApplicationStatus[] = ["pending", "waitlisted", "approved", "rejected"];
 
@@ -21,10 +22,22 @@ export default function AdminApplications() {
     queryFn: () => fetchApplications(tab),
   });
 
+  // The card leaves the list the moment the decision is tapped and comes
+  // back if the database refused it, with the reason on screen — a tap
+  // that failed quietly used to look like a tap that did nothing.
   const decide = useMutation({
     mutationFn: ({ id, decision }: { id: string; decision: Exclude<ApplicationStatus, "pending"> }) =>
       decideApplication(id, decision),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-apps"] }),
+    onMutate: ({ id }) => {
+      const before = queryClient.getQueryData<ApplicationRow[]>(["admin-apps", tab]);
+      queryClient.setQueryData<ApplicationRow[]>(["admin-apps", tab], (rows) => rows?.filter((r) => r.id !== id));
+      return { before };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.before) queryClient.setQueryData(["admin-apps", tab], ctx.before);
+      showAlert("That decision didn’t take", err instanceof Error ? err.message : String(err));
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["admin-apps"] }),
   });
 
   return (

@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as Location from "expo-location";
+import { makeLazyWriter, readDiskCache, writeDiskCache } from "./diskCache";
 
 /**
  * Turning the place a member typed into a point.
@@ -17,14 +18,64 @@ export interface Point {
   lng: number;
 }
 
+const FILE = "place-points.json";
+const KEY = "vintage.place-points";
+
 const cache = new Map<string, Point | null>();
+let loaded = false;
+
+/** The stored points, checked value by value. */
+export function parseStoredPoints(raw: unknown): Record<string, Point | null> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out: Record<string, Point | null> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (v === null) {
+      out[k] = null;
+      continue;
+    }
+    if (!v || typeof v !== "object") continue;
+    const { lat, lng } = v as Record<string, unknown>;
+    if (typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng)) out[k] = { lat, lng };
+  }
+  return out;
+}
+
+// Points found for the words on older posts are kept on the phone too, so
+// the map and the places view do not look the same towns up again on
+// every launch.
+function load() {
+  if (loaded) return;
+  loaded = true;
+  const stored = readDiskCache(FILE, KEY, parseStoredPoints);
+  if (!stored) return;
+  for (const [k, v] of Object.entries(stored)) {
+    if (!cache.has(k)) cache.set(k, v);
+  }
+}
+
+const persist = makeLazyWriter(() => writeDiskCache(FILE, KEY, Object.fromEntries(cache)));
 
 function key(place: string): string {
   return place.trim().toLowerCase();
 }
 
+/** Points already known for posts that carry words but no point, by post id. */
+export function knownPoints<T extends { id: string; location: string | null; lat: number | null; lng: number | null }>(
+  posts: readonly T[],
+): Record<string, Point> {
+  load();
+  const out: Record<string, Point> = {};
+  for (const p of posts) {
+    if (!p.location || (p.lat != null && p.lng != null)) continue;
+    const point = cache.get(key(p.location));
+    if (point) out[p.id] = point;
+  }
+  return out;
+}
+
 /** Look a place up, remembering the answer for the session. */
 export async function geocodePlace(place: string, timeoutMs = 2500): Promise<Point | null> {
+  load();
   const k = key(place);
   if (k.length < 2) return null;
   if (cache.has(k)) return cache.get(k) ?? null;
@@ -43,6 +94,7 @@ export async function geocodePlace(place: string, timeoutMs = 2500): Promise<Poi
       // lookup actually answered. A timeout stays unremembered so a later,
       // calmer moment can try again.
       cache.set(k, point);
+      persist();
       return point;
     });
   const point = await Promise.race([

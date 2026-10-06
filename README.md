@@ -542,11 +542,16 @@ this repo:
   `admin_set_invite_quota(profile, n)` and `admin_set_default_invite_quota(n)`, and `posts.place_id`.
   Approved members who held fewer than five invitations were raised to five.
 - **Places** come from Apple Maps through the local module `modules/vintage-places` (MKLocalSearch).
+  The town each photograph was taken in is looked up as a profile's photographs load (and for a new
+  post as it is published) and kept in a small file on the phone, so the Places view opens placed.
+- **The tab pager takes one finger** through the local module `modules/vintage-pager`: two fingers are a
+  pinch on a photograph or the timeline, never a swipe between tabs. A magnified timeline also holds the
+  pager (and, on another member's profile, the stack's back swipe) while it is dragged.
   No API key or environment variable is needed. Web and Android keep a typed place with no point.
 - **Invitation links** still use `EXPO_PUBLIC_INVITE_BASE` for the web landing page (`api/invite.ts`);
   without it the app shares `vintage://invite/<code>` and the code itself, which the recipient enters after
   installing (Landing → "I have an invitation", or the waiting screen → "I have an invitation").
-- Native modules (`vintage-video`, `vintage-places`, `react-native-maps`, `expo-location`) require a full
+- Native modules (`vintage-video`, `vintage-places`, `vintage-pager`, `react-native-maps`, `expo-location`) require a full
   EAS build; they cannot ship over the air.
 - **Migration `0017_push.sql`** — applied to staging and production. Adds `push_tokens` and
   `notification_prefs` (both member-own under RLS), `activity.pushed_at` / `posts.notified_at`
