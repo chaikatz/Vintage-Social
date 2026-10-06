@@ -13,6 +13,7 @@ import {
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
+import { useIsFocused } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { colors, radii, spacing, type } from "@/theme";
@@ -46,6 +47,7 @@ export default function Thread() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
+  const focused = useIsFocused();
 
   const peerQ = useQuery({
     queryKey: ["conversation-peer", id, userId],
@@ -56,8 +58,9 @@ export default function Thread() {
     queryKey: ["messages", id],
     queryFn: () => fetchMessages(id ?? ""),
     enabled: Boolean(id),
-    // A reply that arrives while the thread is open shows up on its own.
-    refetchInterval: 5000,
+    // A reply that arrives while the thread is open shows up on its own —
+    // only while it is the screen on view.
+    refetchInterval: focused ? 5000 : false,
   });
   // Newest at the bottom, and the list opens there: an inverted list is
   // laid out from its end, so the latest message and anything sent or

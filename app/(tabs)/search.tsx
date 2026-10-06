@@ -121,12 +121,14 @@ export default function Search() {
       <Screen padded={false}>
         {field}
         <FlatList
-          data={ranked}
+          // Nothing from the last term is shown under a new one; the list
+          // waits the beat until the query has caught up with what is typed.
+          data={settledQ.trim() === q.trim() ? ranked : []}
           keyExtractor={(p) => p.id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           ListEmptyComponent={
-            results.isFetched ? (
+            results.isFetched && settledQ.trim() === q.trim() && !results.isPlaceholderData ? (
               <EmptyState title="Nobody by that name" body="Try a different spelling." />
             ) : null
           }

@@ -154,11 +154,11 @@ export default function Compose() {
         // simply plays it. If the bake fails the footage goes up as
         // recorded and the look is applied at play time, as it always was.
         let source = uri;
-        if (isNoFilter(filterId)) {
-          // Nothing to bake into the footage; the file as recorded is the post.
-          baked = true;
-        } else if (bakes && !isDemoMode()) {
-          setStage("Applying the film to the clip…");
+        if (bakes && !isDemoMode()) {
+          // Even with no film the clip goes through the bake: it caps the
+          // size, brings HDR to standard range and writes MP4 — the shader
+          // is simply an identity then.
+          setStage(isNoFilter(filterId) ? "Preparing the clip…" : "Applying the film to the clip…");
           try {
             const out = await publishStep("render", () => bakeVideo(uri, filter));
             source = out.uri;
@@ -333,7 +333,6 @@ export default function Compose() {
         // Pulling the page down puts the keyboard away with the same
         // gesture, and the caption field is kept above it while it is up.
         keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets
       >
         {/* The frame, full bleed, with the film stock struck across the
             bottom-left the way a lab writes it on the sleeve. */}

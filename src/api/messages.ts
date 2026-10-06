@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import { fetchPost } from "./posts";
-import type { ConversationWithPeer, MessageRow, MessageWithPost, ProfileRow } from "@/types/db";
+import type { ConversationWithPeer, MessageRow, MessageWithPost, PostWithAuthor, ProfileRow } from "@/types/db";
 
 /**
  * Direct messages: one to one, nothing else.
@@ -94,11 +94,23 @@ export async function fetchMessages(conversationId: string): Promise<MessageWith
 
   const rows = (data ?? []) as MessageRow[];
   // Shared photographs are rare enough that fetching them individually is
-  // cheaper than joining every message against posts.
+  // cheaper than joining every message against posts — and a thread is
+  // re-read every few seconds while open, so each is read once and kept
+  // for a while rather than fetched again on every poll.
   const shared = await Promise.all(
-    rows.map((m) => (m.post_id ? fetchPost(m.post_id) : Promise.resolve(null))),
+    rows.map((m) => (m.post_id ? sharedPost(m.post_id) : Promise.resolve(null))),
   );
   return rows.map((m, i) => ({ ...m, post: shared[i] }));
+}
+
+const SHARED_POST_TTL_MS = 5 * 60_000;
+const sharedPosts = new Map<string, { at: number; post: Promise<PostWithAuthor | null> }>();
+function sharedPost(postId: string): Promise<PostWithAuthor | null> {
+  const cached = sharedPosts.get(postId);
+  if (cached && Date.now() - cached.at < SHARED_POST_TTL_MS) return cached.post;
+  const post = fetchPost(postId).catch(() => null);
+  sharedPosts.set(postId, { at: Date.now(), post });
+  return post;
 }
 
 export async function sendMessage(

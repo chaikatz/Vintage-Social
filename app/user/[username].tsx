@@ -87,6 +87,7 @@ export default function UserProfile() {
       queryClient.invalidateQueries({ queryKey: ["follow-state", myId, profile?.id] });
       queryClient.invalidateQueries({ queryKey: ["profile", username] });
       queryClient.invalidateQueries({ queryKey: ["following", myId] });
+      queryClient.invalidateQueries({ queryKey: ["follows"] });
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["explore"] });
       // Your own following count lives on your profile row.

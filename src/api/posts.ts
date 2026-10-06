@@ -165,7 +165,6 @@ export async function deleteOwnPost(postId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Which of these posts has the viewer liked? Returns a set of post ids. */
 /** Who liked a post, newest first. Shown only for your own posts (app/likes.tsx). */
 export async function fetchLikers(postId: string): Promise<Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">[]> {
   if (!postId) return [];
@@ -182,6 +181,7 @@ export async function fetchLikers(postId: string): Promise<Pick<ProfileRow, "id"
     .filter((p): p is Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url"> => Boolean(p));
 }
 
+/** Which of these posts has the viewer liked? Returns a set of post ids. */
 export async function fetchMyLikes(userId: string, postIds: string[]): Promise<Set<string>> {
   if (postIds.length === 0) return new Set();
   if (isDemoMode()) return demo.demoFetchMyLikes(userId, postIds);

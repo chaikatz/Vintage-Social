@@ -160,12 +160,15 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
   const drift = React.useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const pinchRef = React.useRef({ distance: 0, x0: 0, y0: 0, release: null as null | (() => void) });
   const box = React.useRef({ w: 1, h: 1 });
+  const frameRef = React.useRef<View>(null);
   const [pinching, setPinching] = React.useState(false);
   const pinchResponder = React.useMemo(() => {
     const two = (e: GestureResponderEvent) => e.nativeEvent.touches.length === 2;
+    // Page coordinates: the touched child is the picture itself, which moves
+    // and grows under the fingers, so its own local coordinates drift.
     const read = (e: GestureResponderEvent) => {
       const [a, b] = e.nativeEvent.touches;
-      return { d: Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY), x: (a.locationX + b.locationX) / 2, y: (a.locationY + b.locationY) / 2 };
+      return { d: Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY), x: (a.pageX + b.pageX) / 2, y: (a.pageY + b.pageY) / 2 };
     };
     return PanResponder.create({
       onStartShouldSetPanResponderCapture: two,
@@ -178,10 +181,13 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
         pinchRef.current.x0 = t.x;
         pinchRef.current.y0 = t.y;
         pinchRef.current.release = holdTabSwipe();
-        // Scale about the fingers: move the picture's origin to the pinch.
-        focus.setValue({ x: t.x - box.current.w / 2, y: t.y - box.current.h / 2 });
         drift.setValue({ x: 0, y: 0 });
         setPinching(true);
+        // Scale about the fingers: move the picture's origin to the pinch,
+        // in the frame's own coordinates.
+        frameRef.current?.measureInWindow((fx, fy) => {
+          focus.setValue({ x: t.x - fx - box.current.w / 2, y: t.y - fy - box.current.h / 2 });
+        });
       },
       onPanResponderMove: (e) => {
         if (!two(e) || !pinchRef.current.distance) return;
@@ -239,15 +245,19 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
 
   const url = mediaUrl("media", post.media_path);
   const thumb = mediaUrl("thumbnails", post.thumb_path);
+  // The pinch's handlers sit on a plain View around the Pressable: a
+  // Pressable spreads its own responder handlers last and would override
+  // them, leaving a pinch to be read as a press.
   return (
-    <Pressable
-      onPress={handlePress}
+    <View
+      ref={frameRef}
       style={[frame, held]}
       onLayout={(e) => {
         box.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
       }}
       {...pinchResponder.panHandlers}
     >
+    <Pressable onPress={handlePress} style={StyleSheet.absoluteFill}>
       {url ? (
         <Animated.View style={[StyleSheet.absoluteFill, zoomStyle]}>
           <Image
@@ -269,6 +279,7 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
       {stamp}
       {heartOverlay}
     </Pressable>
+    </View>
   );
 }
 
@@ -340,11 +351,15 @@ function VideoMedia({
   const { status, error } = useEvent(player, "statusChange", { status: player.status, error: undefined });
   const { isPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
   const retried = React.useRef(false);
+  const activeRef = React.useRef(active);
+  activeRef.current = active;
   React.useEffect(() => {
     if (status === "readyToPlay" && active && !player.playing) player.play();
     if (status === "error" && !retried.current && url) {
       retried.current = true;
-      player.replaceAsync(url).then(() => active && player.play()).catch(() => undefined);
+      // Read `active` when the retry lands, not when it was asked for: a
+      // card scrolled away in the meantime must stay quiet.
+      player.replaceAsync(url).then(() => activeRef.current && player.play()).catch(() => undefined);
     }
   }, [status, error, active, player, url]);
   const [stalled, setStalled] = React.useState(false);

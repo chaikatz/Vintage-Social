@@ -31,7 +31,10 @@ if (Platform.OS !== "web") {
   });
   onlineManager.setEventListener((setOnline) =>
     NetInfo.addEventListener((state) => {
-      setOnline(state.isConnected !== false && state.isInternetReachable !== false);
+      // Connected is enough. The reachability probe pings a third party that
+      // some networks block, and it would pause every query while Supabase
+      // itself was perfectly reachable.
+      setOnline(state.isConnected !== false);
     }),
   );
 }

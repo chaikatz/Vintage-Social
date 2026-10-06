@@ -580,6 +580,16 @@ this repo:
   dropped connection three times (`src/utils/retry.ts`); a retry told the file or row already exists
   counts as success, since the id was chosen on the phone. Once the row is in, nothing that follows —
   tags, cache warming, the profile re-read — can turn into "Couldn't publish".
+- **A review of the last several commits, twelve findings fixed.** The post pinch now lives on a plain
+  View around the Pressable (a Pressable's own handlers had overridden it, so a pinch read as a press),
+  reads the fingers in page coordinates, and an offscreen card can no longer start playing after a
+  retry. The timeline holds the tab pager only while its screen is on view, and its flick carries real
+  momentum. A clip posted with no film still goes through the bake, which caps its size and brings HDR
+  to standard range. Online means connected, not a third party's reachability probe. A thread polls
+  only while on view, and the photographs shared in it are read once and kept. Baked films stay H.264,
+  since a shared film also plays in browsers. Search counts a fresh follow at once and shows nothing of
+  the last term under a new one. The profile re-read never stacks, and "Check status" says when the
+  check itself failed. The darkroom's keyboard is compensated once.
 - **Further polish.** The invitation card's rule is a hairline. "Members only" is half its former size
   everywhere it appears. The timeline's pinch keeps the point between the fingers under them in both
   directions: sideways by shifting the line, up and down by *lifting* it — what that pushes above the

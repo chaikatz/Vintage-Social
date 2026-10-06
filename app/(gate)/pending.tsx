@@ -59,6 +59,7 @@ export default function Pending() {
   // and anyone still waiting is told so, with the time of the check.
   const [checking, setChecking] = React.useState(false);
   const [checkedAt, setCheckedAt] = React.useState<Date | null>(null);
+  const [checkFailed, setCheckFailed] = React.useState(false);
   const approved = profile?.status === "approved";
   React.useEffect(() => {
     if (approved) router.replace("/");
@@ -72,7 +73,8 @@ export default function Pending() {
   const checkAgain = async () => {
     setChecking(true);
     try {
-      await refreshProfile();
+      const ok = await refreshProfile();
+      setCheckFailed(!ok);
       setCheckedAt(new Date());
     } finally {
       setChecking(false);
@@ -133,7 +135,9 @@ export default function Pending() {
             <GateButton title="Check status" onPress={checkAgain} loading={checking} style={styles.gap} />
             {checkedAt ? (
               <Text style={styles.checked}>
-                Checked at {checkedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — still being read. We’ll let you know.
+                {checkFailed
+                  ? "Couldn’t check just now — try again in a moment."
+                  : `Checked at ${checkedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — still being read. We’ll let you know.`}
               </Text>
             ) : null}
           </>

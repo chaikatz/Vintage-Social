@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { router } from "expo-router";
@@ -26,7 +27,8 @@ interface SessionState {
   isApprovedMember: boolean;
   /** True when running against the in-memory demo backend (browser review). */
   isDemo: boolean;
-  refreshProfile: () => Promise<void>;
+  /** Re-read the signed-in member's profile. Resolves true when the read landed, false when it could not. */
+  refreshProfile: () => Promise<boolean>;
   signOut: () => Promise<void>;
 }
 
@@ -74,7 +76,10 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
       isAdmin: profile?.role === "admin",
       isApprovedMember: profile?.status === "approved",
       isDemo: true,
-      refreshProfile: async () => setProfile(demoCurrentProfile()),
+      refreshProfile: async () => {
+        setProfile(demoCurrentProfile());
+        return true;
+      },
       signOut: async () => {
         demoSignOut();
         await leaveToLanding();
@@ -107,12 +112,17 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   const userId = session?.user?.id ?? null;
   const restoring = session === undefined;
 
-  const refreshProfile = useCallback(async () => {
+  // One read at a time: a second call while the first is still retrying
+  // joins it instead of stacking another behind it.
+  const inFlight = useRef<Promise<boolean> | null>(null);
+  const refreshProfile = useCallback(async (): Promise<boolean> => {
     if (!userId) {
       setProfile(null);
       setProfileLoaded(!restoring);
-      return;
+      return true;
     }
+    if (inFlight.current) return inFlight.current;
+    const run = (async () => {
     try {
       const data = await withRetry(async () => {
         const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
@@ -121,6 +131,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       });
       setProfile(data);
       setProfileLoaded(true);
+      return true;
     } catch {
       // The read failed, not the membership. Keep what we knew; a member
       // with no profile yet stays on the splash until a read succeeds.
@@ -128,6 +139,14 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
         if (p) setProfileLoaded(true);
         return p;
       });
+      return false;
+    }
+    })();
+    inFlight.current = run;
+    try {
+      return await run;
+    } finally {
+      inFlight.current = null;
     }
   }, [userId, restoring]);
 

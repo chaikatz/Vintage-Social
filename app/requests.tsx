@@ -34,6 +34,7 @@ export default function Requests() {
       queryClient.invalidateQueries({ queryKey: ["follow-requests", userId] });
       queryClient.invalidateQueries({ queryKey: ["activity", userId] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
+      queryClient.invalidateQueries({ queryKey: ["follows"] });
       refreshProfile().catch(() => undefined);
     },
     onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),

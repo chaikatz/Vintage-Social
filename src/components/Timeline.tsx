@@ -24,6 +24,7 @@ import { shortDate } from "@/utils/time";
 import { buildTimeline, type TimelineRow } from "@/utils/timeline";
 import { aspectRatio } from "./PostMedia";
 import { holdTabSwipe } from "@/utils/tabSwipe";
+import { useIsFocused } from "@react-navigation/native";
 import { PhotoInspector } from "./PhotoInspector";
 import type { PostRow } from "@/types/db";
 
@@ -113,10 +114,14 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   // and took the pinch's with it: the whole screen shifted and sometimes
   // changed tabs. While the line is on screen the pager is held still, so
   // every gesture here belongs to the line alone.
+  // Held only while this screen is the one on view: tab screens stay
+  // mounted after they are left, and a lock held from an unfocused profile
+  // would have stopped swiping everywhere.
+  const focused = useIsFocused();
   React.useEffect(() => {
-    if (rows.length === 0) return;
+    if (!focused || rows.length === 0) return;
     return holdTabSwipe();
-  }, [rows.length]);
+  }, [focused, rows.length]);
 
   const sidewaysRoom = (atScale: number) => Math.max(0, (width * atScale - width) / 2);
   const clampShift = (value: number, atScale: number) => {
@@ -224,8 +229,9 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
           live.shift = targetShift;
           live.lift = targetLift;
           Animated.parallel([
-            Animated.spring(shift, { toValue: targetShift, velocity: g.vx, damping: 26, stiffness: 180, mass: 0.9, useNativeDriver: false }),
-            Animated.spring(lift, { toValue: targetLift, velocity: g.vy, damping: 26, stiffness: 180, mass: 0.9, useNativeDriver: false }),
+            // The responder's velocity is per millisecond; the spring's is per second.
+            Animated.spring(shift, { toValue: targetShift, velocity: g.vx * 1000, damping: 26, stiffness: 180, mass: 0.9, useNativeDriver: false }),
+            Animated.spring(lift, { toValue: targetLift, velocity: g.vy * 1000, damping: 26, stiffness: 180, mass: 0.9, useNativeDriver: false }),
           ]).start();
         }
         setPinching(false);

@@ -471,15 +471,10 @@ private final class Baker {
     composition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
     composition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
 
-    // HEVC carries noticeably more picture per byte than H.264 at the same
-    // size, which is what "the film looks a little soft" came down to once
-    // a clip had to fit under the storage cap. Every iPhone that runs this
-    // app plays it; a device that cannot encode it falls back to H.264.
-    let presets = AVAssetExportSession.exportPresets(compatibleWith: asset)
-    let preset = presets.contains(AVAssetExportPresetHEVCHighestQuality)
-      ? AVAssetExportPresetHEVCHighestQuality
-      : AVAssetExportPresetHighestQuality
-    guard let export = AVAssetExportSession(asset: asset, presetName: preset) else {
+    // H.264, on purpose: a shared film is also played in browsers from the
+    // share page, and HEVC does not play in all of them. The softness of a
+    // long clip came from the size cap below, which is now higher.
+    guard let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
       promise.reject("E_BAKE_EXPORT", "This video cannot be exported")
       return
     }
