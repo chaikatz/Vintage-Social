@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors, spacing, type } from "@/theme";
 
 /** Kept for the gallery's `sort` param: the two grid orders. */
@@ -22,16 +22,18 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
   return (
     <View style={styles.row} accessibilityRole="radiogroup">
       <Text style={styles.label} numberOfLines={1}>Profile view:</Text>
-      <View style={styles.spacer} />
-      <Option label="Posted" active={value === "posted"} onPress={() => onChange("posted")} />
-      <Text style={styles.divider}>·</Text>
-      <Option label="Taken" active={value === "taken"} onPress={() => onChange("taken")} />
-      <Text style={styles.divider}>·</Text>
-      <Option label="Timeline" active={value === "timeline"} onPress={() => onChange("timeline")} />
-      <Text style={styles.divider}>·</Text>
-      <Option label="Map" active={value === "map"} onPress={() => onChange("map")} />
-      <Text style={styles.divider}>·</Text>
-      <Option label="Places" active={value === "places"} onPress={() => onChange("places")} />
+      {/* The label stays put; on the narrowest phones the views scroll past it. */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.options} style={styles.optionsScroll}>
+        <Option label="Posted" active={value === "posted"} onPress={() => onChange("posted")} />
+        <Text style={styles.divider}>·</Text>
+        <Option label="Taken" active={value === "taken"} onPress={() => onChange("taken")} />
+        <Text style={styles.divider}>·</Text>
+        <Option label="Timeline" active={value === "timeline"} onPress={() => onChange("timeline")} />
+        <Text style={styles.divider}>·</Text>
+        <Option label="Map" active={value === "map"} onPress={() => onChange("map")} />
+        <Text style={styles.divider}>·</Text>
+        <Option label="Places" active={value === "places"} onPress={() => onChange("places")} />
+      </ScrollView>
     </View>
   );
 }
@@ -64,7 +66,8 @@ const styles = StyleSheet.create({
     color: colors.inkFaint,
     flexShrink: 0,
   },
-  spacer: { flex: 1 },
+  optionsScroll: { flex: 1 },
+  options: { flexGrow: 1, justifyContent: "flex-end", alignItems: "center", gap: 6, paddingLeft: 6 },
   option: {
     fontFamily: type.mono,
     fontSize: 9,
