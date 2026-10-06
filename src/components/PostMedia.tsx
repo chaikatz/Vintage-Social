@@ -156,8 +156,11 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
   // pager is held still so the pinch never shifts the screen sideways.
   const zoom = React.useRef(new Animated.Value(1)).current;
   const focus = React.useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const pinchRef = React.useRef({ distance: 0, release: null as null | (() => void) });
+  // Where the fingers have moved since the pinch began: the picture follows them.
+  const drift = React.useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const pinchRef = React.useRef({ distance: 0, x0: 0, y0: 0, release: null as null | (() => void) });
   const box = React.useRef({ w: 1, h: 1 });
+  const [pinching, setPinching] = React.useState(false);
   const pinchResponder = React.useMemo(() => {
     const two = (e: GestureResponderEvent) => e.nativeEvent.touches.length === 2;
     const read = (e: GestureResponderEvent) => {
@@ -172,36 +175,50 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
         if (!two(e)) return;
         const t = read(e);
         pinchRef.current.distance = t.d;
+        pinchRef.current.x0 = t.x;
+        pinchRef.current.y0 = t.y;
         pinchRef.current.release = holdTabSwipe();
         // Scale about the fingers: move the picture's origin to the pinch.
         focus.setValue({ x: t.x - box.current.w / 2, y: t.y - box.current.h / 2 });
+        drift.setValue({ x: 0, y: 0 });
+        setPinching(true);
       },
       onPanResponderMove: (e) => {
         if (!two(e) || !pinchRef.current.distance) return;
         const t = read(e);
         zoom.setValue(Math.min(3, Math.max(1, t.d / pinchRef.current.distance)));
+        drift.setValue({ x: t.x - pinchRef.current.x0, y: t.y - pinchRef.current.y0 });
       },
       onPanResponderRelease: () => {
         pinchRef.current.release?.();
         pinchRef.current.release = null;
-        Animated.spring(zoom, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220 }).start();
+        Animated.parallel([
+          Animated.spring(zoom, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220 }),
+          Animated.spring(drift, { toValue: { x: 0, y: 0 }, useNativeDriver: true, damping: 18, stiffness: 220 }),
+        ]).start(() => setPinching(false));
       },
       onPanResponderTerminate: () => {
         pinchRef.current.release?.();
         pinchRef.current.release = null;
-        Animated.spring(zoom, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220 }).start();
+        Animated.parallel([
+          Animated.spring(zoom, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220 }),
+          Animated.spring(drift, { toValue: { x: 0, y: 0 }, useNativeDriver: true, damping: 18, stiffness: 220 }),
+        ]).start(() => setPinching(false));
       },
     });
-  }, [zoom, focus]);
+  }, [zoom, focus, drift]);
   const zoomStyle = {
     transform: [
-      { translateX: focus.x },
-      { translateY: focus.y },
+      { translateX: Animated.add(focus.x, drift.x) },
+      { translateY: Animated.add(focus.y, drift.y) },
       { scale: zoom },
       { translateX: Animated.multiply(focus.x, -1) },
       { translateY: Animated.multiply(focus.y, -1) },
     ],
   };
+  // While held, the picture may grow past its frame and over what is
+  // around it, as it does in any photo feed; let go and it is clipped again.
+  const held = pinching ? styles.held : null;
 
   if (isVideo) {
     return (
@@ -225,7 +242,7 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
   return (
     <Pressable
       onPress={handlePress}
-      style={frame}
+      style={[frame, held]}
       onLayout={(e) => {
         box.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
       }}
@@ -400,6 +417,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   bare: { borderTopWidth: 0, borderBottomWidth: 0 },
+  held: { overflow: "visible", zIndex: 20, elevation: 20 },
   heart: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",

@@ -580,6 +580,15 @@ this repo:
   dropped connection three times (`src/utils/retry.ts`); a retry told the file or row already exists
   counts as success, since the id was chosen on the phone. Once the row is in, nothing that follows —
   tags, cache warming, the profile re-read — can turn into "Couldn't publish".
+- **Further polish.** The invitation card's rule is a hairline. "Members only" is half its former size
+  everywhere it appears. The timeline's pinch keeps the point between the fingers under them in both
+  directions: sideways by shifting the line, up and down by *lifting* it — what that pushes above the
+  line's top is clipped there, under the profile, which never moves; a finger dragged down brings it
+  back, and a zoomed line can be dragged freely with a flick. A photograph in the feed or on its page
+  zooms under the fingers, follows them, and may grow over its frame while held, springing back on
+  release. "Check status" on the waitlist screen re-reads the profile and says what it found (a member
+  let in is taken in; anyone still waiting sees the time of the check) instead of replacing the screen
+  with itself.
 - **A long pass of small things, each verified.** The profile line says `MEMBER · NO. 00027` for every
   number (the word is the same for everyone; the number says how early). The timeline's pinch and, once
   zoomed, a one-finger sideways drag with a flick belong to the line alone: the tab pager is held still

@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   // A thin rule around it: this is the invitation, the thing that is sent.
   card: {
     backgroundColor: colors.paper,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.ink,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,

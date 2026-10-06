@@ -95,10 +95,17 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const base = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(1)).current;
   const shift = useRef(new Animated.Value(0)).current;
-  const live = useRef({ scale: 1, shift: 0 }).current;
-  const pinch = useRef({ distance: 0, scale: 1, cx: 0 }).current;
-  // One finger across a zoomed line drags it sideways; this is where it began.
-  const drag = useRef({ active: false, shift: 0 }).current;
+  // How far the zoomed line has been pulled up past its own top edge (never
+  // positive). A pinch keeps the point between the fingers under them in
+  // both directions; what that pushes above the line's top is clipped
+  // there, under the profile, rather than moving the profile — and a
+  // finger dragged down brings it back.
+  const lift = useRef(new Animated.Value(0)).current;
+  const baseHeight = useRef(0);
+  const live = useRef({ scale: 1, shift: 0, lift: 0 }).current;
+  const pinch = useRef({ distance: 0, scale: 1, cx: 0, cy: 0 }).current;
+  // One finger on a zoomed line drags it; this is where the drag began.
+  const drag = useRef({ active: false, shift: 0, lift: 0 }).current;
   const [pinching, setPinching] = useState(false);
   const [zoomed, setZoomed] = useState(false);
 
@@ -116,6 +123,9 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
     const room = sidewaysRoom(atScale);
     return Math.min(room, Math.max(-room, value));
   };
+  // Never below zero (the line cannot start below its own top) and never
+  // more than the line has grown, so at actual size it sits exactly where it did.
+  const clampLift = (value: number, atScale: number) => Math.min(0, Math.max(-Math.max(0, baseHeight.current * (atScale - 1)), value));
 
   const responder = useMemo(() => {
     const twoFingers = (e: GestureResponderEvent) => e.nativeEvent.touches.length === 2;
@@ -144,9 +154,10 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
     const dragStart = (e: GestureResponderEvent, g: { dx: number; dy: number }) =>
       e.nativeEvent.touches.length === 1 &&
       live.scale > 1.02 &&
-      Math.abs(g.dx) > 6 &&
-      Math.abs(g.dx) > Math.abs(g.dy) * 1.3 &&
-      onTheLine(e);
+      onTheLine(e) &&
+      ((Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.3) ||
+        // Down, when there is line hidden above to bring back; up is the page's.
+        (g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 1.3 && live.lift < -1));
     return PanResponder.create({
       // Two fingers on the line are a pinch and are claimed before the page
       // can scroll with them; one finger is the page's, unless the line is
@@ -158,9 +169,13 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         shift.stopAnimation((v: number) => {
           live.shift = v;
         });
+        lift.stopAnimation((v: number) => {
+          live.lift = v;
+        });
         if (!twoFingers(e)) {
           drag.active = true;
           drag.shift = live.shift;
+          drag.lift = live.lift;
           setPinching(true);
           return;
         }
@@ -169,19 +184,21 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         if (!t) return;
         pinch.distance = t.distance;
         pinch.scale = live.scale;
-        // The point of the line under the fingers, sideways, in the block's
-        // own unscaled coordinates — it stays under them as the scale
-        // changes. Up and down nothing follows: the block grows from its
-        // top, and the page is never scrolled by a pinch, so the profile
-        // above the line stays exactly where it is.
+        // The point of the line under the fingers, in the line's own
+        // unscaled coordinates. It stays under them as the scale changes:
+        // sideways by shifting, up and down by lifting — never by scrolling
+        // the page, so the profile above does not move.
         pinch.cx = (t.fx - width / 2 - live.shift) / live.scale;
+        pinch.cy = (scrollY.current + t.fy - blockTop.current - live.lift) / live.scale;
         setPinching(true);
       },
       onPanResponderMove: (e, g) => {
         if (drag.active) {
           if (e.nativeEvent.touches.length !== 1) return;
           live.shift = clampShift(drag.shift + g.dx, live.scale);
+          live.lift = clampLift(drag.lift + g.dy, live.scale);
           shift.setValue(live.shift);
+          lift.setValue(live.lift);
           return;
         }
         const t = read(e);
@@ -189,19 +206,27 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, (pinch.scale * t.distance) / pinch.distance));
         // Sideways: only as far as the line has grown past the page edges.
         const nextShift = clampShift(t.fx - width / 2 - pinch.cx * next, next);
+        const nextLift = clampLift(scrollY.current + t.fy - blockTop.current - pinch.cy * next, next);
         live.scale = next;
         live.shift = nextShift;
+        live.lift = nextLift;
         scale.setValue(next);
         shift.setValue(nextShift);
+        lift.setValue(nextLift);
       },
       onPanResponderRelease: (_e, g) => {
         if (drag.active) {
           drag.active = false;
           // Let go with a flick and the line carries on a little, settling
           // inside its room rather than stopping dead under the finger.
-          const target = clampShift(live.shift + g.vx * 160, live.scale);
-          live.shift = target;
-          Animated.spring(shift, { toValue: target, velocity: g.vx, damping: 26, stiffness: 180, mass: 0.9, useNativeDriver: false }).start();
+          const targetShift = clampShift(live.shift + g.vx * 160, live.scale);
+          const targetLift = clampLift(live.lift + g.vy * 160, live.scale);
+          live.shift = targetShift;
+          live.lift = targetLift;
+          Animated.parallel([
+            Animated.spring(shift, { toValue: targetShift, velocity: g.vx, damping: 26, stiffness: 180, mass: 0.9, useNativeDriver: false }),
+            Animated.spring(lift, { toValue: targetLift, velocity: g.vy, damping: 26, stiffness: 180, mass: 0.9, useNativeDriver: false }),
+          ]).start();
         }
         setPinching(false);
         setZoomed(Math.abs(live.scale - 1) > 0.02);
@@ -212,14 +237,16 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         setZoomed(Math.abs(live.scale - 1) > 0.02);
       },
     });
-  }, [width, base, scale, shift, live, pinch, drag]);
+  }, [width, base, scale, shift, lift, live, pinch, drag]);
 
   const actualSize = () => {
     live.scale = 1;
     live.shift = 0;
+    live.lift = 0;
     Animated.parallel([
       Animated.timing(scale, { toValue: 1, duration: 220, useNativeDriver: false }),
       Animated.timing(shift, { toValue: 0, duration: 220, useNativeDriver: false }),
+      Animated.timing(lift, { toValue: 0, duration: 220, useNativeDriver: false }),
     ]).start();
     setZoomed(false);
   };
@@ -227,8 +254,8 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   // The scaled block keeps the page the right length: its wrapper is as
   // tall as the rows are at this scale, and the rows are drawn from its
   // top, scaled about the spine.
-  const blockHeight = Animated.multiply(base, scale);
-  const settle = Animated.divide(Animated.multiply(base, Animated.subtract(scale, 1)), 2);
+  const blockHeight = Animated.add(Animated.multiply(base, scale), lift);
+  const settle = Animated.add(Animated.divide(Animated.multiply(base, Animated.subtract(scale, 1)), 2), lift);
 
   return (
     <View
@@ -275,6 +302,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
               onLayout={(e) => {
                 const h = e.nativeEvent.layout.height;
                 if (h > 0) {
+                  baseHeight.current = h;
                   base.setValue(h);
                   if (!measured) setMeasured(true);
                 }

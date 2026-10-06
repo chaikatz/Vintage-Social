@@ -55,7 +55,7 @@ export function Wordmark({
   return (
     <View style={[styles.column, style]}>
       {word}
-      <Text style={[styles.tagline, { fontSize: Math.round(size * 0.8), marginTop: gap + 2 }]}>{tagline}</Text>
+      <Text style={[styles.tagline, { fontSize: Math.max(6, Math.round(size * 0.45)), marginTop: gap + 2 }]}>{tagline}</Text>
     </View>
   );
 }

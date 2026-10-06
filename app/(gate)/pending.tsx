@@ -52,6 +52,17 @@ export default function Pending() {
   // rendered on some passes and not others, and React throws — which was
   // "Sign out crashes the waitlist screen".)
   const [redeeming, setRedeeming] = React.useState(false);
+  // "Check status": the profile is re-read, and the screen says what it
+  // found. It used to replace itself with the root, which sent anyone still
+  // waiting straight back here with nothing to show for the tap — so the
+  // button looked broken. Now a member who has been let in is taken in,
+  // and anyone still waiting is told so, with the time of the check.
+  const [checking, setChecking] = React.useState(false);
+  const [checkedAt, setCheckedAt] = React.useState<Date | null>(null);
+  const approved = profile?.status === "approved";
+  React.useEffect(() => {
+    if (approved) router.replace("/");
+  }, [approved, router]);
 
   if (session === null) return <Redirect href="/(gate)/landing" />;
 
@@ -59,8 +70,13 @@ export default function Pending() {
   const copy = COPY[status] ?? COPY.applied;
 
   const checkAgain = async () => {
-    await refreshProfile();
-    router.replace("/");
+    setChecking(true);
+    try {
+      await refreshProfile();
+      setCheckedAt(new Date());
+    } finally {
+      setChecking(false);
+    }
   };
 
   const enterInvitation = () =>
@@ -114,7 +130,12 @@ export default function Pending() {
         {status === "applied" || status === "waitlisted" ? (
           <>
             <GateButton title="I have an invitation" variant="solid" onPress={enterInvitation} loading={redeeming} />
-            <GateButton title="Check status" onPress={checkAgain} style={styles.gap} />
+            <GateButton title="Check status" onPress={checkAgain} loading={checking} style={styles.gap} />
+            {checkedAt ? (
+              <Text style={styles.checked}>
+                Checked at {checkedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — still being read. We’ll let you know.
+              </Text>
+            ) : null}
           </>
         ) : null}
         <GateButton title="Sign out" variant="quiet" onPress={signOut} style={styles.gap} />
@@ -125,6 +146,15 @@ export default function Pending() {
 
 const styles = StyleSheet.create({
   link: { textDecorationLine: "underline", marginTop: 0 },
+  checked: {
+    fontFamily: type.mono,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    color: colors.inkFaint,
+    textAlign: "center",
+    marginTop: spacing.md,
+  },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   wordmark: { marginBottom: spacing.lg },
   title: { fontFamily: type.serif, fontSize: 19, color: colors.ink },

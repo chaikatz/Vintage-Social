@@ -169,7 +169,7 @@ export function exportLayout(
   const rule: Rect = { x: margin, y: labelTop, width: W - 2 * margin, height: Math.max(1, r2(W * 0.002)) };
 
   const wordmarkHeight = r2(wordmarkSize * 1.3);
-  const taglineSize = r2(W * 0.016);
+  const taglineSize = r2(W * 0.0085);
   const taglineHeight = r2(taglineSize * 1.3);
   // The wordmark and its tagline together sit on the label's line.
   const brandBlock = wordmarkHeight + taglineHeight;
