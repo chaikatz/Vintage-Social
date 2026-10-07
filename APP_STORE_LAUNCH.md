@@ -139,13 +139,28 @@ objects were verified present on production on 7 October:
    hidden and the Privacy Policy's "support address shown in Settings" points
    at nothing — Apple does ask for a visible support contact.
 
-3. **Sign in once as the review account on TestFlight** (`appreview@vintagesocial.app`,
-   password as you hold it). The account is approved, email-confirmed, not
-   banned, follows 12 members and has 96 posts in its Home feed; but its last
-   sign-in was 15 September and the password cannot be checked from here.
-   **UNVERIFIED** until you do this. To rotate it, run the `UPDATE` at the
-   bottom of `supabase/production/10_reviewer_account.sql` with a new value
-   and change it in App Store Connect; never commit it.
+3. **Set a password you know for the review account and verify it.** The
+   account (`appreview@vintagesocial.app`, username `app_review`) is approved,
+   email-confirmed, not banned, follows 12 members and has 96 posts in its
+   Home feed, but its last sign-in was 15 September and the password cannot
+   be checked from here. On your Mac:
+
+   ```bash
+   cd ~/Documents/Vintage-Social && npm i --no-save bcryptjs
+   node scripts/reviewer-password.mjs hash      # type the new password twice; prints SQL with only its hash
+   ```
+
+   Paste the printed SQL into the **production** SQL editor and run it (one
+   row changes: that account's password hash; its old sessions end). Then
+
+   ```bash
+   node scripts/reviewer-password.mjs verify    # signs in as the reviewer, checks profile, allowance and feed, signs out
+   ```
+
+   `verify` reads the production URL and anon key from `.env.production` (or
+   the shell). All lines PASS → put the same password in App Store Connect.
+   The password is typed, never echoed, never written anywhere by the script,
+   and must never be committed or pasted into a chat.
 
 4. **Supabase Auth → Attack protection → enable "Leaked password protection".**
    One toggle; recommended by the advisor; not a review blocker.

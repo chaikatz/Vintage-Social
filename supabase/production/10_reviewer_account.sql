@@ -58,6 +58,14 @@ end $$;
 -- ---------------------------------------------------------------------------
 -- rotate the password
 -- ---------------------------------------------------------------------------
+-- Preferred: on your Mac,  node scripts/reviewer-password.mjs hash
+-- It asks for the new password without echoing it, hashes it locally, and
+-- prints an UPDATE that carries only the hash — so the password never
+-- appears in the SQL editor or its history. Then
+--   node scripts/reviewer-password.mjs verify
+-- signs in as the reviewer against production and checks the feed.
+--
+-- By hand (puts the password in the editor's history; avoid):
 -- update auth.users
 --   set encrypted_password = extensions.crypt('NEW-PASSWORD', extensions.gen_salt('bf')), updated_at = now()
 --   where email = 'appreview@vintagesocial.app';
