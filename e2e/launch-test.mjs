@@ -95,7 +95,7 @@ async function signInAs(email) {
 // PHASE A — the membership chain, in one continuous session
 // ===========================================================================
 await go("/", 1600);
-check("Landing reads as a closed door", /Membership required/.test(await text()));
+check("Landing reads as a closed door", /Members only/.test(await text()));
 await shot("01-landing");
 
 // 1. application
@@ -111,13 +111,13 @@ await f.nth(7).fill("I shoot on a Rollei my father left me, mostly harbours and 
 await shot("02-application");
 await tap("Submit application", 2900);
 const pendingText = await text();
-check("Application lands on the waitlist screen", /Application received/.test(pendingText));
+check("Application lands on the waitlist screen", /Application received/i.test(pendingText));
 check("Applicant carries no membership number", !/NO\. \d{5}/.test(pendingText));
 await shot("03-pending");
 
 // 2. the founder approves
 await tap("Sign out", 2600);
-check("Signing out from the waitlist reaches the door", /Membership required/.test(await text()));
+check("Signing out from the waitlist reaches the door", /Members only/.test(await text()));
 await signInAs("admin@vintage.club");
 await tab("profile");
 await byLabel("Admin").first().click();
@@ -125,7 +125,7 @@ await wait(2300);
 await tap("Applications", 2600);
 const queue = await text();
 check("Application reaches the admin queue", /wren\.alcott/.test(queue));
-check("Queue shows who nominated an applicant", /nominated by/.test(queue));
+check("Queue shows who invited an applicant", /invited by/.test(queue));
 await shot("04-admin-queue");
 
 // The queue is oldest first, so the application just submitted is last.
@@ -147,26 +147,25 @@ await tap("Reports", 2500);
 check("Moderation queue holds the open report", /Promotional|engagement/i.test(await text()));
 await shot("06-reports");
 
-// 3. a member mints a nomination
+// 3. a member's invitation
 await back();
 await signOutFromSettings();
 await signInAs("elena@vintage.club");
 await tab("profile");
-await tap("Nominations", 2600);
+await tap("Invitations", 2600);
 const nom = await text();
-check("Framed as nomination, not referral", /Nominate a member|None left/.test(nom));
-check("Quota shown and finite", /left of \d+/.test(nom));
-await tap("Nominate a member", 2300);
-const codes = (await text()).match(/[A-Z0-9]{4}-[A-Z0-9]{4}/g) ?? [];
-check("A nomination code is minted", codes.length > 0, codes[0] ?? "none");
-await shot("07-nominations");
-const code = codes[0] ?? "";
+check("Framed as an invitation with an allowance", /invitations? left · \d+ of \d+ taken up|Every invitation you were given/.test(nom));
+// The code is the ending of the member's link: shown on its own line under "Copy invitation code".
+const codes = (await text()).match(/vintage:\/\/invite\/([a-z0-9-]+)|\/i\/([a-z0-9-]+)/);
+const code = codes?.[1] ?? codes?.[2] ?? "";
+check("An invitation code is shown", code.length > 0, code || "none");
+await shot("07-invitations");
 
-// 4. the nomination is redeemed
+// 4. the invitation is taken up
 await back();
 await signOutFromSettings();
-await tap("I have a nomination", 2500);
-check("Nomination screen is framed as nomination", /By nomination/.test(await text()));
+await tap("I have an invitation", 2500);
+check("Invitation screen is framed as an invitation", /By invitation/.test(await text()));
 const g = fields();
 await g.nth(0).fill(code);
 await g.nth(1).fill("Ada Fen");
@@ -174,21 +173,21 @@ await g.nth(2).fill("ada.fen");
 await g.nth(3).fill("ada@example.com");
 await g.nth(4).fill("vintage-demo");
 await shot("08-nomination-card");
-await tap("Accept the nomination", 4200);
+await tap("Accept the invitation", 4200);
 // Assert positively that the feed is showing. The gate screens stay
 // mounted underneath, so their text is still in the DOM and its absence
 // proves nothing.
 const admitted = await text();
 check(
-  "Redeemed nomination admits straight to the feed",
-  /elena\.marchetti|june\.nakamura|sam\.okafor/.test(admitted) && !/Application received/.test(admitted),
+  "Redeemed invitation admits straight to the feed",
+  /elena\.marchetti|june\.nakamura|sam\.okafor/.test(admitted) && !/Application received/i.test(admitted),
 );
 await shot("09-admitted");
 
 await tab("profile", 2800);
 const newMember = await text();
 check("New member is numbered on entry", /NO\. \d{5}/.test(newMember));
-check("New member is a founding member", /FOUNDING MEMBER/.test(newMember));
+check("New member reads as a member", /MEMBER · NO\. \d{5}/.test(newMember));
 await shot("10-new-member");
 
 // ===========================================================================
@@ -218,7 +217,7 @@ await shot("12-comments");
 
 await go("/user/tomas.lindqvist", 2800);
 const tomas = await text();
-check("Profile shows FOUNDING MEMBER and number", /FOUNDING MEMBER · NO\. \d{5}/.test(tomas));
+check("Profile shows MEMBER and number", /MEMBER · NO\. \d{5}/.test(tomas));
 await shot("13-profile-founding");
 const follow = () => seen(page.getByText(/^(Follow|Following|Requested)$/)).first();
 const before = await follow().textContent();
@@ -247,7 +246,13 @@ const compose = await text();
 check("Filter tray offers the full set", /Archive/.test(compose) && /Postcard/.test(compose));
 check("Date stamp offered on every filter", /Date stamp/.test(compose));
 await tap("Cassette", 1500);
-await seen(page.getByPlaceholder(/a town, a street/)).first().fill("Leith");
+// The place is chosen in a sheet: open it from the "Where" row, type, take the words.
+await byLabel("Choose a place").first().click();
+await wait(1200);
+const where = seen(page.getByPlaceholder(/a town, a street|a restaurant, a hotel/i)).first();
+await where.fill("Leith");
+await where.press("Enter");
+await wait(1200);
 await shot("17-compose");
 await tap("Share to VINTAGE", 4600);
 const afterPost = await text();
