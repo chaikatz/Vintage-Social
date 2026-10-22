@@ -6,7 +6,6 @@ import {
   BARREN_LIMIT,
   BUILD_AHEAD_MONTHS,
   byTime,
-  COLD_START_PICKS,
   condense,
   DAY_DIRECT_YEARS,
   DAY_FIRST,
@@ -22,6 +21,7 @@ import {
   EDIT_SCALE,
   EPOCH_GUARD_MS,
   isEligible,
+  isLostDate,
   MAX_IN_FLIGHT,
   MOMENT_GAP_MS,
   OCCASION_MEMORY,
@@ -37,10 +37,13 @@ import {
   READ_ACROSS_GAP_MS,
   READ_AROUND,
   READ_AROUND_ENOUGH,
+  READ_FAR_MS,
+  READ_NEAR_MS,
   REDISCOVERY_AGE_DAYS,
   REFERENCE_DATE,
   ROLL_LENGTH,
   SAME_OCCASION_MS,
+  sameMoment,
   shapeOf,
   SLICE_FIRST,
   WIDE_FIRST,
@@ -165,22 +168,40 @@ function years(first: number, last: number): number[] {
   return last < first ? [] : Array.from({ length: last - first + 1 }, (_, i) => first + i);
 }
 
-/** Of these years, the ones in a decade that holds any photograph: one count per decade. */
-async function inFilledDecades(lib: LibrarySource, list: readonly number[]): Promise<number[]> {
-  if (list.length === 0) return [];
-  const decades = years(Math.floor(list[0] / 10), Math.floor(list[list.length - 1] / 10)).map((d) => d * 10);
-  const filled = await Promise.all(
-    decades.map(async (d) => ((await lib.count({ from: yearRange(d).from, to: yearRange(d + 10).from })) > 0 ? d : null)),
-  );
-  const keep = new Set(filled.filter((d): d is number => d != null));
-  return list.filter((y) => keep.has(Math.floor(y / 10) * 10));
-}
-
 /** The instants a lost date is stamped with: the first of January 1970, give or take a time zone, and Photos' reference date. */
 const PLACEHOLDERS: readonly TimeRange[] = [
   { from: -EPOCH_GUARD_MS, to: EPOCH_GUARD_MS + 1 },
   { from: REFERENCE_DATE, to: REFERENCE_DATE + 1 },
 ];
+
+/** How many photographs in a range carry a lost date: one count for each placeholder instant the range touches, none for the rest. */
+async function lostIn(lib: LibrarySource, range: TimeRange): Promise<number> {
+  const placeholders = PLACEHOLDERS.map((p) => ({ from: Math.max(p.from, range.from), to: Math.min(p.to, range.to) })).filter(
+    (p) => p.to > p.from,
+  );
+  const lost = await Promise.all(placeholders.map((p) => lib.count(p)));
+  return lost.reduce((a, b) => a + b, 0);
+}
+
+/**
+ * Of these years, the ones in a decade that holds any photograph: one
+ * count per decade, and the lost dates in it counted and left out, so a
+ * single photograph stamped with the first of January 1970 does not open
+ * ten empty years of the 1970s.
+ */
+async function inFilledDecades(lib: LibrarySource, list: readonly number[]): Promise<number[]> {
+  if (list.length === 0) return [];
+  const decades = years(Math.floor(list[0] / 10), Math.floor(list[list.length - 1] / 10)).map((d) => d * 10);
+  const filled = await Promise.all(
+    decades.map(async (d) => {
+      const range = { from: yearRange(d).from, to: yearRange(d + 10).from };
+      const [all, lost] = await Promise.all([lib.count(range), lostIn(lib, range)]);
+      return all - lost > 0 ? d : null;
+    }),
+  );
+  const keep = new Set(filled.filter((d): d is number => d != null));
+  return list.filter((y) => keep.has(Math.floor(y / 10) * 10));
+}
 
 /**
  * Photographs in a range, screenshots left out: two counts, no
@@ -190,15 +211,8 @@ const PLACEHOLDERS: readonly TimeRange[] = [
  * will show.
  */
 async function photographs(lib: LibrarySource, range: TimeRange): Promise<number> {
-  const placeholders = PLACEHOLDERS.map((p) => ({ from: Math.max(p.from, range.from), to: Math.min(p.to, range.to) })).filter(
-    (p) => p.to > p.from,
-  );
-  const [all, screenshots, ...lost] = await Promise.all([
-    lib.count(range),
-    lib.count(range, "screenshot"),
-    ...placeholders.map((p) => lib.count(p)),
-  ]);
-  return Math.max(0, all - screenshots - lost.reduce((a, b) => a + b, 0));
+  const [all, screenshots, lost] = await Promise.all([lib.count(range), lib.count(range, "screenshot"), lostIn(lib, range)]);
+  return Math.max(0, all - screenshots - lost);
 }
 
 const yearOf = (p: Print) => new Date(p.takenAt).getFullYear();
@@ -219,10 +233,12 @@ export interface YearCount {
  * anything are opened year by year, so a library whose oldest scan is from
  * 1952 costs a few dozen counts, not two hundred. Years before 1970 are
  * counted like any other — and, unlike in the first version, shown too.
+ * `oldest`, when the caller already has it, saves asking the library for
+ * it again: that question sorts every photograph the library holds.
  */
-export async function yearIndex(source: LibrarySource, now = Date.now()): Promise<YearCount[]> {
+export async function yearIndex(source: LibrarySource, now = Date.now(), oldest?: number | null): Promise<YearCount[]> {
   const lib = gated(source);
-  const span = yearSpan(await lib.oldest(), now);
+  const span = yearSpan(oldest !== undefined ? oldest : await lib.oldest(), now);
   if (!span) return [];
   const list = await inFilledDecades(lib, years(span.first, span.last));
   const counts = await Promise.all(list.map(async (year) => ({ year, count: await photographs(lib, yearRange(year)) })));
@@ -275,13 +291,17 @@ function daysFrom(p: Print, date: Date): number {
 /**
  * The years to look in when the year index has not been read: every year
  * from the oldest photograph's to last year. Only `oldest()` is asked, so
- * the first print does not wait for forty counts.
+ * the first print does not wait for forty counts — and not even that
+ * when the caller already knows it. An oldest date that is itself a lost
+ * one says nothing about where the library begins, so its decades are
+ * counted however short the span.
  */
-async function yearsBack(lib: LibrarySource, now: number): Promise<number[]> {
-  const span = yearSpan(await lib.oldest(), now);
-  if (!span) return [];
+async function yearsBack(lib: LibrarySource, now: number, known?: number | null): Promise<number[]> {
+  const oldest = known !== undefined ? known : await lib.oldest();
+  const span = yearSpan(oldest, now);
+  if (oldest == null || !span) return [];
   const list = years(span.first, span.last - 1);
-  return list.length <= DAY_DIRECT_YEARS ? list : inFilledDecades(lib, list);
+  return list.length <= DAY_DIRECT_YEARS && !isLostDate(oldest) ? list : inFilledDecades(lib, list);
 }
 
 /**
@@ -386,10 +406,13 @@ function sweep(perYear: readonly Print[][]): Print[] {
  * throw away.
  *
  * Seen history is ignored here — the date is the reason to look again.
+ * `oldest`, when the caller already has it (null for an empty library),
+ * is used instead of asking the library again, which would put a second
+ * sort of the whole library in front of the first anniversary page.
  */
 export async function onThisDay(
   source: LibrarySource,
-  opts: { now?: number; years?: readonly number[] | null; maxReach?: DayReach } = {},
+  opts: { now?: number; years?: readonly number[] | null; maxReach?: DayReach; oldest?: number | null } = {},
 ): Promise<DayResult> {
   const now = opts.now ?? Date.now();
   const lib = gated(source);
@@ -399,7 +422,7 @@ export async function onThisDay(
       ? [...new Set(opts.years)]
           .filter((y) => Number.isInteger(y) && y < today.getFullYear() && y >= new Date(EARLIEST_PLAUSIBLE).getFullYear())
           .sort((a, b) => a - b)
-      : await yearsBack(lib, now);
+      : await yearsBack(lib, now, opts.oldest);
   const widest = Math.max(0, DAY_REACHES.findIndex((r) => r.reach === (opts.maxReach ?? "season")));
   let found: Print[][] = list.map(() => []);
   let reach: DayReach = DAY_REACHES[0].reach;
@@ -437,7 +460,7 @@ export function opensOnThisDay(day: DayResult | null | undefined): boolean {
 export interface SurpriseOptions {
   now?: number;
   seed: number;
-  /** When the oldest photograph was taken, for the first picks before any year is counted. */
+  /** When the oldest photograph was taken, for the picks dealt before the year index is known. */
   oldest: number | null;
   /** The year index, if it is already known; otherwise given later through `setYears`. */
   years?: readonly YearCount[] | null;
@@ -458,9 +481,9 @@ interface Bed {
   weight: number;
   /** Fewer photographs than a pool year needs; drawn from only when nothing else is left. */
   tiny: boolean;
-  /** Tries in a row that found nothing usable at all, whatever the rules. */
-  barren: number;
-  /** Put away for the visit: read end to end and found empty, or barren too many times running. */
+  /** The year index's count, when the bed is a year; unknown for the cold bed. */
+  count?: number;
+  /** Put away for the visit: read end to end, or every stretch of it learned, and nothing usable found. */
   dry: boolean;
   /** Stretches of the range a read has shown to hold no eligible photograph: in order, never overlapping. */
   empty: TimeRange[];
@@ -485,31 +508,33 @@ function markEmpty(bed: Bed, from: number, to: number): void {
  * stretch between the moment and the nearest eligible frame is empty for
  * the Darkroom's purposes — a moment drawn there would only find that
  * same frame again — and so is the stretch beyond the furthest one, when
- * the page reached the end of the range.
+ * the page reached the end of the window it read (`range`), which is the
+ * most a read can say: what lies past the window was not asked about.
  */
-function learn(bed: Bed, side: "before" | "after", moment: number, page: Page, eligible: readonly Print[]): void {
+function learn(bed: Bed, side: "before" | "after", moment: number, range: TimeRange, page: Page, eligible: readonly Print[]): void {
   const last = page.prints[page.prints.length - 1];
   const times = eligible.map((p) => p.takenAt);
   if (side === "before") {
     if (times.length === 0) {
-      markEmpty(bed, page.hasNextPage && last ? Math.floor(last.takenAt) + 1 : bed.range.from, moment + 1);
+      markEmpty(bed, page.hasNextPage && last ? Math.floor(last.takenAt) + 1 : range.from, moment + 1);
       return;
     }
     markEmpty(bed, Math.floor(Math.max(...times)) + 1, moment + 1);
-    if (!page.hasNextPage) markEmpty(bed, bed.range.from, Math.min(...times));
+    if (!page.hasNextPage) markEmpty(bed, range.from, Math.min(...times));
   } else {
     if (times.length === 0) {
-      markEmpty(bed, moment + 1, page.hasNextPage && last ? last.takenAt : bed.range.to);
+      markEmpty(bed, moment + 1, page.hasNextPage && last ? last.takenAt : range.to);
       return;
     }
     markEmpty(bed, moment + 1, Math.min(...times));
-    if (!page.hasNextPage) markEmpty(bed, Math.floor(Math.max(...times)) + 1, bed.range.to);
+    if (!page.hasNextPage) markEmpty(bed, Math.floor(Math.max(...times)) + 1, range.to);
   }
 }
 
 /** Which rule emptied a try: nothing usable at all, all seen lately, or all near a recent pick. */
 type Miss = "barren" | "quiet" | "near";
 
+/** One pick's tries so far: the rules eased for it, and the beds that keep coming up empty. */
 interface Eased {
   /** Year avoidance and the year cap. */
   spread: boolean;
@@ -517,6 +542,14 @@ interface Eased {
   apart: boolean;
   /** Years with one or two photographs. */
   tiny: boolean;
+  /** Tries in a row, this pick, that found nothing usable at all in a bed, whatever the rules. */
+  barren: Map<Bed, number>;
+}
+
+/** One side of a drawn moment, as read: its eligible frames, nearest first, and whether the read reached the bed's end with nothing left over. */
+interface Side {
+  eligible: Print[];
+  whole: boolean;
 }
 
 /**
@@ -536,10 +569,17 @@ interface Eased {
  * Six tries at each step. When they fail, the rule that was in the way
  * eases — the quiet window halves for the rest of the roll; the year
  * rules or the six-hour rule step aside for this one pick; the smallest
- * years are let in — and it tries again. Years that turn out empty are
- * put away, so a library of two tiny years and two large ones never
- * spends its tries on the tiny ones. Only when every rule has eased and
- * nothing at all is left is the visit `exhausted`.
+ * years are let in — and it tries again. Years read end to end and found
+ * empty are put away, so a library of two tiny years and two large ones
+ * never spends its tries on the tiny ones; a year that keeps coming up
+ * empty is passed over for the rest of the pick, never the visit. Only
+ * when the years are known, every rule has eased and nothing at all is
+ * left is the visit `exhausted`.
+ *
+ * Every read keeps to a window of time around the drawn moment, a month
+ * and then at most a year either side, so no question grows with the
+ * library — not even before the years are counted, when the bed is the
+ * library's whole span.
  */
 export class Surprise {
   private readonly lib: LibrarySource;
@@ -556,7 +596,6 @@ export class Surprise {
   private beds: Bed[] | null = null;
   private readonly cold: Bed | null = null;
   private dealt: number;
-  private visitPicks = 0;
   private quiet = QUIET_LADDER[0];
   private isExhausted = false;
   private queue: Promise<unknown> = Promise.resolve();
@@ -573,7 +612,7 @@ export class Surprise {
     if (opts.oldest != null && Number.isFinite(opts.oldest)) {
       const from = Math.max(opts.oldest, EARLIEST_PLAUSIBLE);
       if (from < this.ceiling) {
-        this.cold = { year: null, range: { from, to: this.ceiling }, weight: 1, tiny: false, barren: 0, dry: false, empty: [] };
+        this.cold = { year: null, range: { from, to: this.ceiling }, weight: 1, tiny: false, dry: false, empty: [] };
       }
     }
     if (opts.years) this.setYears(opts.years);
@@ -584,7 +623,12 @@ export class Surprise {
     return this.dealt >= ROLL_LENGTH;
   }
 
-  /** Nothing left to deal, even with every rule eased and a quiet window of no days at all. */
+  /**
+   * Nothing left to deal, even with every rule eased and a quiet window of
+   * no days at all. Never said before the year index is known: until then
+   * the picks draw on the library's whole span, and an empty draw there
+   * only means the years must be counted first.
+   */
   get exhausted(): boolean {
     return this.isExhausted;
   }
@@ -609,7 +653,7 @@ export class Surprise {
         range,
         weight,
         tiny: count < POOL_MIN_COUNT,
-        barren: known?.barren ?? 0,
+        count,
         dry: known?.dry ?? false,
         empty: known?.empty ?? [],
       });
@@ -623,7 +667,8 @@ export class Surprise {
    * taken one at a time, in order, so the deal for a seed is always the
    * same deal. With no oldest date to start cold from and no years yet,
    * there is nowhere to draw from: it deals nothing, and is not exhausted,
-   * until `setYears` arrives.
+   * until `setYears` arrives. Nor is it exhausted when the cold start
+   * comes up short: it deals what it found and waits for the years.
    */
   next(count: number): Promise<Print[]> {
     const run = this.queue.then(() => this.deal(count));
@@ -653,7 +698,9 @@ export class Surprise {
     while (out.length < count && !this.rollDone && !this.isExhausted) {
       const p = await this.pickOne();
       if (!p) {
-        this.isExhausted = true;
+        // Before the years are known an empty pick means "not yet": the
+        // room counts the years and asks again.
+        if (this.beds !== null) this.isExhausted = true;
         break;
       }
       this.record(p);
@@ -671,11 +718,10 @@ export class Surprise {
     const pile = pileKey(p);
     this.perPile.set(pile, (this.perPile.get(pile) ?? 0) + 1);
     this.dealt += 1;
-    this.visitPicks += 1;
   }
 
   private async pickOne(): Promise<Print | null> {
-    const eased: Eased = { spread: false, apart: false, tiny: false };
+    const eased: Eased = { spread: false, apart: false, tiny: false, barren: new Map() };
     let misses = new Set<Miss>();
     let tries = 0;
     for (;;) {
@@ -717,28 +763,36 @@ export class Surprise {
   }
 
   /**
-   * Where the next moment is drawn from. The first picks of a visit — and
-   * every pick until the years have been counted — come from the whole
-   * span of the library, which needs no count at all. After that, a year,
-   * by weight, avoiding the last picks' years and any year that has had
-   * its share of this roll; when those rules leave nothing, the share
-   * gives way first and then the avoidance, so a pool of one or two
-   * years still deals.
+   * Where the next moment is drawn from. Until the years have been
+   * counted, the whole span of the library, which needs no count at all;
+   * a span that keeps coming up empty this pick gives way, and the pick
+   * waits for the years. Once they are known, a year, by weight — the
+   * index has already left out the lost dates and weighs a year of one
+   * stray photograph by the root of one, so an outlier dated 1904 cannot
+   * pull the picks to the library's first month the way a draw over the
+   * whole span can. The year avoids the last picks' years and any year
+   * that has had its share of this roll; when those rules leave nothing,
+   * the share gives way first and then the avoidance, so a pool of one or
+   * two years still deals.
    */
   private chooseBed(eased: Eased): Bed | null {
-    const coldFirst = this.beds === null || this.visitPicks < COLD_START_PICKS;
-    if (coldFirst && this.cold && !this.cold.dry) return this.cold;
-    if (!this.beds) return null;
+    const passed = (b: Bed) => (eased.barren.get(b) ?? 0) >= BARREN_LIMIT;
+    if (this.beds === null) return this.cold && !this.cold.dry && !passed(this.cold) ? this.cold : null;
     const live = this.beds.filter((b) => !b.dry && (eased.tiny || !b.tiny));
     if (live.length === 0) return null;
-    let options = live;
+    // A year that keeps coming up empty steps aside for the rest of this
+    // pick while another is left; only when none is left is it tried
+    // again, so a pick never ends while a year still has unread time.
+    const fresh = live.filter((b) => !passed(b));
+    const pool = fresh.length > 0 ? fresh : live;
+    let options = pool;
     if (!eased.spread) {
-      const avoidCount = live.length >= 3 ? 2 : live.length === 2 ? 1 : 0;
+      const avoidCount = pool.length >= 3 ? 2 : pool.length === 2 ? 1 : 0;
       const avoid = new Set(this.recent.slice(this.recent.length - avoidCount).map(yearOf));
-      const share = Math.max(2, Math.ceil(ROLL_LENGTH / live.length) + 1);
-      const apart = live.filter((b) => !avoid.has(b.year!));
+      const share = Math.max(2, Math.ceil(ROLL_LENGTH / pool.length) + 1);
+      const apart = pool.filter((b) => !avoid.has(b.year!));
       const within = apart.filter((b) => (this.yearPicks.get(b.year!) ?? 0) < share);
-      options = within.length > 0 ? within : apart.length > 0 ? apart : live;
+      options = within.length > 0 ? within : apart.length > 0 ? apart : pool;
     }
     return this.weighted(options, (b) => b.weight);
   }
@@ -776,36 +830,67 @@ export class Surprise {
       bed.dry = true;
       return "barren";
     }
-    const { from, to } = bed.range;
-    const eligible = (p: Print) => isEligible(p, { now: this.now });
-    const before = await this.lib.page({ range: { from, to: moment + 1 }, first: READ_AROUND, order: "desc" });
-    let frames = before.prints.filter(eligible);
-    learn(bed, "before", moment, before, frames);
-    let readAll = !before.hasNextPage;
+    const before = await this.readSide(bed, "before", moment);
+    let frames = before.eligible;
+    let readAll = before.whole;
     let found = this.candidates(frames, eased);
     // Thin before the moment, nothing there that may be shown, or the
     // moment fell in a gap: read the far side too. In a small year the two
-    // pages are the whole year, and an empty answer then means the year
+    // sides are the whole year, and an empty answer then means the year
     // is empty.
     const nearest = frames.length > 0 ? frames[0].takenAt : -Infinity;
     const thin = frames.length < READ_AROUND_ENOUGH || typeof found === "string" || moment - nearest > READ_ACROSS_GAP_MS;
-    if (thin && moment + 1 < to) {
-      const after = await this.lib.page({ range: { from: moment + 1, to }, first: READ_AROUND, order: "asc" });
-      const newer = after.prints.filter(eligible);
-      learn(bed, "after", moment, after, newer);
-      frames = frames.concat(newer);
-      readAll = readAll && !after.hasNextPage;
+    if (thin && moment + 1 < bed.range.to) {
+      const after = await this.readSide(bed, "after", moment);
+      frames = frames.concat(after.eligible);
+      readAll = readAll && after.whole;
       found = this.candidates(frames, eased);
     }
     if (typeof found !== "string") {
-      bed.barren = 0;
+      eased.barren.delete(bed);
       return this.weighted(found, quality);
     }
     if (found === "barren") {
-      bed.barren += 1;
-      if (readAll || bed.barren >= BARREN_LIMIT) bed.dry = true;
+      eased.barren.set(bed, (eased.barren.get(bed) ?? 0) + 1);
+      // Only a bed read end to end is put away. One that merely came up
+      // empty a few times running has learned where it is empty, and its
+      // next draw keeps to the rest.
+      if (readAll) bed.dry = true;
+    } else {
+      eased.barren.delete(bed);
     }
     return found;
+  }
+
+  /**
+   * The nearest frames on one side of a moment, within a window of time:
+   * a month, and a year when the month was read to its end and held too
+   * few eligible frames to choose from. Never past the bed's own ends,
+   * and never further than a year, however far those are — a moment in a
+   * long gap finds nothing, the gap it read is learned, and the next draw
+   * keeps out of it.
+   */
+  private async readSide(bed: Bed, side: "before" | "after", moment: number): Promise<Side> {
+    const eligible = (p: Print) => isEligible(p, { now: this.now });
+    let read: Side = { eligible: [], whole: false };
+    // A year too sparse for a month to hold enough to choose from would
+    // only cost the month's read before the year's: go straight to the year.
+    const sparse =
+      bed.count != null &&
+      (bed.count * READ_NEAR_MS) / Math.max(1, bed.range.to - bed.range.from) < 2 * READ_AROUND_ENOUGH;
+    for (const reach of sparse ? [READ_FAR_MS] : [READ_NEAR_MS, READ_FAR_MS]) {
+      const range =
+        side === "before"
+          ? { from: Math.max(bed.range.from, moment + 1 - reach), to: moment + 1 }
+          : { from: moment + 1, to: Math.min(bed.range.to, moment + 1 + reach) };
+      const page = await this.lib.page({ range, first: READ_AROUND, order: side === "before" ? "desc" : "asc" });
+      const frames = page.prints.filter(eligible);
+      learn(bed, side, moment, range, page, frames);
+      const atEnd = side === "before" ? range.from <= bed.range.from : range.to >= bed.range.to;
+      read = { eligible: frames, whole: atEnd && !page.hasNextPage };
+      if (page.hasNextPage || atEnd || frames.length >= READ_AROUND_ENOUGH) break;
+    }
+    return read;
   }
 
   /** The moments among these frames that may be dealt now, paced by shape; or which rule left none. */
@@ -1058,6 +1143,15 @@ export class YearEdit {
     const pages = await Promise.all(
       slices.map((slice) => this.lib.page({ range: slice.range, first: SLICE_FIRST, order: "asc" })),
     );
+    const usable = pages.map((page) =>
+      page.prints.filter((p) => isEligible(p, { now: this.now, allowRecent: this.allowRecent })),
+    );
+    // MORE FROM: a moment that holds a print this visit has already shown
+    // is left out whole, whichever slice its frames fell in. Leaving out
+    // only the shown frame would let the rest of its burst stand in for
+    // it, and the member would see the same photograph again.
+    const all = usable.flat();
+    const spoken = all.some((p) => this.shown.has(p.id)) ? sameMoment(all, (p) => this.shown.has(p.id)) : null;
     const picks: Print[] = [];
     const take = (p: Print) => {
       picks.push(p);
@@ -1069,9 +1163,7 @@ export class YearEdit {
       let want = 1 + carried;
       const pin = this.pin;
       const pinned = pin != null && pin.takenAt >= slice.range.from && pin.takenAt < slice.range.to;
-      let frames = pages[i].prints.filter(
-        (p) => !this.shown.has(p.id) && isEligible(p, { now: this.now, allowRecent: this.allowRecent }),
-      );
+      let frames = usable[i];
       if (pinned) {
         // The print the member came from takes its slice's place, and its
         // own moment goes with it.
@@ -1079,7 +1171,9 @@ export class YearEdit {
         want -= 1;
         frames = frames.filter((p) => p.id !== pin.id && Math.abs(p.takenAt - pin.takenAt) > MOMENT_GAP_MS);
       }
-      const moments = condense(frames);
+      // Condensed before the shown are taken out, so a moment is the same
+      // moment it was when it was shown, and its representative the same frame.
+      const moments = condense(frames).filter((m) => !this.shown.has(m.id) && !spoken?.has(m.id));
       while (want > 0) {
         const best = this.best(moments, slice.middle);
         if (!best) break;

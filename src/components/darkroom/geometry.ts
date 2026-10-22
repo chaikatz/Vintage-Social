@@ -9,8 +9,13 @@
  * screen lays these out with flex and measures the stage; the numbers
  * here are what it is measured against.
  *
+ * At the end are the plate's two other rules that need no screen: how far
+ * the caption's presses reach, and what a plate that cannot draw its
+ * photograph decides about asking again.
+ *
  * Pure, so the tests can hold the plate to its sizes.
  */
+import type { PlateTrouble } from "./words";
 
 /** The running head's height; a minimum, so it grows with Dynamic Type. */
 export const HEAD_HEIGHT = 44;
@@ -124,4 +129,70 @@ export function bladeDepth(
     return depth > 0.5 ? { axis: "horizontal", depth } : null;
   }
   return null;
+}
+
+/** Every press in the room is at least this tall (§11.6). */
+export const TOUCH_TARGET = 44;
+/** Caption line 1's own height at the default type size. */
+const LINE_1 = 14;
+
+/**
+ * How far the caption's two presses reach above and below their letters.
+ * Drawn as padding that an equal negative margin takes back, so the
+ * caption is laid out exactly as if the reach were not there and
+ * `captionHeight` still holds, and the target is part of the measured
+ * layout, where a test can see it. (HitSlop's trouble here was never its
+ * reach: the line beneath, drawn later, took the touch first. That line
+ * and the progress slot now let touches through.)
+ *
+ * The date reaches up to the plate's edge and down over the line
+ * beneath: 44 at the default type size and more as the type grows. Below
+ * the default its press keeps a minimum height of 44, which leaves the
+ * 14 pt the row is held to anyway, so nothing moves. The word at the
+ * right (SET ASIDE) is set smaller, in 10 pt Courier with no line height
+ * of its own: about 11 pt tall, and 9.3 at the smallest Dynamic Type
+ * size. So it reaches further down, and its reach and letters make 44 at
+ * every size without its minimum height ever taking effect, which would
+ * move the word when it has a row of its own.
+ */
+export const DATE_REACH = { top: CAPTION_GAP, bottom: TOUCH_TARGET - LINE_1 - CAPTION_GAP };
+export const WORD_REACH = { top: 15, bottom: 20 };
+
+/**
+ * Why a plate could not draw its photograph, decided when it fails and
+ * kept: gone from the library (expo-image's error says "not found"), or
+ * failed while the phone was offline, or failed while it was online. It is
+ * read from the moment of failure, not from the network afterwards,
+ * because §9.4 tells the last two apart by when they happened: one that
+ * failed with a connection will not draw by being asked again at once.
+ * The error text names the asset, so it is only matched, never kept.
+ */
+export function plateTrouble(error: string | undefined, online: boolean): PlateTrouble {
+  if (/not found/i.test(error ?? "")) return "missing";
+  return online ? "other" : "offline";
+}
+
+/**
+ * Whether a plate that could not draw asks again as the network changes.
+ * Only on the way back online: one that failed offline is asked for once
+ * the phone is online (it may be already, if the failure was reported
+ * after the connection came back), and one that failed online only when
+ * the phone has been offline since and is back. So a print that fails
+ * with a connection settles on COULDN’T SHOW THIS ONE instead of asking
+ * again forever. One gone from the library waits for the library to
+ * change, which retries every plate in trouble.
+ */
+/**
+ * What a failure is called once the phone goes offline: one that looked
+ * like the image's own fault while the phone was online (or before it
+ * knew) may just as well be iCloud's, and it will be asked again when the
+ * phone is back — so it says IN ICLOUD meanwhile, not "Try it again later".
+ */
+export function troubleOffline(trouble: PlateTrouble | null, wasOnline: boolean, online: boolean): PlateTrouble | null {
+  return trouble === "other" && wasOnline && !online ? "offline" : trouble;
+}
+
+export function asksAgain(trouble: PlateTrouble | null, wasOnline: boolean, online: boolean): boolean {
+  if (trouble == null || trouble === "missing" || !online) return false;
+  return trouble === "offline" || !wasOnline;
 }

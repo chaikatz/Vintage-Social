@@ -62,7 +62,13 @@ export class Visit {
 
   constructor(readonly source: LibrarySource) {}
 
-  /** When the oldest photograph was taken; null for an empty library. Asked once a visit. */
+  /**
+   * When the oldest photograph was taken; null for an empty library.
+   * Asked once a visit, and handed to every reader that wants it (On this
+   * day's years, the year index, Surprise's cold start), since the
+   * question sorts every photograph on the phone. Let go when Photos says
+   * the library changed.
+   */
   oldest(): Promise<number | null> {
     if (!this.oldestAsked) {
       const asked = this.source.oldest();
@@ -90,12 +96,15 @@ export class Visit {
     return yearCache && Date.now() - yearCache.at < YEARS_FRESH_MS ? yearCache.years : null;
   }
 
-  /** The year index, counted again unless it is fresh; every Surprise of the visit is given it. */
+  /**
+   * The year index, counted again unless it is fresh. Every Surprise of
+   * the visit is given it, however it was come by: a roll begun cold
+   * before another room counted the years has still not been told them.
+   */
   async years(force = false): Promise<YearCount[]> {
     const known = force ? null : this.freshYears();
-    if (known) return known;
-    const years = await yearIndex(this.source, Date.now());
-    yearCache = { at: Date.now(), years };
+    const years = known ?? (await yearIndex(this.source, Date.now(), await this.oldest()));
+    if (!known) yearCache = { at: Date.now(), years };
     for (const d of this.surprises) d.setYears(years);
     return years;
   }
@@ -114,7 +123,7 @@ export class Visit {
   async askDay(): Promise<DayResult> {
     const known = this.knownDay();
     if (known) return known;
-    const result = await onThisDay(this.source, { now: Date.now() });
+    const result = await onThisDay(this.source, { now: Date.now(), oldest: await this.oldest() });
     this.remember(result);
     return result;
   }
@@ -126,14 +135,15 @@ export class Visit {
    * decides the same way, a little later.
    */
   askDayOnly(now: number): Promise<DayResult | null> {
-    const dayOnly = { now, maxReach: "day" as const };
-    return onThisDay(this.source, dayOnly).then(
-      (result) => {
-        this.remember(result, now);
-        return result;
-      },
-      () => null,
-    );
+    return this.oldest()
+      .then((oldest) => onThisDay(this.source, { now, maxReach: "day", oldest }))
+      .then(
+        (result) => {
+          this.remember(result, now);
+          return result;
+        },
+        () => null,
+      );
   }
 
   /** A print the member settled on. */
@@ -173,13 +183,24 @@ export class Visit {
     });
   }
 
-  /** A dealer for a Surprise roll, told the year index when it arrives. */
+  /** A dealer for a Surprise roll, told the year index when it arrives; a reader still being built is told once it is. */
   surpriseDealer(key: ChapterKey, reader: Reader | Promise<Reader | null>): Dealer {
     const d = new Dealer(key, reader, { orphan });
     this.surprises.add(d);
     const years = this.freshYears();
-    if (years && !(reader instanceof Promise)) d.setYears(years);
+    if (years) d.setYears(years);
     return d;
+  }
+
+  /**
+   * A roll begun by an earlier room and kept, shown again in this one: it
+   * is told the year index as this visit learns it, and now if the room
+   * already has it.
+   */
+  adopt(d: Dealer, known: readonly YearCount[] | null): void {
+    this.surprises.add(d);
+    const years = this.freshYears() ?? known;
+    if (years) d.setYears(years);
   }
 
   editDealer(key: ChapterKey, reader: Reader | Promise<Reader | null>, accept?: (p: Print) => boolean): Dealer {

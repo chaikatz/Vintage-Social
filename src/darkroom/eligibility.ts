@@ -126,11 +126,20 @@ export const POOL_MIN_COUNT = 3;
 /** Older years weigh a little more: this much per year of age, up to `AGE_LEAN_YEARS`. */
 export const AGE_LEAN = 0.1;
 export const AGE_LEAN_YEARS = 15;
-/** The first picks of a visit are drawn from the whole span of the library, before any year has been counted. */
-export const COLD_START_PICKS = 2;
 /** Frames read either side of a drawn moment, and how many eligible ones make the far side unnecessary. */
 export const READ_AROUND = 40;
 export const READ_AROUND_ENOUGH = 6;
+/**
+ * How far a read reaches from a drawn moment: a month, and then a year
+ * when the month held too few to choose from. Never further. Photos
+ * gathers every photograph a question's range holds before it hands back
+ * the first forty, so a read to the far end of the library (where the
+ * picks before the year index draw from) would grow with the library.
+ * A year bed is no longer than a year, so its second read reaches its
+ * ends, as it always did.
+ */
+export const READ_NEAR_MS = 30 * DAY_MS;
+export const READ_FAR_MS = 366 * DAY_MS;
 /**
  * A moment further than this from the nearest frame before it has landed
  * in a gap between occasions. The frames after it are read too, so the
@@ -145,7 +154,12 @@ export const SAME_OCCASION_MS = 6 * HOUR;
 export const OCCASION_MEMORY = 8;
 /** Tries at each step before a rule is relaxed. */
 export const ATTEMPTS_PER_STEP = 6;
-/** A year that yields nothing usable this many times running is put away for the visit. */
+/**
+ * A year that yields nothing usable this many times running is passed
+ * over for the rest of that pick, while another is left. It is not put
+ * away for the visit: in a year of screenshots, three reads that found
+ * only screenshots have still left most of the year unread.
+ */
 export const BARREN_LIMIT = 3;
 
 // By year ---------------------------------------------------------------------
@@ -188,8 +202,7 @@ const SCREENS = new Set(SCREEN_SIZES.map(([s, l]) => `${s}x${l}`));
  */
 export function isEligible(print: Print, opts: { now?: number; allowRecent?: boolean } = {}): boolean {
   const t = print.takenAt;
-  if (!Number.isFinite(t) || t < EARLIEST_PLAUSIBLE) return false;
-  if (Math.abs(t) <= EPOCH_GUARD_MS || t === REFERENCE_DATE) return false;
+  if (isLostDate(t)) return false;
   if (opts.now != null && !opts.allowRecent && t > opts.now - REDISCOVERY_AGE_DAYS * DAY_MS) return false;
   if (print.subtypes.includes("screenshot")) return false;
   if (print.filename && NOT_A_CAMERA.test(print.filename)) return false;
@@ -201,6 +214,11 @@ export function isEligible(print: Print, opts: { now?: number; allowRecent?: boo
   if (short / long < MIN_SHAPE && !print.subtypes.includes("panorama")) return false;
   if (SCREENS.has(`${short}x${long}`)) return false;
   return true;
+}
+
+/** A date that only says the real one was lost: before 1900, the turn of 1970 within a time zone, or Photos' reference date. */
+export function isLostDate(t: number): boolean {
+  return !Number.isFinite(t) || t < EARLIEST_PLAUSIBLE || Math.abs(t) <= EPOCH_GUARD_MS || t === REFERENCE_DATE;
 }
 
 /**
@@ -304,6 +322,36 @@ export function condense(prints: readonly Print[]): Print[] {
   }
   for (const run of runs(rest)) out.push(representative(run));
   return out.sort(byTime);
+}
+
+/**
+ * Of these frames, the ids of the ones that make one moment with a frame
+ * `shown` picks out, those frames included: reached from it in steps of
+ * no more than a minute and a half, and no further from it than a
+ * moment lasts. Taken from the frame itself rather than from where
+ * `condense` happens to start a moment, so a burst that a slice's edge cut
+ * in two is still one burst. Once one frame of a burst has been shown,
+ * whatever is left of it is the same picture again.
+ */
+export function sameMoment(frames: readonly Print[], shown: (p: Print) => boolean): Set<string> {
+  const unique = new Map<string, Print>();
+  for (const p of frames) if (!unique.has(p.id)) unique.set(p.id, p);
+  const sorted = [...unique.values()].sort(byTime);
+  const out = new Set<string>();
+  sorted.forEach((s, k) => {
+    if (!shown(s)) return;
+    out.add(s.id);
+    for (const step of [1, -1]) {
+      let prev = s;
+      for (let j = k + step; j >= 0 && j < sorted.length; j += step) {
+        const p = sorted[j];
+        if (Math.abs(p.takenAt - prev.takenAt) > MOMENT_GAP_MS || Math.abs(p.takenAt - s.takenAt) > MOMENT_SPAN_MS) break;
+        out.add(p.id);
+        prev = p;
+      }
+    }
+  });
+  return out;
 }
 
 /** The second a print was taken in, for counting how many of one pile have been shown. */

@@ -87,6 +87,7 @@ const OLD_HISTORY = "document/darkroom-history.json";
 const SHELF = "document/darkroom-set-aside.json";
 const PLACE = "document/darkroom-place.json";
 const INTRO = "document/darkroom-intro.json";
+const OWNER = "document/darkroom-owner.json";
 
 function print(n: number, over: Partial<Print> = {}): Print {
   return {
@@ -718,25 +719,27 @@ describe("markDeveloped", () => {
 // Forgetting
 // ---------------------------------------------------------------------------
 
-describe("forgetting", () => {
-  async function filled() {
-    const app = await launch();
-    const { history, shelf, session } = app;
-    history.markSeen("p1");
-    history.recordDeveloped("p2");
-    history.finishDay("2026-10-22");
-    history.flushHistory();
-    settle();
-    shelf.toggleSetAside(print(3));
-    session.savePlace({ mode: "surprise", year: null, month: 0, index: 0, prints: prints(3) });
-    session.flushPlace();
-    session.keepChapter("surprise", { prints: prints(3), index: 0, reader: null, more: true, reach: null });
-    session.markIntroSeen();
-    expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, SHELF, PLACE].sort());
-    return app;
-  }
+/** A phone with something in every file, kept for member "a". */
+async function filled() {
+  const app = await launch();
+  const { history, shelf, session, forget } = app;
+  forget.claimDarkroom("a");
+  history.markSeen("p1");
+  history.recordDeveloped("p2");
+  history.finishDay("2026-10-22");
+  history.flushHistory();
+  settle();
+  shelf.toggleSetAside(print(3));
+  session.savePlace({ mode: "surprise", year: null, month: 0, index: 0, prints: prints(3) });
+  session.flushPlace();
+  session.keepChapter("surprise", { prints: prints(3), index: 0, reader: null, more: true, reach: null });
+  session.markIntroSeen();
+  expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, SHELF, PLACE, OWNER].sort());
+  return app;
+}
 
-  it("at sign-out, deletes all four files and clears memory, chapters included", async () => {
+describe("forgetting", () => {
+  it("at sign-out, deletes every file, the owner's too, and clears memory, chapters included", async () => {
     const { history, shelf, session, forget } = await filled();
     forget.forgetDarkroom();
     expect([...phone.files.keys()]).toEqual([]);
@@ -759,7 +762,7 @@ describe("forgetting", () => {
   it("from Settings, forgets what was shown, posted and where the member was, and keeps the shelf", async () => {
     const { history, shelf, session, forget } = await filled();
     forget.forgetDarkroomHistory();
-    expect([...phone.files.keys()].sort()).toEqual([INTRO, SHELF].sort());
+    expect([...phone.files.keys()].sort()).toEqual([INTRO, SHELF, OWNER].sort());
     expect(history.seenWithin("p1", 21)).toBe(false);
     expect(history.developedAt("p2")).toBeNull();
     expect(history.dayFinished()).toBeNull();
@@ -767,6 +770,12 @@ describe("forgetting", () => {
     expect(session.recallChapter("surprise")).toBeNull();
     expect(shelf.isSetAside("p3")).toBe(true);
     expect(session.introSeen()).toBe(true);
+
+    // The member is still signed in, so what they look at next is kept as before.
+    history.markSeen("p9");
+    history.flushHistory();
+    settle();
+    expect(stored(HISTORY).seen.map((e: [string, number]) => e[0])).toEqual(["p9"]);
   });
 
   it("never writes back what a waiting flush still held", async () => {
@@ -777,19 +786,333 @@ describe("forgetting", () => {
     settle();
     expect(phone.files.has(HISTORY)).toBe(false);
   });
+});
 
-  it("happens whenever the member signed in stops being the one signed in", async () => {
+describe("whose the Darkroom is", () => {
+  it("is kept beside the files, as the member's id and nothing else", async () => {
+    await filled();
+    expect(stored(OWNER)).toEqual({ v: 1, id: "a" });
     const { forget } = await launch();
-    // A sign-out, here or from elsewhere; a session that expired or was revoked.
-    expect(forget.memberLeft("a", null)).toBe(true);
-    // Someone else, without a sign-out between.
-    expect(forget.memberLeft("a", "b")).toBe(true);
-    // A launch with nobody signed in: a session may have ended while the app was closed.
-    expect(forget.memberLeft(undefined, null)).toBe(true);
-    // A token refresh for the same member, a first sign-in, a sign-in after nobody.
-    expect(forget.memberLeft("a", "a")).toBe(false);
-    expect(forget.memberLeft(undefined, "a")).toBe(false);
-    expect(forget.memberLeft(null, "b")).toBe(false);
+    expect(forget.parseOwner({ v: 1, id: "a" })).toBe("a");
+    for (const junk of [null, "a", ["a"], { id: "a" }, { v: 2, id: "a" }, { v: 1, id: "" }, { v: 1, id: 7 }]) {
+      expect(forget.parseOwner(junk)).toBeNull();
+    }
+  });
+
+  it("survives a launch with nobody signed in, and the same member comes back to all of it", async () => {
+    await filled();
+    // Offline, with the access token expired: nobody is signed in for a
+    // while, and nothing is forgotten for it.
+    const app = await launch();
+    expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, SHELF, PLACE, OWNER].sort());
+    // The token refreshes: the same member, with the shelf, the place, the
+    // first-visit page passed and the history all still there.
+    app.forget.claimDarkroom("a");
+    expect(app.shelf.isSetAside("p3")).toBe(true);
+    expect(app.session.placeLine()).toBe("You left off in August 2018.");
+    expect(app.session.introSeen()).toBe(true);
+    expect(app.history.developedAt("p2")).not.toBeNull();
+    expect(writesTo(OWNER)).toBe(1);
+  });
+
+  it("is forgotten, memory and all, before a different member sees any of it", async () => {
+    const { history, shelf, session, forget } = await filled();
+    forget.claimDarkroom("b");
+    expect([...phone.files.keys()]).toEqual([OWNER]);
+    expect(stored(OWNER)).toEqual({ v: 1, id: "b" });
+    expect(shelf.setAsidePrints()).toEqual([]);
+    expect(session.placeLine()).toBeNull();
+    expect(session.recallChapter("surprise")).toBeNull();
+    expect(session.introSeen()).toBe(false);
+    expect(history.seenWithin("p1", 21)).toBe(false);
+    expect(history.developedAt("p2")).toBeNull();
+
+    // And after a launch whose session had ended while the app was closed.
+    await filled();
+    const app = await launch();
+    app.forget.claimDarkroom("b");
+    expect([...phone.files.keys()]).toEqual([OWNER]);
+    expect(app.shelf.isSetAside("p3")).toBe(false);
+    expect(app.session.placeLine()).toBeNull();
+  });
+
+  it("is forgotten when no owner is on record: files from before the record belong to nobody", async () => {
+    await filled();
+    phone.files.delete(OWNER);
+    const app = await launch();
+    app.forget.claimDarkroom("a");
+    expect([...phone.files.keys()]).toEqual([OWNER]);
+    expect(app.shelf.setAsidePrints()).toEqual([]);
+  });
+
+  it("keeps what is not yet on disk when the member already on record claims it again", async () => {
+    const { history, forget } = await filled();
+    history.markSeen("p7");
+    forget.claimDarkroom("a");
+    expect(history.seenWithin("p7", 21)).toBe(true);
+    history.flushHistory();
+    settle();
+    expect(stored(HISTORY).seen.map((e: [string, number]) => e[0])).toContain("p7");
+  });
+});
+
+describe("a room still open when the session ends", () => {
+  it("writes nothing back after the forgetting, and the next member finds none of it", async () => {
+    const { history, shelf, session, posted, forget } = await filled();
+    // auth says SIGNED_OUT while the room is on top of the stack.
+    forget.forgetDarkroom();
+    expect([...phone.files.keys()]).toEqual([]);
+
+    // The room goes on: pages settle, prints are looked at, set aside and
+    // posted, and then it is put away as it is left and the app goes to
+    // the background.
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 2, prints: prints(6) });
+    session.keepChapter("surprise", { prints: prints(6), index: 2, reader: null, more: true, reach: null });
+    for (let i = 0; i < 30; i++) history.markSeen(`q${i}`);
+    history.finishDay("2026-10-22");
+    shelf.toggleSetAside(print(4));
+    session.markIntroSeen();
+    posted.markDeveloped("p5");
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 3, prints: prints(6) });
+    session.flushPlace();
+    history.flushHistory();
+    settle();
+    toBackground();
+    settle();
+    expect([...phone.files.keys()]).toEqual([]);
+    // On screen it still behaves, for the moment before the door.
+    expect(shelf.isSetAside("p4")).toBe(true);
+
+    // The next member signs in.
+    forget.claimDarkroom("b");
+    expect([...phone.files.keys()]).toEqual([OWNER]);
+    expect(session.placeLine()).toBeNull();
+    expect(session.readPlace()).toBeNull();
+    expect(session.recallChapter("surprise")).toBeNull();
+    expect(session.introSeen()).toBe(false);
+    expect(shelf.setAsidePrints()).toEqual([]);
+    expect(history.seenWithin("q0", 21)).toBe(false);
+    expect(history.developedAt("p5")).toBeNull();
+    expect(history.dayFinished()).toBeNull();
+
+    // And what they do is kept as before.
+    shelf.toggleSetAside(print(7));
+    expect(stored(SHELF).map((p: { id: string }) => p.id)).toEqual(["p7"]);
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 1, prints: prints(2) });
+    session.flushPlace();
+    expect(stored(PLACE).deck.map((p: { id: string }) => p.id)).toEqual(["p0", "p1"]);
+    history.markSeen("p8");
+    history.flushHistory();
+    settle();
+    expect(stored(HISTORY).seen.map((e: [string, number]) => e[0])).toEqual(["p8"]);
+    session.markIntroSeen();
+    expect(stored(INTRO)).toBe(true);
+  });
+
+  it("never writes a flush that was waiting when the forgetting came", async () => {
+    const { history, forget } = await launch();
+    forget.claimDarkroom("a");
+    history.markSeen("p1");
+    history.flushHistory();
+    forget.forgetDarkroom();
+    history.markSeen("q1");
+    settle();
+    expect(phone.files.has(HISTORY)).toBe(false);
+  });
+
+  it("opens again for the same member after a sign-out that never reached the server", async () => {
+    const { history, shelf, forget } = await filled();
+    // "Sign out" forgot it, but auth kept the session: the same member is heard from again.
+    forget.forgetDarkroom();
+    forget.claimDarkroom("a");
+    expect(shelf.setAsidePrints()).toEqual([]);
+    shelf.toggleSetAside(print(9));
+    expect(stored(SHELF).map((p: { id: string }) => p.id)).toEqual(["p9"]);
+    history.markSeen("p9");
+    history.flushHistory();
+    settle();
+    expect(stored(HISTORY).seen.map((e: [string, number]) => e[0])).toEqual(["p9"]);
+  });
+
+  it("lets go of what was kept in memory while shut, even when the owner's file outlived the forgetting", async () => {
+    const { history, shelf, session, forget } = await filled();
+    forget.forgetDarkroom();
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 2, prints: prints(6) });
+    session.keepChapter("surprise", { prints: prints(6), index: 2, reader: null, more: true, reach: null });
+    session.markIntroSeen();
+    history.markSeen("q1");
+    shelf.toggleSetAside(print(4));
+    // The delete of the owner's file failed; the next claim matches it.
+    phone.files.set(OWNER, JSON.stringify({ v: 1, id: "a" }));
+    forget.claimDarkroom("a");
+    expect(session.readPlace()).toBeNull();
+    expect(session.recallChapter("surprise")).toBeNull();
+    expect(session.introSeen()).toBe(false);
+    expect(history.seenWithin("q1", 21)).toBe(false);
+    expect(shelf.setAsidePrints()).toEqual([]);
+    expect([...phone.files.keys()]).toEqual([OWNER]);
+  });
+
+  it("never lets a flush that waited across the forgetting write the last member's marks for the next", async () => {
+    const { history, forget } = await launch();
+    forget.claimDarkroom("a");
+    history.markSeen("p1");
+    history.flushHistory();
+    forget.forgetDarkroom();
+    forget.claimDarkroom("b");
+    settle();
+    expect(phone.files.has(HISTORY)).toBe(false);
+    expect(history.seenWithin("p1", 21)).toBe(false);
+  });
+
+  it("stays shut across nothing: a launch after it writes as usual once someone claims it", async () => {
+    const first = await filled();
+    first.forget.forgetDarkroom();
+    const app = await launch();
+    app.forget.claimDarkroom("a");
+    app.shelf.toggleSetAside(print(1));
+    expect(stored(SHELF).map((p: { id: string }) => p.id)).toEqual(["p1"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Who is signed in, as the auth client the app ships tells it
+// ---------------------------------------------------------------------------
+
+/**
+ * The provider forgets the Darkroom on SIGNED_OUT and lets whoever is
+ * signed in claim it. That is only right if auth-js says SIGNED_OUT for a
+ * session that has really left the phone, and never for a refresh that
+ * failed for want of a network. These run the real client against a
+ * server out of reach, one that refuses the refresh token, and one that
+ * answers again, with the provider's two rules subscribed to it.
+ */
+describe("the auth client the provider listens to", () => {
+  const KEY = "sb-test-auth-token";
+  type Answer = "offline" | "refused" | "online";
+
+  function user(id: string) {
+    return { id, aud: "authenticated", role: "authenticated", app_metadata: {}, user_metadata: {}, created_at: "" };
+  }
+
+  function json(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  }
+
+  async function until(check: () => boolean): Promise<void> {
+    for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
+  }
+
+  async function openApp(answer: { now: Answer }) {
+    const app = await filled();
+    const { AuthClient } = await import("@supabase/supabase-js");
+    // Closed for three hours: the access token has run out, the refresh token has not.
+    const keychain = new Map<string, string>([
+      [
+        KEY,
+        JSON.stringify({
+          access_token: "old",
+          refresh_token: "r1",
+          token_type: "bearer",
+          expires_in: 3600,
+          expires_at: Math.floor(Date.now() / 1000) - 3 * 3600,
+          user: user("a"),
+        }),
+      ],
+    ]);
+    const network = async (): Promise<Response> => {
+      if (answer.now === "offline") {
+        // Out of reach for longer than the client keeps retrying.
+        vi.setSystemTime(Date.now() + 60_000);
+        throw new TypeError("Network request failed");
+      }
+      if (answer.now === "refused") {
+        return json(400, { code: 400, error_code: "refresh_token_not_found", msg: "Invalid Refresh Token: Refresh Token Not Found" });
+      }
+      const at = Math.floor(Date.now() / 1000);
+      return json(200, {
+        access_token: "new",
+        refresh_token: "r2",
+        token_type: "bearer",
+        expires_in: 3600,
+        expires_at: at + 3600,
+        user: user("a"),
+      });
+    };
+    const client = new AuthClient({
+      url: "https://vintage.invalid/auth/v1",
+      storageKey: KEY,
+      storage: {
+        getItem: async (k: string) => keychain.get(k) ?? null,
+        setItem: async (k: string, v: string) => void keychain.set(k, v),
+        removeItem: async (k: string) => void keychain.delete(k),
+      },
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+      fetch: network,
+    });
+    const events: string[] = [];
+    // The provider's two rules: forget on SIGNED_OUT, and whoever is signed in claims it.
+    const { data: sub } = client.onAuthStateChange((event, next) => {
+      events.push(event);
+      if (event === "SIGNED_OUT") app.forget.forgetDarkroom();
+      if (next?.user?.id) app.forget.claimDarkroom(next.user.id);
+    });
+    const close = async () => {
+      sub.subscription.unsubscribe();
+      await client.stopAutoRefresh();
+    };
+    return { app, client, keychain, events, close };
+  }
+
+  let quiet: { mockRestore: () => void } | null = null;
+  beforeEach(() => {
+    // The client warns about a refresh that could not reach the server.
+    quiet = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    quiet?.mockRestore();
+  });
+
+  it("offline with an expired token: nobody for now, no SIGNED_OUT, the session kept and the Darkroom with it", async () => {
+    const answer = { now: "offline" as Answer };
+    const { app, client, keychain, events, close } = await openApp(answer);
+    try {
+      const { data } = await client.getSession();
+      await until(() => events.includes("INITIAL_SESSION"));
+      expect(data.session).toBeNull();
+      expect(events).not.toContain("SIGNED_OUT");
+      expect(keychain.has(KEY)).toBe(true);
+      expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, SHELF, PLACE, OWNER].sort());
+
+      // The network comes back: the same member, and the shelf is still there.
+      answer.now = "online";
+      vi.setSystemTime(Date.now() + 5 * 60_000);
+      const back = await client.getSession();
+      await until(() => events.includes("TOKEN_REFRESHED"));
+      expect(back.data.session?.user.id).toBe("a");
+      expect(events).not.toContain("SIGNED_OUT");
+      expect(app.shelf.isSetAside("p3")).toBe(true);
+      expect(stored(SHELF).map((p: { id: string }) => p.id)).toEqual(["p3"]);
+      expect(app.session.introSeen()).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
+  it("a refresh token the server refuses: SIGNED_OUT, the session gone, and the Darkroom forgotten", async () => {
+    const { client, keychain, events, close } = await openApp({ now: "refused" });
+    try {
+      const { data } = await client.getSession();
+      await until(() => events.includes("SIGNED_OUT"));
+      expect(data.session).toBeNull();
+      expect(events).toContain("SIGNED_OUT");
+      expect(keychain.has(KEY)).toBe(false);
+      expect([...phone.files.keys()]).toEqual([]);
+    } finally {
+      await close();
+    }
   });
 });
 
@@ -808,10 +1131,19 @@ describe("guards", () => {
     expect(compose).toMatch(/import \{ markDeveloped \} from "@\/darkroom\/posted"/);
   });
 
-  it("the session provider forgets the Darkroom in both providers, and on demo sign-out", () => {
+  it("the session provider claims the Darkroom in both providers, and forgets it only when a session ends", () => {
     const provider = read("src/providers/SessionProvider.tsx");
-    expect(provider.match(/useForgetDarkroomOnLeave\(/g)?.length).toBe(3);
+    // Whoever is signed in claims it, in the demo and against Supabase.
+    expect(provider.match(/useDarkroomOwner\(/g)?.length).toBe(3);
+    expect(provider).toMatch(/if \(userId\) claimDarkroom\(userId\);/);
+    // Forgotten at "Sign out", in both...
     expect(provider).toMatch(/demoSignOut\(\);\s*\/\/[^\n]*\n\s*forgetDarkroom\(\);/);
+    expect(provider).toMatch(/queryClient\.clear\(\);\s*forgetDarkroom\(\);/);
+    // ...and when auth says the session has left the phone.
+    expect(provider).toMatch(/onAuthStateChange\(\(event, next\) => \{[\s\S]*?if \(event === "SIGNED_OUT"\) forgetDarkroom\(\);[\s\S]*?else if \(next\?\.user\?\.id\) claimDarkroom\(next\.user\.id\);\s*setSession\(next\);/);
+    // Never for a first answer of nobody: an offline launch is not a sign-out.
+    expect(provider.match(/forgetDarkroom\(\)/g)?.length).toBe(3);
+    expect(provider).not.toMatch(/memberLeft/);
   });
 
   it("Settings' Forget keeps the shelf", () => {

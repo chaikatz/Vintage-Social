@@ -146,6 +146,13 @@ let placeDirty = false;
  * and is moved past it too. A new visit, or a save anywhere else, ends it.
  */
 let movedPast: string | null = null;
+/**
+ * Shut by `forgetDarkroom` until a member is next signed in. A room still
+ * open when the session ended goes on working from memory, but nothing it
+ * keeps reaches the disk for the next member to find; `reopenSession` lets
+ * that memory go before anyone else reads it.
+ */
+let sealed = false;
 
 function loadPlace(): SavedPlace | null {
   if (!placeLoaded) {
@@ -205,7 +212,7 @@ export function savePlace(
 
 /** Put the place on disk, or delete the file when there is none. Nothing to do when nothing changed. */
 export function flushPlace(): void {
-  if (!placeDirty) return;
+  if (sealed || !placeDirty) return;
   placeDirty = false;
   if (place) writeDiskCache(PLACE_FILE, PLACE_KEY, toFile(place));
   else deleteDiskCache(PLACE_FILE, PLACE_KEY);
@@ -258,6 +265,28 @@ export function forgetPlace(): void {
   placeDirty = false;
   movedPast = null;
   deleteDiskCache(PLACE_FILE, PLACE_KEY);
+}
+
+/** No more writes of the place or the first-visit flag, until `reopenSession`. */
+export function sealSession(): void {
+  sealed = true;
+}
+
+/**
+ * A member is signed in again after a seal: the place, the positions and
+ * the first-visit flag kept in memory while it was shut belonged to the
+ * member who left, so they go, and the next read starts from the files.
+ * Without a seal there is nothing to let go, and nothing changes.
+ */
+export function reopenSession(): void {
+  if (!sealed) return;
+  sealed = false;
+  place = null;
+  placeLoaded = false;
+  placeDirty = false;
+  movedPast = null;
+  chapters.clear();
+  intro = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,7 +344,7 @@ export function introSeen(): boolean {
 
 export function markIntroSeen(): void {
   intro = true;
-  writeDiskCache(INTRO_FILE, INTRO_KEY, true);
+  if (!sealed) writeDiskCache(INTRO_FILE, INTRO_KEY, true);
 }
 
 /** At sign-out: the next member is shown the first-visit page, and what it says, again. */

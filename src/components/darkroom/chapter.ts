@@ -147,14 +147,60 @@ export function dropOnSettle(
   return { prints: kept, index: Math.max(0, Math.min(at, kept.length)), rebased };
 }
 
-/** The place's print, found again among a chapter's prints; or the place's own index, held in range. */
-export function placeIndex(prints: readonly Print[], place: Pick<SavedPlace, "deck" | "index">): number {
-  const id = place.deck[place.index]?.id;
+/**
+ * Where a page of a deck falls among a fuller list of the same chapter:
+ * its print, found by id; or, for the deck's end page, just past the
+ * deck's last print, since a deck holds only the twenty prints behind
+ * the member and its own index counts from the first of those. Null
+ * when the list does not hold the print.
+ */
+export function pageAmong(prints: readonly Print[], deck: readonly Print[], index: number): number | null {
+  const id = deck[index]?.id;
   if (id) {
     const i = prints.findIndex((p) => p.id === id);
-    if (i >= 0) return i;
+    return i >= 0 ? i : null;
   }
-  return Math.max(0, Math.min(place.index, prints.length));
+  const last = deck[deck.length - 1]?.id;
+  if (!last) return null;
+  const j = prints.findIndex((p) => p.id === last);
+  return j >= 0 ? j + 1 : null;
+}
+
+/** The place's print, found again among a chapter's prints; or the place's own index, held in range. */
+export function placeIndex(prints: readonly Print[], place: Pick<SavedPlace, "deck" | "index">): number {
+  return pageAmong(prints, place.deck, place.index) ?? Math.max(0, Math.min(place.index, prints.length));
+}
+
+/**
+ * What a choice in Contents opens, or null when it leaves the room as it
+ * is: the chapter already open, its year line, or the month already in
+ * view (§3.10). A month of the year open is a jump inside it (§4.3). The
+ * month the chapter itself opened at is turned back to among the prints
+ * already dealt, so it shows the same prints from that month's first;
+ * any other month has its own kept position.
+ */
+export function choiceOf(
+  room: { showing: boolean; where: Where | null; chapter: Pick<Chapter, "prints" | "index"> | null },
+  mode: DarkroomMode,
+  year: number | null,
+  month: number | null,
+): OpenSpec | null {
+  const w = room.where;
+  const here = room.showing && w != null && w.mode === mode;
+  if (here && mode !== "year") return null;
+  if (here && w.year === year) {
+    if (month == null) return null;
+    if (month === w.month) {
+      const c = room.chapter;
+      const inView = c?.prints[c.index];
+      if (inView && new Date(inView.takenAt).getMonth() === month) return null;
+      const first = c?.prints.find((p) => new Date(p.takenAt).getMonth() === month) ?? c?.prints[0];
+      return first ? { mode, year, month, jump: true, startId: first.id } : { mode, year, month, jump: true, fresh: true };
+    }
+  }
+  // A month of the year already open is a jump inside it; anything else is a cut.
+  const jump = mode === "year" && w?.mode === "year" && w.year === year;
+  return { mode, year: mode === "year" ? year : null, month: mode === "year" ? month ?? 0 : 0, jump };
 }
 
 /** How a chapter ends, for its end page. */

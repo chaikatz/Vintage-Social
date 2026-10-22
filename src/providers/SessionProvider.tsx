@@ -16,7 +16,7 @@ import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
 import { forgetPushToken } from "@/utils/push";
-import { forgetDarkroom, memberLeft } from "@/darkroom/forget";
+import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 
 interface SessionState {
   /** undefined while restoring the persisted session on launch. */
@@ -75,21 +75,21 @@ export async function enterApp(): Promise<void> {
 
 /**
  * The Darkroom's memory on this phone — what it showed, the shelf, the
- * place, the first-visit page — belongs to whoever is signed in. Forget it
- * whenever that stops being true, however the session ended: a sign-out
- * here, a sign-out everywhere from another device, a refresh token that
- * expired or was revoked, or a different member signing in (`memberLeft`
- * has the rule).
+ * place, the first-visit page — belongs to one member, whose id is kept
+ * beside it. Whoever signs in claims it, and finds it forgotten first if
+ * it was kept for someone else (`claimDarkroom` has the rule). It is also
+ * forgotten when the session ends: at "Sign out", and when auth says
+ * SIGNED_OUT (see below).
+ *
+ * Nobody signed in is not, on its own, a reason to forget. A launch with
+ * no network and an expired access token answers "nobody" while the
+ * session is still on the phone, and the same member comes back as soon
+ * as the token refreshes; their shelf must still be there.
  */
-function useForgetDarkroomOnLeave(userId: string | null, restoring: boolean): void {
-  // undefined until the first settled answer about who is signed in.
-  const owner = useRef<string | null | undefined>(undefined);
+function useDarkroomOwner(userId: string | null): void {
   useEffect(() => {
-    if (restoring) return;
-    const was = owner.current;
-    owner.current = userId;
-    if (memberLeft(was, userId)) forgetDarkroom();
-  }, [userId, restoring]);
+    if (userId) claimDarkroom(userId);
+  }, [userId]);
 }
 
 /** A minimal fake Session so route gates behave identically in demo mode. */
@@ -107,7 +107,7 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<ProfileRow | null>(() => demoCurrentProfile());
 
   useEffect(() => demoSubscribe(() => setProfile(demoCurrentProfile())), []);
-  useForgetDarkroomOnLeave(profile?.id ?? null, false);
+  useDarkroomOwner(profile?.id ?? null);
 
   const value = useMemo<SessionState>(
     () => ({
@@ -141,7 +141,19 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
+      // auth-js says SIGNED_OUT only once it has removed the session from
+      // this phone: a sign-out, or a refresh token the server refused (a
+      // sign-out everywhere, a revoked or expired session) after the access
+      // token had run out too. A refresh that failed for want of a network
+      // keeps the session and says nothing of the kind.
+      if (event === "SIGNED_OUT") forgetDarkroom();
+      // Any word of a member claims the Darkroom for them, not only a new
+      // id: a "Sign out" that could not reach the server forgets it and
+      // seals it while auth keeps the same member, who must have it back
+      // (empty) when they are next heard from. A claim by the owner on
+      // record costs one small read.
+      else if (next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
     });
     return () => sub.subscription.unsubscribe();
@@ -154,7 +166,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   // waitlist screen.
   const userId = session?.user?.id ?? null;
   const restoring = session === undefined;
-  useForgetDarkroomOnLeave(userId, restoring);
+  useDarkroomOwner(userId);
 
   // One read at a time: a second call while the first is still retrying
   // joins it instead of stacking another behind it.

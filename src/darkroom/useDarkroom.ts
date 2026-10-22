@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
 import * as MediaLibrary from "expo-media-library";
 import {
+  choiceOf,
   dayStateOf,
   DEFAULT_DAY_MINIMUM,
   dropOnSettle,
   endingOf,
   JUMP_HALF_MS,
   opensOnThisDay,
+  pageAmong,
   placeIndex,
   startIndex,
   type Chapter,
@@ -56,8 +58,8 @@ import type { DarkroomMode, DayReach, Print } from "./types";
  * same print and the deal carrying on; a batch that lands after the room
  * has turned away goes into that kept position rather than nowhere (see
  * `dealer.ts`). The chapter last open also goes to disk, through
- * `savePlace` and `flushPlace`, on blur and when the app leaves the
- * foreground.
+ * `savePlace` and `flushPlace`, on blur and whenever the app stops being
+ * active.
  *
  * Restoring from disk rebuilds what a file cannot hold (§10.8): Surprise
  * deals on with a new seed, the deck's prints excluded and counted toward
@@ -142,6 +144,8 @@ export function useDarkroom(params: RoomParams) {
   const opening = useRef(0);
   const pagerGeneration = useRef(0);
   const started = useRef(false);
+  /** The first-visit word has been said and iOS asked, and the room has not yet gone in. */
+  const asking = useRef(false);
   const afterFirst = useRef(false);
   /** Prints whose full image has drawn this visit. */
   const loaded = useRef(new Set<string>());
@@ -163,18 +167,68 @@ export function useDarkroom(params: RoomParams) {
 
   // --- reading on ------------------------------------------------------------
 
+  /** Reads of the year index under way. */
+  const yearsReading = useRef(0);
+
+  /**
+   * A first deal too short to decide on: nothing at all, or — under
+   * limited access, from a cold start that cannot yet say whether it has
+   * run out — fewer than a few. Either way the year index is read before
+   * the room settles on the prints, the empty page, or "only a few".
+   */
+  const shortOfPrints = (dealt: number, cold: boolean) =>
+    dealt === 0 || (cold && live.current.access === "limited" && dealt < DEFAULT_DAY_MINIMUM);
+
+  /**
+   * A roll that has run dry before it was given the year index, while the
+   * index is being read, has only run out of its cold start (§10.5.9): it
+   * waits for the years rather than ending, so neither the end of the
+   * roll nor the exhausted page is shown on a guess.
+   */
+  const waitingForYears = useCallback(
+    (d: Dealer | null) =>
+      d != null &&
+      d.key === chapterKey("surprise", null, 0) &&
+      yearsReading.current > 0 &&
+      !d.hasYears &&
+      !d.failed &&
+      d.reader?.ending !== "roll",
+    [],
+  );
+
+  /**
+   * The roll on the stage, told again whether it deals on: the year index
+   * is being read, or has been, and a roll stalled for want of it may now
+   * draw from it. A read that failed keeps its TRY AGAIN.
+   */
+  const reconsiderRoll = useCallback(() => {
+    const d = dealer.current;
+    if (!d) return;
+    const more = d.more || waitingForYears(d);
+    patch((s) => {
+      const c = s.chapter;
+      return c && c.key === d.key && c.mode === "surprise" && !c.failed && c.more !== more ? { chapter: { ...c, more } } : {};
+    });
+  }, [patch, waitingForYears]);
+
   const loadYears = useCallback(
     async (force = false): Promise<YearCount[] | null> => {
       if (!visit) return null;
+      yearsReading.current += 1;
+      reconsiderRoll();
       try {
         const years = await visit.years(force);
         if (live.current.years !== years) patch({ years });
         return years;
       } catch {
         return null;
+      } finally {
+        // Every roll has been given the years by now, or the read failed: either way the roll says how it ends.
+        yearsReading.current -= 1;
+        reconsiderRoll();
       }
     },
-    [visit, patch],
+    [visit, patch, reconsiderRoll],
   );
 
   const loadMonths = useCallback(
@@ -201,16 +255,29 @@ export function useDarkroom(params: RoomParams) {
   const listen = useCallback(
     (d: Dealer) => {
       d.listener = (batch, more, failed) => {
+        const held = !failed && !more && waitingForYears(d);
+        // The member outran the deal and waited on the trailing page: the
+        // first print of the batch lands in front of them, which is shown.
+        const c0 = live.current.chapter;
+        if (c0 && c0.key === d.key && c0.index >= c0.prints.length) {
+          const landed = appendNew(c0.prints, batch)[c0.index];
+          if (landed) visit?.record(landed);
+        }
         patch((s) => {
           const c = s.chapter;
           if (!c || c.key !== d.key) return {};
           // ANOTHER ROLL waits on its first batch with the stage faded.
           const loading = s.loading?.jump && s.loading.mode === c.mode && s.where?.mode === c.mode ? null : s.loading;
-          return { chapter: { ...c, prints: appendNew(c.prints, batch), more, failed }, loading };
+          const prints = appendNew(c.prints, batch);
+          const next = more || held;
+          // An empty batch that changes nothing leaves the chapter as it is:
+          // the dealer asks again in its own time, rather than at once.
+          if (batch.length === 0 && next === c.more && failed === c.failed && loading === s.loading) return {};
+          return { chapter: { ...c, prints, more: next, failed }, loading };
         });
       };
     },
-    [patch],
+    [patch, visit, waitingForYears],
   );
 
   // --- keeping the place -------------------------------------------------------
@@ -220,6 +287,9 @@ export function useDarkroom(params: RoomParams) {
     const c = live.current.chapter;
     if (!c || live.current.view.kind !== "prints") return;
     const d = dealer.current;
+    // An open under way has already kept this chapter, with its dealer, and
+    // let go of it; keeping it again now would keep it without one.
+    if (!d && live.current.loading) return;
     let index = c.index;
     // Left from under the editor: a post may have moved the kept position
     // on past the print it was developed from (`advancePlace`), and the
@@ -256,30 +326,54 @@ export function useDarkroom(params: RoomParams) {
       if (!visit.knownDay()) {
         askDay()
           .then((result) => {
-            // A deck restored without its reach learns it now.
-            patch((s) =>
-              s.chapter?.mode === "on-this-day" && s.chapter.reach == null ? { chapter: { ...s.chapter, reach: result.reach } } : {},
-            );
+            if (!mounted.current) return;
+            // A deck restored from disk without its reach learns it now, and
+            // takes back the day's prints from before the twenty it kept,
+            // with the member left on the same print (§10.8): those are put
+            // in ahead of the member, so the pager is told to keep its place.
+            const key = chapterKey("on-this-day", null, 0);
+            const c = live.current.chapter;
+            if (c?.key === key && c.reach == null) {
+              const index = pageAmong(result.prints, c.prints, c.index);
+              commit({
+                chapter:
+                  index == null
+                    ? { ...c, reach: result.reach }
+                    : { ...c, prints: result.prints, index, reach: result.reach, rebase: c.rebase + 1 },
+              });
+            }
+            // Kept already, as the member chose another chapter: the kept position is put right too.
+            const kept = recallChapter(key);
+            if (kept && kept.reach == null) {
+              const index = pageAmong(result.prints, kept.prints, kept.index);
+              if (index != null) keepChapter(key, { ...kept, prints: result.prints, index, reach: result.reach });
+            }
           })
           .catch(() => undefined);
       }
       const c = live.current.chapter;
       if (c?.mode === "year" && c.year != null) void loadMonths(c.year);
     }, 0);
-  }, [visit, loadYears, askDay, patch, loadMonths]);
+  }, [visit, loadYears, askDay, commit, loadMonths]);
 
   const show = useCallback(
     (c: Omit<Chapter, "generation" | "rebase" | "failed">, d: Dealer | null) => {
       if (dealer.current && dealer.current !== d) dealer.current.release();
       dealer.current = d;
       if (d) listen(d);
+      // A roll kept from an earlier room is told the years by this one.
+      if (d && c.mode === "surprise") visit?.adopt(d, live.current.years);
       pagerGeneration.current += 1;
-      const chapter: Chapter = { ...c, failed: false, generation: pagerGeneration.current, rebase: 0 };
+      const more = c.more || (c.mode === "surprise" && waitingForYears(d));
+      const chapter: Chapter = { ...c, more, failed: false, generation: pagerGeneration.current, rebase: 0 };
       commit({ chapter, view: { kind: "prints" }, where: { mode: c.mode, year: c.year, month: c.month }, loading: null });
+      // The print a chapter opens on is shown without a settle, and counts as shown (MORE FROM leaves it out).
+      const first = c.prints[c.index];
+      if (first) visit?.record(first);
       savePlace({ mode: c.mode, year: c.year, month: c.month, index: c.index, prints: c.prints });
       afterFirstPrint();
     },
-    [listen, commit, afterFirstPrint],
+    [listen, commit, afterFirstPrint, waitingForYears, visit],
   );
 
   const showEmpty = useCallback(
@@ -321,12 +415,12 @@ export function useDarkroom(params: RoomParams) {
 
   // --- opening a chapter --------------------------------------------------------
 
-  /** The Set aside chapter, most recently set aside first. */
+  /** The Set aside chapter, most recently set aside first; at its end page when that is where the member left it. */
   const openShelf = useCallback(
     (key: ChapterKey, where: Where, at: (shelf: Print[]) => number) => {
       const shelf = [...setAsidePrints()];
       if (shelf.length === 0) return showEmpty("shelf", where);
-      show({ key, ...where, prints: shelf, index: Math.max(0, Math.min(at(shelf), shelf.length - 1)), more: false, reach: null }, null);
+      show({ key, ...where, prints: shelf, index: Math.max(0, Math.min(at(shelf), shelf.length)), more: false, reach: null }, null);
       void pruneShelf();
     },
     [show, showEmpty, pruneShelf],
@@ -385,11 +479,13 @@ export function useDarkroom(params: RoomParams) {
           if (first == null) return showEmpty(live.current.access === "limited" ? "selection" : "library", null);
           const s = visit.surprise(first, { exclude: spec.keep ? [spec.keep.id] : [] });
           const d = visit.surpriseDealer(key, surpriseReader(s));
+          const cold = !d.hasYears;
           let prints = await s.next(BATCH.surprise);
-          if (prints.length === 0 && !s.exhausted && !s.rollDone) {
-            // Nowhere yet to draw from: the year index, then again.
-            await loadYears();
-            prints = await s.next(BATCH.surprise);
+          if (shortOfPrints(prints.length, cold) && !s.rollDone && (!s.exhausted || cold)) {
+            // Nowhere yet to draw from, or only a cold start run dry: the year index, then again.
+            const years = await loadYears();
+            if (years) d.setYears(years);
+            prints = appendNew(prints, await s.next(BATCH.surprise - prints.length));
           }
           const all = spec.keep ? [spec.keep, ...prints] : prints;
           if (!still()) return keepAside(key, all, d, null);
@@ -444,6 +540,7 @@ export function useDarkroom(params: RoomParams) {
       const surpriseKey = chapterKey("surprise", null, 0);
       const s = visit.surprise(first);
       const d = visit.surpriseDealer(surpriseKey, surpriseReader(s));
+      const cold = !d.hasYears;
       const dealt = s.next(BATCH.surprise).catch(() => [] as Print[]);
 
       const day = await dayAsked;
@@ -460,9 +557,11 @@ export function useDarkroom(params: RoomParams) {
       }
       commit({ loading: { mode: "surprise", year: null, month: 0, since: now, jump: false } });
       let prints = await dealt;
-      if (prints.length === 0 && !s.exhausted && !s.rollDone && still()) {
-        await loadYears();
-        prints = await s.next(BATCH.surprise);
+      if (shortOfPrints(prints.length, cold) && !s.rollDone && (!s.exhausted || cold) && still()) {
+        // The cold start found nothing: the year index, then again, before any verdict on the visit.
+        const years = await loadYears();
+        if (years) d.setYears(years);
+        prints = appendNew(prints, await s.next(BATCH.surprise - prints.length));
       }
       if (!still()) return keepAside(surpriseKey, prints, d, null);
       const where: Where = { mode: "surprise", year: null, month: 0 };
@@ -516,8 +615,15 @@ export function useDarkroom(params: RoomParams) {
     [visit, openShelf, show],
   );
 
-  /** Into the room proper: the params given, or the place kept, or the default rule. */
+  /**
+   * Into the room proper: the params given, or the place kept, or the
+   * default rule. Once: the first-visit page's fade and iOS handing the
+   * app back after its question can both come here. TRY AGAIN, and access
+   * given from Settings, start it over on purpose.
+   */
   const begin = useCallback(() => {
+    asking.current = false;
+    if (started.current) return;
     started.current = true;
     const mode = initial.mode ?? (initial.year != null ? "year" : null);
     if (mode) {
@@ -569,11 +675,16 @@ export function useDarkroom(params: RoomParams) {
    * calls `begin`.
    */
   const enter = useCallback(async (): Promise<boolean> => {
+    // iOS's question takes the app away and back: that return is this
+    // word's to settle, not the AppState check's, which would otherwise
+    // turn CONTINUE into ENTER under the member's finger, or go in early.
+    asking.current = true;
     const was = live.current.access;
     let access: LibraryAccess = was === "checking" ? await readAccess() : was;
     if (access === "undetermined") access = await requestAccess();
     if (!mounted.current) return false;
     if (!isGranted(access)) {
+      asking.current = false;
       settleAccess(access);
       return false;
     }
@@ -651,18 +762,15 @@ export function useDarkroom(params: RoomParams) {
 
   /**
    * A chapter chosen in Contents or on a page; `month` only from the
-   * month strip. False when it is the chapter already open, which the
-   * choice simply leaves as it is.
+   * month strip. False when it is the chapter already open, or the month
+   * already in view, which the choice simply leaves as it is (`choiceOf`).
    */
   const choose = useCallback(
     (mode: DarkroomMode, year: number | null = null, month: number | null = null): boolean => {
-      const w = live.current.where;
-      const here = live.current.view.kind === "prints" && w != null && w.mode === mode;
-      if (here && mode !== "year") return false;
-      if (here && w.year === year && (month == null || month === w.month)) return false;
-      // A month of the year already open is a jump inside it; anything else is a cut.
-      const jump = mode === "year" && w?.mode === "year" && w.year === year;
-      void open({ mode, year: mode === "year" ? year : null, month: mode === "year" ? month ?? 0 : 0, jump });
+      const s = live.current;
+      const spec = choiceOf({ showing: s.view.kind === "prints", where: s.where, chapter: s.chapter }, mode, year, month);
+      if (!spec) return false;
+      void open(spec);
       return true;
     },
     [open],
@@ -683,9 +791,12 @@ export function useDarkroom(params: RoomParams) {
     if (c?.mode === "year" && c.year != null) void open({ mode: "year", year: c.year, month: 0, shifted: true, jump: true });
   }, [open]);
 
+  /** FROM JANUARY: the year from its first print. A January chapter already kept is turned back to its start, not to where it was left. */
   const fromJanuary = useCallback(() => {
     const c = live.current.chapter;
-    if (c?.mode === "year" && c.year != null) void open({ mode: "year", year: c.year, month: 0, jump: true });
+    if (c?.mode !== "year" || c.year == null) return;
+    const kept = recallChapter(chapterKey("year", c.year, 0));
+    void open({ mode: "year", year: c.year, month: 0, jump: true, startId: kept?.prints[0]?.id ?? null });
   }, [open]);
 
   /** ANOTHER ROLL: the chapter carries on with a new roll, this visit's picks still excluded. */
@@ -762,8 +873,19 @@ export function useDarkroom(params: RoomParams) {
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
-      if (next === "background") putAway();
-      else if (next === "active") {
+      // Leaving active, not only for the background: flicked away from the
+      // app switcher, the app is only ever inactive before iOS ends it, and
+      // the place must survive that (decision 14). Nothing is written when
+      // nothing has changed. Under the editor the room was put away as it
+      // lost focus, and a post may have moved its kept position on since
+      // (`advancePlace`): only what is in memory goes to disk then.
+      if (next !== "active") {
+        if (focused.current) putAway();
+        else {
+          flushPlace();
+          flushHistory();
+        }
+      } else if (!asking.current) {
         const v = live.current.view.kind;
         if (v === "denied" || v === "firstVisit" || live.current.access === "checking") void checkAccess();
       }
@@ -785,6 +907,10 @@ export function useDarkroom(params: RoomParams) {
       commit({ access, missing, revision: before.revision + 1, years: whole ? null : before.years });
       if (!isGranted(access)) return settleAccess(access);
       const v = before.view;
+      // The first chapter is still being dealt: it finishes with what it
+      // has, rather than starting over on the default rule and dropping
+      // the chapter asked for. New photographs never reshuffle (§9.5).
+      if (v.kind === "checking" && before.loading) return;
       // A page that said there was nothing, or that the library would not
       // answer, looks again: photographs just shared, or arriving from
       // iCloud on a new phone, appear without leaving the room.

@@ -56,6 +56,12 @@ let ids = new Set<string>();
 /** How many were let go because the library no longer has them, not yet said. */
 let pruned = 0;
 const listeners = new Set<() => void>();
+/**
+ * Shut by `forgetDarkroom` until a member is next signed in: a room still
+ * open when the session ended may still set aside and put back on screen,
+ * but the file is not written, and `reopenSetAside` lets it all go.
+ */
+let sealed = false;
 
 function load(): SetAsidePrint[] {
   if (!prints) {
@@ -73,11 +79,13 @@ function changed(next: SetAsidePrint[]): void {
 
 /** Written at once on every change: the shelf is the member's, and an app kill must not lose a choice. */
 function save(next: SetAsidePrint[]): void {
-  writeDiskCache(
-    FILE,
-    KEY,
-    next.map(({ id, uri, width, height, takenAt, setAsideAt }) => ({ id, uri, width, height, takenAt, setAsideAt })),
-  );
+  if (!sealed) {
+    writeDiskCache(
+      FILE,
+      KEY,
+      next.map(({ id, uri, width, height, takenAt, setAsideAt }) => ({ id, uri, width, height, takenAt, setAsideAt })),
+    );
+  }
   changed(next);
 }
 
@@ -151,6 +159,25 @@ export function forgetSetAside(): void {
   deleteDiskCache(FILE, KEY);
   pruned = 0;
   changed([]);
+}
+
+/** No more writes of the shelf, until `reopenSetAside`. */
+export function sealSetAside(): void {
+  sealed = true;
+}
+
+/**
+ * A member is signed in again after a seal: anything set aside while it
+ * was shut was the leaving member's, so it goes, and the shelf on screen
+ * is read again from the file. Without a seal nothing changes.
+ */
+export function reopenSetAside(): void {
+  if (!sealed) return;
+  sealed = false;
+  pruned = 0;
+  prints = null;
+  ids = new Set();
+  for (const l of listeners) l();
 }
 
 function subscribe(listener: () => void): () => void {

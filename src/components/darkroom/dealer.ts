@@ -81,6 +81,8 @@ export class Dealer {
   private stalled = false;
   private failedLast = false;
   private retry: ReturnType<typeof setTimeout> | null = null;
+  /** The year index this roll was given, kept for a reader still being built. */
+  private years: readonly YearCount[] | null = null;
 
   constructor(
     readonly key: ChapterKey,
@@ -98,6 +100,8 @@ export class Dealer {
           this.engine = r;
           this.building = null;
           if (!r) this.stalled = true;
+          // The years may have arrived while it was being built: it is told them now.
+          else if (this.years) r.setYears?.(this.years);
           return r;
         },
         () => {
@@ -182,13 +186,23 @@ export class Dealer {
     return run;
   }
 
-  /** The year index has arrived: a roll dealt cold can now draw from it. */
+  /** The year index has been given to this roll; until then a roll dealt cold may run dry only for want of it. */
+  get hasYears(): boolean {
+    return this.years != null;
+  }
+
+  /**
+   * The year index has arrived: a roll dealt cold can now draw from it.
+   * Given again as the same answer, it changes nothing, so a deal that has
+   * really run out is not started over each time the index is asked for.
+   */
   setYears(years: readonly YearCount[]): void {
-    this.engine?.setYears?.(years);
-    if (this.engine?.setYears) {
-      this.empties = 0;
-      this.stalled = false;
-    }
+    if (years === this.years) return;
+    this.years = years;
+    if (!this.engine?.setYears) return;
+    this.engine.setYears(years);
+    this.empties = 0;
+    this.stalled = false;
   }
 
   /** A new roll, this visit's picks still excluded. */

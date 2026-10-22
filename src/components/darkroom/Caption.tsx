@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Pressable, StyleSheet, View, type LayoutChangeEvent } from "react-native";
-import { CAPTION_GAP } from "./geometry";
+import { CAPTION_GAP, DATE_REACH, TOUCH_TARGET, WORD_REACH } from "./geometry";
 import { useLook } from "./look";
 import { room } from "./room";
 import { RoomText } from "./Type";
@@ -39,6 +39,11 @@ export interface CaptionWord {
  * While a print comes down from iCloud the second line is a 1 pt gold
  * rule across the caption: growing with the download when it can be
  * measured, breathing when it cannot (still, under Reduce Motion).
+ *
+ * The date and the word are each a 44 pt press (§11.6), reaching over the
+ * gap above and the line beneath without moving a letter (`DATE_REACH`
+ * and `WORD_REACH` in geometry.ts). The line and the rule let a touch
+ * through to them, since nothing happens when either is pressed.
  */
 export function Caption({
   width,
@@ -93,7 +98,7 @@ export function Caption({
         </View>
       </View>
       <View style={styles.row}>
-        <Pressable onPress={onDate} hitSlop={{ top: 15, bottom: 15 }} style={styles.date} testID={testID ? `${testID}-date` : undefined}>
+        <Pressable onPress={onDate} style={styles.date} testID={testID ? `${testID}-date` : undefined}>
           <RoomText kind="dateLabel" numberOfLines={1} maxFontSizeMultiplier={1.5}>
             {label}
           </RoomText>
@@ -103,7 +108,14 @@ export function Caption({
       {progress ? (
         <ProgressRule fraction={progress.fraction} width={width} still={look.reduceMotion} />
       ) : (
-        <RoomText kind="line" numberOfLines={2} maxFontSizeMultiplier={2} style={styles.line} testID={testID ? `${testID}-line` : undefined}>
+        <RoomText
+          kind="line"
+          numberOfLines={2}
+          maxFontSizeMultiplier={2}
+          pointerEvents="none"
+          style={styles.line}
+          testID={testID ? `${testID}-line` : undefined}
+        >
           {line}
         </RoomText>
       )}
@@ -142,7 +154,7 @@ function CaptionRight({
     <Pressable
       onPress={onPress}
       disabled={word.inert}
-      hitSlop={{ top: 14, bottom: 14, left: 14, right: 8 }}
+      hitSlop={{ left: 14, right: 8 }}
       style={({ pressed }) => [styles.right, style, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityState={{ selected: word.on, disabled: word.inert }}
@@ -190,7 +202,7 @@ function ProgressRule({ fraction, width, still }: { fraction: Animated.Value | n
       }
     : { opacity: breath };
   return (
-    <View style={styles.progressSlot} accessible={false}>
+    <View style={styles.progressSlot} accessible={false} pointerEvents="none">
       <Animated.View style={[styles.progress, { width }, grow]} />
     </View>
   );
@@ -202,10 +214,28 @@ const styles = StyleSheet.create({
   measure: { position: "absolute", top: 0, left: 0, width: 0, height: 0, overflow: "hidden", opacity: 0 },
   measureRow: { flexDirection: "row", width: 2000 },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 14 },
-  date: { flexShrink: 1 },
-  right: { flexDirection: "row", alignItems: "center" },
+  // Each press's reach is padding its negative margin takes back, so the
+  // row and the caption measure as they would without it.
+  date: {
+    flexShrink: 1,
+    minHeight: TOUCH_TARGET,
+    justifyContent: "center",
+    paddingTop: DATE_REACH.top,
+    paddingBottom: DATE_REACH.bottom,
+    marginTop: -DATE_REACH.top,
+    marginBottom: -DATE_REACH.bottom,
+  },
+  right: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: TOUCH_TARGET,
+    paddingTop: WORD_REACH.top,
+    paddingBottom: WORD_REACH.bottom,
+    marginTop: -WORD_REACH.top,
+    marginBottom: -WORD_REACH.bottom,
+  },
   sameRow: { marginLeft: GAP },
-  ownRow: { alignSelf: "flex-end", marginTop: 6 },
+  ownRow: { alignSelf: "flex-end", marginTop: 6 - WORD_REACH.top },
   dot: { width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: room.gold, marginRight: DOT_GAP },
   pressed: { opacity: 0.6 },
   line: { marginTop: 6 },

@@ -140,15 +140,18 @@ export function stateWords(state: DevelopState, ctx: StateContext): StateWords {
       return state.slow
         ? { ...base, right: null, bottom: develop({ label: "Developing…", act: "none", busy: true }), announce: "Developing" }
         : { ...base, right: toggleWord(ctx, true), bottom: develop({ act: "none", busy: true }) };
-    case "inCloud":
+    case "inCloud": {
+      const line2 = state.network === "cellular" ? "Developing it will use mobile data." : "Developing it will download it.";
       return {
         ...base,
         line1: "Kept in iCloud",
-        line2: state.network === "cellular" ? "Developing it will use mobile data." : "Developing it will download it.",
+        line2,
         right: { label: "Not now", act: "notNow", inert: false },
         bottom: develop({ label: "Download and develop", act: "download" }),
-        announce: "Kept in iCloud",
+        // Said with what DOWNLOAD AND DEVELOP will cost, since VoiceOver never reaches the caption.
+        announce: `Kept in iCloud. ${line2}`,
       };
+    }
     case "downloading":
       return {
         ...base,
@@ -249,15 +252,64 @@ export function captionWords(p: {
   };
 }
 
-/** The stage's custom actions for VoiceOver: develop, the shelf, the caption thread, Contents. */
-export function stageActions(takenAt: number | null, setAside: boolean): { name: string; label: string }[] {
-  const year = takenAt != null ? new Date(takenAt).getFullYear() : null;
-  return [
-    { name: "develop", label: "Develop" },
-    { name: "setAside", label: setAside ? "Put back" : "Set aside" },
-    ...(year != null ? [{ name: "more", label: `More from ${year}` }] : []),
-    { name: "contents", label: "Contents" },
-  ];
+/** One of the stage's custom actions: what the room calls it, and what VoiceOver says. */
+export interface StageAction {
+  name: "develop" | RightAct | "more" | "contents";
+  label: string;
+}
+
+/**
+ * The stage's custom actions for VoiceOver (§11.1), which stand in for the
+ * words VoiceOver cannot reach on the pages: DEVELOP's word, the caption's
+ * word at the right, the caption thread, and Contents. Each is offered
+ * only while it would do something, so a develop state shows through:
+ * DOWNLOAD AND DEVELOP and NOT NOW in iCloud, STOP while downloading (the
+ * only way out then, §6.3), REMOVE for a print gone from the shelf. Off
+ * VoiceOver SET ASIDE carries a gold dot; here it says PUT BACK instead.
+ * With no print in front of the member — the next batch still being
+ * dealt — only Contents is left.
+ */
+export function stageActions(
+  takenAt: number | null,
+  setAside: boolean,
+  state?: {
+    words: Pick<StateWords, "right" | "bottom">;
+    /** A develop state is showing, which holds the caption thread. */
+    stated: boolean;
+    /** Working or downloading, which holds the pages and Contents too. */
+    busy: boolean;
+  },
+): StageAction[] {
+  const contents: StageAction[] = state?.busy ? [] : [{ name: "contents", label: "Contents" }];
+  if (takenAt == null) return contents;
+  const bottom = state?.words.bottom ?? { label: "Develop", act: "develop" };
+  const right = state ? state.words.right : { label: "Set aside", act: "toggle" as const, inert: false };
+  const out: StageAction[] = [];
+  if (bottom.act !== "none") out.push({ name: "develop", label: bottom.label });
+  if (right && !right.inert) out.push({ name: right.act, label: right.act === "toggle" ? (setAside ? "Put back" : "Set aside") : right.label });
+  if (!state?.stated) out.push({ name: "more", label: `More from ${new Date(takenAt).getFullYear()}` });
+  return [...out, ...contents];
+}
+
+/**
+ * The actions as iOS is handed them. On the new architecture VoiceOver
+ * speaks an action's name and never its label, and hands the name back,
+ * so each goes by its words. Swiping up and down on the adjustable stage
+ * reaches it as increment and decrement without either being listed.
+ */
+export function spokenActions(actions: readonly StageAction[]): { name: string; label: string }[] {
+  return actions.map((a) => ({ name: a.label, label: a.label }));
+}
+
+/** The action VoiceOver handed back, by its words (or, on the old architecture, by its own name). */
+export function actionNamed(actions: readonly StageAction[], said: string): StageAction["name"] | null {
+  return actions.find((a) => a.label === said || a.name === said)?.name ?? null;
+}
+
+/** Said as the shelf changes, or refuses to: the 501st print changes nothing (§7.4). */
+export function shelfSaid(result: "on" | "off" | "full"): string {
+  if (result === "full") return SHELF_FULL;
+  return result === "on" ? "Set aside" : "Put back";
 }
 
 // ---------------------------------------------------------------------------
@@ -516,11 +568,23 @@ export function endPage(ending: Ending, ctx: { now: number; limited: boolean; ye
 // VoiceOver and Contents
 // ---------------------------------------------------------------------------
 
-/** The stage's value: "October 22, 2019. Six years ago today. Set aside. Posted in May 2026." */
-export function stageValue(takenAt: number, line: string, setAside: boolean, postedAt: number | null): string {
+/**
+ * The stage's value: "October 22, 2019. Six years ago today. Set aside.
+ * Posted in May 2026." While a develop state is showing, its own lines
+ * follow, since they are printed in the caption VoiceOver cannot reach:
+ * "Kept in iCloud. Developing it will use mobile data."
+ */
+export function stageValue(
+  takenAt: number,
+  line: string,
+  setAside: boolean,
+  postedAt: number | null,
+  state?: { line1: string | null; line2: string | null },
+): string {
   let value = `${fullDate(takenAt)}. ${line}.`;
   if (setAside) value += " Set aside.";
   if (postedAt != null) value += ` Posted in ${monthYearWords(postedAt)}.`;
+  for (const said of [state?.line1, state?.line2]) if (said) value += ` ${/[.…]$/.test(said) ? said : `${said}.`}`;
   return value;
 }
 

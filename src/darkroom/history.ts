@@ -112,6 +112,12 @@ let scheduled = false;
 let listening = false;
 /** The work-in-progress build's copy in Documents is still there. */
 let oldFileLeft = false;
+/**
+ * Shut by `forgetDarkroom` until a member is next signed in: a room still
+ * open when the session ended may go on marking what it shows, but none
+ * of it is written, and `reopenHistory` lets it go.
+ */
+let sealed = false;
 
 /**
  * The work-in-progress build kept this file in Documents, which is backed
@@ -159,7 +165,7 @@ function listenForBackground(): void {
 }
 
 function write(): void {
-  if (!history || !dirty) return;
+  if (sealed || !history || !dirty) return;
   const now = Date.now();
   // Looks past their two months are let go here as well as on load, so a
   // long-lived session never writes them back.
@@ -187,7 +193,7 @@ function write(): void {
  * screen's fade. Calls while one is waiting join it.
  */
 export function flushHistory(): void {
-  if (!dirty || scheduled) return;
+  if (sealed || !dirty || scheduled) return;
   scheduled = true;
   const run = () => {
     scheduled = false;
@@ -262,4 +268,23 @@ export function forgetHistory(): void {
   deleteDiskCache(FILE, KEY, IN_CACHE);
   oldFileLeft = false;
   deleteOldFile();
+}
+
+/** No more writes of the history, until `reopenHistory`. */
+export function sealHistory(): void {
+  sealed = true;
+}
+
+/**
+ * A member is signed in again after a seal: whatever was marked while it
+ * was shut belonged to the member who left, so it goes, and the next read
+ * starts from the file. Without a seal nothing changes.
+ */
+export function reopenHistory(): void {
+  if (!sealed) return;
+  sealed = false;
+  history = null;
+  dirty = false;
+  marks = 0;
+  oldFileLeft = false;
 }

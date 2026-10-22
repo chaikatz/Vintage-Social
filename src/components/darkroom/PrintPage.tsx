@@ -1,11 +1,21 @@
-import React, { memo, useEffect, useRef, useState } from "react";
-import { Animated, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import React, { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Image, type ImageErrorEventData } from "expo-image";
 import { printSource } from "@/darkroom/printSource";
 import type { Print } from "@/darkroom/types";
 import { Blades } from "./Blades";
 import { Caption } from "./Caption";
-import { captionHeight, captionWidth, feedCrops, groupTop, plateBox, ratioOf } from "./geometry";
+import {
+  asksAgain,
+  captionHeight,
+  captionWidth,
+  feedCrops,
+  groupTop,
+  plateBox,
+  plateTrouble,
+  troubleOffline,
+  ratioOf,
+} from "./geometry";
 import { useLook } from "./look";
 import { room } from "./room";
 import { RoomText } from "./Type";
@@ -49,13 +59,16 @@ const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" }
  *
  * The plate zooms under a pinch, 1–2×, inside its own box (PhotoInspector's
  * ZoomablePhoto, with no double-tap, so a single tap has no delay), and
- * goes back to actual size when the page stops being current. A tap
- * hides the room's words. Under the editor, neighbours draw their well
- * only, so one full decode is live behind it.
+ * goes back to actual size when the page stops being current, and again
+ * as it is taken off screen. At actual size it does not move at all under
+ * a drag. A tap hides the room's words. Under the editor, neighbours
+ * draw their well only, so one full decode is live behind it.
  *
  * When the photograph cannot be drawn the plate says why, in the well:
  * gone from the library, waiting for the phone to be online (it tries
- * again when it is), or anything else. Expo-image's error text names the
+ * again when it is), or anything else, which stays said until the phone
+ * has been offline and is back, or the library changes (`plateTrouble`
+ * and `asksAgain` in geometry.ts). Expo-image's error text names the
  * asset, so it is never shown or logged — only matched.
  */
 export interface PrintPageProps {
@@ -177,12 +190,25 @@ function Zoom({
 }) {
   const scroll = useRef<ScrollView>(null);
   const zoomed = useRef(false);
+  const latestBox = useRef(box);
+  latestBox.current = box;
   // A page swiped away from goes back to actual size while still on screen.
   useEffect(() => {
     if (current || !zoomed.current) return;
     zoomed.current = false;
-    scroll.current?.scrollResponderZoomTo({ x: 0, y: 0, width: box.width, height: box.height, animated: false });
+    actualSize(scroll.current, box);
   }, [current, box.width, box.height]);
+  // And a plate taken off screen goes back too, whatever the throttled
+  // scroll events last said. Fabric recycles a scroll view, and its
+  // prepareForRecycle puts back the offset but not the zoomed content's
+  // transform or size, so whichever plate or list is handed this one next
+  // would draw its contents shifted and pan over empty well. A layout
+  // effect's cleanup runs before the view is deleted, and its command
+  // reaches the view ahead of the deletion.
+  useLayoutEffect(() => {
+    const view = scroll.current;
+    return () => actualSize(view, latestBox.current);
+  }, []);
 
   return (
     <ScrollView
@@ -192,6 +218,11 @@ function Zoom({
       minimumZoomScale={1}
       maximumZoomScale={2}
       bouncesZoom
+      // At actual size the print fills its box exactly, so a drag has
+      // nothing to show; without these a vertical scroll view still
+      // rubber-bands, and the photograph slides under its hairline (§5.4).
+      alwaysBounceVertical={false}
+      alwaysBounceHorizontal={false}
       centerContent
       scrollsToTop={false}
       showsHorizontalScrollIndicator={false}
@@ -208,16 +239,27 @@ function Zoom({
   );
 }
 
+/**
+ * Back to actual size at once, at the origin. Only iOS zooms a scroll
+ * view. The second argument is the one React Native reads: `animated`
+ * inside the rect only spares the deprecation warning.
+ */
+function actualSize(view: ScrollView | null, box: { width: number; height: number }) {
+  if (Platform.OS !== "ios" || view == null) return;
+  view.scrollResponderZoomTo({ x: 0, y: 0, width: box.width, height: box.height, animated: false }, false);
+}
+
 /** The well, the proof, the photograph — or the words that say why there is none. */
 function Photograph(props: PrintPageProps & { box: { width: number; height: number } }) {
   const { print, box, images, proof, current, dissolve, revision, online, limited, gone, onLoad, onGone } = props;
   const look = useLook();
-  const [trouble, setTrouble] = useState<"missing" | "other" | null>(null);
+  const [trouble, setTrouble] = useState<PlateTrouble | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [drawn, setDrawn] = useState(false);
 
   // The library changed, or the phone came back online: a print that
-  // could not be drawn is asked for again.
+  // could not be drawn is asked for again. Never because it failed while
+  // online, or it would be asked for again forever.
   const seenRevision = useRef(revision);
   useEffect(() => {
     if (seenRevision.current === revision) return;
@@ -227,15 +269,23 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
       setAttempt((a) => a + 1);
     }
   }, [revision, trouble]);
+  const wasOnline = useRef(online);
   useEffect(() => {
-    if (online && trouble === "other") {
+    const recast = troubleOffline(trouble, wasOnline.current, online);
+    const again = asksAgain(trouble, wasOnline.current, online);
+    wasOnline.current = online;
+    if (recast !== trouble) {
+      setTrouble(recast);
+      return;
+    }
+    if (again) {
       setTrouble(null);
       setAttempt((a) => a + 1);
     }
   }, [online, trouble]);
 
   if (trouble || gone) {
-    const why: PlateTrouble = gone || trouble === "missing" ? "missing" : online ? "other" : "offline";
+    const why: PlateTrouble = gone ? "missing" : (trouble ?? "missing");
     const words = placeholderWords(why, limited);
     return (
       <View style={[styles.well, styles.placeholder]}>
@@ -283,9 +333,9 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
             onLoad(print.id);
           }}
           onError={(e: ImageErrorEventData) => {
-            const missing = /not found/i.test(e?.error ?? "");
-            setTrouble(missing ? "missing" : "other");
-            if (missing) onGone(print.id);
+            const why = plateTrouble(e?.error, online);
+            setTrouble(why);
+            if (why === "missing") onGone(print.id);
           }}
           accessibilityIgnoresInvertColors
         />

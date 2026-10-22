@@ -46,6 +46,8 @@ import {
   endPage,
   firstVisitPage,
   captionWords,
+  LOOKING,
+  shelfSaid,
   stageActions,
   stageValue,
   stateWords,
@@ -55,6 +57,7 @@ import {
   type PageWord,
   type PageWords,
   type RightAct,
+  type StageAction,
 } from "@/components/darkroom/words";
 
 /**
@@ -152,7 +155,7 @@ export default function Darkroom() {
     online,
     onCompose: (composeParams) => router.push({ pathname: "/compose", params: composeParams }),
   });
-  const chrome = useChrome({ screenReader, locked: develop.id != null, reduceMotion });
+  const chrome = useChrome({ screenReader, locked: develop.id != null, reduceMotion, top: insets.top });
   const fades = useStageFades(state.loading, now, reduceMotion);
 
   /** A print's state: its develop state, or "gone" when Photos said it is not there. */
@@ -211,6 +214,17 @@ export default function Darkroom() {
     pruneShelf: darkroom.pruneShelf,
   });
 
+  /**
+   * Contents, unless a develop is working or downloading. Page turns are
+   * held then and STOP is the way out (§6.3): a chapter chosen meanwhile
+   * would open frozen, and the editor would follow with the print left
+   * behind, under the sheet or over the new chapter. The word stays where
+   * it is; it does nothing until the develop is done.
+   */
+  const showContents = (months = false) => {
+    if (!develop.busy) sheet.show(months);
+  };
+
   /** After a chapter change: said, and the focus on the stage, once the sheet has gone and the chapter is in. */
   const pendingAnnouncement = useRef<string | null>(null);
   useEffect(() => {
@@ -231,18 +245,18 @@ export default function Darkroom() {
 
   const toggleShelf = (print: Print) => {
     const result = toggleSetAside(print);
+    // The refusal at the cap is said too: under VoiceOver the caption that prints it is out of reach.
+    announce(shelfSaid(result));
     if (result === "full") {
       setShelfFull(print.id);
       return;
     }
     if (result === "on") {
       haptics.setAside();
-      announce("Set aside");
       // Set aside is looked at: Surprise leaves it be. Not on the shelf, which is browsed on purpose.
       if (!shelfChapter) markSeen(print.id);
     } else {
       haptics.putBack();
-      announce("Put back");
     }
   };
 
@@ -303,7 +317,7 @@ export default function Darkroom() {
       case "surprise":
         return choose("surprise");
       case "chooseYear":
-        return sheet.show();
+        return showContents();
       case "retry":
         return darkroom.retry();
       case "readOn":
@@ -341,14 +355,14 @@ export default function Darkroom() {
     else if (act === "remove") {
       putBack(print.id);
       haptics.putBack();
-      announce("Put back");
+      announce(shelfSaid("off"));
     }
   });
 
   /** The caption thread: in a year, the month strip; anywhere else, this print's year, at its month. */
   const onDate = useEvent((print: Print) => {
     if (develop.id != null) return;
-    if (where?.mode === "year") return sheet.show(true);
+    if (where?.mode === "year") return showContents(true);
     const year = new Date(print.takenAt).getFullYear();
     pendingAnnouncement.current = chapterAnnouncement("year", year, now);
     darkroom.thread(print);
@@ -365,6 +379,15 @@ export default function Darkroom() {
     },
     [settle, clear],
   );
+
+  // A new chapter is as good as a page turn: a state left on a print of
+  // the last one (in iCloud, offline, a failure) is cleared, so it does
+  // not hold the caption thread and the chrome in this one. A develop
+  // working or downloading is kept by its own guard.
+  const generation = chapter?.generation;
+  useEffect(() => {
+    clear();
+  }, [generation, clear]);
 
   const renderPrint = (print: Print, index: number) => {
     const isCurrent = chapter != null && index === chapter.index;
@@ -429,16 +452,21 @@ export default function Darkroom() {
 
   const aside = current ? shelfIds.has(current.id) : false;
   const baseLine = current ? captionFor(current.takenAt, now, chapter?.mode ?? "surprise", chapter?.reach ?? null, null).line : "";
+  // The stage stays the one element over a trailing page still waiting on
+  // its batch, so VoiceOver's focus is not lost there; only the end page
+  // speaks for itself.
+  const waiting = atTail && chapter?.more === true;
   const accessibility = {
-    single: state.view.kind === "prints" && !atTail,
-    value: current ? stageValue(current.takenAt, baseLine, aside, developedAt(current.id)) : "",
-    actions: stageActions(current?.takenAt ?? null, aside),
-    onAction: (name: string) => {
+    single: state.view.kind === "prints" && (!atTail || waiting),
+    value: current ? stageValue(current.takenAt, baseLine, aside, developedAt(current.id), words) : waiting ? LOOKING : "",
+    actions: stageActions(current?.takenAt ?? null, aside, { words, stated: develop.id != null, busy: develop.busy }),
+    onAction: (name: StageAction["name"]) => {
+      if (name === "contents") return showContents();
       if (!current) return;
       if (name === "develop") onBottom(words.bottom.act);
-      else if (name === "setAside") toggleShelf(current);
       else if (name === "more") onDate(current);
-      else if (name === "contents") sheet.show();
+      // The caption's own word: SET ASIDE or PUT BACK, NOT NOW, STOP, REMOVE.
+      else onRight(current);
     },
     onIncrement: () => chapter && !develop.busy && stage.current?.goTo(chapter.index + 1),
     onDecrement: () => chapter && !develop.busy && stage.current?.goTo(chapter.index - 1),
@@ -474,6 +502,11 @@ export default function Darkroom() {
     <LookContext.Provider value={look}>
       <View
         style={styles.root}
+        // Magic Tap is DEVELOP (§11.1) where React Native delivers it. On
+        // the new architecture in 0.81 it never arrives: the view reads its
+        // handler under another name (onAccessibilityMagicTap) than the one
+        // React sends, and there is no way round that from here. DEVELOP is
+        // reached instead as the stage's first custom action, by its words.
         onMagicTap={() => {
           if (showsDevelop) onBottom(words.bottom.act);
         }}
@@ -482,13 +515,14 @@ export default function Darkroom() {
       >
         <Stack.Screen options={{ headerShown: false }} />
         <RunningHead
-          top={insets.top}
+          top={chrome.top}
           name={headName}
           contents={inside}
+          held={develop.busy}
           opacity={chrome.opacity}
           hidden={chrome.hidden}
           onBack={back}
-          onContents={() => sheet.show()}
+          onContents={() => showContents()}
         />
 
         <View style={styles.stage} onLayout={(e) => setStageHeight(e.nativeEvent.layout.height)}>

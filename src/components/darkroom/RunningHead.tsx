@@ -17,6 +17,7 @@ export function RunningHead({
   top,
   name,
   contents,
+  held = false,
   opacity,
   hidden,
   onBack,
@@ -28,6 +29,8 @@ export function RunningHead({
   name: string | null;
   /** CONTENTS is offered (there is a library to choose from). */
   contents: boolean;
+  /** A develop is under way: CONTENTS and the chapter name wait, and say so. */
+  held?: boolean;
   opacity: Animated.Value;
   hidden: boolean;
   onBack: () => void;
@@ -48,12 +51,13 @@ export function RunningHead({
       </View>
       {name ? (
         <Pressable
-          onPress={contents ? onContents : undefined}
-          disabled={!contents}
-          style={({ pressed }) => [styles.chapter, pressed && styles.pressed]}
+          onPress={contents && !held ? onContents : undefined}
+          disabled={!contents || held}
+          style={({ pressed }) => [styles.chapter, held && styles.held, pressed && styles.pressed]}
           accessibilityRole="button"
           accessibilityLabel={`Chapter, ${name}`}
-          accessibilityHint={contents ? CHAPTER_HINT : undefined}
+          accessibilityHint={contents && !held ? CHAPTER_HINT : undefined}
+          accessibilityState={{ disabled: !contents || held }}
           testID="darkroom-chapter"
         >
           <RoomText kind="head" numberOfLines={1} maxFontSizeMultiplier={1.3}>
@@ -65,11 +69,13 @@ export function RunningHead({
         {contents ? (
           <Pressable
             onPress={onContents}
+            disabled={held}
             hitSlop={10}
-            style={({ pressed }) => [styles.contents, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.contents, held && styles.held, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel="Contents"
-            accessibilityHint={CONTENTS_HINT}
+            accessibilityHint={held ? undefined : CONTENTS_HINT}
+            accessibilityState={{ disabled: held }}
             testID="darkroom-contents"
           >
             <RoomText kind="head" maxFontSizeMultiplier={1.3}>
@@ -91,4 +97,5 @@ const styles = StyleSheet.create({
   // Its right edge on the page's 16 pt gutter (4 of padding, 12 here).
   contents: { minHeight: 44, justifyContent: "center", paddingRight: 12 },
   pressed: { opacity: 0.6 },
+  held: { opacity: 0.4 },
 });

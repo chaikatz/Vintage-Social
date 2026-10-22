@@ -10,7 +10,8 @@ vi.mock("@/demo/photoAssets", () => ({
   PHOTOS: new Proxy({}, { has: (_t, key) => typeof key === "string" && !key.startsWith("http"), get: () => 1 }),
 }));
 
-import { condense, isEligible, quality, REDISCOVERY_AGE_DAYS, representative } from "@/darkroom/eligibility";
+import { condense, isEligible, quality, READ_FAR_MS, REDISCOVERY_AGE_DAYS, representative, sameMoment } from "@/darkroom/eligibility";
+import { mulberry32 } from "@/utils/shuffle";
 import {
   anniversary,
   editSize,
@@ -64,11 +65,15 @@ function print(takenAt: number, over: Partial<Print> = {}): Print {
 class FakeLibrary implements LibrarySource {
   readonly prints: Print[];
   readonly calls = { count: [] as { range: TimeRange; subtype?: string }[], page: [] as PageRequest[], oldest: 0 };
+  /** For each page asked for, how many photographs its range held: what Photos gathers before it hands back the first few. */
+  readonly matched: number[] = [];
   inFlight = 0;
   maxInFlight = 0;
+  private readonly times: number[];
 
   constructor(prints: readonly Print[]) {
     this.prints = [...prints].sort((a, b) => a.takenAt - b.takenAt);
+    this.times = this.prints.map((p) => p.takenAt);
   }
 
   private async answer<T>(value: () => T): Promise<T> {
@@ -83,8 +88,20 @@ class FakeLibrary implements LibrarySource {
     }
   }
 
+  /** The first photograph taken at or after `t`, by binary search, so a library of tens of thousands stays quick. */
+  private index(t: number): number {
+    let lo = 0;
+    let hi = this.times.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.times[mid] < t) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
   private within(range: TimeRange) {
-    return this.prints.filter((p) => p.takenAt >= range.from && p.takenAt < range.to);
+    return this.prints.slice(this.index(range.from), Math.max(this.index(range.from), this.index(range.to)));
   }
 
   count(range: TimeRange, subtype?: "screenshot") {
@@ -96,6 +113,7 @@ class FakeLibrary implements LibrarySource {
     this.calls.page.push(request);
     return this.answer(() => {
       let list = this.within(request.range);
+      this.matched.push(list.length);
       if (request.order === "desc") list = list.reverse();
       return { prints: list.slice(0, request.first), hasNextPage: list.length > request.first };
     });
@@ -122,6 +140,40 @@ function series(from: number, count: number, step: number, over: Partial<Print> 
 /** A photograph on each of `days` days of a year, at noon, starting on the 3rd of January. */
 function yearOfDays(year: number, days: number, over: Partial<Print> = {}): Print[] {
   return Array.from({ length: days }, (_, i) => print(at(year, 0, 3 + i, 12), over));
+}
+
+/**
+ * A library that is mostly screenshots: up to two dozen a day from 2021,
+ * and on one day in twenty-five an outing of five to thirty-four camera
+ * frames, three minutes apart. About 24,000 items, 2,000 of them
+ * photographs. Forty frames either side of a moment cover a day or two of
+ * screenshots, so most reads find nothing that may be shown.
+ */
+function screenshotHeavy(): FakeLibrary {
+  const rand = mulberry32(5);
+  const prints: Print[] = [];
+  for (let t = at(2021, 0, 1, 0); t < at(2026, 5, 1, 0); t += DAY) {
+    const shots = Math.floor(rand() * 24);
+    for (let i = 0; i < shots; i++) {
+      prints.push(print(t + 8 * HOUR + rand() * 14 * HOUR, { subtypes: ["screenshot"], width: 1179, height: 2556 }));
+    }
+    if (rand() < 0.04) {
+      const frames = 5 + Math.floor(rand() * 30);
+      prints.push(...series(t + 10 * HOUR + rand() * 8 * HOUR, frames, 3 * MIN));
+    }
+  }
+  return new FakeLibrary(prints);
+}
+
+/** A few photographs most days from 2012, and one more photograph at `stray`, alone at the far end of the library. */
+function withStray(stray: number): FakeLibrary {
+  const rand = mulberry32(5);
+  const prints = [print(stray)];
+  for (let t = at(2012, 0, 1); t < at(2026, 5, 1); t += DAY) {
+    const k = Math.floor(rand() * 8);
+    for (let i = 0; i < k; i++) prints.push(print(t + 9 * HOUR + rand() * 10 * HOUR));
+  }
+  return new FakeLibrary(prints);
 }
 
 beforeEach(() => {
@@ -268,6 +320,21 @@ describe("moments", () => {
     const b = print(at(2012, 1, 1, 15));
     expect(condense([a, b, a, b])).toHaveLength(2);
   });
+
+  it("know a shown frame's moment by the frame itself, wherever a page or a slice cut it", () => {
+    const t = at(2016, 4, 3, 10);
+    // A frame a minute for ten minutes, then one two minutes after.
+    const run = series(t, 11, MIN);
+    const apart = print(t + 12 * MIN);
+    const all = [...run, apart];
+    // From the first frame, five minutes' worth: no further than a moment lasts.
+    expect([...sameMoment(all, (p) => p.id === run[0].id)].sort()).toEqual(run.slice(0, 6).map((p) => p.id).sort());
+    // From the middle, five minutes either way; not the frame after the gap.
+    const middle = sameMoment(all, (p) => p.id === run[5].id);
+    expect(middle.size).toBe(11);
+    expect(middle.has(apart.id)).toBe(false);
+    expect(sameMoment(all, () => false).size).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -294,15 +361,34 @@ describe("the year index", () => {
     const lib = new FakeLibrary([print(at(1962, 5, 1)), print(at(2019, 5, 1))]);
     const years = await yearIndex(lib, NOW);
     expect(years.map((y) => y.year)).toEqual([1962, 2019]);
-    // Seven decades counted once each, then the eighteen years of the two filled
-    // decades (1962–69, 2010–19) twice each — all, and screenshots — not 65 years;
-    // and 1969 once more, for the lost dates at the turn of 1970.
-    expect(lib.calls.count).toHaveLength(7 + 18 * 2 + 1);
+    // Seven decades counted once each, and the lost dates in the three that touch
+    // one (the turn of 1970 falls in the 1960s and the 1970s, Photos' reference
+    // date in the 2000s); then the eighteen years of the two filled decades
+    // (1962–69, 2010–19) twice each — all, and screenshots — not 65 years; and
+    // 1969 once more, for the lost dates at the turn of 1970.
+    expect(lib.calls.count).toHaveLength(7 + 3 + 18 * 2 + 1);
     expect(lib.maxInFlight).toBeLessThanOrEqual(4);
   });
 
   it("is empty for an empty library", async () => {
     expect(await yearIndex(new FakeLibrary([]), NOW)).toEqual([]);
+  });
+
+  it("does not open a decade whose only photograph is a lost date", async () => {
+    const lib = new FakeLibrary([print(0), print(at(2015, 3, 1)), print(at(2016, 3, 1))]);
+    expect(await yearIndex(lib, NOW)).toEqual([
+      { year: 2015, count: 1 },
+      { year: 2016, count: 1 },
+    ]);
+    // The years counted one by one are those of the 2010s, the one decade that holds a real photograph; not one of the 1970s.
+    const counted = lib.calls.count
+      .map((c) => c.range)
+      .filter((r) => {
+        const year = yearRange(new Date(r.from).getFullYear());
+        return r.from === year.from && r.to === year.to;
+      })
+      .map((r) => new Date(r.from).getFullYear());
+    expect(new Set(counted)).toEqual(new Set(Array.from({ length: 10 }, (_, i) => 2010 + i)));
   });
 
   it("does not offer a year whose only photographs carry a lost date", async () => {
@@ -368,8 +454,37 @@ describe("on this day", () => {
     const lib = new FakeLibrary([print(at(1904, 9, 22, 10)), print(at(2016, 9, 22, 9)), print(at(2021, 9, 22, 9))]);
     const day = await onThisDay(lib, { now: NOW });
     expect(day.prints.map(yearOf)).toEqual([1904, 2016, 2021]);
-    expect(lib.calls.count).toHaveLength(13); // 1900s … 2020s
+    // 1900s … 2020s, and the lost dates in the 1960s, 1970s and 2000s.
+    expect(lib.calls.count).toHaveLength(13 + 3);
     expect(lib.calls.page).toHaveLength(6 + 10 + 6); // 1904–09, the 2010s and 2020–25
+  });
+
+  it("uses an oldest date it is given instead of asking the library again", async () => {
+    const lib = new FakeLibrary([print(at(2009, 2, 1)), print(at(2014, 9, 22, 9)), print(at(2017, 9, 22, 9)), print(at(2020, 9, 22, 9))]);
+    const day = await onThisDay(lib, { now: NOW, oldest: lib.prints[0].takenAt });
+    expect(day.prints.map(yearOf)).toEqual([2014, 2017, 2020]);
+    expect(lib.calls.oldest).toBe(0);
+    expect(lib.calls.page).toHaveLength(17);
+    // The year index takes it too.
+    expect(await yearIndex(lib, NOW, lib.prints[0].takenAt)).toEqual(await yearIndex(new FakeLibrary(lib.prints), NOW));
+    expect(lib.calls.oldest).toBe(0);
+    // A library already known to be empty is not asked anything at all.
+    const empty = new FakeLibrary([]);
+    expect(await onThisDay(empty, { now: NOW, oldest: null })).toEqual({ reach: "season", prints: [] });
+    expect(await yearIndex(empty, NOW, null)).toEqual([]);
+    expect(empty.calls).toEqual({ count: [], page: [], oldest: 0 });
+  });
+
+  it("does not read the anniversaries of a decade only a lost date opened", async () => {
+    // The turn of 1970 opened the 1970s, and Photos' reference date the 2000s.
+    for (const lost of [0, Date.UTC(2001, 0, 1)]) {
+      const lib = new FakeLibrary([print(lost), print(at(2012, 9, 22, 9)), print(at(2016, 9, 22, 9)), print(at(2020, 9, 22, 9))]);
+      const day = await onThisDay(lib, { now: NOW });
+      expect(day.prints.map(yearOf)).toEqual([2012, 2016, 2020]);
+      // Only the decades the real photographs are in: 2010 to last year.
+      const read = new Set(lib.calls.page.map((r) => new Date(r.range.from).getFullYear()));
+      expect([...read].sort((a, b) => a - b)).toEqual(Array.from({ length: 16 }, (_, i) => 2010 + i));
+    }
   });
 
   it("uses the years it is given, leaving out this year and impossible ones", async () => {
@@ -700,6 +815,90 @@ describe("surprise", () => {
     expect(lib.calls.page.length).toBeLessThan(200);
   });
 
+  it("never says it has seen everything before the years are counted", async () => {
+    const lib = library(2010, 2012);
+    const s = surprise(lib, { oldest: lib.prints[0].takenAt, held: () => true });
+    // Nothing found from the library's whole span: not yet, rather than nothing at all.
+    expect(await s.next(3)).toEqual([]);
+    expect(s.exhausted).toBe(false);
+    // With the years known and still nothing, it says so.
+    s.setYears(await yearIndex(lib, NOW));
+    expect(await s.next(3)).toEqual([]);
+    expect(s.exhausted).toBe(true);
+    expect(lib.calls.page.length).toBeLessThan(200);
+  });
+
+  it("reads no further than a year either side of a drawn moment, even across the library's whole span", async () => {
+    // Four photographs a day for eighteen years: some 26,000.
+    const prints: Print[] = [];
+    for (let t = at(2008, 0, 1, 9); t < at(2026, 5, 1); t += DAY) for (const h of [0, 3, 6, 9]) prints.push(print(t + h * HOUR));
+    const lib = new FakeLibrary(prints);
+    const s = surprise(lib, { oldest: lib.prints[0].takenAt, seed: 4 });
+    expect(await s.next(3)).toHaveLength(3);
+    s.setYears(await yearIndex(new FakeLibrary(prints), NOW));
+    expect(await s.next(24)).toHaveLength(21);
+    for (const r of lib.calls.page) expect(r.range.to - r.range.from).toBeLessThanOrEqual(READ_FAR_MS);
+    // Photos gathers a range's every photograph before it hands back forty: never
+    // more than a year's worth here, where a read to the end of the library's span
+    // once gathered half of it.
+    expect(Math.max(...lib.matched)).toBeLessThanOrEqual(366 * 4);
+  });
+
+  describe("on a library heavy with screenshots", () => {
+    it("deals whole rolls, one after another, without saying it has seen everything", async () => {
+      const lib = screenshotHeavy();
+      const years = await yearIndex(lib, NOW);
+      for (const seed of [1, 2, 3]) {
+        const s = surprise(lib, { years, oldest: lib.prints[0].takenAt, seed });
+        expect(await s.next(24)).toHaveLength(24);
+        expect(s.exhausted).toBe(false);
+        s.anotherRoll(seed + 50);
+        expect(await s.next(24)).toHaveLength(24);
+        expect(s.exhausted).toBe(false);
+      }
+    });
+
+    it("waits for the years when the cold start comes up short, then deals", async () => {
+      const lib = screenshotHeavy();
+      const years = await yearIndex(lib, NOW);
+      for (const seed of [1, 3, 4, 5, 6]) {
+        const s = surprise(lib, { oldest: lib.prints[0].takenAt, seed });
+        const cold = await s.next(3);
+        expect(s.exhausted).toBe(false);
+        s.setYears(years);
+        expect([...cold, ...(await s.next(3 - cold.length))]).toHaveLength(3);
+      }
+    });
+  });
+
+  it("is not pulled to the library's first month by one photograph alone at the far end", async () => {
+    // A clock never set (the first of January 1970), and a stray scan dated 1904.
+    for (const stray of [0, at(1904, 0, 1, 0)]) {
+      const lib = withStray(stray);
+      const years = await yearIndex(lib, NOW);
+      const firstMonth = (p: Print) => p.takenAt >= at(2012, 0, 1, 0) && p.takenAt < at(2012, 1, 1, 0);
+      let fromCold = 0;
+      let fromYears = 0;
+      for (let seed = 1; seed <= 40; seed++) {
+        // Before the years are counted, from the library's whole span.
+        const s = surprise(lib, { oldest: stray, seed });
+        let first = await s.next(1);
+        expect(s.exhausted).toBe(false);
+        if (first.length === 0) {
+          s.setYears(years);
+          first = await s.next(1);
+        }
+        if (firstMonth(first[0])) fromCold += 1;
+        // Once they are known, from the years, even for the first pick.
+        const warm = (await surprise(lib, { oldest: stray, years, seed }).next(1))[0];
+        if (firstMonth(warm) || warm.takenAt < at(2012, 0, 1, 0)) fromYears += 1;
+      }
+      // A draw over the whole span once found the first month of 2012 four times in five.
+      expect(fromCold).toBeLessThanOrEqual(8);
+      expect(fromYears).toBeLessThanOrEqual(2);
+    }
+  });
+
   describe("on small and skewed libraries", () => {
     it("does not stall on two tiny years beside two large ones", async () => {
       const prints: Print[] = [print(at(2012, 4, 1)), print(at(2014, 4, 1))];
@@ -919,6 +1118,25 @@ describe("a year as an edit", () => {
     const shown = new Set(first.map((p) => p.id));
     for (const p of more) expect(shown.has(p.id)).toBe(false);
     expect(lib.calls.page.some((r) => !firstRanges.has(`${r.range.from}-${r.range.to}`))).toBe(true);
+  });
+
+  it("never deals the rest of a burst MORE FROM has already shown", async () => {
+    // A weekly outing of three bursts, each four frames two seconds apart.
+    const prints: Print[] = [];
+    for (let d = 0; d < 365; d += 7) for (const h of [10, 14, 18]) prints.push(...series(at(2016, 0, 3 + d, h, 20), 4, 2_000));
+    const lib = new FakeLibrary(prints);
+    const months = await monthIndex(lib, 2016);
+    const first = await new YearEdit(lib, 2016, { now: NOW, months, seenWithin: never }).next(500);
+    const more = await new YearEdit(lib, 2016, {
+      now: NOW,
+      months,
+      shifted: true,
+      exclude: first.map((p) => p.id),
+      seenWithin: never,
+    }).next(500);
+    expect(more.length).toBeGreaterThan(40);
+    const again = more.filter((p) => first.some((f) => Math.abs(f.takenAt - p.takenAt) <= 5 * MIN));
+    expect(again).toEqual([]);
   });
 
   it("shows the current year's recent photographs, the one place they appear", async () => {

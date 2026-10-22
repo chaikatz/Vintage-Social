@@ -15,7 +15,13 @@ const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await ctx.newPage();
 
 const errors = [];
-page.on("pageerror", (e) => errors.push(e.message));
+// The test browser is a Chromium without H.264, so a demo video that
+// starts to autoplay has its play() refused ("no supported source"). That
+// is the browser, not the app; which feed rows render — and so whether a
+// video is among them — depends on the time of day the demo is seeded at.
+page.on("pageerror", (e) => {
+  if (!/no supported source/.test(e.message)) errors.push(e.message);
+});
 page.on("console", (m) => {
   if (m.type() === "error" && !/ERR_|Failed to load resource/.test(m.text())) {
     errors.push("console: " + m.text());

@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { keepScrollToOneFinger } from "@/utils/pagerTouches";
 import type { Print } from "@/darkroom/types";
-import { STAGE_HINT, STAGE_LABEL } from "./words";
+import { actionNamed, spokenActions, STAGE_HINT, STAGE_LABEL, type StageAction } from "./words";
 
 /** One page of the pager: a print, or the page after the last of them. */
 type Item = { kind: "print"; print: Print } | { kind: "tail" };
@@ -56,8 +56,9 @@ export interface StageHandle {
  * VoiceOver sees one element over the whole stage (§11.1): adjustable,
  * labelled "Photograph", its value the date and the line. Swiping up or
  * down turns the page; the pages themselves are hidden from it. On the
- * last page the element steps aside and the end page's title takes the
- * focus, so its words can be reached.
+ * end page the element steps aside and the end page's title takes the
+ * focus, so its words can be reached. Over a trailing page still waiting
+ * on the next batch it stays, and the focus with it.
  */
 export const Stage = React.forwardRef<StageHandle, {
   prints: readonly Print[];
@@ -77,8 +78,8 @@ export const Stage = React.forwardRef<StageHandle, {
     /** False on the end page, where its own words are read. */
     single: boolean;
     value: string;
-    actions: { name: string; label: string }[];
-    onAction: (name: string) => void;
+    actions: StageAction[];
+    onAction: (name: StageAction["name"]) => void;
     onIncrement: () => void;
     onDecrement: () => void;
   };
@@ -122,13 +123,29 @@ export const Stage = React.forwardRef<StageHandle, {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generation]);
 
-  // The end page arrives: VoiceOver's focus goes to its title.
+  // The end page arrives: VoiceOver's focus goes to its title. A trailing
+  // page still waiting on the next batch is not an end page: the stage
+  // stays the one element over it, so the focus is not lost.
   const atTail = index >= prints.length;
+  const single = props.accessibility.single;
+  const atEnd = atTail && !single;
   useEffect(() => {
-    if (!atTail) return;
+    if (!atEnd) return;
     const t = setTimeout(() => focusOn(props.tailTitle.current), 120);
     return () => clearTimeout(t);
-  }, [atTail, props.tailTitle]);
+  }, [atEnd, props.tailTitle]);
+
+  // Back on a print from the trailing page — the batch the member outran
+  // has landed, or they stepped back from the end — the focus comes back
+  // to the stage, and VoiceOver reads the print.
+  const wasAtTail = useRef(atTail);
+  useEffect(() => {
+    const was = wasAtTail.current;
+    wasAtTail.current = atTail;
+    if (!was || atTail || !single) return;
+    const t = setTimeout(() => focusOn(wrapper.current), 120);
+    return () => clearTimeout(t);
+  }, [atTail, single]);
 
   const webTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -171,12 +188,16 @@ export const Stage = React.forwardRef<StageHandle, {
       accessibilityLabel={a11y.single ? STAGE_LABEL : undefined}
       accessibilityValue={a11y.single ? { text: a11y.value } : undefined}
       accessibilityHint={a11y.single ? STAGE_HINT : undefined}
-      accessibilityActions={a11y.single ? [{ name: "increment" }, { name: "decrement" }, ...a11y.actions] : undefined}
+      // Listed by their words, which is what VoiceOver says; increment and
+      // decrement reach the adjustable stage without being listed, and
+      // listed they would be read out as "increment" and "decrement".
+      accessibilityActions={a11y.single ? spokenActions(a11y.actions) : undefined}
       onAccessibilityAction={(e: AccessibilityActionEvent) => {
-        const name = e.nativeEvent.actionName;
-        if (name === "increment") a11y.onIncrement();
-        else if (name === "decrement") a11y.onDecrement();
-        else a11y.onAction(name);
+        const said = e.nativeEvent.actionName;
+        if (said === "increment") return a11y.onIncrement();
+        if (said === "decrement") return a11y.onDecrement();
+        const name = actionNamed(a11y.actions, said);
+        if (name) a11y.onAction(name);
       }}
       testID="darkroom-stage"
       nativeID="darkroom-stage"

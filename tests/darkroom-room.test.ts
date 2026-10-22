@@ -7,6 +7,17 @@ vi.mock("react-native", () => ({
   Platform: { OS: "ios", select: (o: Record<string, unknown>) => o.ios ?? o.default },
   DynamicColorIOS: (o: { dark: string }) => o.dark,
 }));
+vi.mock("expo-status-bar", () => ({ setStatusBarHidden: () => undefined }));
+
+// What a visit reads besides the library: the phone's own stores, faked in memory.
+vi.mock("@/darkroom/develop", () => ({ stillInLibrary: async () => null }));
+vi.mock("@/darkroom/history", () => ({
+  developedRecently: () => false,
+  localDay: () => "2026-10-22",
+  seenWithin: () => false,
+}));
+vi.mock("@/darkroom/session", () => ({ keepChapter: () => undefined, recallChapter: () => null }));
+vi.mock("@/darkroom/setAside", () => ({ isSetAside: () => false, setAsidePrints: () => [] }));
 
 /**
  * The room: the rules it decides by that need no screen — where a plate
@@ -28,6 +39,7 @@ import {
   stageFrame,
 } from "@/components/darkroom/geometry";
 import {
+  actionNamed,
   captionWords,
   chapterAnnouncement,
   chapterName,
@@ -41,6 +53,8 @@ import {
   placeholderWords,
   prunedNote,
   settingsPath,
+  shelfSaid,
+  spokenActions,
   stageActions,
   stageValue,
   stateWords,
@@ -51,20 +65,24 @@ import {
   type StateContext,
 } from "@/components/darkroom/words";
 import {
+  choiceOf,
   dayComplete,
   dayStateOf,
   DEFAULT_DAY_MINIMUM,
   dropOnSettle,
   endingOf,
   opensOnThisDay,
+  pageAmong,
   placeIndex,
   startIndex,
   type Chapter,
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, type Reader } from "@/components/darkroom/dealer";
 import { roles, room, toneColor } from "@/components/darkroom/room";
+import { steadyTop } from "@/components/darkroom/useChrome";
+import { Visit } from "@/components/darkroom/visit";
 import { dark } from "@/theme";
-import type { Print } from "@/darkroom/types";
+import type { LibrarySource, Print } from "@/darkroom/types";
 
 const NOW = new Date(2026, 9, 22, 12, 0).getTime(); // 22 October 2026, noon
 
@@ -299,6 +317,71 @@ describe("a print's caption", () => {
     expect(stageActions(day(2014, 7, 1), false).map((a) => a.label)).toEqual(["Develop", "Set aside", "More from 2014", "Contents"]);
     expect(stageActions(day(2014, 7, 1), true)[1].label).toBe("Put back");
   });
+
+  const ctx: StateContext = { setAside: false, shelfChapter: false, limited: false };
+  const actionsIn = (state: DevelopState, setAside = false) => {
+    const words = stateWords(state, { ...ctx, setAside });
+    const busy = state.kind === "working" || state.kind === "downloading";
+    return stageActions(day(2014, 7, 1), setAside, { words, stated: state.kind !== "idle", busy });
+  };
+
+  it("hands iOS the actions by their words, which is what VoiceOver says on the new architecture", () => {
+    const actions = actionsIn({ kind: "idle" }, true);
+    // No "increment", "decrement" or "setAside": swiping up and down reaches the adjustable stage unlisted.
+    expect(spokenActions(actions)).toEqual([
+      { name: "Develop", label: "Develop" },
+      { name: "Put back", label: "Put back" },
+      { name: "More from 2014", label: "More from 2014" },
+      { name: "Contents", label: "Contents" },
+    ]);
+    expect(actionNamed(actions, "Put back")).toBe("toggle");
+    expect(actionNamed(actions, "More from 2014")).toBe("more");
+    expect(actionNamed(actions, "contents")).toBe("contents");
+    expect(actionNamed(actions, "increment")).toBeNull();
+  });
+
+  it("offers STOP under VoiceOver while downloading, and only what does something", () => {
+    const down = actionsIn({ kind: "downloading", progress: 0.4 });
+    // Pages and Contents are held, the caption thread too: STOP is the way out (§6.3).
+    expect(down.map((a) => [a.name, a.label])).toEqual([["stop", "Stop"]]);
+    const cloud = actionsIn({ kind: "inCloud", network: "cellular" });
+    expect(cloud.map((a) => a.label)).toEqual(["Download and develop", "Not now", "Contents"]);
+    const gone = actionsIn({ kind: "missing" }, true);
+    expect(gone.map((a) => a.label)).toEqual(["Remove", "Contents"]);
+    // With nothing in front of the member, only Contents.
+    expect(stageActions(null, false).map((a) => a.label)).toEqual(["Contents"]);
+  });
+
+  it("says the mobile-data line before a download, in the announcement and in the stage's value", () => {
+    const cellular = stateWords({ kind: "inCloud", network: "cellular" }, ctx);
+    expect(cellular.announce).toBe("Kept in iCloud. Developing it will use mobile data.");
+    expect(stageValue(day(2019, 9, 22), "Seven years ago today", false, null, cellular)).toBe(
+      "October 22, 2019. Seven years ago today. Kept in iCloud. Developing it will use mobile data.",
+    );
+    const down = stateWords({ kind: "downloading", progress: null }, ctx);
+    expect(stageValue(day(2019, 9, 22), "Seven years ago today", false, null, down)).toBe(
+      "October 22, 2019. Seven years ago today. Bringing it down from iCloud.",
+    );
+  });
+
+  it("says the shelf's refusal at the cap aloud, as it says set aside and put back", () => {
+    expect(shelfSaid("full")).toBe("The shelf is full. Put one back first.");
+    expect(shelfSaid("on")).toBe("Set aside");
+    expect(shelfSaid("off")).toBe("Put back");
+  });
+});
+
+describe("the chrome", () => {
+  it("keeps the head where it is while the status bar is hidden on a Home-button iPhone", () => {
+    // Shown: the inset as it is.
+    expect(steadyTop(20, 20, false)).toBe(20);
+    // Hidden, and the status bar gone with the words: the inset falls to 0, the head does not.
+    expect(steadyTop(20, 0, true)).toBe(20);
+    // Shown again, before the status bar is back: still 20, not a second jump.
+    expect(steadyTop(20, 0, false)).toBe(20);
+    // A Face ID phone keeps its inset throughout.
+    expect(steadyTop(59, 59, true)).toBe(59);
+  });
 });
 
 describe("the word pages", () => {
@@ -475,6 +558,60 @@ describe("chapters", () => {
     const list = ["a", "b", "c"].map((id, i) => print(id, day(2015, 0, i + 1)));
     expect(placeIndex(list, { deck: [list[2], list[1]], index: 1 })).toBe(1);
     expect(placeIndex(list, { deck: [print("x", 0)], index: 7 })).toBe(3);
+  });
+
+  it("comes back to the end page of a kept chapter, not twenty prints before it", () => {
+    // A roll of 24 read to its end: the deck kept prints 4–23, and the end page as index 20.
+    const roll = Array.from({ length: 24 }, (_, i) => print(`r${i}`, day(2010 + (i % 12), i % 12, 1)));
+    const deck = roll.slice(4);
+    expect(placeIndex(roll, { deck, index: deck.length })).toBe(24);
+    // An 87-print year left on its end page.
+    const year = Array.from({ length: 87 }, (_, i) => print(`y${i}`, day(2016, Math.floor(i / 8), (i % 8) + 1)));
+    expect(placeIndex(year, { deck: year.slice(67), index: 20 })).toBe(87);
+    // The deck itself, restored from disk, is still its own end page.
+    expect(placeIndex(deck, { deck, index: deck.length })).toBe(deck.length);
+  });
+
+  it("finds a restored deck's page among the whole day, so the prints before it come back", () => {
+    const whole = Array.from({ length: 40 }, (_, i) => print(`d${i}`, day(1990 + i, 9, 22)));
+    const deck = whole.slice(10);
+    expect(pageAmong(whole, deck, 20)).toBe(30);
+    expect(pageAmong(whole, deck, deck.length)).toBe(40);
+    expect(pageAmong(whole, [print("elsewhere", 0)], 0)).toBeNull();
+  });
+
+  describe("a choice in Contents", () => {
+    const year2016 = (months: number[]) => months.map((m, i) => print(`m${i}`, day(2016, m, 1 + (i % 20))));
+    const opened = (month: number, prints: Print[], index: number) => ({
+      showing: true,
+      where: { mode: "year" as const, year: 2016, month },
+      chapter: { prints, index },
+    });
+
+    it("leaves the chapter already open, or its year line, as it is", () => {
+      expect(choiceOf({ showing: true, where: { mode: "surprise", year: null, month: 0 }, chapter: null }, "surprise", null, null)).toBeNull();
+      expect(choiceOf(opened(0, year2016([0, 1]), 0), "year", 2016, null)).toBeNull();
+    });
+
+    it("turns back to the month the chapter opened at, from its first print, when the member has read on", () => {
+      const prints = year2016([0, 0, 2, 5, 5]);
+      // Opened at January, now in June: JAN is not a dead tap.
+      expect(choiceOf(opened(0, prints, 3), "year", 2016, 0)).toEqual({ mode: "year", year: 2016, month: 0, jump: true, startId: "m0" });
+      // Opened at August by the caption thread, read on to October: AUG goes back to August.
+      const august = year2016([7, 7, 9]);
+      expect(choiceOf(opened(7, august, 2), "year", 2016, 7)).toMatchObject({ month: 7, jump: true, startId: "m0" });
+      // On the end page too.
+      expect(choiceOf(opened(0, prints, prints.length), "year", 2016, 0)).toMatchObject({ startId: "m0" });
+    });
+
+    it("does nothing for the month already in view", () => {
+      expect(choiceOf(opened(0, year2016([0, 0, 2]), 1), "year", 2016, 0)).toBeNull();
+    });
+
+    it("opens another month of the year as a jump, to its own kept position (§4.3)", () => {
+      expect(choiceOf(opened(0, year2016([0, 5]), 1), "year", 2016, 7)).toEqual({ mode: "year", year: 2016, month: 7, jump: true });
+      expect(choiceOf(opened(0, year2016([0]), 0), "year", 2019, null)).toEqual({ mode: "year", year: 2019, month: 0, jump: false });
+    });
   });
 
   it("ends each chapter on its own page", () => {
@@ -655,10 +792,91 @@ describe("the dealer", () => {
     });
   });
 
+  it("tells a roll still being built the year index that arrived meanwhile", async () => {
+    const told = vi.fn();
+    let build = (_: Reader) => undefined as void;
+    const building = new Promise<Reader>((r) => (build = r));
+    const d = new Dealer("surprise", building, { orphan: vi.fn() });
+    const years = [{ year: 2016, count: 40 }];
+    d.setYears(years);
+    expect(d.hasYears).toBe(true);
+    build({ next: async () => [], done: false, setYears: told });
+    await d.read(3);
+    expect(told).toHaveBeenCalledWith(years);
+    d.release();
+  });
+
+  it("is not started over when given the same year index again", async () => {
+    const told = vi.fn();
+    const d = new Dealer("surprise", { next: async () => [], done: false, setYears: told }, { orphan: vi.fn() });
+    const years = [{ year: 2016, count: 40 }];
+    d.setYears(years);
+    d.setYears(years);
+    expect(told).toHaveBeenCalledTimes(1);
+  });
+
   it("appends only what is new", () => {
     const a = [prints[0], prints[1]];
     expect(appendNew(a, [prints[1], prints[2]]).map((p) => p.id)).toEqual(["p0", "p1", "p2"]);
     expect(appendNew(a, [prints[0]])).toBe(a);
+  });
+});
+
+describe("a visit", () => {
+  /** A library of ten photographs a year since 2015, none of them on this day; it counts how often it is asked its oldest date. */
+  function library() {
+    const asked = { oldest: 0 };
+    const source: LibrarySource = {
+      count: async (_, subtype) => (subtype ? 0 : 10),
+      page: async () => ({ prints: [], hasNextPage: false }),
+      oldest: async () => {
+        asked.oldest += 1;
+        return day(2015, 0, 1);
+      },
+    };
+    return { source, asked };
+  }
+
+  it("asks the library its oldest date once, however many readers want it, and again after a change", async () => {
+    const { source, asked } = library();
+    const visit = new Visit(source);
+    visit.libraryChanged(true);
+    const first = await visit.oldest();
+    await visit.askDayOnly(Date.now());
+    await visit.askDay();
+    await visit.years(true);
+    visit.surprise(first);
+    expect(asked.oldest).toBe(1);
+    visit.libraryChanged(false);
+    await visit.years(true);
+    expect(asked.oldest).toBe(2);
+  });
+
+  it("gives the year index to a roll begun cold, even when another room counted it", async () => {
+    const { source } = library();
+    const room = new Visit(source);
+    room.libraryChanged(true);
+    const told = vi.fn();
+    const d = room.surpriseDealer("surprise", { next: async () => [], done: false, setYears: told });
+    expect(d.hasYears).toBe(false);
+    // Another room's visit counts the years; this one then finds them fresh.
+    await new Visit(source).years(true);
+    const years = await room.years();
+    expect(told).toHaveBeenCalledWith(years);
+    expect(d.hasYears).toBe(true);
+  });
+
+  it("tells a roll kept from an earlier room the years this room reads", async () => {
+    const { source } = library();
+    const earlier = new Visit(source);
+    earlier.libraryChanged(true);
+    const told = vi.fn();
+    const kept = earlier.surpriseDealer("surprise", { next: async () => [], done: false, setYears: told });
+    const room = new Visit(source);
+    room.adopt(kept, null);
+    expect(kept.hasYears).toBe(false);
+    const years = await room.years(true);
+    expect(told).toHaveBeenLastCalledWith(years);
   });
 });
 
