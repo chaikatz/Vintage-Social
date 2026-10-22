@@ -85,6 +85,15 @@ export async function yearIndex(source: LibrarySource, now = Date.now()): Promis
   return counts.filter((c) => c.count > 0);
 }
 
+/** One year's months, January first, each with its count; only asked for the year open in the contents. */
+export async function monthIndex(source: LibrarySource, year: number): Promise<number[]> {
+  return inBatches(Array.from({ length: 12 }, (_, m) => m), 4, async (m) => {
+    const range = { from: new Date(year, m, 1).getTime(), to: new Date(year, m + 1, 1).getTime() };
+    const [all, screenshots] = await Promise.all([source.count(range), source.count(range, "screenshot")]);
+    return Math.max(0, all - screenshots);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // On this day
 // ---------------------------------------------------------------------------
@@ -290,6 +299,8 @@ export class YearChapter {
     private readonly source: LibrarySource,
     readonly year: number,
     private readonly pageSize = 200,
+    /** Open the chapter at this month (0–11) rather than January. */
+    readonly fromMonth = 0,
   ) {}
 
   get done(): boolean {
@@ -302,8 +313,9 @@ export class YearChapter {
   }
 
   private async readPage(): Promise<void> {
+    const year = yearRange(this.year);
     const page = await this.source.page({
-      range: yearRange(this.year),
+      range: { from: new Date(this.year, this.fromMonth, 1).getTime(), to: year.to },
       first: this.pageSize,
       after: this.cursor,
       order: "asc",

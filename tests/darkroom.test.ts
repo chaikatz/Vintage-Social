@@ -14,9 +14,10 @@ import {
   Surprise,
   windowAround,
   YearChapter,
+  monthIndex,
   yearIndex,
 } from "@/darkroom/discovery";
-import { agoLine, fullDate, monthYear, yearsBetween } from "@/darkroom/labels";
+import { agoLine, captionFor, fullDate, monthYear, yearsBetween } from "@/darkroom/labels";
 import { accessFrom } from "@/darkroom/access";
 import { parseHistory, remember } from "@/darkroom/history";
 import { parseSetAside } from "@/darkroom/setAside";
@@ -321,12 +322,36 @@ describe("a year as a chapter", () => {
   });
 });
 
+describe("a year by month", () => {
+  it("counts each month without screenshots, and can open the chapter at a month", async () => {
+    const lib = new FakeLibrary([
+      print(new Date(2016, 0, 3)),
+      print(new Date(2016, 5, 3, 9)),
+      print(new Date(2016, 5, 3, 18)),
+      print(new Date(2016, 5, 4), { subtypes: ["screenshot"] }),
+      print(new Date(2016, 10, 1)),
+    ]);
+    expect(await monthIndex(lib, 2016)).toEqual([1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0]);
+    const fromJune = await new YearChapter(lib, 2016, 50, 5).next(10);
+    expect(fromJune.map((p) => new Date(p.takenAt).getMonth())).toEqual([5, 5, 10]);
+  });
+});
+
 describe("labels", () => {
   const now = new Date(2026, 9, 22).getTime();
   it("set the date like a catalogue", () => {
     expect(monthYear(new Date(2018, 7, 14).getTime())).toBe("AUGUST 2018");
     expect(fullDate(new Date(2018, 7, 14).getTime())).toBe("August 14, 2018");
   });
+  it("caption each way in as an archive would", () => {
+    const day = new Date(2019, 9, 22, 9).getTime();
+    expect(captionFor(day, now, "on-this-day", "day", false)).toEqual({ label: "OCTOBER 22, 2019", line: "Seven years ago today" });
+    const near = new Date(2019, 9, 20, 9).getTime();
+    expect(captionFor(near, now, "on-this-day", "week", false).line).toBe("Seven years ago, this week");
+    expect(captionFor(near, now, "surprise", null, true)).toEqual({ label: "OCTOBER 2019", line: "Seven years ago · posted" });
+    expect(captionFor(new Date(2016, 7, 14).getTime(), now, "year", null, false)).toEqual({ label: "AUGUST 14, 2016", line: "Sunday" });
+  });
+
   it("count a year only once its anniversary has passed, and say it in words", () => {
     expect(yearsBetween(new Date(2019, 9, 23).getTime(), now)).toBe(6);
     expect(yearsBetween(new Date(2019, 9, 22).getTime(), now)).toBe(7);

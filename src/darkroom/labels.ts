@@ -68,3 +68,58 @@ export function sameCalendarDay(ms: number, now: number): boolean {
 export function countLabel(n: number): string {
   return n.toLocaleString("en-US");
 }
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** "Tuesday" */
+export function weekday(ms: number): string {
+  return WEEKDAYS[new Date(ms).getDay()];
+}
+
+/** "OCT 22" */
+export function shortDay(ms: number): string {
+  const d = new Date(ms);
+  return `${MONTHS[d.getMonth()].slice(0, 3).toUpperCase()} ${d.getDate()}`;
+}
+
+/** "October 22" */
+export function monthDay(ms: number): string {
+  const d = new Date(ms);
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+export const MONTH_INITIALS = MONTHS.map((m) => m.slice(0, 3).toUpperCase());
+
+/**
+ * The two lines under a print, by the way in it was found.
+ *
+ *   On this day   OCTOBER 22, 2019    Six years ago today / this week / around this time
+ *   Surprise      AUGUST 2014         Eleven years ago
+ *   A year        AUGUST 14, 2016     Sunday
+ *   Set aside     AUGUST 2016         Ten years ago
+ *
+ * A photograph already posted from this phone says so at the end of the second line.
+ */
+export function captionFor(
+  ms: number,
+  now: number,
+  mode: "on-this-day" | "surprise" | "year" | "set-aside",
+  reach: "day" | "week" | "season" | null,
+  posted: boolean,
+): { label: string; line: string } {
+  let label: string;
+  let line: string;
+  if (mode === "on-this-day") {
+    label = fullDate(ms).toUpperCase();
+    const head = agoLine(ms, now);
+    line = sameCalendarDay(ms, now) ? `${head} today` : reach === "week" ? `${head}, this week` : `${head}, around this time`;
+    if (head === "Earlier this year") line = head;
+  } else if (mode === "year") {
+    label = fullDate(ms).toUpperCase();
+    line = weekday(ms);
+  } else {
+    label = monthYear(ms);
+    line = agoLine(ms, now);
+  }
+  return { label, line: posted ? `${line} · posted` : line };
+}

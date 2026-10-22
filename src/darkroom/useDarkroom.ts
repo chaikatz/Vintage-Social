@@ -56,7 +56,11 @@ export interface DarkroomState {
   years: YearCount[];
   mode: DarkroomMode;
   year: number | null;
+  /** By year: the month the chapter was opened at. */
+  month: number;
   prints: Print[];
+  /** Whether On This Day holds anything, once it has been asked. */
+  dayHas: boolean | null;
   /** On This Day only: how far it had to reach. */
   reach: DayReach | null;
   sequence: SequenceState;
@@ -77,7 +81,9 @@ export function useDarkroom(initial: { mode?: DarkroomMode; year?: number | null
       years: [],
       mode: place?.mode ?? initial.mode ?? "on-this-day",
       year: place?.year ?? initial.year ?? null,
+      month: 0,
       prints: place?.prints ?? [],
+      dayHas: null,
       reach: null,
       sequence: place ? "ready" : "idle",
       more: place ? true : false,
@@ -115,11 +121,16 @@ export function useDarkroom(initial: { mode?: DarkroomMode; year?: number | null
 
   // --- opening a way in ---------------------------------------------------
   const open = useCallback(
-    async (mode: DarkroomMode, year: number | null = null, opts: { startId?: string | null; refreshYears?: boolean } = {}) => {
+    async (
+      mode: DarkroomMode,
+      year: number | null = null,
+      opts: { startId?: string | null; refreshYears?: boolean; month?: number } = {},
+    ) => {
       if (!source) return;
       const gen = ++generation.current;
       reader.current = null;
-      patch({ mode, year, prints: [], index: 0, sequence: "loading", more: false, reach: null, restored: false });
+      const month = opts.month ?? 0;
+      patch({ mode, year, month, prints: [], index: 0, sequence: "loading", more: false, reach: null, restored: false });
       try {
         const y = await years(source, opts.refreshYears);
         if (gen !== generation.current) return;
@@ -135,10 +146,11 @@ export function useDarkroom(initial: { mode?: DarkroomMode; year?: number | null
           const day = await onThisDay(source, y);
           prints = day.prints;
           reach = day.reach;
+          patch({ dayHas: day.prints.length > 0 });
         } else if (mode === "year") {
           chosenYear = year ?? y[0]?.year ?? null;
           if (chosenYear != null) {
-            const chapter = new YearChapter(source, chosenYear);
+            const chapter = new YearChapter(source, chosenYear, 200, month);
             reader.current = chapter;
             prints = await chapter.next(BATCH.year);
             more = !chapter.done;
@@ -185,6 +197,7 @@ export function useDarkroom(initial: { mode?: DarkroomMode; year?: number | null
       if (gen !== generation.current) return;
       const day = await onThisDay(source, y);
       if (gen !== generation.current) return;
+      patch({ dayHas: day.prints.length > 0 });
       if (day.reach === "day" && day.prints.length >= ON_THIS_DAY_OPENS_WITH) {
         reader.current = null;
         patch({ years: y, mode: "on-this-day", year: null, prints: day.prints, reach: day.reach, more: false, index: 0, sequence: "ready" });
