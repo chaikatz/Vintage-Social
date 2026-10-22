@@ -473,7 +473,7 @@ describe("the privacy policy", () => {
     // Set aside keeps more than an identifier, and says so.
     expect(text).toMatch(/photographs you set aside[^.]*it keeps the date each was taken and its size/);
     // Forgetting in Settings keeps the shelf.
-    expect(text).toContain("“Forget what the Darkroom has shown me” in Settings clears all of it but keeps the photographs you set aside.");
+    expect(text).toContain("“Forget what the Darkroom has shown me” in Settings clears what it has shown you and where you left off, but keeps the photographs you set aside.");
     expect(text).toContain("The list is deleted when you sign out.");
     // Ordinary app data on the phone: no promise that a backup leaves it out.
     expect(text).toContain("can be included in your phone’s own backup");

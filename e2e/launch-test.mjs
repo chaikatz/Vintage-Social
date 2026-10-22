@@ -15,13 +15,17 @@ const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await ctx.newPage();
 
 const errors = [];
-// The test browser is a Chromium without H.264, so a demo video that
-// starts to autoplay has its play() refused ("no supported source"). That
-// is the browser, not the app; which feed rows render — and so whether a
-// video is among them — depends on the time of day the demo is seeded at.
+// A Chromium built without H.264 refuses a demo video's play() ("no
+// supported source"). That is the browser, not the app; which feed rows
+// render — and so whether a video is among them — depends on the time of
+// day the demo is seeded at. Forgiven only when the browser really cannot
+// play H.264, so a broken video address still fails the test elsewhere.
+let noH264 = false;
 page.on("pageerror", (e) => {
-  if (!/no supported source/.test(e.message)) errors.push(e.message);
+  if (noH264 && /no supported source/.test(e.message)) return;
+  errors.push(e.message);
 });
+noH264 = await page.evaluate(() => document.createElement("video").canPlayType('video/mp4; codecs="avc1.42E01E"') === "");
 page.on("console", (m) => {
   if (m.type() === "error" && !/ERR_|Failed to load resource/.test(m.text())) {
     errors.push("console: " + m.text());

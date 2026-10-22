@@ -920,6 +920,26 @@ describe("a room still open when the session ends", () => {
     expect(phone.files.has(HISTORY)).toBe(false);
   });
 
+  it("lets a repeat claim by the owner keep everything, in memory as on disk", async () => {
+    const { session, forget } = await filled();
+    // Not yet flushed when the token refreshes.
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 4, prints: prints(6) });
+    session.keepChapter("year:2016:0", { prints: prints(2), index: 1, reader: null, more: false, reach: null });
+    forget.claimDarkroom("a");
+    expect(session.recallChapter("surprise")).not.toBeNull();
+    expect(session.recallChapter("year:2016:0")?.index).toBe(1);
+    expect(session.readPlace()?.index).toBe(4);
+    session.flushPlace();
+    expect(stored(PLACE).index).toBe(4);
+  });
+
+  it("asks the disk who owns the Darkroom once a run, so an owner record that failed to save cannot forget it later", async () => {
+    const { shelf, forget } = await filled();
+    phone.files.delete(OWNER);
+    forget.claimDarkroom("a");
+    expect(shelf.setAsidePrints().map((p) => p.id)).toEqual(["p3"]);
+  });
+
   it("opens again for the same member after a sign-out that never reached the server", async () => {
     const { history, shelf, forget } = await filled();
     // "Sign out" forgot it, but auth kept the session: the same member is heard from again.
@@ -1139,10 +1159,14 @@ describe("guards", () => {
     // Forgotten at "Sign out", in both...
     expect(provider).toMatch(/demoSignOut\(\);\s*\/\/[^\n]*\n\s*forgetDarkroom\(\);/);
     expect(provider).toMatch(/queryClient\.clear\(\);\s*forgetDarkroom\(\);/);
-    // ...and when auth says the session has left the phone.
-    expect(provider).toMatch(/onAuthStateChange\(\(event, next\) => \{[\s\S]*?if \(event === "SIGNED_OUT"\) forgetDarkroom\(\);[\s\S]*?else if \(next\?\.user\?\.id\) claimDarkroom\(next\.user\.id\);\s*setSession\(next\);/);
+    // ...and when auth says the session has left the phone, heard where the
+    // client is made so that one said during launch is not missed...
+    const client = read("src/lib/supabase.ts");
+    expect(client).toMatch(/onAuthStateChange\(\(event\) => \{\s*if \(event === "SIGNED_OUT"\) forgetDarkroom\(\);/);
+    // ...while any word of a member claims it for them.
+    expect(provider).toMatch(/onAuthStateChange\(\(event, next\) => \{[\s\S]*?if \(event !== "SIGNED_OUT" && next\?\.user\?\.id\) claimDarkroom\(next\.user\.id\);\s*setSession\(next\);/);
     // Never for a first answer of nobody: an offline launch is not a sign-out.
-    expect(provider.match(/forgetDarkroom\(\)/g)?.length).toBe(3);
+    expect(provider.match(/forgetDarkroom\(\)/g)?.length).toBe(2);
     expect(provider).not.toMatch(/memberLeft/);
   });
 

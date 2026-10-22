@@ -173,16 +173,6 @@ export function plateTrouble(error: string | undefined, online: boolean): PlateT
 }
 
 /**
- * Whether a plate that could not draw asks again as the network changes.
- * Only on the way back online: one that failed offline is asked for once
- * the phone is online (it may be already, if the failure was reported
- * after the connection came back), and one that failed online only when
- * the phone has been offline since and is back. So a print that fails
- * with a connection settles on COULDN’T SHOW THIS ONE instead of asking
- * again forever. One gone from the library waits for the library to
- * change, which retries every plate in trouble.
- */
-/**
  * What a failure is called once the phone goes offline: one that looked
  * like the image's own fault while the phone was online (or before it
  * knew) may just as well be iCloud's, and it will be asked again when the
@@ -192,6 +182,16 @@ export function troubleOffline(trouble: PlateTrouble | null, wasOnline: boolean,
   return trouble === "other" && wasOnline && !online ? "offline" : trouble;
 }
 
+/**
+ * Whether a plate that could not draw asks again as the network changes.
+ * Only on the way back online: one that failed offline is asked for once
+ * the phone is online (it may be already, if the failure was reported
+ * after the connection came back), and one that failed online only when
+ * the phone has been offline since and is back. So a print that fails
+ * with a connection settles on COULDN’T SHOW THIS ONE instead of asking
+ * again forever. One gone from the library waits for the library to
+ * change, which retries every plate in trouble.
+ */
 export function asksAgain(trouble: PlateTrouble | null, wasOnline: boolean, online: boolean): boolean {
   if (trouble == null || trouble === "missing" || !online) return false;
   return trouble === "offline" || !wasOnline;

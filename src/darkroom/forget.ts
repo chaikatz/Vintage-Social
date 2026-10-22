@@ -28,6 +28,8 @@ function each(steps: (() => void)[]): void {
  */
 const OWNER_FILE = "darkroom-owner.json";
 const OWNER_KEY = "vintage.darkroom-owner";
+/** Whom this run has already claimed the Darkroom for; let go by a forgetting. */
+let claimedBy: string | null = null;
 
 /** The stored owner's id, or null for a file that is missing or does not fit. */
 export function parseOwner(raw: unknown): string | null {
@@ -55,6 +57,7 @@ function forgetOwner(): void {
  * straight back for the next one.
  */
 export function forgetDarkroom(): void {
+  claimedBy = null;
   each([
     sealHistory,
     sealSetAside,
@@ -92,6 +95,11 @@ export function forgetDarkroomHistory(): void {
  */
 export function claimDarkroom(userId: string): void {
   if (!userId) return;
+  // Claimed already in this run, and not forgotten since: nothing to read.
+  // (A file that cannot be read back reads as nobody's, so asking the disk
+  // again at every token refresh would forget a member's shelf each time
+  // the owner's record failed to save.)
+  if (claimedBy === userId) return;
   each([
     () => {
       if (readDiskCache(OWNER_FILE, OWNER_KEY, parseOwner) === userId) return;
@@ -102,4 +110,5 @@ export function claimDarkroom(userId: string): void {
     reopenSetAside,
     reopenSession,
   ]);
+  claimedBy = userId;
 }

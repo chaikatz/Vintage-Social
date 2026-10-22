@@ -4,6 +4,7 @@ import * as SecureStore from "expo-secure-store";
 import { AppState, Platform } from "react-native";
 import { isDemoMode, requireEnv } from "./env";
 import type { Database } from "@/types/db";
+import { forgetDarkroom } from "@/darkroom/forget";
 
 /**
  * Session tokens live in the iOS keychain (SecureStore), not AsyncStorage.
@@ -30,6 +31,15 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: false,
   },
+});
+
+// The Darkroom's memory on this phone goes with the session. Listened for
+// here, as the client is made, rather than in the session provider: auth
+// starts restoring the session the moment the client exists, and a
+// refresh the server refuses at launch (a sign-out made on another
+// device) says SIGNED_OUT once, to whoever is listening by then.
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_OUT") forgetDarkroom();
 });
 
 // Refresh tokens only while the app is foregrounded.

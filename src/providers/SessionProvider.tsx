@@ -142,18 +142,18 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
-      // auth-js says SIGNED_OUT only once it has removed the session from
-      // this phone: a sign-out, or a refresh token the server refused (a
-      // sign-out everywhere, a revoked or expired session) after the access
-      // token had run out too. A refresh that failed for want of a network
-      // keeps the session and says nothing of the kind.
-      if (event === "SIGNED_OUT") forgetDarkroom();
+      // SIGNED_OUT forgets the Darkroom where the client is made
+      // (src/lib/supabase.ts), so that one said during launch is heard.
+      // auth-js says it only once it has removed the session from this
+      // phone: a sign-out, or a refresh token the server refused; a
+      // refresh that failed for want of a network keeps the session.
+      //
       // Any word of a member claims the Darkroom for them, not only a new
       // id: a "Sign out" that could not reach the server forgets it and
       // seals it while auth keeps the same member, who must have it back
-      // (empty) when they are next heard from. A claim by the owner on
-      // record costs one small read.
-      else if (next?.user?.id) claimDarkroom(next.user.id);
+      // (empty) when they are next heard from. A claim already made in
+      // this run costs nothing.
+      if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
     });
     return () => sub.subscription.unsubscribe();

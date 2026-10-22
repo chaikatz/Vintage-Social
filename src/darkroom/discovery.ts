@@ -481,8 +481,6 @@ interface Bed {
   weight: number;
   /** Fewer photographs than a pool year needs; drawn from only when nothing else is left. */
   tiny: boolean;
-  /** The year index's count, when the bed is a year; unknown for the cold bed. */
-  count?: number;
   /** Put away for the visit: read end to end, or every stretch of it learned, and nothing usable found. */
   dry: boolean;
   /** Stretches of the range a read has shown to hold no eligible photograph: in order, never overlapping. */
@@ -653,7 +651,6 @@ export class Surprise {
         range,
         weight,
         tiny: count < POOL_MIN_COUNT,
-        count,
         dry: known?.dry ?? false,
         empty: known?.empty ?? [],
       });
@@ -873,12 +870,10 @@ export class Surprise {
   private async readSide(bed: Bed, side: "before" | "after", moment: number): Promise<Side> {
     const eligible = (p: Print) => isEligible(p, { now: this.now });
     let read: Side = { eligible: [], whole: false };
-    // A year too sparse for a month to hold enough to choose from would
-    // only cost the month's read before the year's: go straight to the year.
-    const sparse =
-      bed.count != null &&
-      (bed.count * READ_NEAR_MS) / Math.max(1, bed.range.to - bed.range.from) < 2 * READ_AROUND_ENOUGH;
-    for (const reach of sparse ? [READ_FAR_MS] : [READ_NEAR_MS, READ_FAR_MS]) {
+    // The month first, even in a year of few photographs: the year's count
+    // leaves out its screenshots, which a read still has to page past, so
+    // a year that looks sparse can be a heavy read from end to end.
+    for (const reach of [READ_NEAR_MS, READ_FAR_MS]) {
       const range =
         side === "before"
           ? { from: Math.max(bed.range.from, moment + 1 - reach), to: moment + 1 }
