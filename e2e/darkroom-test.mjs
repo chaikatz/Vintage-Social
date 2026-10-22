@@ -69,14 +69,24 @@ const turn = async (n = 1) => {
   }, n);
   await wait(900);
 };
-/** Straight to the end of the chapter: the page after the last print. */
-const toEnd = async () => {
-  await page.evaluate(() => {
-    const lists = [...document.querySelectorAll('[data-testid="darkroom-pager"]')].filter((e) => e.offsetParent !== null);
-    const list = lists[lists.length - 1];
-    if (list) list.scrollTo({ left: list.scrollWidth, behavior: "instant" });
-  });
-  await wait(1200);
+/**
+ * On to the end of the chapter, the page after the last print — a page at a
+ * time, as a member swipes. (One long jump lands among the list's unrendered
+ * spacer, which has no snap points in the browser, and snaps back.)
+ */
+const endInFront = () =>
+  page.evaluate((width) => {
+    const end = document.querySelector('[data-testid="darkroom-end"]');
+    if (!end) return false;
+    const r = end.getBoundingClientRect();
+    return r.width > 0 && Math.abs(r.left) < width / 2;
+  }, W);
+const toEnd = async (limit = 60) => {
+  for (let i = 0; i < limit; i++) {
+    if (await endInFront()) return true;
+    await turn(1);
+  }
+  return endInFront();
 };
 const openContents = async () => {
   await byId("darkroom-contents").first().click();
@@ -163,7 +173,8 @@ const chosenYear = yearTitles[Math.min(2, yearTitles.length - 1)];
 await yearLines.nth(Math.min(2, yearCount - 1)).click();
 await wait(2600);
 check("A year opens as a chapter", (await chapterHead()) === String(chosenYear), await chapterHead());
-check("The year’s caption gives the weekday", /\bA (Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\b/.test(await text()));
+const yearLine = ((await byId("darkroom-caption-line").first().textContent().catch(() => "")) ?? "").trim();
+check("The year’s caption gives the weekday", /^A (Sun|Mon|Tues|Wednes|Thurs|Fri|Satur)day\b/.test(yearLine), yearLine || (await text()).slice(0, 300));
 
 await openContents();
 await wait(1400);
@@ -202,8 +213,7 @@ await wait(900);
 await byId("darkroom-contents-on-this-day").first().click();
 await wait(2200);
 check("On this day comes back to the print it was left on", (await dateLabel()) === secondDate, await dateLabel());
-await toEnd();
-const ended = await appears("darkroom-end", 5000);
+const ended = await toEnd();
 check("On this day ends on its end page", ended && /That is everything from this (day|week|time of year)/.test(await text()));
 check("The end page hands on to another way in", /Surprise me/i.test(await text()) && /Choose a year/i.test(await text()));
 await shot("end");

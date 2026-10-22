@@ -18,6 +18,14 @@ interface RoomTextProps extends Omit<TextProps, "style"> {
 }
 
 const BOLD: TextStyle = { fontWeight: "700" };
+/**
+ * A line held to a fixed number of lines keeps its trailing tracking. The
+ * negative margin that centres a rule under the letters also makes a
+ * container that hugs the line one step of tracking narrower than its
+ * text, and a line that may not wrap is then cut with an ellipsis — "ON
+ * THIS DA…". None of these lines carries a rule, so nothing is lost.
+ */
+const KEEP_TRACKING: TextStyle = { marginRight: 0 };
 
 export const RoomText = forwardRef<Text, RoomTextProps>(function RoomText(props, ref) {
   const { kind, tone, style, ...rest } = props;
@@ -27,7 +35,13 @@ export const RoomText = forwardRef<Text, RoomTextProps>(function RoomText(props,
     <Text
       ref={ref}
       {...rest}
-      style={[r.style, { color: toneColor(tone ?? r.tone, look.contrast) }, look.bold && BOLD, style]}
+      style={[
+        r.style,
+        rest.numberOfLines != null && KEEP_TRACKING,
+        { color: toneColor(tone ?? r.tone, look.contrast) },
+        look.bold && BOLD,
+        style,
+      ]}
     />
   );
 });

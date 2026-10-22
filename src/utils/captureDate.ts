@@ -40,7 +40,9 @@ async function libraryCreationTime(assetId: string | null | undefined): Promise<
     const permission = await MediaLibrary.getPermissionsAsync();
     if (!permission.granted) return null;
 
-    const info = await MediaLibrary.getAssetInfoAsync(assetId);
+    // Only the date is wanted, and the library knows it without the file:
+    // never bring an original down from iCloud just to read when it was taken.
+    const info = await MediaLibrary.getAssetInfoAsync(assetId, { shouldDownloadFromNetwork: false });
     return captureDateFromEpoch(info?.creationTime);
   } catch {
     // A date stamp is never worth failing a post over.

@@ -103,7 +103,7 @@ export function Caption({
       {progress ? (
         <ProgressRule fraction={progress.fraction} width={width} still={look.reduceMotion} />
       ) : (
-        <RoomText kind="line" numberOfLines={2} maxFontSizeMultiplier={2} style={styles.line}>
+        <RoomText kind="line" numberOfLines={2} maxFontSizeMultiplier={2} style={styles.line} testID={testID ? `${testID}-line` : undefined}>
           {line}
         </RoomText>
       )}
