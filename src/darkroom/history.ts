@@ -60,12 +60,26 @@ function load(): Map<string, number> {
   return seen;
 }
 
-const persist = makeLazyWriter(() =>
-  writeDiskCache(FILE, KEY, { seen: [...load().entries()], developed: [...developed.entries()] }),
-);
+const write = () => writeDiskCache(FILE, KEY, { seen: [...load().entries()], developed: [...developed.entries()] });
+// A few seconds after the last mark, and at once when the app goes to the
+// background — never once per swipe, where writing the file would cost a frame.
+const persist = makeLazyWriter(write, 4000);
+let flushing: { remove: () => void } | null = null;
+function flushOnBackground(): void {
+  if (flushing) return;
+  try {
+    const { AppState } = require("react-native") as typeof import("react-native");
+    flushing = AppState?.addEventListener?.("change", (state: string) => {
+      if (state !== "active" && seen) write();
+    }) ?? { remove: () => undefined };
+  } catch {
+    flushing = { remove: () => undefined };
+  }
+}
 
 export function markSeen(id: string, at = Date.now()): void {
   remember(load(), id, at, SEEN_LIMIT);
+  flushOnBackground();
   persist();
 }
 

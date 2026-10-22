@@ -28,7 +28,9 @@ const stop = () => server.kill();
 process.on("exit", stop);
 
 await new Promise((r) => setTimeout(r, 1500));
-const test = spawn(process.execPath, [new URL("launch-test.mjs", import.meta.url).pathname], {
+// `node e2e/run.mjs darkroom` runs the Darkroom's walk instead of the launch test.
+const which = process.argv[2] === "darkroom" ? "darkroom-test.mjs" : "launch-test.mjs";
+const test = spawn(process.execPath, [new URL(which, import.meta.url).pathname], {
   stdio: "inherit",
   env: { ...process.env, SHOT_DIR: process.env.SHOT_DIR ?? "/tmp/vintage-launch-shots" },
 });

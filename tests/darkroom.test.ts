@@ -314,6 +314,19 @@ describe("a year as a chapter", () => {
     expect(chapter.done).toBe(true);
   });
 
+  it("pages by time without a cursor, and gets past a pile of one timestamp", async () => {
+    const t = new Date(2018, 3, 1, 12).getTime();
+    const pile = Array.from({ length: 7 }, () => print(t, { width: 4032, height: 3024 }));
+    const later = [print(t + 2 * DAY), print(t + 4 * DAY), print(t + 6 * DAY)];
+    const lib = new FakeLibrary([...pile, ...later]);
+    const chapter = new YearChapter(lib, 2018, 3);
+    const all = await chapter.next(20);
+    // The pile is one moment; then each later day.
+    expect(all).toHaveLength(1 + 3);
+    expect(lib.calls.page.some((r) => r.after)).toBe(true); // the pile needed the cursor
+    expect(lib.calls.page.filter((r) => r.after).length).toBeLessThan(lib.calls.page.length);
+  });
+
   it("does not split a burst that straddles a page boundary", async () => {
     const t = new Date(2019, 0, 1, 12).getTime();
     const lib = new FakeLibrary([print(t), print(t + 1000), print(t + 2000), print(t + 3000)]);

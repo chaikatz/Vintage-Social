@@ -21,7 +21,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { pickFromLibrary } from "@/utils/pickForCompose";
 import { readDiskCache, writeDiskCache } from "@/utils/diskCache";
 import { useDarkroom } from "@/darkroom/useDarkroom";
-import { develop, type DevelopFailure, type DevelopStage } from "@/darkroom/develop";
+import { develop, discardDeveloped, type DevelopFailure, type DevelopStage } from "@/darkroom/develop";
 import { developedAt } from "@/darkroom/history";
 import { toggleSetAside, useSetAside } from "@/darkroom/setAside";
 import { chooseMorePhotographs, openPhotoSettings } from "@/darkroom/access";
@@ -55,16 +55,16 @@ const LIT = new Animated.Value(1);
 /** A chapter's title card is held at least this long, so a jump reads as a jump. */
 const TITLE_HOLD_MS = 500;
 
-const STAGE_WORDS: Record<DevelopStage, string> = {
-  reading: "Developing…",
-  icloud: "Bringing it down from iCloud…",
-  preparing: "Developing…",
+/** What the caption says while a print is being developed: the line in capitals, and the quiet line under it. */
+const STAGE_WORDS: Record<DevelopStage, [string, string]> = {
+  reading: ["Developing…", " "],
+  icloud: ["Developing…", "If it’s kept in iCloud, it’s on its way down."],
 };
 
-const FAILURE_WORDS: Record<DevelopFailure, [string, string]> = {
+const FAILURE_WORDS: Record<Exclude<DevelopFailure, "cancelled">, [string, string]> = {
   missing: ["No longer in your library", "It may have been deleted, or it’s outside what VINTAGE can see."],
   icloud: ["iCloud didn’t send it", "Try again on a better connection, or set it aside."],
-  offline: ["In iCloud, and this iPhone is offline", "Set it aside, and develop it when you’re connected."],
+  offline: ["Not on this iPhone, and it’s offline", "It may be kept in iCloud. Set it aside, and develop it when you’re connected."],
   unreadable: ["This one wouldn’t open", "Try again, or set it aside."],
 };
 
@@ -101,6 +101,11 @@ export default function Darkroom() {
   const chrome = useRef(new Animated.Value(1)).current;
   const [chromeHidden, setChromeHidden] = useState(false);
   const developing = useRef(false);
+  const stopDeveloping = useRef(false);
+  // The copy handed to the editor; if the member comes back without posting, it is not kept.
+  const developed = useRef<string | null>(null);
+  // Prints whose image failed to draw because the photograph is gone.
+  const [missing, setMissing] = useState<ReadonlySet<string>>(new Set());
   const afterContents = useRef<(() => void) | null>(null);
 
   // --- the room's light ----------------------------------------------------
@@ -122,6 +127,8 @@ export default function Darkroom() {
       setStatusBarStyle("light", true);
       setStage(null);
       developing.current = false;
+      discardDeveloped(developed.current);
+      developed.current = null;
       Animated.timing(chrome, { toValue: 1, duration: reduceMotion ? 0 : 200, useNativeDriver: true }).start();
       setChromeHidden(false);
       return () => {
@@ -250,24 +257,34 @@ export default function Darkroom() {
   const developNow = async (print: Print | null = current) => {
     if (!print || developing.current) return;
     developing.current = true;
+    stopDeveloping.current = false;
     setFailure(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => undefined);
     AccessibilityInfo.announceForAccessibility("Developing");
     setStage("reading");
     Animated.timing(chrome, { toValue: 0.0, duration: reduceMotion ? 0 : 200, useNativeDriver: true }).start();
-    const outcome = await develop(print, (s) => {
-      setStage(s);
-      if (s === "icloud") AccessibilityInfo.announceForAccessibility("Bringing the original down from iCloud");
+    const outcome = await develop(print, {
+      known_missing: missing.has(print.id),
+      cancelled: () => stopDeveloping.current,
+      onStage: (s) => {
+        setStage(s);
+        if (s === "icloud") AccessibilityInfo.announceForAccessibility("If it’s kept in iCloud, it’s on its way down.");
+      },
     });
-    if (!outcome.ok) {
+    const restore = () => {
       developing.current = false;
       setStage(null);
-      setFailure({ id: print.id, reason: outcome.reason });
       Animated.timing(chrome, { toValue: 1, duration: reduceMotion ? 0 : 180, useNativeDriver: true }).start();
+    };
+    if (!outcome.ok) {
+      restore();
+      if (outcome.reason === "cancelled") return;
+      setFailure({ id: print.id, reason: outcome.reason });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
       AccessibilityInfo.announceForAccessibility(FAILURE_WORDS[outcome.reason][0]);
       return;
     }
+    developed.current = outcome.params.uri;
     router.push({ pathname: "/compose", params: outcome.params });
   };
 
@@ -369,7 +386,7 @@ export default function Darkroom() {
   })();
 
   const pager = words === null;
-  const failed = failure && current && failure.id === current.id ? FAILURE_WORDS[failure.reason] : null;
+  const failed = failure && current && failure.id === current.id && failure.reason !== "cancelled" ? FAILURE_WORDS[failure.reason] : null;
 
   return (
     <View
@@ -441,6 +458,7 @@ export default function Darkroom() {
                   chrome={isCurrent && stage ? LIT : chrome}
                   reduceMotion={reduceMotion}
                   stage={isCurrent && stage ? STAGE_WORDS[stage] : null}
+                  onMissing={() => setMissing((m) => (m.has(item.id) ? m : new Set(m).add(item.id)))}
                   accessibilityLabel={`Photograph, ${fullDate(item.takenAt)}. ${caption.line}.${aside ? " Set aside." : ""}`}
                   accessibilityActions={[
                     { name: "increment", label: "Next photograph" },
@@ -473,21 +491,37 @@ export default function Darkroom() {
       </View>
 
       {/* DEVELOP: the one word on this page that carries the rule. */}
-      <Animated.View style={[styles.foot, { paddingBottom: Math.max(insets.bottom, 16) + 8, opacity: pager && current ? chrome : 0 }]} pointerEvents={pager && current && !chromeHidden && !stage ? "box-none" : "none"}>
+      <Animated.View
+        style={[styles.foot, { paddingBottom: Math.max(insets.bottom, 16) + 8, opacity: stage === "icloud" ? 1 : pager && current ? chrome : 0 }]}
+        pointerEvents={stage === "icloud" || (pager && current && !chromeHidden && !stage) ? "box-none" : "none"}
+      >
         {state.access === "limited" && pager ? (
           <Text style={styles.limited} maxFontSizeMultiplier={1.4}>
             Only the photographs you shared with VINTAGE
           </Text>
         ) : null}
-        <Word
-          label="Develop"
-          ruled
-          strong
-          onPress={() => developNow()}
-          disabled={!current || Boolean(stage)}
-          accessibilityHint="Opens this photograph in the editor, to post."
-          style={styles.develop}
-        />
+        {stage === "icloud" ? (
+          <Word
+            label="Cancel"
+            ruled
+            strong
+            onPress={() => {
+              stopDeveloping.current = true;
+            }}
+            accessibilityHint="Stops waiting for the photograph to come down from iCloud."
+            style={styles.develop}
+          />
+        ) : (
+          <Word
+            label="Develop"
+            ruled
+            strong
+            onPress={() => developNow()}
+            disabled={!current || Boolean(stage)}
+            accessibilityHint="Opens this photograph in the editor, to post."
+            style={styles.develop}
+          />
+        )}
       </Animated.View>
 
       <Contents
@@ -512,7 +546,7 @@ export default function Darkroom() {
           act?.();
         }}
       />
-      {stage ? <View style={StyleSheet.absoluteFill} accessibilityViewIsModal /> : null}
+      {stage === "reading" ? <View style={StyleSheet.absoluteFill} accessibilityViewIsModal /> : null}
     </View>
   );
 }

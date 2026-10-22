@@ -15,6 +15,7 @@
     "phone:tunnel": "expo start --go --tunnel",
     "build:web": "expo export --platform web",
     "test:e2e": "node e2e/run.mjs",
+    "test:darkroom": "node e2e/run.mjs darkroom",
     "test:rls": "node supabase/tests/run.mjs",
     "seed:curate": "node seed/curate.mjs",
     "seed:build": "node seed/build.mjs",

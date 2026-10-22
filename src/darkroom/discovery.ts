@@ -288,6 +288,10 @@ export class Surprise {
  * a year of eight thousand photographs costs one page.
  */
 export class YearChapter {
+  /** Where the next page starts: the capture time of the last frame read, and the frames read at exactly that time. */
+  private from: number | null = null;
+  private atFrom = new Set<string>();
+  /** Fallback for a pile of frames that all share one timestamp (an import). */
   private cursor: string | null = null;
   private ended = false;
   private scene: Print[] = [];
@@ -312,21 +316,41 @@ export class YearChapter {
     return this.ready.splice(0, count);
   }
 
+  /**
+   * Pages are keyed by time, not by the library's cursor: the next page
+   * starts at the last frame's capture time, and the frames already read at
+   * that exact moment are skipped. A cursor is a linear scan in Photos and
+   * fails outright if its photograph is deleted between pages; a time does
+   * neither. Only a page made entirely of one timestamp — an import pile —
+   * falls back to the cursor to get past it.
+   */
   private async readPage(): Promise<void> {
     const year = yearRange(this.year);
+    const start = this.from ?? new Date(this.year, this.fromMonth, 1).getTime();
     const page = await this.source.page({
-      range: { from: new Date(this.year, this.fromMonth, 1).getTime(), to: year.to },
+      range: { from: start, to: year.to },
       first: this.pageSize,
       after: this.cursor,
       order: "asc",
     });
-    for (const p of page.prints) if (isEligible(p)) this.feed(p);
-    this.cursor = page.endCursor;
-    if (!page.hasNextPage || page.prints.length === 0) {
+    const fresh = page.prints.filter((p) => !(p.takenAt === this.from && this.atFrom.has(p.id)));
+    for (const p of fresh) if (isEligible(p)) this.feed(p);
+    const last = page.prints[page.prints.length - 1];
+    if (!page.hasNextPage || page.prints.length === 0 || (fresh.length === 0 && !this.cursor && page.prints.length < this.pageSize)) {
       this.ended = true;
       this.closeScene();
       this.closeOccasion();
+      return;
     }
+    if (last.takenAt === this.from || page.prints.every((p) => p.takenAt === page.prints[0].takenAt)) {
+      // A pile of one timestamp longer than a page: let the cursor step over it.
+      this.cursor = page.endCursor;
+    } else {
+      this.cursor = null;
+    }
+    if (last.takenAt !== this.from) this.atFrom = new Set();
+    this.from = last.takenAt;
+    for (const p of page.prints) if (p.takenAt === last.takenAt) this.atFrom.add(p.id);
   }
 
   private feed(p: Print): void {

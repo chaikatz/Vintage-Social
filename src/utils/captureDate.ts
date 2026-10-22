@@ -16,9 +16,9 @@ import { captureDateFrom, captureDateFromEpoch } from "./exif";
  * real date for video and for the stripped-metadata photographs that used to
  * fall through as well.
  *
- * It stays best-effort throughout: no permission, no asset id, a library
- * that does not know — all of them return null and the stamp falls back to
- * the posting time, which is what it did before.
+ * It stays best-effort throughout: no permission (it is never asked for
+ * here), no asset id, a library that does not know — all of them return
+ * null and the stamp falls back to the posting time.
  */
 export async function captureDateForAsset(
   asset: Pick<ImagePickerAsset, "exif" | "assetId">,
@@ -33,10 +33,11 @@ async function libraryCreationTime(assetId: string | null | undefined): Promise<
   // blob with no library behind it.
   if (!assetId || Platform.OS === "web") return null;
   try {
-    let permission = await MediaLibrary.getPermissionsAsync();
-    if (!permission.granted && permission.canAskAgain) {
-      permission = await MediaLibrary.requestPermissionsAsync();
-    }
+    // Only if access was already given. The ordinary picker needs no
+    // library permission, and asking for the whole library in the middle of
+    // picking one photograph is a prompt nobody was told about. The Darkroom
+    // asks, with an explanation, when the member walks into it.
+    const permission = await MediaLibrary.getPermissionsAsync();
     if (!permission.granted) return null;
 
     const info = await MediaLibrary.getAssetInfoAsync(assetId);

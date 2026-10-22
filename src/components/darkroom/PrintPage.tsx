@@ -46,6 +46,7 @@ export function PrintPage({
   chrome,
   reduceMotion,
   stage,
+  onMissing,
   accessibilityLabel,
   accessibilityActions,
   onAccessibilityAction,
@@ -62,8 +63,10 @@ export function PrintPage({
   /** The caption fades with the rest of the room's words. */
   chrome: Animated.Value;
   reduceMotion: boolean;
-  /** While developing: what is happening, in place of the caption. */
-  stage?: string | null;
+  /** While developing: what is happening, in place of the caption's two lines. */
+  stage?: [string, string] | null;
+  /** The photograph turned out to be gone from the library. */
+  onMissing?: () => void;
   accessibilityLabel: string;
   accessibilityActions: { name: string; label?: string }[];
   onAccessibilityAction: (name: string) => void;
@@ -101,7 +104,10 @@ export function PrintPage({
               priority={active ? "high" : "low"}
               recyclingKey={print.id}
               transition={reduceMotion ? 0 : { duration: 320, effect: "cross-dissolve", timing: "ease-out" }}
-              onError={() => setMissing(true)}
+              onError={() => {
+                setMissing(true);
+                onMissing?.();
+              }}
               accessibilityIgnoresInvertColors
             />
           )}
@@ -109,7 +115,7 @@ export function PrintPage({
         <Animated.View style={[styles.caption, { opacity: chrome }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
           <View style={styles.captionRow}>
             <Text style={[styles.label, untrack(2.2)]} numberOfLines={1} maxFontSizeMultiplier={1.5}>
-              {stage ?? label}
+              {stage ? stage[0] : label}
             </Text>
             {stage || missing ? null : (
               <Pressable onPress={onSetAside} hitSlop={{ top: 14, bottom: 14, left: 14, right: 8 }} style={styles.aside}>
@@ -120,8 +126,8 @@ export function PrintPage({
               </Pressable>
             )}
           </View>
-          <Text style={styles.line} numberOfLines={1} maxFontSizeMultiplier={2}>
-            {stage ? " " : line}
+          <Text style={styles.line} numberOfLines={stage ? 2 : 1} maxFontSizeMultiplier={2}>
+            {stage ? stage[1] : line}
           </Text>
         </Animated.View>
       </View>
