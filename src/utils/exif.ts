@@ -67,6 +67,8 @@ export function parseExifDate(value: unknown): string | null {
  * across the corner of someone's photograph, so both fall back to the
  * posting time.
  */
+const UNSET_CLOCK_MS = 36 * 3_600_000;
+
 export function plausibleCaptureDate(date: Date): string | null {
   const time = date.getTime();
   if (Number.isNaN(time)) return null;
@@ -76,9 +78,12 @@ export function plausibleCaptureDate(date: Date): string | null {
 }
 
 /** The same check, for a millisecond timestamp — what the photo library
- * reports for a file that carries no EXIF, video especially. */
+ * reports for a file that carries no EXIF, video especially. Before 1970 is
+ * negative and perfectly real (a scanned family print dated 1962); only
+ * the epoch itself, give or take a day and a half of time zones, is the
+ * mark of a clock that was never set. */
 export function captureDateFromEpoch(ms: unknown): string | null {
-  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return null;
+  if (typeof ms !== "number" || !Number.isFinite(ms) || Math.abs(ms) < UNSET_CLOCK_MS) return null;
   return plausibleCaptureDate(new Date(ms));
 }
 

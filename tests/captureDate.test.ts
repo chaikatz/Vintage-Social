@@ -29,6 +29,12 @@ describe("capture date from the photo library", () => {
     expect(captureDateFromEpoch(Number.NaN)).toBeNull();
   });
 
+  it("reads a photograph from before 1970", () => {
+    const then = new Date(1962, 7, 14, 15, 0, 0);
+    expect(then.getTime()).toBeLessThan(0);
+    expect(captureDateFromEpoch(then.getTime())).toBe(then.toISOString());
+  });
+
   it("accepts today", () => {
     expect(captureDateFromEpoch(Date.now())).not.toBeNull();
   });
