@@ -34,21 +34,6 @@ async function years(source: LibrarySource, refresh = false): Promise<YearCount[
   return y;
 }
 
-/** For the Post tab's entry line: how far back the library goes, from what is already known. */
-export function knownYears(): YearCount[] | null {
-  return yearsCache?.years ?? null;
-}
-
-export async function libraryYears(): Promise<YearCount[]> {
-  const source = darkroomSource();
-  if (!source) return [];
-  try {
-    return await years(source);
-  } catch {
-    return [];
-  }
-}
-
 export type SequenceState = "idle" | "loading" | "ready" | "empty" | "failed";
 
 export interface DarkroomState {
