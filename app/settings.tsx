@@ -15,6 +15,8 @@ import { mediaUrl, prepareAvatar, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/providers/SessionProvider";
+import { darkroomAvailable } from "@/darkroom/source";
+import { forgetHistory } from "@/darkroom/history";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
 import { loadAppearance, setAppearance, type AppearanceChoice } from "@/utils/appearance";
 import {
@@ -291,6 +293,26 @@ export default function Settings() {
         <Text style={styles.linkLabel}>Blocked members</Text>
         <Feather name="chevron-right" size={16} color={colors.inkFaint} />
       </Pressable>
+      {darkroomAvailable() ? (
+        <Pressable
+          style={styles.linkRow}
+          onPress={() =>
+            showAlert(
+              "Forget what the Darkroom has shown you?",
+              "It keeps a short list, on this phone, of the photographs it has shown you and the ones you posted, so it doesn’t repeat itself. Nothing on it ever leaves your phone. Photographs you set aside stay set aside.",
+              [
+                { text: "Forget", style: "destructive", onPress: () => forgetHistory() },
+                { text: "Cancel", style: "cancel" },
+              ],
+            )
+          }
+          accessibilityRole="button"
+          accessibilityHint="Clears the Darkroom's list of photographs it has shown you, on this phone."
+        >
+          <Text style={styles.linkLabel}>Forget what the Darkroom has shown me</Text>
+          <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+        </Pressable>
+      ) : null}
       <Pressable style={styles.linkRow} onPress={() => openDoc("privacy", PRIVACY_URL)} accessibilityRole="link">
         <Text style={styles.linkLabel}>Privacy Policy</Text>
         <Feather name="chevron-right" size={16} color={colors.inkFaint} />

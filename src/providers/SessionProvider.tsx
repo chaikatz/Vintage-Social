@@ -16,6 +16,7 @@ import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
 import { forgetPushToken } from "@/utils/push";
+import { forgetDarkroom } from "@/darkroom/forget";
 
 interface SessionState {
   /** undefined while restoring the persisted session on launch. */
@@ -191,6 +192,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     if (error) await supabase.auth.signOut({ scope: "local" });
     // Nothing of this member stays for the next one to sign in on this phone.
     queryClient.clear();
+    forgetDarkroom();
     await leaveToLanding();
   }, []);
 

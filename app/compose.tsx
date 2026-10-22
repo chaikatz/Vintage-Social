@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { showAlert } from "@/utils/alert";
 import { rememberPlace } from "@/utils/reverseGeocode";
+import { markDeveloped } from "@/darkroom/history";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -61,6 +62,9 @@ export default function Compose() {
     height: string;
     duration: string;
     takenAt: string;
+    /** Set when the Darkroom opened the editor: the library identifier of the photograph. */
+    assetId?: string;
+    from?: string;
   }>();
 
   const uri = params.uri ?? "";
@@ -88,6 +92,8 @@ export default function Compose() {
   // The renderer could not read the file. Rare now that library originals
   // are re-encoded first, but a black frame must never be what gets posted.
   const [renderFailed, setRenderFailed] = useState(false);
+  // The renderer has drawn its first frame of the film.
+  const [filmReady, setFilmReady] = useState(false);
   // Video: the still frame shows the film exactly; "motion" plays the clip
   // with the play-time approximation, muted unless asked.
   const [motion, setMotion] = useState(false);
@@ -276,6 +282,10 @@ export default function Compose() {
       // publish": the tags, the cache, the counts are each best-effort.
       setPublished(true);
 
+      // Developed from the Darkroom: it remembers, on this phone, that this
+      // one has been shared, and does not offer it again as a rediscovery.
+      if (params.assetId) markDeveloped(params.assetId);
+
       // The town this was taken in, learned now so the places view on the
       // profile already knows where the photograph goes.
       if (chosen?.lat != null && chosen?.lng != null) {
@@ -361,15 +371,24 @@ export default function Compose() {
           ) : renderFailed ? (
             <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" />
           ) : (
-            <FilteredImage
-              ref={filteredRef}
-              uri={uri}
-              width={width}
-              height={height}
-              filter={filter}
-              style={StyleSheet.absoluteFill}
-              onError={() => setRenderFailed(true)}
-            />
+            <>
+              {/* The photograph itself, at once, while the renderer warms up;
+                  the film is then drawn over it. Without it the frame showed
+                  its bare background first — cream, in the dark print. */}
+              {!filmReady ? <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+              <View style={[StyleSheet.absoluteFill, !filmReady && styles.filmWaiting]}>
+                <FilteredImage
+                  ref={filteredRef}
+                  uri={uri}
+                  width={width}
+                  height={height}
+                  filter={filter}
+                  style={StyleSheet.absoluteFill}
+                  onReady={() => setFilmReady(true)}
+                  onError={() => setRenderFailed(true)}
+                />
+              </View>
+            </>
           )}
           {stampOn ? <DateStamp iso={stampIso} /> : null}
           {/* The stock, written on the sleeve — nothing written when there is none. */}
@@ -591,6 +610,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.shutter,
     overflow: "hidden",
   },
+  filmWaiting: { opacity: 0 },
   previewFilm: { position: "absolute", left: spacing.lg, bottom: spacing.md },
   previewControls: {
     position: "absolute",

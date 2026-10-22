@@ -18,7 +18,7 @@ export const LEGAL_TITLES: Record<LegalDoc, string> = {
   terms: "Terms of Use",
 };
 
-export const LEGAL_UPDATED = "September 15, 2026";
+export const LEGAL_UPDATED = "October 22, 2026";
 
 export const PRIVACY_POLICY = `VINTAGE is a small, invitation-only club for photographs. This policy says what we collect, why, and what you can do about it.
 
@@ -32,13 +32,15 @@ What you post. Photographs and short films you publish, the filter you chose, yo
 
 Capture dates. With your permission, VINTAGE reads the date a photograph or film was taken from the file you choose, so the date stamp says when the shutter fired. VINTAGE does not read your location from your photographs and does not track where you are. A place on a post is the one you typed or picked by name.
 
+Your photo library, in the Darkroom. If you allow it, the Darkroom shows you photographs already on your phone so you can find one worth posting. It reads them, and the dates they were taken, on your phone. Nothing about your library — not the photographs, their dates, or how many there are — is sent to us or to anyone else. So that it does not repeat itself, the Darkroom keeps a short list on your phone of which photographs you looked at, set aside or posted; it holds only the library's own identifiers, and is deleted when you sign out or when you choose "Forget what the Darkroom has shown me" in Settings. Only a photograph you choose to post is uploaded.
+
 Device token. If you allow notifications, a token that lets us send them to your phone. It is deleted when you sign out.
 
 Diagnostics. Our hosting providers keep ordinary server logs (such as IP address and request time) to run the service.
 
 ## What we do not do
 
-We do not sell your information. We do not show advertising. We do not use your photographs to train anything. We do not read your contacts or your camera roll beyond the photographs you pick.
+We do not sell your information. We do not show advertising. We do not use your photographs to train anything. We do not read your contacts. We do not upload anything from your photo library except the photographs you post.
 
 ## Who can see what
 

@@ -131,7 +131,7 @@ export default function Memories() {
                 <Pressable
                   key={day.yearsAgo}
                   style={styles.dayRow}
-                  onPress={() => router.push({ pathname: "/library-picker", params: { mode: "day" } })}
+                  onPress={() => router.push({ pathname: "/darkroom", params: { mode: "on-this-day" } })}
                 >
                   <View style={styles.dayThumbs}>
                     {day.photos.slice(0, 3).map((p) => (

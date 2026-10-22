@@ -11,10 +11,11 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.vintage.social",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "VINTAGE needs access to your photo library so you can share photographs.",
+        "NSPhotoLibraryUsageDescription": "VINTAGE shows the photographs in your library so you can rediscover one and share it. They are read on this iPhone, and nothing is uploaded unless you post it.",
         "NSCameraUsageDescription": "VINTAGE needs camera access so you can take photographs to share.",
         "NSMicrophoneUsageDescription": "VINTAGE needs microphone access when you record short videos.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "PHPhotoLibraryPreventAutomaticLimitedAccessAlert": true
       }
     },
     "android": {
@@ -42,7 +43,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "VINTAGE needs access to your photo library so you can share photographs."
+          "photosPermission": "VINTAGE shows the photographs in your library so you can rediscover one and share it. They are read on this iPhone, and nothing is uploaded unless you post it."
         }
       ],
       "expo-asset",
@@ -51,7 +52,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "VINTAGE reads the date a photograph or video was taken, so the date stamp says when the shutter fired rather than when you posted it.",
+          "photosPermission": "VINTAGE shows the photographs in your library so you can rediscover one and share it. They are read on this iPhone, and nothing is uploaded unless you post it.",
           "savePhotosPermission": "VINTAGE does not save anything to your library.",
           "isAccessMediaLocationEnabled": false
         }

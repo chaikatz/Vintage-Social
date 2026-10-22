@@ -1,15 +1,15 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { showAlert } from "@/utils/alert";
-import * as ImagePicker from "expo-image-picker";
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { colors, spacing, type } from "@/theme";
-import { prepareForDarkroom } from "@/api/media";
-import { captureDateForAsset } from "@/utils/captureDate";
-import { composeParamsFor, libraryGranted, randomOldPhoto } from "@/utils/library";
+import { ruleWidth } from "@/components/gate/rule";
+import { pickFromLibrary, takeForCompose, type PickedParams } from "@/utils/pickForCompose";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
+import { darkroomAvailable, darkroomSource } from "@/darkroom/source";
+import { readAccess } from "@/darkroom/access";
 
 /**
  * Where a post begins.
@@ -18,133 +18,51 @@ import { MAX_VIDEO_SECONDS } from "@/utils/validation";
  * feed and grid as everything else — there is no separate video surface.
  *
  * Set like the rest of VINTAGE: a serif line, then quiet rows ruled off
- * with hairlines, each a way of finding a picture. The library first,
- * because that is where the photographs are; the camera and a short clip
- * beside it; then the two ways of looking back into the roll. Nothing
- * here is a card, a plate or a dark block.
+ * with hairlines. First the Darkroom — the camera roll, one print at a
+ * time, from further back than anyone scrolls — because the best
+ * photographs are rarely the newest. Then the ordinary ways in, one tap
+ * away: the library, the camera, a short clip. Nothing here is a card, a
+ * plate or a dark block; the Darkroom itself is the dark room.
  */
 export default function Create() {
   const router = useRouter();
-  const [finding, setFinding] = useState(false);
   // Reading the capture date and decoding the photograph take a moment;
-  // without a guard a second tap in that moment opened the darkroom twice.
+  // without a guard a second tap in that moment opened the editor twice.
   const [opening, setOpening] = useState(false);
+  // How far back the library goes — one question of the library, asked
+  // only once access has already been given; never a prompt from here.
+  const [since, setSince] = useState<number | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      let live = true;
+      const source = darkroomSource();
+      if (!source) return;
+      readAccess()
+        .then(async (access) => {
+          if (access !== "full" && access !== "limited") return null;
+          return source.oldest();
+        })
+        .then((oldest) => live && oldest && setSince(new Date(oldest).getFullYear()))
+        .catch(() => undefined);
+      return () => {
+        live = false;
+      };
+    }, []),
+  );
 
-  // One photograph from further back than you were going to look. It is
-  // the same darkroom as any other post; only the choosing is different.
-  const findSomething = async () => {
-    if (finding) return;
-    setFinding(true);
-    try {
-      if (!(await libraryGranted(true))) {
-        showAlert(
-          "Nothing to look through",
-          "VINTAGE needs to see your photo library to find something in it. You can allow this in Settings.",
-        );
-        return;
-      }
-      const photo = await randomOldPhoto();
-      const params = photo ? await composeParamsFor(photo) : null;
-      if (!params) {
-        showAlert("Nothing older to find", "Everything in your library is from the last few months.");
-        return;
-      }
-      router.push({ pathname: "/compose", params });
-    } finally {
-      setFinding(false);
-    }
-  };
-
-  const openCompose = async (asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video") => {
+  const openWith = async (get: () => Promise<PickedParams | null>) => {
     if (opening) return;
     setOpening(true);
     try {
-      await openComposeNow(asset, mediaType);
+      const params = await get();
+      if (params) router.push({ pathname: "/compose", params });
     } finally {
       setOpening(false);
     }
   };
 
-  const openComposeNow = async (asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video") => {
-    // EXIF first, then the photo library — video carries no EXIF at all, so
-    // the library is the only place its real date exists.
-    const takenAt = await captureDateForAsset(asset);
-    // A photograph arrives as the picker found it — HEIC or JPEG, perhaps
-    // stored on its side — so it is decoded properly first: orientation
-    // applied, longest side capped, saved as JPEG the renderer can read.
-    // The size that comes back is the upright one the darkroom frames by.
-    let { uri, width, height } = asset;
-    if (mediaType === "photo") {
-      try {
-        const ready = await prepareForDarkroom(uri);
-        uri = ready.uri;
-        width = ready.width;
-        height = ready.height;
-      } catch {
-        // Fall through with the original; the darkroom reports what it can't read.
-      }
-    }
-    router.push({
-      pathname: "/compose",
-      params: {
-        uri,
-        mediaType,
-        width: String(width ?? 0),
-        height: String(height ?? 0),
-        duration: String(asset.duration != null ? Math.round(asset.duration / 1000) : 0),
-        // When the shutter actually fired, for the date stamp. Empty when
-        // neither the file nor the library knew.
-        takenAt: takenAt ?? "",
-      },
-    });
-  };
-
-  const pick = async (mediaType: "photo" | "video") => {
-    if (opening) return;
-    const isVideo = mediaType === "video";
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: isVideo ? ["videos"] : ["images"],
-      // Photographs are not put through the system editor: on iOS it crops
-      // to a square whatever aspect is asked for, which is what squeezed
-      // every portrait into a box. The darkroom frames the picture itself,
-      // at its own shape between 4:5 and 1.91:1, as a photo feed does.
-      // Videos still open the system trimmer on iOS so a long clip can be
-      // cut to length here instead of being picked and then refused.
-      allowsEditing: isVideo && Platform.OS === "ios",
-      quality: 1,
-      // Only honoured alongside allowsEditing; it caps the trimmer.
-      videoMaxDuration: MAX_VIDEO_SECONDS,
-      exif: true,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    if (isVideo && asset.duration != null && asset.duration > (MAX_VIDEO_SECONDS + 1) * 1000) {
-      showAlert(
-        "Too long",
-        `Videos on VINTAGE are at most ${MAX_VIDEO_SECONDS} seconds. Trim this one and try again.`,
-      );
-      return;
-    }
-    await openCompose(asset, mediaType);
-  };
-
-  const takePhoto = async () => {
-    if (opening) return;
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      showAlert("Camera is off", "VINTAGE can only take a photograph if it may use the camera. You can allow this in Settings.");
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      allowsEditing: false, // the darkroom frames it; the system editor would crop it square
-      quality: 1,
-      exif: true,
-    });
-    if (!result.canceled && result.assets[0]) await openCompose(result.assets[0], "photo");
-  };
-
   const native = Platform.OS !== "web";
+  const thisYear = new Date().getFullYear();
 
   return (
     <Screen padded={false}>
@@ -153,46 +71,54 @@ export default function Create() {
         <Text style={styles.heading}>Share a photograph.</Text>
         <Text style={styles.sub}>One picture at a time. You choose the film and the date stamp next.</Text>
 
+        {darkroomAvailable() ? (
+          <>
+            <View style={styles.rule} />
+            {/* The way in that leads with the old. */}
+            <Pressable
+              style={({ pressed }) => [styles.darkroom, pressed && styles.rowPressed]}
+              onPress={() => router.push("/darkroom")}
+              accessibilityRole="button"
+              accessibilityLabel="Enter the Darkroom"
+              accessibilityHint="Your photo library, one photograph at a time, from further back."
+            >
+              <Text style={[styles.eyebrow, styles.darkroomEyebrow]}>The Darkroom</Text>
+              <Text style={styles.darkroomTitle}>Something worth remembering.</Text>
+              <Text style={styles.darkroomBody}>
+                {since != null && since < thisYear
+                  ? `Your photographs go back to ${since}. This day in other years, a year at a time, or one from the back of the drawer.`
+                  : "Your own photographs, one at a time, from further back than you would ever scroll."}
+              </Text>
+              <View style={styles.enter}>
+                <Text style={styles.enterLabel}>Enter the Darkroom</Text>
+                <View style={[styles.enterRule, { width: ruleWidth("Enter the Darkroom") }]} />
+              </View>
+            </Pressable>
+          </>
+        ) : null}
+
         <View style={styles.rule} />
         <Row
           icon="image"
           title="From your library"
           body="A photograph you've already taken"
-          onPress={() => pick("photo")}
-          primary
+          onPress={() => openWith(() => pickFromLibrary("photo"))}
           busy={opening}
         />
         {native ? (
           <>
             <View style={styles.hairline} />
-            <Row icon="camera" title="Camera" body="Take one now" onPress={takePhoto} />
+            <Row icon="camera" title="Camera" body="Take one now" onPress={() => openWith(takeForCompose)} />
           </>
         ) : null}
         <View style={styles.hairline} />
-        <Row icon="film" title="Short video" body={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`} onPress={() => pick("video")} />
+        <Row
+          icon="film"
+          title="Short video"
+          body={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`}
+          onPress={() => openWith(() => pickFromLibrary("video"))}
+        />
         <View style={styles.rule} />
-
-        {/* The back of the drawer: the library read for what is already in it. */}
-        {native ? (
-          <>
-            <Text style={[styles.eyebrow, styles.eyebrowSpaced]}>Look back</Text>
-            <Row
-              icon="sun"
-              title="On this day"
-              body="What you shot on this date in other years"
-              onPress={() => router.push("/memories")}
-            />
-            <View style={styles.hairline} />
-            <Row
-              icon="shuffle"
-              title="Find me something"
-              body="One photograph, at random, from a while ago"
-              onPress={findSomething}
-              busy={finding}
-            />
-            <View style={styles.rule} />
-          </>
-        ) : null}
 
         <View style={styles.spacer} />
         <Text style={styles.note}>Nothing here is ranked. A photograph is seen by the people who follow you, in the order it was posted.</Text>
@@ -278,6 +204,21 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowTitle: { fontSize: 15, fontWeight: "600", color: colors.ink },
   rowBody: { fontSize: 12, color: colors.inkFaint, marginTop: 2 },
+
+  darkroom: { paddingTop: spacing.lg, paddingBottom: spacing.md },
+  darkroomEyebrow: { marginTop: 0 },
+  darkroomTitle: { fontFamily: type.serif, fontSize: 22, lineHeight: 29, color: colors.ink, marginTop: spacing.sm },
+  darkroomBody: { ...type.caption, fontSize: 13, lineHeight: 19, marginTop: spacing.xs, maxWidth: 320 },
+  enter: { alignSelf: "flex-start", marginTop: spacing.lg, paddingVertical: spacing.xs },
+  enterLabel: {
+    fontFamily: type.mono,
+    fontSize: 11,
+    letterSpacing: 2.4,
+    marginRight: -2.4,
+    textTransform: "uppercase",
+    color: colors.ink,
+  },
+  enterRule: { height: 1, backgroundColor: colors.ink, opacity: 0.8, marginTop: 7, alignSelf: "center" },
 
   spacer: { flex: 1 },
   note: { ...type.caption, fontSize: 12, lineHeight: 18, color: colors.inkFaint, paddingBottom: spacing.xl },

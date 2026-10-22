@@ -8,6 +8,7 @@ import { colors, type } from "@/theme";
 import { restoreAppearance } from "@/utils/appearance";
 import { useNotificationTaps } from "@/utils/push";
 import { KeyboardDone } from "@/components/KeyboardDone";
+import { room } from "@/components/darkroom/room";
 
 // Before the first screen draws, so the page opens on the print it was left on.
 restoreAppearance();
@@ -70,10 +71,26 @@ export default function RootLayout() {
               the back gesture is off here, so leaving is a deliberate tap. */}
           <Stack.Screen
             name="compose"
-            options={{
+            options={({ route }) => ({
               title: "New post",
               gestureEnabled: false,
               fullScreenGestureEnabled: false,
+              // Developed from the Darkroom: the print stays where it was
+              // and the lights come up around it, rather than a new page
+              // sliding over the room.
+              animation: (route.params as { from?: string } | undefined)?.from === "darkroom" ? "fade" : "default",
+            })}
+          />
+          {/* The Darkroom: the lights go down as it fades in. Back is the
+              left edge only — a pan anywhere else is the next print. */}
+          <Stack.Screen
+            name="darkroom"
+            options={{
+              headerShown: false,
+              animation: "fade",
+              gestureEnabled: true,
+              fullScreenGestureEnabled: false,
+              contentStyle: { backgroundColor: room.page },
             }}
           />
           {/* Screens with sideways gestures of their own — a pinch on a
