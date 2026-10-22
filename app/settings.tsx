@@ -16,7 +16,7 @@ import { isDemoMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/providers/SessionProvider";
 import { darkroomAvailable } from "@/darkroom/source";
-import { forgetHistory } from "@/darkroom/history";
+import { forgetDarkroomHistory } from "@/darkroom/forget";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
 import { loadAppearance, setAppearance, type AppearanceChoice } from "@/utils/appearance";
 import {
@@ -301,7 +301,7 @@ export default function Settings() {
               "Forget what the Darkroom has shown you?",
               "It keeps a short list, on this phone, of the photographs it has shown you and the ones you posted, so it doesn’t repeat itself. Nothing on it ever leaves your phone. Photographs you set aside stay set aside.",
               [
-                { text: "Forget", style: "destructive", onPress: () => forgetHistory() },
+                { text: "Forget", style: "destructive", onPress: () => forgetDarkroomHistory() },
                 { text: "Cancel", style: "cancel" },
               ],
             )

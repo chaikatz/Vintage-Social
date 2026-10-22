@@ -1,4 +1,5 @@
 import * as MediaLibrary from "expo-media-library";
+import { MAX_PAGE } from "./eligibility";
 import type { LibrarySource, Page, PageRequest, Print, TimeRange } from "./types";
 
 /**
@@ -6,9 +7,14 @@ import type { LibrarySource, Page, PageRequest, Print, TimeRange } from "./types
  *
  * Each call is one Photos fetch with a date predicate, which Photos
  * answers from its own index without loading a single image; a count
- * reads no assets at all. Pages are small and ordered by capture time.
- * Images themselves are never loaded here — the image view asks Photos
- * for each one, at the size it is drawn, only when it is on screen.
+ * (`first: 0`) reads no assets at all. Pages are short and ordered by
+ * capture time, and there is no cursor: a cursor is found by a linear
+ * scan of the whole fetch, and it fails when its photograph has been
+ * deleted, where a time range does neither. The fetch already leaves out
+ * hidden photographs and the extra frames of a burst, and keeps to the
+ * member's own library. Images themselves are never loaded here — the
+ * image view asks Photos for each one, at the size it is drawn, only when
+ * it is on screen.
  */
 
 function toPrint(a: MediaLibrary.Asset): Print {
@@ -23,7 +29,11 @@ function toPrint(a: MediaLibrary.Asset): Print {
   };
 }
 
-/** Photos' predicates are strict on both ends; the range's start is inclusive. */
+/**
+ * Photos' predicates are strict at both ends; the range's start is
+ * inclusive. Negative times — photographs dated before 1970 — pass
+ * through as they are.
+ */
 function bounds(range: TimeRange) {
   return { createdAfter: range.from - 1, createdBefore: range.to };
 }
@@ -39,23 +49,14 @@ export const nativeSource: LibrarySource = {
     return page.totalCount;
   },
 
-  async page({ range, first, after, order }: PageRequest): Promise<Page> {
-    try {
-      const page = await MediaLibrary.getAssetsAsync({
-        mediaType: "photo",
-        ...bounds(range),
-        first,
-        ...(after ? { after } : {}),
-        sortBy: [["creationTime", order === "asc"]],
-      });
-      return { prints: page.assets.map(toPrint), endCursor: page.endCursor ?? null, hasNextPage: page.hasNextPage };
-    } catch (err) {
-      // The photograph a page was reading on from has left the library (or
-      // the selection) since the last page: the chapter ends there rather
-      // than failing. Anything else is a real failure.
-      if (after) return { prints: [], endCursor: null, hasNextPage: false };
-      throw err;
-    }
+  async page({ range, first, order }: PageRequest): Promise<Page> {
+    const page = await MediaLibrary.getAssetsAsync({
+      mediaType: "photo",
+      ...bounds(range),
+      first: Math.max(0, Math.min(MAX_PAGE, Math.floor(first))),
+      sortBy: [["creationTime", order === "asc"]],
+    });
+    return { prints: page.assets.map(toPrint), hasNextPage: page.hasNextPage };
   },
 
   async oldest() {

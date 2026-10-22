@@ -2,664 +2,582 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   AccessibilityInfo,
   Animated,
-  FlatList,
+  Easing,
+  PixelRatio,
   Platform,
-  Pressable,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
+  type Text,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { setStatusBarHidden, setStatusBarStyle } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from "expo-haptics";
-import Feather from "@expo/vector-icons/Feather";
 import { pickFromLibrary } from "@/utils/pickForCompose";
-import { readDiskCache, writeDiskCache } from "@/utils/diskCache";
-import { useDarkroom } from "@/darkroom/useDarkroom";
-import { develop, discardDeveloped, type DevelopFailure, type DevelopStage } from "@/darkroom/develop";
-import { developedAt } from "@/darkroom/history";
-import { toggleSetAside, useSetAside } from "@/darkroom/setAside";
+import { useReducedMotion } from "@/utils/useReducedMotion";
+import { useBoldText, useIncreaseContrast, useScreenReader } from "@/utils/useRoomAccessibility";
+import { useDarkroom, type RoomParams } from "@/darkroom/useDarkroom";
 import { chooseMorePhotographs, openPhotoSettings } from "@/darkroom/access";
-import { monthIndex } from "@/darkroom/discovery";
-import { captionFor, fullDate, monthDay } from "@/darkroom/labels";
+import { developedAt, markSeen } from "@/darkroom/history";
+import { captionFor } from "@/darkroom/labels";
+import { putBack, toggleSetAside, useSetAside } from "@/darkroom/setAside";
 import type { DarkroomMode, Print } from "@/darkroom/types";
-import { PrintPage } from "@/components/darkroom/PrintPage";
 import { Contents } from "@/components/darkroom/Contents";
+import { Develop } from "@/components/darkroom/Develop";
+import { haptics } from "@/components/darkroom/haptics";
+import { LookContext, motion, type Look } from "@/components/darkroom/look";
 import { Plate } from "@/components/darkroom/Plate";
-import { Word } from "@/components/darkroom/Word";
-import { room, roomType, untrack } from "@/components/darkroom/room";
+import { PrintPage } from "@/components/darkroom/PrintPage";
+import { room } from "@/components/darkroom/room";
+import { RunningHead } from "@/components/darkroom/RunningHead";
+import { Stage, type StageHandle } from "@/components/darkroom/Stage";
+import { TitleCard } from "@/components/darkroom/TitleCard";
+import { useChrome } from "@/components/darkroom/useChrome";
+import { useContentsSheet } from "@/components/darkroom/useContentsSheet";
+import { useDevelop } from "@/components/darkroom/useDevelop";
+import { useOnline } from "@/components/darkroom/useOnline";
+import { useStageFades } from "@/components/darkroom/useStageFades";
+import {
+  chapterAnnouncement,
+  chapterName,
+  deniedPage,
+  emptyPage,
+  endPage,
+  firstVisitPage,
+  captionWords,
+  stageActions,
+  stageValue,
+  stateWords,
+  titleCardWords,
+  type BottomAct,
+  type DevelopState,
+  type PageWord,
+  type PageWords,
+  type RightAct,
+} from "@/components/darkroom/words";
 
 /**
  * THE DARKROOM.
  *
- * The member's own camera roll, one print at a time, from further back
- * than they would ever scroll: this day in earlier years, one at random
- * from the back of the drawer, or a year read as a chapter. Swipe for the
- * next; DEVELOP takes it into the ordinary editor to post; SET ASIDE keeps
- * it on this phone to decide on later. Printed on the dark page whatever
- * the appearance, so the photographs are the only light in the room.
+ * The member's own camera roll, one print at a time, set as a photobook:
+ * a running head, a plate with its caption hung beneath, a Contents
+ * sheet, title cards and end pages. This day in other years, a roll of
+ * twenty-four from the back of the drawer, or a year read as a chapter.
+ * Swipe for the next. DEVELOP takes the print into the ordinary editor
+ * to post; SET ASIDE keeps it on this phone to come back to. Printed on
+ * the dark page whatever the appearance, so the photographs are the only
+ * light in the room.
+ *
+ * This file puts the room together. The chapters and where the member is
+ * are `useDarkroom`; develop is `useDevelop`; the pager is `Stage`, each
+ * print `PrintPage`, every word the room says `words.ts`.
  *
  * Everything is read on the phone. Nothing here uploads or publishes —
  * the editor's "Share to VINTAGE" is still the only way out.
  */
 
-const INTRO_FILE = "darkroom-intro.json";
-const INTRO_KEY = "vintage.darkroom-intro";
-/** The caption of the print being developed stays lit while the rest of the room's words go out. */
-const LIT = new Animated.Value(1);
-/** A chapter's title card is held at least this long, so a jump reads as a jump. */
-const TITLE_HOLD_MS = 500;
+const MODES: readonly DarkroomMode[] = ["on-this-day", "surprise", "year", "set-aside"];
+/** The shelf-full line stands in for the caption this long. */
+const SHELF_FULL_MS = 3000;
+/** The first-visit page fades out over this as the room is let in. */
+const THRESHOLD_FADE_MS = 240;
+const IDLE: DevelopState = { kind: "idle" };
 
-/** What the caption says while a print is being developed: the line in capitals, and the quiet line under it. */
-const STAGE_WORDS: Record<DevelopStage, [string, string]> = {
-  reading: ["Developing…", " "],
-  icloud: ["Developing…", "If it’s kept in iCloud, it’s on its way down."],
-};
+/**
+ * A handler whose identity never changes but which always runs the latest
+ * code, so the pages it is handed to need not redraw when the screen does.
+ */
+function useEvent<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+  const latest = useRef(fn);
+  latest.current = fn;
+  return useCallback((...args: A) => latest.current(...args), []);
+}
 
-const FAILURE_WORDS: Record<Exclude<DevelopFailure, "cancelled">, [string, string]> = {
-  missing: ["No longer in your library", "It may have been deleted, or it’s outside what VINTAGE can see."],
-  icloud: ["iCloud didn’t send it", "Try again on a better connection, or set it aside."],
-  offline: ["Not on this iPhone, and it’s offline", "It may be kept in iCloud. Set it aside, and develop it when you’re connected."],
-  unreadable: ["This one wouldn’t open", "Try again, or set it aside."],
-};
-
-function chapterName(mode: DarkroomMode, year: number | null): string {
-  if (mode === "on-this-day") return "On this day";
-  if (mode === "surprise") return "Surprise me";
-  if (mode === "set-aside") return "Set aside";
-  return year != null ? String(year) : "By year";
+function readParams(p: Record<string, string | string[] | undefined>): RoomParams {
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const mode = MODES.find((m) => m === one(p.mode)) ?? null;
+  const year = /^\d{4}$/.test(one(p.year) ?? "") ? Number(one(p.year)) : null;
+  const month = /^\d{1,2}$/.test(one(p.month) ?? "") ? Math.min(11, Number(one(p.month))) : null;
+  const start = one(p.start) || null;
+  return { mode, year, month, start };
 }
 
 export default function Darkroom() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const params = useLocalSearchParams<{ mode?: DarkroomMode; year?: string; start?: string }>();
-  const initialMode =
-    params.mode && ["on-this-day", "surprise", "year", "set-aside"].includes(params.mode) ? params.mode : undefined;
-  const { state, checkAccess, ask, open, openDefault, setIndex } = useDarkroom({
-    mode: initialMode,
-    year: params.year ? Number(params.year) : null,
-    startId: params.start ?? null,
-  });
+  const { width, fontScale } = useWindowDimensions();
+  const pixelRatio = PixelRatio.get();
+  const params = useLocalSearchParams();
+  const darkroom = useDarkroom(useMemo(() => readParams(params), [])); // eslint-disable-line react-hooks/exhaustive-deps
+  const { state } = darkroom;
+  const reduceMotion = useReducedMotion();
+  const contrast = useIncreaseContrast();
+  const bold = useBoldText();
+  const screenReader = useScreenReader();
+  const look = useMemo<Look>(() => ({ contrast, bold, reduceMotion, screenReader }), [contrast, bold, reduceMotion, screenReader]);
+  const focused = useIsFocused();
+  const online = useOnline();
   const shelf = useSetAside();
+  const shelfIds = useMemo(() => new Set(shelf.map((p) => p.id)), [shelf]);
+  /** The visit's today: captions and the day's words are measured from it. */
   const now = useMemo(() => Date.now(), []);
-  const [roomHeight, setRoomHeight] = useState(0);
-  const [contentsOpen, setContentsOpen] = useState(false);
-  const [months, setMonths] = useState<number[] | null>(null);
-  const [stage, setStage] = useState<DevelopStage | null>(null);
-  const [failure, setFailure] = useState<{ id: string; reason: DevelopFailure } | null>(null);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const [introSeen, setIntroSeen] = useState(() => readDiskCache(INTRO_FILE, INTRO_KEY, (raw) => (raw === true ? true : null)) === true);
-  const [titleCard, setTitleCard] = useState<{ eyebrow: string; title: string; until: number } | null>(null);
-  const list = useRef<FlatList<Print>>(null);
-  const chrome = useRef(new Animated.Value(1)).current;
-  const [chromeHidden, setChromeHidden] = useState(false);
-  const developing = useRef(false);
-  const stopDeveloping = useRef(false);
-  // The copy handed to the editor; if the member comes back without posting, it is not kept.
-  const developed = useRef<string | null>(null);
-  // Prints whose image failed to draw because the photograph is gone.
-  const [missing, setMissing] = useState<ReadonlySet<string>>(new Set());
-  const afterContents = useRef<(() => void) | null>(null);
 
-  // --- the room's light ----------------------------------------------------
-  useEffect(() => {
-    let alive = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((v) => alive && setReduceMotion(v)).catch(() => undefined);
-    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
-    return () => {
-      alive = false;
-      sub.remove();
-    };
-  }, []);
+  const chapter = state.chapter;
+  const where = state.where;
+  const limited = state.access === "limited";
+  const shelfChapter = chapter?.mode === "set-aside";
+  const current: Print | null = chapter && state.view.kind === "prints" ? chapter.prints[chapter.index] ?? null : null;
+  const atTail = chapter != null && chapter.index >= chapter.prints.length;
 
-  // The status bar is set while the room is in front and given back when it
-  // is not: the room stays mounted under the editor, whose page may be light.
-  // Back from the editor without posting, the room is as it was.
+  const stage = useRef<StageHandle>(null);
+  const tailTitle = useRef<Text>(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const lit = useRef(new Animated.Value(1)).current;
+  const threshold = useRef(new Animated.Value(1)).current;
+  const [stageHeight, setStageHeight] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [shelfFull, setShelfFull] = useState<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+
+  const develop = useDevelop({
+    reduceMotion,
+    shelfChapter,
+    online,
+    onCompose: (composeParams) => router.push({ pathname: "/compose", params: composeParams }),
+  });
+  const chrome = useChrome({ screenReader, locked: develop.id != null, reduceMotion });
+  const fades = useStageFades(state.loading, now, reduceMotion);
+
+  /** A print's state: its develop state, or "gone" when Photos said it is not there. */
+  const stateOf = useCallback(
+    (id: string): DevelopState => {
+      const s = develop.stateFor(id);
+      return s.kind === "idle" && state.missing.has(id) ? { kind: "gone" } : s;
+    },
+    [develop, state.missing],
+  );
+  const currentState = current ? stateOf(current.id) : IDLE;
+  const words = stateWords(currentState, { setAside: current ? shelfIds.has(current.id) : false, shelfChapter, limited });
+
+  // --- focus, and the status bar ---------------------------------------------
+
+  // Read through a ref, so a change of handler never reads as a blur.
+  const onFocus = useRef(() => {});
+  const onBlur = useRef(() => {});
+  onFocus.current = () => {
+    setStatusBarStyle("light", true);
+    darkroom.focus();
+    develop.returned();
+    chrome.reset();
+  };
+  onBlur.current = () => {
+    setStatusBarHidden(false, "fade");
+    setStatusBarStyle("auto", true);
+    develop.left();
+    darkroom.blur();
+  };
   useFocusEffect(
     useCallback(() => {
-      setStatusBarStyle("light", true);
-      setStage(null);
-      developing.current = false;
-      discardDeveloped(developed.current);
-      developed.current = null;
-      Animated.timing(chrome, { toValue: 1, duration: reduceMotion ? 0 : 200, useNativeDriver: true }).start();
-      setChromeHidden(false);
-      return () => {
-        setStatusBarHidden(false, "fade");
-        setStatusBarStyle("auto", true);
-      };
-    }, [chrome, reduceMotion]),
+      onFocus.current();
+      return () => onBlur.current();
+    }, []),
   );
 
+  // The first-visit page has gone: its column is ready to be seen again, should it be.
   useEffect(() => {
-    checkAccess();
-  }, [checkAccess]);
+    if (state.view.kind !== "firstVisit") threshold.setValue(1);
+  }, [state.view.kind, threshold]);
 
-  const granted = state.access === "full" || state.access === "limited";
-  const threshold = state.access === "undetermined" || (granted && !introSeen);
+  // --- saying what changed ------------------------------------------------------
 
-  // With access and past the threshold, open a way in — unless the last visit's place was kept.
-  const opened = useRef(false);
+  const announce = (text: string) => AccessibilityInfo.announceForAccessibility(text);
   useEffect(() => {
-    if (opened.current || !granted || !introSeen) return;
-    opened.current = true;
-    if (state.restored) return;
-    if (initialMode) open(initialMode, params.year ? Number(params.year) : null, { startId: params.start ?? null });
-    else openDefault();
-  }, [granted, introSeen, state.restored, initialMode, params.year, params.start, open, openDefault]);
+    if (words.announce) announce(words.announce);
+    // Each state is said once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentState.kind, currentState.kind === "working" && currentState.slow]);
 
-  // The open year's months, for the contents page.
-  useEffect(() => {
-    setMonths(null);
-    if (state.mode !== "year" || state.year == null) return;
-    let live = true;
-    const { darkroomSource } = require("@/darkroom/source") as typeof import("@/darkroom/source");
-    const source = darkroomSource();
-    if (source) monthIndex(source, state.year).then((m) => live && setMonths(m)).catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [state.mode, state.year]);
+  const sheet = useContentsSheet({
+    where,
+    loadYears: darkroom.loadYears,
+    loadMonths: darkroom.loadMonths,
+    pruneShelf: darkroom.pruneShelf,
+  });
 
-  // A title card while a chapter is being dealt, held a moment so a jump reads as one.
-  const showTitle = (mode: DarkroomMode, year: number | null, month = 0) => {
-    const title =
-      mode === "on-this-day" ? monthDay(now) : mode === "surprise" ? "Any year" : mode === "set-aside" ? "Set aside" : `${year ?? ""}`;
-    // The eyebrow names the way in; the title names where it opens.
-    const eyebrow =
-      mode === "year" ? (month > 0 ? `By year · from ${fullDate(new Date(year ?? 2000, month, 1).getTime()).split(" ")[0]}` : "By year") : chapterName(mode, year);
-    setTitleCard({ eyebrow, title, until: Date.now() + (reduceMotion ? 0 : TITLE_HOLD_MS) });
-  };
+  /** After a chapter change: said, and the focus on the stage, once the sheet has gone and the chapter is in. */
+  const pendingAnnouncement = useRef<string | null>(null);
   useEffect(() => {
-    if (!titleCard || state.sequence === "loading" || state.sequence === "idle") return;
-    const left = titleCard.until - Date.now();
-    if (left <= 0) {
-      setTitleCard(null);
-      return;
-    }
-    const t = setTimeout(() => setTitleCard(null), left);
+    const text = pendingAnnouncement.current;
+    if (!text || sheet.open || state.loading || state.view.kind !== "prints") return;
+    pendingAnnouncement.current = null;
+    announce(text);
+    stage.current?.focus();
+  }, [sheet.open, state.loading, state.view.kind, chapter?.generation]);
+
+  // --- the shelf ------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!shelfFull) return;
+    const t = setTimeout(() => setShelfFull(null), SHELF_FULL_MS);
     return () => clearTimeout(t);
-  }, [titleCard, state.sequence]);
+  }, [shelfFull]);
 
-  const current = state.sequence === "ready" ? state.prints[state.index] ?? null : null;
-
-  const enter = async () => {
-    let access = state.access;
-    if (access === "undetermined") access = await ask();
-    if (access === "full" || access === "limited") {
-      writeDiskCache(INTRO_FILE, INTRO_KEY, true);
-      setIntroSeen(true);
-    }
-  };
-
-  const choose = (mode: DarkroomMode, year: number | null = null, month = 0) => {
-    Haptics.selectionAsync().catch(() => undefined);
-    setFailure(null);
-    if (mode === state.mode && year === state.year && month === state.month && state.sequence === "ready") return;
-    showTitle(mode, year, month);
-    open(mode, year, { month });
-    AccessibilityInfo.announceForAccessibility(mode === "on-this-day" ? `On this day, ${monthDay(now)}` : chapterName(mode, year));
-  };
-
-  // A choice in the contents is acted on once the sheet has gone: a picker
-  // or an editor pushed under an open sheet would be hidden behind it.
-  const fromContents = (act: () => void) => {
-    setContentsOpen(false);
-    // iOS says when the sheet has gone; elsewhere it is gone at once.
-    if (Platform.OS === "ios") afterContents.current = act;
-    else setTimeout(act, 0);
-  };
-
-  const fromLibrary = async () => {
-    const picked = await pickFromLibrary("photo");
-    if (picked) router.push({ pathname: "/compose", params: picked });
-  };
-
-  // --- paging ---------------------------------------------------------------
-  const onPage = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const next = Math.round(e.nativeEvent.contentOffset.x / width);
-    if (next !== state.index && next >= 0 && next < state.prints.length) {
-      setIndex(next);
-      setFailure(null);
-    }
-  };
-
-  const go = (to: number) => {
-    if (to < 0 || to >= state.prints.length) return;
-    list.current?.scrollToIndex({ index: to, animated: false });
-    setIndex(to);
-    setFailure(null);
-  };
-
-  const toggleChrome = () => {
-    const hide = !chromeHidden;
-    setChromeHidden(hide);
-    Animated.timing(chrome, { toValue: hide ? 0 : 1, duration: reduceMotion ? 0 : 180, useNativeDriver: true }).start();
-    setStatusBarHidden(hide, "fade");
-  };
-
-  // --- set aside --------------------------------------------------------------
-  const setAsideNow = (print: Print) => {
-    const on = toggleSetAside(print);
-    if (on) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    else Haptics.selectionAsync().catch(() => undefined);
-    AccessibilityInfo.announceForAccessibility(on ? "Set aside" : "Put back");
-  };
-
-  // --- develop ----------------------------------------------------------------
-  const developNow = async (print: Print | null = current) => {
-    if (!print || developing.current) return;
-    developing.current = true;
-    stopDeveloping.current = false;
-    setFailure(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => undefined);
-    AccessibilityInfo.announceForAccessibility("Developing");
-    setStage("reading");
-    Animated.timing(chrome, { toValue: 0.0, duration: reduceMotion ? 0 : 200, useNativeDriver: true }).start();
-    const outcome = await develop(print, {
-      known_missing: missing.has(print.id),
-      cancelled: () => stopDeveloping.current,
-      onStage: (s) => {
-        setStage(s);
-        if (s === "icloud") AccessibilityInfo.announceForAccessibility("If it’s kept in iCloud, it’s on its way down.");
-      },
-    });
-    const restore = () => {
-      developing.current = false;
-      setStage(null);
-      Animated.timing(chrome, { toValue: 1, duration: reduceMotion ? 0 : 180, useNativeDriver: true }).start();
-    };
-    if (!outcome.ok) {
-      restore();
-      if (outcome.reason === "cancelled") return;
-      setFailure({ id: print.id, reason: outcome.reason });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
-      AccessibilityInfo.announceForAccessibility(FAILURE_WORDS[outcome.reason][0]);
+  const toggleShelf = (print: Print) => {
+    const result = toggleSetAside(print);
+    if (result === "full") {
+      setShelfFull(print.id);
       return;
     }
-    developed.current = outcome.params.uri;
-    router.push({ pathname: "/compose", params: outcome.params });
+    if (result === "on") {
+      haptics.setAside();
+      announce("Set aside");
+      // Set aside is looked at: Surprise leaves it be. Not on the shelf, which is browsed on purpose.
+      if (!shelfChapter) markSeen(print.id);
+    } else {
+      haptics.putBack();
+      announce("Put back");
+    }
   };
 
-  // --- what fills the room --------------------------------------------------
-  const tail = state.sequence === "ready" ? (state.more ? "more" : "end") : null;
+  // --- the ways on ---------------------------------------------------------------
 
-  const endPage = () => {
-    const title =
-      state.mode === "on-this-day"
-        ? "That is everything from this day."
-        : state.mode === "year"
-          ? `The end of ${state.year ?? "the year"}.`
-          : state.mode === "set-aside"
-            ? "That is all you set aside."
-            : "That is everything the Darkroom can find for now.";
-    const body =
-      state.mode === "on-this-day"
-        ? "There will be another tomorrow."
-        : state.mode === "surprise"
-          ? "It will have others for you another day."
-          : undefined;
-    const yearAt = state.years.findIndex((y) => y.year === state.year);
-    const before = yearAt > 0 ? state.years[yearAt - 1].year : null;
-    const after = yearAt >= 0 && yearAt < state.years.length - 1 ? state.years[yearAt + 1].year : null;
+  /** The ordinary picker, from the room: into the editor with no asset id. Shares develop's guard. */
+  const pick = async () => {
+    if (!develop.claim()) return;
+    try {
+      const picked = await pickFromLibrary("photo");
+      if (picked && mounted.current) router.push({ pathname: "/compose", params: picked });
+      else develop.unclaim();
+    } catch {
+      develop.unclaim();
+    }
+  };
+
+  const choose = (mode: DarkroomMode, year: number | null = null, month: number | null = null) => {
+    if (darkroom.choose(mode, year, month)) pendingAnnouncement.current = chapterAnnouncement(mode, year, now);
+  };
+
+  /** The first-visit word is said once: a second tap while iOS asks, or while the page fades, does nothing. */
+  const entering = useRef(false);
+
+  const back = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)");
+  };
+
+  /** A word on a word page or an end page. */
+  const onWord = (w: PageWord) => {
+    switch (w.act) {
+      case "continue":
+      case "enter":
+        if (entering.current) return;
+        entering.current = true;
+        void darkroom.enter().then((granted) => {
+          if (!granted) {
+            entering.current = false;
+            return;
+          }
+          Animated.timing(threshold, {
+            toValue: 0,
+            duration: motion(look, THRESHOLD_FADE_MS),
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }).start(() => {
+            entering.current = false;
+            darkroom.begin();
+          });
+        });
+        return;
+      case "openSettings":
+        return openPhotoSettings();
+      case "pickOne":
+      case "library":
+        return void pick();
+      case "surprise":
+        return choose("surprise");
+      case "chooseYear":
+        return sheet.show();
+      case "retry":
+        return darkroom.retry();
+      case "readOn":
+        return darkroom.readOn();
+      case "lookThroughYear":
+      case "year":
+        return choose("year", w.year ?? null);
+      case "shareMore":
+      case "choosePhotographs":
+        return void chooseMorePhotographs();
+      case "anotherRoll":
+        return darkroom.anotherRoll();
+      case "moreFrom":
+        return darkroom.moreFrom();
+      case "fromJanuary":
+        return darkroom.fromJanuary();
+    }
+  };
+
+  // --- DEVELOP and the caption's word ----------------------------------------------
+
+  const onBottom = (act: BottomAct) => {
+    if (!current) return;
+    if (act === "develop" || act === "retryLocal") void develop.develop(current);
+    else if (act === "download" || act === "retryCloud") void develop.download(current);
+    else if (act === "shareMore") void chooseMorePhotographs();
+  };
+
+  const onRight = useEvent((print: Print) => {
+    const right = stateWords(stateOf(print.id), { setAside: shelfIds.has(print.id), shelfChapter, limited }).right;
+    const act: RightAct | undefined = right?.act;
+    if (act === "toggle") toggleShelf(print);
+    else if (act === "notNow") develop.notNow();
+    else if (act === "stop") develop.stop();
+    else if (act === "remove") {
+      putBack(print.id);
+      haptics.putBack();
+      announce("Put back");
+    }
+  });
+
+  /** The caption thread: in a year, the month strip; anywhere else, this print's year, at its month. */
+  const onDate = useEvent((print: Print) => {
+    if (develop.id != null) return;
+    if (where?.mode === "year") return sheet.show(true);
+    const year = new Date(print.takenAt).getFullYear();
+    pendingAnnouncement.current = chapterAnnouncement("year", year, now);
+    darkroom.thread(print);
+  });
+
+  // --- the pager ---------------------------------------------------------------------
+
+  const { settle, imageLoaded, imageGone } = darkroom;
+  const { clear } = develop;
+  const onSettle = useCallback(
+    (index: number) => {
+      settle(index);
+      clear();
+    },
+    [settle, clear],
+  );
+
+  const renderPrint = (print: Print, index: number) => {
+    const isCurrent = chapter != null && index === chapter.index;
+    const said = captionWords({
+      takenAt: print.takenAt,
+      now,
+      mode: chapter?.mode ?? "surprise",
+      reach: chapter?.reach ?? null,
+      postedAt: developedAt(print.id),
+      state: stateOf(print.id),
+      setAside: shelfIds.has(print.id),
+      shelfChapter,
+      limited,
+      shelfFull: shelfFull === print.id,
+    });
     return (
-      <Plate eyebrow={state.mode === "on-this-day" ? monthDay(now) : chapterName(state.mode, state.year)} title={title} body={body}>
-        {state.mode !== "surprise" ? <Word label="Surprise me" ruled strong onPress={() => choose("surprise")} /> : null}
-        {state.mode === "year" && after != null ? <Word label={`On to ${after}`} dim onPress={() => choose("year", after)} /> : null}
-        {state.mode === "year" && after == null && before != null ? <Word label={`Back to ${before}`} dim onPress={() => choose("year", before)} /> : null}
-        {state.mode !== "year" ? (
-          <Word label="Choose a year" dim={state.mode !== "surprise"} ruled={state.mode === "surprise"} strong={state.mode === "surprise"} onPress={() => setContentsOpen(true)} />
-        ) : null}
-        <Word label="Choose from your library" dim onPress={fromLibrary} />
-      </Plate>
+      <PrintPage
+        print={print}
+        width={width}
+        stageHeight={stageHeight}
+        fontScale={fontScale}
+        pixelRatio={pixelRatio}
+        current={isCurrent}
+        proof={chapter != null && (index === chapter.index || index === chapter.index + 1)}
+        images={focused || isCurrent}
+        dissolve={!darkroom.hasLoaded(print.id)}
+        revision={state.revision}
+        online={online}
+        limited={limited}
+        gone={state.missing.has(print.id)}
+        label={said.label}
+        line={said.line}
+        long={said.long}
+        progress={isCurrent && said.progress ? develop.progress : null}
+        wordLabel={said.word?.label ?? null}
+        wordOn={said.word?.on ?? false}
+        wordInert={said.word?.inert ?? false}
+        wordHint={said.word?.hint}
+        holdLayout={said.hold}
+        bladesClosed={develop.bladesFor === print.id}
+        captionOpacity={develop.id === print.id ? lit : chrome.opacity}
+        onTap={chrome.toggle}
+        onDate={onDate}
+        onWord={onRight}
+        onLoad={imageLoaded}
+        onGone={imageGone}
+      />
     );
   };
 
-  const words = (() => {
-    if (state.access === "checking") return <View style={styles.fill} />;
-    if (state.access === "unavailable") {
-      return (
-        <Plate eyebrow="The Darkroom" title="There’s no photo library here." body="The Darkroom reads the photographs on your iPhone. Open VINTAGE there to use it.">
-          <Word label="Back" ruled onPress={() => router.back()} />
-        </Plate>
-      );
+  const renderTail = () => {
+    if (!chapter) return <View />;
+    if (chapter.more) {
+      const card = titleCardWords(chapter.mode, chapter.year, chapter.month, now);
+      return card ? <TitleCard eyebrow={card.eyebrow} title={card.title} year={card.year} waiting /> : <View />;
     }
-    if (threshold) {
-      return (
-        <Plate
-          eyebrow="The Darkroom"
-          title="Your best photos aren’t new."
-          titleSize={32}
-          body="One photograph at a time, from further back than you’d think to look."
-          foot="VINTAGE looks through your library on this iPhone. Nothing leaves it unless you post it."
-        >
-          <Word label="Enter" ruled strong onPress={enter} accessibilityHint={state.access === "undetermined" ? "Asks to see your photo library." : undefined} />
-          <Word label="Not now" dim onPress={() => router.back()} />
-        </Plate>
-      );
-    }
-    if (state.access === "denied") {
-      return (
-        <Plate
-          eyebrow="The Darkroom"
-          title="The door is shut."
-          body="VINTAGE isn’t allowed to see your photo library, so there is nothing here to look through. You can let it in from Settings: tap Photos, then Full Access. It only ever reads on this iPhone."
-        >
-          <Word label="Open Settings" ruled strong onPress={openPhotoSettings} />
-          <Word label="Choose one photograph" dim onPress={fromLibrary} />
-        </Plate>
-      );
-    }
-    if (titleCard || state.sequence === "idle" || state.sequence === "loading" || roomHeight === 0) {
-      const card = titleCard ?? { eyebrow: chapterName(state.mode, state.year), title: state.mode === "on-this-day" ? monthDay(now) : "" };
-      return <TitleCard eyebrow={card.eyebrow} title={card.title} waiting={state.sequence === "loading"} onSkip={() => setTitleCard(null)} />;
-    }
-    if (state.sequence === "failed") {
-      return (
-        <Plate eyebrow="The Darkroom" title="The library didn’t answer." body="Something on this iPhone kept VINTAGE from reading your photographs just now.">
-          <Word label="Try again" ruled strong onPress={() => open(state.mode, state.year, { refreshYears: true, month: state.month })} />
-          <Word label="Choose from your library" dim onPress={fromLibrary} />
-        </Plate>
-      );
-    }
-    if (state.sequence === "empty") {
-      return (
-        <Empty
-          mode={state.mode}
-          dayWord={monthDay(now)}
-          limited={state.access === "limited"}
-          hasYears={state.years.length > 0}
-          onChoose={choose}
-          onContents={() => setContentsOpen(true)}
-          onLibrary={fromLibrary}
-        />
-      );
-    }
-    return null;
-  })();
+    const page = darkroom.ending ? endPage(darkroom.ending, { now, limited, years: state.years }) : null;
+    return page ? <Plate ref={tailTitle} page={page} onWord={onWord} testID="darkroom-end" /> : <View />;
+  };
 
-  const pager = words === null;
-  const failed = failure && current && failure.id === current.id && failure.reason !== "cancelled" ? FAILURE_WORDS[failure.reason] : null;
+  // --- VoiceOver's one element over the stage ----------------------------------------
+
+  const aside = current ? shelfIds.has(current.id) : false;
+  const baseLine = current ? captionFor(current.takenAt, now, chapter?.mode ?? "surprise", chapter?.reach ?? null, null).line : "";
+  const accessibility = {
+    single: state.view.kind === "prints" && !atTail,
+    value: current ? stageValue(current.takenAt, baseLine, aside, developedAt(current.id)) : "",
+    actions: stageActions(current?.takenAt ?? null, aside),
+    onAction: (name: string) => {
+      if (!current) return;
+      if (name === "develop") onBottom(words.bottom.act);
+      else if (name === "setAside") toggleShelf(current);
+      else if (name === "more") onDate(current);
+      else if (name === "contents") sheet.show();
+    },
+    onIncrement: () => chapter && !develop.busy && stage.current?.goTo(chapter.index + 1),
+    onDecrement: () => chapter && !develop.busy && stage.current?.goTo(chapter.index - 1),
+  };
+
+  // --- what fills the stage --------------------------------------------------------
+
+  const iosMajor = Platform.OS === "ios" ? parseInt(String(Platform.Version), 10) : 18;
+  const page: PageWords | null =
+    state.view.kind === "firstVisit"
+      ? firstVisitPage(state.view.access)
+      : state.view.kind === "denied"
+        ? deniedPage(iosMajor)
+        : state.view.kind === "empty"
+          ? emptyPage(state.view.why, { now, limited })
+          : null;
+  const granted = state.access === "full" || state.access === "limited";
+  const inside = granted && state.view.kind !== "firstVisit" && state.view.kind !== "checking";
+  const headWhere = fades.card && state.loading?.mode ? state.loading : where;
+  const headName = inside && headWhere?.mode ? chapterName(headWhere.mode, headWhere.year) : null;
+  const n = chapter?.prints.length ?? 0;
+  const developOpacity = useMemo(
+    () =>
+      Animated.multiply(
+        scrollX.interpolate({ inputRange: [(n - 1) * width, n * width], outputRange: [1, 0], extrapolate: "clamp" }),
+        chrome.opacity,
+      ),
+    [scrollX, n, width, chrome.opacity],
+  );
+  const showsDevelop = state.view.kind === "prints" && current != null;
 
   return (
-    <View
-      style={styles.root}
-      // VoiceOver: a two-finger double tap develops; the escape gesture leaves.
-      onMagicTap={() => {
-        if (pager && current) developNow();
-      }}
-      onAccessibilityEscape={() => (contentsOpen ? setContentsOpen(false) : router.back())}
-    >
-      <Stack.Screen options={{ headerShown: false }} />
+    <LookContext.Provider value={look}>
+      <View
+        style={styles.root}
+        onMagicTap={() => {
+          if (showsDevelop) onBottom(words.bottom.act);
+        }}
+        onAccessibilityEscape={() => (sheet.open ? sheet.close() : back())}
+        testID="darkroom"
+      >
+        <Stack.Screen options={{ headerShown: false }} />
+        <RunningHead
+          top={insets.top}
+          name={headName}
+          contents={inside}
+          opacity={chrome.opacity}
+          hidden={chrome.hidden}
+          onBack={back}
+          onContents={() => sheet.show()}
+        />
 
-      {/* The running head: back, the chapter, the contents. */}
-      <Animated.View style={[styles.head, { paddingTop: insets.top, opacity: chrome }]} pointerEvents={chromeHidden || stage ? "none" : "box-none"}>
-        <Pressable onPress={() => router.back()} hitSlop={8} style={styles.back} accessibilityRole="button" accessibilityLabel="Back">
-          <Feather name="chevron-left" size={24} color={room.ink} />
-        </Pressable>
-        <Text style={[styles.chapter, untrack(2.4)]} accessibilityRole="header" numberOfLines={1} maxFontSizeMultiplier={1.3}>
-          {granted && !threshold ? chapterName(state.mode, state.year) : ""}
-        </Text>
-        <View style={styles.contentsSlot}>
-          {granted && !threshold ? (
-            <Pressable onPress={() => setContentsOpen(true)} hitSlop={10} style={styles.contentsHit} accessibilityRole="button" accessibilityLabel="Contents" accessibilityHint="Choose a way in, a year, or a month.">
-              <Text style={[styles.contentsWord, untrack(2.4)]} maxFontSizeMultiplier={1.3}>
-                Contents
-              </Text>
-            </Pressable>
+        <View style={styles.stage} onLayout={(e) => setStageHeight(e.nativeEvent.layout.height)}>
+          <Animated.View
+            style={[StyleSheet.absoluteFill, { opacity: fades.stage }]}
+            pointerEvents={state.loading ? "none" : "auto"}
+          >
+            {page ? (
+              <Plate
+                page={page}
+                onWord={onWord}
+                opacity={state.view.kind === "firstVisit" ? threshold : undefined}
+                testID={`darkroom-page-${state.view.kind}`}
+              />
+            ) : chapter && stageHeight > 0 && state.view.kind === "prints" ? (
+              <Stage
+                ref={stage}
+                prints={chapter.prints}
+                generation={chapter.generation}
+                index={chapter.index}
+                rebase={chapter.rebase}
+                width={width}
+                height={stageHeight}
+                scrollX={scrollX}
+                scrollEnabled={!develop.busy && !state.loading}
+                renderPrint={renderPrint}
+                renderTail={renderTail}
+                onSettle={onSettle}
+                onDragging={setDragging}
+                accessibility={accessibility}
+                tailTitle={tailTitle}
+              />
+            ) : null}
+          </Animated.View>
+          {fades.card ? (
+            <Animated.View style={[StyleSheet.absoluteFill, { opacity: fades.cardOpacity }]} pointerEvents="none">
+              <TitleCard
+                eyebrow={fades.card.eyebrow}
+                title={fades.card.title}
+                year={fades.card.year}
+                waiting={state.loading != null}
+                since={fades.card.since}
+              />
+            </Animated.View>
           ) : null}
         </View>
-      </Animated.View>
 
-      <View style={styles.room} onLayout={(e) => setRoomHeight(e.nativeEvent.layout.height)}>
-        {pager ? (
-          <FlatList
-            ref={list}
-            key={`${state.mode}-${state.year ?? ""}-${state.month}-${state.restored ? "r" : "f"}`}
-            data={state.prints}
-            horizontal
-            pagingEnabled
-            disableIntervalMomentum
-            decelerationRate="fast"
-            bounces={false}
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(p) => p.id}
-            initialScrollIndex={state.index > 0 && state.index < state.prints.length ? state.index : undefined}
-            getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
-            onMomentumScrollEnd={onPage}
-            onScrollToIndexFailed={() => undefined}
-            initialNumToRender={1}
-            maxToRenderPerBatch={1}
-            windowSize={3}
-            scrollEnabled={!stage}
-            renderItem={({ item, index }) => {
-              const caption = captionFor(item.takenAt, now, state.mode, state.reach, developedAt(item.id) != null);
-              const aside = shelf.some((p) => p.id === item.id);
-              const isCurrent = index === state.index;
-              const fail = isCurrent && failed;
-              return (
-                <PrintPage
-                  print={item}
-                  width={width}
-                  height={roomHeight}
-                  label={fail ? fail[0].toUpperCase() : caption.label}
-                  line={fail ? fail[1] : caption.line}
-                  active={isCurrent}
-                  isSetAside={aside}
-                  onSetAside={() => setAsideNow(item)}
-                  onTap={toggleChrome}
-                  chrome={isCurrent && stage ? LIT : chrome}
-                  reduceMotion={reduceMotion}
-                  stage={isCurrent && stage ? STAGE_WORDS[stage] : null}
-                  onMissing={() => setMissing((m) => (m.has(item.id) ? m : new Set(m).add(item.id)))}
-                  accessibilityLabel={`Photograph, ${fullDate(item.takenAt)}. ${caption.line}.${aside ? " Set aside." : ""}`}
-                  accessibilityActions={[
-                    { name: "increment", label: "Next photograph" },
-                    { name: "decrement", label: "Previous photograph" },
-                    { name: "develop", label: "Develop" },
-                    { name: "setAside", label: aside ? "Put back" : "Set aside" },
-                    { name: "contents", label: "Contents" },
-                  ]}
-                  onAccessibilityAction={(name) => {
-                    if (name === "increment") go(index + 1);
-                    else if (name === "decrement") go(index - 1);
-                    else if (name === "develop") developNow(item);
-                    else if (name === "setAside") setAsideNow(item);
-                    else if (name === "contents") setContentsOpen(true);
-                  }}
-                />
-              );
-            }}
-            ListFooterComponent={
-              tail ? (
-                <View style={{ width, height: roomHeight }}>
-                  {tail === "more" ? <TitleCard eyebrow={chapterName(state.mode, state.year)} title="" waiting onSkip={() => undefined} /> : endPage()}
-                </View>
-              ) : null
-            }
+        <View style={{ marginBottom: Math.max(insets.bottom, 16) + 8 }}>
+          <Develop
+            words={words.bottom}
+            opacity={showsDevelop && !fades.card ? developOpacity : ZERO}
+            interactive={showsDevelop && !atTail && !chrome.hidden && !state.loading && !fades.card}
+            dragging={dragging}
+            drawing={develop.drawing && develop.id === current?.id}
+            onPress={onBottom}
           />
-        ) : (
-          words
-        )}
+        </View>
+
+        <Contents
+          visible={sheet.open}
+          now={now}
+          where={where}
+          years={state.years}
+          months={where?.mode === "year" ? state.months : null}
+          monthInView={chapter?.mode === "year" && current ? new Date(current.takenAt).getMonth() : null}
+          day={state.day}
+          shelfCount={shelf.length}
+          prunedNote={sheet.note}
+          limited={limited}
+          toMonths={sheet.toMonths}
+          onChoose={(mode, year, month) => {
+            haptics.chosen();
+            sheet.close();
+            choose(mode, year ?? null, month ?? null);
+          }}
+          onLibrary={() => sheet.close(() => void pick())}
+          onShareMore={() => sheet.close(() => void chooseMorePhotographs())}
+          onSettings={() => sheet.close(openPhotoSettings)}
+          onClose={() => sheet.close()}
+          onDismiss={sheet.dismissed}
+        />
       </View>
-
-      {/* DEVELOP: the one word on this page that carries the rule. */}
-      <Animated.View
-        style={[styles.foot, { paddingBottom: Math.max(insets.bottom, 16) + 8, opacity: stage === "icloud" ? 1 : pager && current ? chrome : 0 }]}
-        pointerEvents={stage === "icloud" || (pager && current && !chromeHidden && !stage) ? "box-none" : "none"}
-      >
-        {state.access === "limited" && pager ? (
-          <Text style={styles.limited} maxFontSizeMultiplier={1.4}>
-            Only the photographs you shared with VINTAGE
-          </Text>
-        ) : null}
-        {stage === "icloud" ? (
-          <Word
-            label="Cancel"
-            ruled
-            strong
-            onPress={() => {
-              stopDeveloping.current = true;
-            }}
-            accessibilityHint="Stops waiting for the photograph to come down from iCloud."
-            style={styles.develop}
-          />
-        ) : (
-          <Word
-            label="Develop"
-            ruled
-            strong
-            onPress={() => developNow()}
-            disabled={!current || Boolean(stage)}
-            accessibilityHint="Opens this photograph in the editor, to post."
-            style={styles.develop}
-          />
-        )}
-      </Animated.View>
-
-      <Contents
-        visible={contentsOpen}
-        now={now}
-        mode={state.mode}
-        year={state.year}
-        years={state.years}
-        months={months}
-        dayHasPhotographs={state.dayHas}
-        setAside={shelf}
-        limited={state.access === "limited"}
-        onChoose={(mode, year) => fromContents(() => choose(mode, year ?? null))}
-        onMonth={(month) => fromContents(() => choose("year", state.year, month))}
-        onLibrary={() => fromContents(fromLibrary)}
-        onChooseMore={() => fromContents(chooseMorePhotographs)}
-        onSettings={() => fromContents(openPhotoSettings)}
-        onClose={() => setContentsOpen(false)}
-        onDismiss={() => {
-          const act = afterContents.current;
-          afterContents.current = null;
-          act?.();
-        }}
-      />
-      {stage === "reading" ? <View style={StyleSheet.absoluteFill} accessibilityViewIsModal /> : null}
-    </View>
+    </LookContext.Provider>
   );
 }
 
-/** A chapter's opening page: its name, large, and a rule — while it is dealt, and a moment after. */
-function TitleCard({ eyebrow, title, waiting, onSkip }: { eyebrow: string; title: string; waiting: boolean; onSkip: () => void }) {
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    if (!waiting) return;
-    const t = setTimeout(() => setSlow(true), 1200);
-    return () => clearTimeout(t);
-  }, [waiting]);
-  const isYear = /^\d{4}$/.test(title);
-  return (
-    <Pressable style={styles.card} onPress={onSkip} accessible={false}>
-      <Text style={[roomType.eyebrow, styles.cardEyebrow, untrack(2.4)]}>{eyebrow}</Text>
-      {title ? (
-        <Text style={[styles.cardTitle, isYear && styles.cardYear]} accessibilityRole="header">
-          {title}
-        </Text>
-      ) : null}
-      <View style={styles.cardRule} />
-      <Text style={[styles.cardSlow, { opacity: slow && waiting ? 1 : 0 }]} accessibilityLiveRegion="polite">
-        Looking through your library…
-      </Text>
-    </Pressable>
-  );
-}
-
-function Empty({
-  mode,
-  dayWord,
-  limited,
-  hasYears,
-  onChoose,
-  onContents,
-  onLibrary,
-}: {
-  mode: DarkroomMode;
-  dayWord: string;
-  limited: boolean;
-  hasYears: boolean;
-  onChoose: (mode: DarkroomMode, year?: number | null) => void;
-  onContents: () => void;
-  onLibrary: () => void;
-}) {
-  if (!hasYears) {
-    return limited ? (
-      <Plate
-        eyebrow="The Darkroom"
-        title="Only a few photographs to look through."
-        body="You’ve shared part of your library with VINTAGE, and none of it is here yet. The Darkroom is at its best when it can look through all of it — it still reads only on this iPhone."
-      >
-        <Word label="Share more photographs" ruled strong onPress={chooseMorePhotographs} />
-        <Word label="Allow full access in Settings" dim onPress={openPhotoSettings} />
-        <Word label="Choose from your library" dim onPress={onLibrary} />
-      </Plate>
-    ) : (
-      <Plate eyebrow="The Darkroom" title="Nothing to look through yet." body="There are no photographs in your library on this iPhone. If they live in iCloud, they may still be arriving.">
-        <Word label="Choose from your library" ruled strong onPress={onLibrary} />
-      </Plate>
-    );
-  }
-  if (mode === "on-this-day") {
-    return (
-      <Plate eyebrow="On this day" title={`Nothing from ${dayWord}.`} body="Not in any other year, or in the weeks around it.">
-        <Word label="Surprise me" ruled strong onPress={() => onChoose("surprise")} />
-        <Word label="Choose a year" dim onPress={onContents} />
-        <Word label="Choose from your library" dim onPress={onLibrary} />
-      </Plate>
-    );
-  }
-  if (mode === "set-aside") {
-    return (
-      <Plate eyebrow="Set aside" title="Nothing set aside." body="Set a print aside to come back to it. It stays on this phone and is never posted on its own.">
-        <Word label="Surprise me" ruled strong onPress={() => onChoose("surprise")} />
-      </Plate>
-    );
-  }
-  return (
-    <Plate
-      eyebrow="The Darkroom"
-      title="Nothing old enough yet."
-      body={
-        limited
-          ? "Everything you’ve shared with VINTAGE is from the last few months. Share more, or choose one yourself."
-          : "Everything in your library is from the last few months. The Darkroom keeps to photographs from before then. Give it a season."
-      }
-    >
-      {limited ? <Word label="Share more photographs" ruled strong onPress={chooseMorePhotographs} /> : null}
-      <Word label="Choose a year" dim={limited} ruled={!limited} strong={!limited} onPress={onContents} />
-      <Word label="Choose from your library" dim onPress={onLibrary} />
-    </Plate>
-  );
-}
+const ZERO = new Animated.Value(0);
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: room.page },
-  fill: { flex: 1 },
-  head: { flexDirection: "row", alignItems: "center", minHeight: 44, paddingHorizontal: 4, zIndex: 2 },
-  back: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-  chapter: { flex: 1, textAlign: "center", fontFamily: roomType.mono, fontSize: 10, color: room.soft, textTransform: "uppercase" },
-  contentsSlot: { width: 96, alignItems: "flex-end", paddingRight: 12 },
-  contentsHit: { minHeight: 44, justifyContent: "center" },
-  contentsWord: { fontFamily: roomType.mono, fontSize: 10, color: room.soft, textTransform: "uppercase" },
-  room: { flex: 1 },
-  foot: { alignItems: "center" },
-  develop: { minHeight: 48, paddingHorizontal: 24 },
-  limited: { fontFamily: roomType.serif, fontStyle: "italic", fontSize: 12, color: room.faint, marginBottom: 2 },
-  card: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
-  cardEyebrow: { color: room.gold },
-  cardTitle: { fontFamily: roomType.serif, fontSize: 40, lineHeight: 48, color: room.ink, marginTop: 12, textAlign: "center" },
-  cardYear: { fontSize: 64, lineHeight: 72, fontVariant: ["oldstyle-nums"] },
-  cardRule: { width: 26, height: 1, backgroundColor: room.ink, opacity: 0.8, marginTop: 16 },
-  cardSlow: { fontFamily: roomType.serif, fontStyle: "italic", fontSize: 14, lineHeight: 20, color: room.faint, marginTop: 18 },
+  stage: { flex: 1 },
 });

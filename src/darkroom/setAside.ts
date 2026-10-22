@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { readDiskCache, writeDiskCache } from "@/utils/diskCache";
+import { deleteDiskCache, readDiskCache, writeDiskCache } from "@/utils/diskCache";
 import type { Print } from "./types";
 
 /**
@@ -7,24 +7,32 @@ import type { Print } from "./types";
  * the side of the bench to decide on later.
  *
  * A reference, not a copy: the library's identifier and enough to draw it
- * (its address, its shape, its date), kept in one small file on this
- * phone. Nothing is uploaded and nothing is published. If the photograph
- * leaves the library, or falls outside a limited selection, the reference
- * is simply shown as gone and can be put back.
+ * without asking the library first (its address, its shape, when it was
+ * taken), kept in one small file on this phone. No pixels, no file name,
+ * no place. Nothing is uploaded and nothing is published. If the
+ * photograph leaves the library, or falls outside a limited selection,
+ * the reference is shown as gone and can be removed.
+ *
+ * The shelf lives in Documents rather than the cache folder: it is the
+ * member's own choosing, and iOS emptying the cache must not empty it.
+ * It holds 500. Past that it refuses, and says so, rather than quietly
+ * letting the oldest go — a bench, not an archive, and never a loss the
+ * member did not choose.
  */
 
 const FILE = "darkroom-set-aside.json";
 const KEY = "vintage.darkroom-set-aside";
-/** Past this the oldest reference is let go: a bench, not an archive. */
 export const SET_ASIDE_LIMIT = 500;
 
 export interface SetAsidePrint extends Print {
   setAsideAt: number;
 }
 
+/** The stored list, newest first, with anything that does not fit, or repeats, left out. */
 export function parseSetAside(raw: unknown): SetAsidePrint[] | null {
   if (!Array.isArray(raw)) return null;
   const out: SetAsidePrint[] = [];
+  const ids = new Set<string>();
   for (const v of raw) {
     if (!v || typeof v !== "object") continue;
     const r = v as Record<string, unknown>;
@@ -36,27 +44,41 @@ export function parseSetAside(raw: unknown): SetAsidePrint[] | null {
     const takenAt = num(r.takenAt);
     const setAsideAt = num(r.setAsideAt);
     if (!id || uri == null || width == null || height == null || takenAt == null || setAsideAt == null) continue;
+    if (ids.has(id)) continue;
+    ids.add(id);
     out.push({ id, uri, width, height, takenAt, setAsideAt, subtypes: [] });
   }
-  return out;
+  return out.sort((a, b) => b.setAsideAt - a.setAsideAt).slice(0, SET_ASIDE_LIMIT);
 }
 
 let prints: SetAsidePrint[] | null = null;
+let ids = new Set<string>();
+/** How many were let go because the library no longer has them, not yet said. */
+let pruned = 0;
 const listeners = new Set<() => void>();
 
 function load(): SetAsidePrint[] {
-  if (!prints) prints = readDiskCache(FILE, KEY, parseSetAside) ?? [];
+  if (!prints) {
+    prints = readDiskCache(FILE, KEY, parseSetAside) ?? [];
+    ids = new Set(prints.map((p) => p.id));
+  }
   return prints;
 }
 
-function save(next: SetAsidePrint[]): void {
+function changed(next: SetAsidePrint[]): void {
   prints = next;
+  ids = new Set(next.map((p) => p.id));
+  for (const l of listeners) l();
+}
+
+/** Written at once on every change: the shelf is the member's, and an app kill must not lose a choice. */
+function save(next: SetAsidePrint[]): void {
   writeDiskCache(
     FILE,
     KEY,
     next.map(({ id, uri, width, height, takenAt, setAsideAt }) => ({ id, uri, width, height, takenAt, setAsideAt })),
   );
-  for (const l of listeners) l();
+  changed(next);
 }
 
 /** Newest set aside first. */
@@ -65,32 +87,70 @@ export function setAsidePrints(): readonly SetAsidePrint[] {
 }
 
 export function isSetAside(id: string): boolean {
-  return load().some((p) => p.id === id);
+  load();
+  return ids.has(id);
 }
 
-export function setAside(print: Print, at = Date.now()): void {
-  const rest = load().filter((p) => p.id !== print.id);
-  save([{ ...print, subtypes: [], setAsideAt: at }, ...rest].slice(0, SET_ASIDE_LIMIT));
+/**
+ * Set aside, or put back. "full" when the shelf already holds 500 and
+ * this one is not on it: nothing changes, and the room says why.
+ */
+export function toggleSetAside(print: Print, at = Date.now()): "on" | "off" | "full" {
+  const list = load();
+  if (ids.has(print.id)) {
+    putBack(print.id);
+    return "off";
+  }
+  if (list.length >= SET_ASIDE_LIMIT) return "full";
+  // Only what the file keeps: no subtypes, and never the file name.
+  const kept: SetAsidePrint = {
+    id: print.id,
+    uri: print.uri,
+    width: print.width,
+    height: print.height,
+    takenAt: print.takenAt,
+    subtypes: [],
+    setAsideAt: at,
+  };
+  save([kept, ...list]);
+  return "on";
 }
 
 export function putBack(id: string): void {
+  load();
+  if (!ids.has(id)) return;
+  save(load().filter((p) => p.id !== id));
+}
+
+/**
+ * Let go of references the library no longer resolves, and keep a note
+ * of how many, for the contents page to say once. Returns how many went.
+ */
+export function pruneSetAside(missingIds: readonly string[]): number {
+  if (missingIds.length === 0) return 0;
+  const missing = new Set(missingIds);
   const list = load();
-  if (!list.some((p) => p.id === id)) return;
-  save(list.filter((p) => p.id !== id));
-}
-
-/** Set aside, or put back. Returns whether it is now set aside. */
-export function toggleSetAside(print: Print): boolean {
-  if (isSetAside(print.id)) {
-    putBack(print.id);
-    return false;
+  const next = list.filter((p) => !missing.has(p.id));
+  const gone = list.length - next.length;
+  if (gone > 0) {
+    save(next);
+    pruned += gone;
   }
-  setAside(print);
-  return true;
+  return gone;
 }
 
+/** How many were let go since this was last asked, said once: the count, then 0. */
+export function takePrunedNote(): number {
+  const n = pruned;
+  pruned = 0;
+  return n;
+}
+
+/** The shelf emptied and its file deleted — at sign-out, so the next member finds none of it. */
 export function forgetSetAside(): void {
-  save([]);
+  deleteDiskCache(FILE, KEY);
+  pruned = 0;
+  changed([]);
 }
 
 function subscribe(listener: () => void): () => void {

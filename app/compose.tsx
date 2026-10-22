@@ -13,7 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { showAlert } from "@/utils/alert";
 import { rememberPlace } from "@/utils/reverseGeocode";
-import { markDeveloped } from "@/darkroom/history";
+import { markDeveloped } from "@/darkroom/posted";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import * as VideoThumbnails from "expo-video-thumbnails";
@@ -283,7 +283,8 @@ export default function Compose() {
       setPublished(true);
 
       // Developed from the Darkroom: it remembers, on this phone, that this
-      // one has been shared, and does not offer it again as a rediscovery.
+      // one has been shared and does not offer it again as a rediscovery,
+      // takes it off the shelf, and moves the room's place on past it.
       if (params.assetId) markDeveloped(params.assetId);
 
       // The town this was taken in, learned now so the places view on the
@@ -369,13 +370,19 @@ export default function Compose() {
               <VideoPreview uri={uri} filter={filter} muted={previewMuted} />
             )
           ) : renderFailed ? (
-            <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" />
+            // In memory only: a developed copy that is not posted must leave no trace on disk.
+            <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory" />
           ) : (
             <>
               {/* The photograph itself, at once, while the renderer warms up;
                   the film is then drawn over it. Without it the frame showed
-                  its bare background first — cream, in the dark print. */}
-              {!filmReady ? <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+                  its bare background first — cream, in the dark print. Held
+                  in memory only: the file may be a developed copy that is
+                  deleted if it is not posted, and must leave no copy in the
+                  image cache on disk. */}
+              {!filmReady ? (
+                <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory" />
+              ) : null}
               <View style={[StyleSheet.absoluteFill, !filmReady && styles.filmWaiting]}>
                 <FilteredImage
                   ref={filteredRef}

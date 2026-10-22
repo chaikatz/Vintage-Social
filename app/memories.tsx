@@ -1,7 +1,8 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import { Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
@@ -13,6 +14,7 @@ import { mediaUrl } from "@/api/media";
 import { groupEras, memoryHeadline, onThisDay } from "@/utils/memories";
 import { signatureDate } from "@/utils/time";
 import { libraryGranted, photosOnThisDay } from "@/utils/library";
+import { darkroomAvailable } from "@/darkroom/source";
 import { useSession } from "@/providers/SessionProvider";
 import type { PostRow } from "@/types/db";
 
@@ -27,6 +29,13 @@ import type { PostRow } from "@/types/db";
  *
  * The headline is the sentence a notification will carry once there are
  * notifications, so the two read the same.
+ *
+ * This screen never asks for the photo library. When access has already
+ * been given it reads this day's photographs to show them; when it has
+ * not, it offers the Darkroom's On this day instead, and the Darkroom's
+ * own first page is the one place that asks. The library's thumbnails
+ * are kept in memory only, so no copy of a photograph from the library is
+ * written to the phone's disk by this screen.
  */
 export default function Memories() {
   const router = useRouter();
@@ -55,11 +64,26 @@ export default function Memories() {
     staleTime: 60 * 60_000,
   });
 
-  const askLibrary = async () => {
-    if (await libraryGranted(true)) {
-      queryClient.invalidateQueries({ queryKey: ["library-granted"] });
-      queryClient.invalidateQueries({ queryKey: ["library-on-this-day"] });
+  // Coming back from the Darkroom, where access may just have been given.
+  const focusedBefore = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedBefore.current) queryClient.invalidateQueries({ queryKey: ["library-granted"] });
+      focusedBefore.current = true;
+    }, [queryClient]),
+  );
+
+  // The Darkroom's On this day, opened at the first photograph of `year`
+  // when one is given. Where there is no Darkroom, the day's grid.
+  const openDay = (year?: number) => {
+    if (!darkroomAvailable()) {
+      router.push({ pathname: "/library-picker", params: { mode: "day" } });
+      return;
     }
+    router.push({
+      pathname: "/darkroom",
+      params: year != null ? { mode: "on-this-day", year: String(year) } : { mode: "on-this-day" },
+    });
   };
 
   const openPost = (post: PostRow) => {
@@ -108,17 +132,22 @@ export default function Memories() {
         })}
 
         {/* The phone's own copies of this day — only ever read, never sent. */}
-        {Platform.OS !== "web" ? (
+        {Platform.OS !== "web" && (granted.data !== false || darkroomAvailable()) ? (
           <View style={styles.section}>
             <SectionLabel>In your library</SectionLabel>
             {granted.data === false ? (
-              <Pressable style={styles.ask} onPress={askLibrary}>
+              <Pressable
+                style={({ pressed }) => [styles.ask, pressed && styles.pressed]}
+                onPress={() => openDay()}
+                accessibilityRole="button"
+                accessibilityHint="Opens On this day in the Darkroom."
+              >
                 <Feather name="image" size={16} color={colors.ink} />
                 <View style={styles.askText}>
                   <Text style={styles.askTitle}>Look in your photo library</Text>
                   <Text style={styles.askBody}>
-                    VINTAGE can find photographs from this day in earlier years. It reads them on your
-                    phone and keeps nothing.
+                    The Darkroom can find photographs from this day in earlier years. It looks through your
+                    library on your phone, and nothing leaves it unless you post it.
                   </Text>
                 </View>
               </Pressable>
@@ -130,12 +159,22 @@ export default function Memories() {
               (library.data ?? []).map((day) => (
                 <Pressable
                   key={day.yearsAgo}
-                  style={styles.dayRow}
-                  onPress={() => router.push({ pathname: "/darkroom", params: { mode: "on-this-day" } })}
+                  style={({ pressed }) => [styles.dayRow, pressed && styles.pressed]}
+                  onPress={() => openDay(today.getFullYear() - day.yearsAgo)}
+                  accessibilityRole="button"
+                  accessibilityHint={darkroomAvailable() ? "Opens them in the Darkroom." : undefined}
                 >
                   <View style={styles.dayThumbs}>
                     {day.photos.slice(0, 3).map((p) => (
-                      <Image key={p.id} source={p.uri} style={styles.dayThumb} contentFit="cover" />
+                      <Image
+                        key={p.id}
+                        source={p.uri}
+                        style={styles.dayThumb}
+                        contentFit="cover"
+                        cachePolicy="memory"
+                        recyclingKey={p.id}
+                        accessibilityIgnoresInvertColors
+                      />
                     ))}
                   </View>
                   <View style={styles.dayText}>
@@ -256,6 +295,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paperRaised,
   },
   askText: { flex: 1 },
+  pressed: { opacity: 0.6 },
   askTitle: { fontSize: 14, fontWeight: "600", color: colors.ink },
   askBody: { ...type.caption, fontSize: 12, lineHeight: 17, marginTop: 2 },
   quiet: { ...type.caption, paddingHorizontal: spacing.lg, color: colors.inkFaint },

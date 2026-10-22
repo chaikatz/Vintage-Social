@@ -4,11 +4,10 @@ import { Stack } from "expo-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { SessionProvider } from "@/providers/SessionProvider";
-import { colors, type } from "@/theme";
+import { colors, dark, type } from "@/theme";
 import { restoreAppearance } from "@/utils/appearance";
 import { useNotificationTaps } from "@/utils/push";
 import { KeyboardDone } from "@/components/KeyboardDone";
-import { room } from "@/components/darkroom/room";
 
 // Before the first screen draws, so the page opens on the print it was left on.
 restoreAppearance();
@@ -77,20 +76,27 @@ export default function RootLayout() {
               fullScreenGestureEnabled: false,
               // Developed from the Darkroom: the print stays where it was
               // and the lights come up around it, rather than a new page
-              // sliding over the room.
-              animation: (route.params as { from?: string } | undefined)?.from === "darkroom" ? "fade" : "default",
+              // sliding over the room. Quicker than the room's own fade in,
+              // so handing the print over adds no wait. Every other way in
+              // slides as usual, at the platform's own pace.
+              ...((route.params as { from?: string } | undefined)?.from === "darkroom"
+                ? { animation: "fade" as const, animationDuration: 280 }
+                : { animation: "default" as const }),
             })}
           />
-          {/* The Darkroom: the lights go down as it fades in. Back is the
-              left edge only — a pan anywhere else is the next print. */}
+          {/* The Darkroom: the lights go down as it fades in, onto the
+              deepest brown the theme has, so not a frame of the light page
+              shows in Light appearance. Back is the left edge only — a pan
+              anywhere else is the next print. */}
           <Stack.Screen
             name="darkroom"
             options={{
               headerShown: false,
               animation: "fade",
+              animationDuration: 360,
               gestureEnabled: true,
               fullScreenGestureEnabled: false,
-              contentStyle: { backgroundColor: room.page },
+              contentStyle: { backgroundColor: dark.paperSunken },
             }}
           />
           {/* Screens with sideways gestures of their own — a pinch on a

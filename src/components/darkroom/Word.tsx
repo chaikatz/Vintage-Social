@@ -1,72 +1,105 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Animated, Pressable, StyleSheet, View, type Insets, type StyleProp, type ViewStyle } from "react-native";
 import { ruleWidth } from "@/components/gate/rule";
-import { room, roomType, untrack } from "./room";
+import { RoomText, Rule } from "./Type";
 
 /**
  * A word you can press, the way VINTAGE sets every way in: tracked
- * capitals, and the short rule signed beneath when it is the one that
- * matters or the one that is chosen. Cream on the darkroom page.
+ * capitals. Each page has exactly one primary word, and only it carries
+ * the short rule signed beneath (`ruleWidth`, 7 below the letters); the
+ * rest are smaller, softer and unruled. In the room the primary word is
+ * almost always DEVELOP.
+ *
+ * `dim` is the 0.4 of a word that cannot be used just now, which always
+ * comes with a reason for VoiceOver; `disabled` alone is a word that is
+ * briefly inert (DEVELOP while a page is being dragged, or while it
+ * develops) and keeps its full ink.
  */
 export function Word({
   label,
   onPress,
-  ruled = false,
-  strong = false,
-  dim = false,
+  primary = false,
+  ruled = primary,
   disabled = false,
+  dim = false,
+  busy,
+  selected,
   accessibilityLabel,
   accessibilityHint,
-  selected,
+  maxFontSizeMultiplier = 2.4,
+  ruleScale,
+  onLabelWidth,
+  minHeight = 44,
+  paddingHorizontal = 6,
+  hitSlop,
+  testID,
   style,
 }: {
   label: string;
   onPress: () => void;
-  /** The short rule beneath. */
+  /** The page's one ruled word. */
+  primary?: boolean;
+  /** The rule beneath; a primary word has it unless it is briefly put by (DEVELOPING… while it downloads). */
   ruled?: boolean;
-  /** The primary word: a step larger. */
-  strong?: boolean;
-  /** Not the chosen one: receded. */
-  dim?: boolean;
   disabled?: boolean;
+  dim?: boolean;
+  busy?: boolean;
+  selected?: boolean;
   accessibilityLabel?: string;
   accessibilityHint?: string;
-  selected?: boolean;
-  style?: ViewStyle;
+  maxFontSizeMultiplier?: number;
+  /** DEVELOP's rule draws out under the word as it develops. */
+  ruleScale?: Animated.Value | Animated.AnimatedInterpolation<number>;
+  /** The letters' own width, for a rule that draws out to it. */
+  onLabelWidth?: (width: number) => void;
+  minHeight?: number;
+  paddingHorizontal?: number;
+  hitSlop?: Insets | number;
+  testID?: string;
+  style?: StyleProp<ViewStyle>;
 }) {
-  const tracking = strong ? 3.2 : 2.2;
+  const tracking = primary ? 3 : 2.2;
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
-      hitSlop={10}
-      style={({ pressed }) => [styles.base, pressed && styles.pressed, disabled && styles.disabled, style]}
+      disabled={disabled || dim}
+      hitSlop={hitSlop}
+      testID={testID}
+      style={({ pressed }) => [
+        styles.base,
+        { minHeight, paddingHorizontal },
+        pressed && styles.pressed,
+        dim && styles.dim,
+        style,
+      ]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled, selected }}
+      accessibilityState={{ disabled: disabled || dim, selected, busy }}
     >
-      <Text
-        maxFontSizeMultiplier={1.3}
-        style={[styles.label, strong && styles.strong, untrack(tracking), { color: dim ? room.faint : room.ink }]}
+      <RoomText
+        kind={primary ? "wordPrimary" : "word"}
+        maxFontSizeMultiplier={maxFontSizeMultiplier}
+        style={styles.label}
+        onLayout={onLabelWidth ? (e) => onLabelWidth(Math.max(0, e.nativeEvent.layout.width - tracking)) : undefined}
       >
         {label}
-      </Text>
-      <View
-        style={[
-          styles.rule,
-          { width: ruleWidth(label), backgroundColor: room.ink, opacity: ruled ? 0.8 : 0 },
-        ]}
-      />
+      </RoomText>
+      {primary ? (
+        // The slot stays when the rule is put by, so the word never moves.
+        <View style={[styles.ruleSlot, !ruled && styles.hidden]}>
+          <Rule width={ruleWidth(label)} scaleX={ruleScale} />
+        </View>
+      ) : null}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  base: { minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
-  pressed: { opacity: 0.6 },
-  disabled: { opacity: 0.35 },
-  label: { fontFamily: roomType.mono, fontSize: 10.5, textTransform: "uppercase" },
-  strong: { fontSize: 13 },
-  rule: { height: 1, marginTop: 7 },
+  base: { alignItems: "center", justifyContent: "center" },
+  label: { textAlign: "center" },
+  ruleSlot: { marginTop: 7, alignItems: "center" },
+  pressed: { opacity: 0.75 },
+  dim: { opacity: 0.4 },
+  hidden: { opacity: 0 },
 });

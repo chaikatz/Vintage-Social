@@ -1,269 +1,892 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
 import * as MediaLibrary from "expo-media-library";
-import { onThisDay, Surprise, YearChapter, yearIndex, type YearCount } from "./discovery";
+import {
+  dayStateOf,
+  DEFAULT_DAY_MINIMUM,
+  dropOnSettle,
+  endingOf,
+  JUMP_HALF_MS,
+  opensOnThisDay,
+  placeIndex,
+  startIndex,
+  type Chapter,
+  type Loading,
+  type OpenSpec,
+  type RoomView,
+  type Where,
+} from "@/components/darkroom/chapter";
+import { appendNew, Dealer, editReader, surpriseReader } from "@/components/darkroom/dealer";
+import { Visit } from "@/components/darkroom/visit";
+import type { DayState, EmptyWhy } from "@/components/darkroom/words";
 import { readAccess, requestAccess, type LibraryAccess } from "./access";
-import { developedRecently, markSeen, seenRecently } from "./history";
-import { isSetAside, setAsidePrints } from "./setAside";
-import { keepPlace, recallPlace } from "./session";
+import { REDISCOVERY_AGE_DAYS, type YearCount } from "./discovery";
+import { dayFinished, finishDay, flushHistory, localDay, markSeen } from "./history";
+import {
+  chapterKey,
+  flushPlace,
+  introSeen,
+  keepChapter,
+  markIntroSeen,
+  readPlace,
+  recallChapter,
+  savePlace,
+  type ChapterKey,
+  type SavedPlace,
+} from "./session";
+import { isSetAside, pruneSetAside, setAsidePrints } from "./setAside";
 import { darkroomSource } from "./source";
-import type { DarkroomMode, DayReach, LibrarySource, Print } from "./types";
+import type { DarkroomMode, DayReach, Print } from "./types";
 
 /**
- * The Darkroom's state: whether it may look, what the library holds by
- * year, which way in is open, and the sequence of prints in front of the
- * member — extended a few at a time as they reach the end of it, never
- * all at once.
+ * The Darkroom's state: whether it may look, which chapter is open and
+ * the prints dealt into it, where the member is among them, and what the
+ * library holds by year — kept as the member moves through it, and kept
+ * again when they leave.
+ *
+ * The first way in (§4.2). A place saved under twelve hours ago is taken
+ * up exactly, with no title card. Otherwise the day itself is asked of
+ * every earlier year, and at the same moment Surprise begins its cold
+ * start; On this day opens when the day holds three moments and was not
+ * already seen to its end today, and Surprise — already dealing — opens
+ * when not. By year is never the first way in.
+ *
+ * Chapters. Each keeps its own position in memory (`keepChapter`), with
+ * the dealer that was dealing it, so going back to a chapter finds the
+ * same print and the deal carrying on; a batch that lands after the room
+ * has turned away goes into that kept position rather than nowhere (see
+ * `dealer.ts`). The chapter last open also goes to disk, through
+ * `savePlace` and `flushPlace`, on blur and when the app leaves the
+ * foreground.
+ *
+ * Restoring from disk rebuilds what a file cannot hold (§10.8): Surprise
+ * deals on with a new seed, the deck's prints excluded and counted toward
+ * the roll; a year builds its edit again and carries on after the deck;
+ * On this day shows the deck and asks the day again in the background,
+ * to learn how far it reached. In every case the year index is read again
+ * after the first print, and a chapter that can deal no further ends on
+ * its end page: nothing waits on a reader that does not exist.
+ *
+ * Sequences only ever grow at the end. The exception is a print that has
+ * left the chapter — put back from the shelf, or gone from the library —
+ * which is taken out once the member has turned past it, with the pager
+ * told to keep its place (`rebase`).
+ *
+ * Everything is read on the phone. Nothing here is sent anywhere.
  */
 
-/** Read this many more when the member is this close to the end. */
-const BATCH = { surprise: 6, year: 12 } as const;
-export const READ_AHEAD = 3;
-/** A print looked at for this long counts as seen. */
-const SEEN_AFTER_MS = 800;
-/** On This Day opens the Darkroom when the day itself holds at least this many. */
-export const ON_THIS_DAY_OPENS_WITH = 3;
-
-let yearsCache: { at: number; years: YearCount[] } | null = null;
-const YEARS_FRESH_MS = 10 * 60_000;
-
-async function years(source: LibrarySource, refresh = false): Promise<YearCount[]> {
-  if (!refresh && yearsCache && Date.now() - yearsCache.at < YEARS_FRESH_MS) return yearsCache.years;
-  const y = await yearIndex(source);
-  yearsCache = { at: Date.now(), years: y };
-  return y;
-}
-
-export type SequenceState = "idle" | "loading" | "ready" | "empty" | "failed";
+/** Dealt at a time, and kept at least this far ahead of the member. */
+const BATCH = { surprise: 3, year: 12 } as const;
+const AHEAD = { surprise: 3, year: 4 } as const;
+/** A print settled on, with its image drawn, for this long counts as seen. */
+export const SEEN_AFTER_MS = 1200;
+/** Photos reports a change, then often several more: they are taken together after this. */
+export const LIBRARY_SETTLE_MS = 2000;
+const DAY_MS = 86_400_000;
+/** A pinned print is looked for through at most this many batches of its year. */
+const PIN_SEARCH = 12;
 
 export interface DarkroomState {
   access: LibraryAccess | "checking";
-  years: YearCount[];
-  mode: DarkroomMode;
-  year: number | null;
-  /** By year: the month the chapter was opened at. */
-  month: number;
-  prints: Print[];
-  /** Whether On This Day holds anything, once it has been asked. */
-  dayHas: boolean | null;
-  /** On This Day only: how far it had to reach. */
-  reach: DayReach | null;
-  sequence: SequenceState;
-  /** More can be read past the end of `prints`. */
-  more: boolean;
-  index: number;
-  /** Restored from the last visit rather than started fresh. */
-  restored: boolean;
+  view: RoomView;
+  where: Where | null;
+  chapter: Chapter | null;
+  loading: Loading | null;
+  /** The year index, oldest first; null until it has been read. */
+  years: YearCount[] | null;
+  /** One year's twelve month counts, for Contents. */
+  months: { year: number; counts: number[] } | null;
+  /** What On this day holds today, for Contents. */
+  day: DayState;
+  /** Prints known to be gone from the library, or from the shared selection. */
+  missing: ReadonlySet<string>;
+  /** Bumped when the library changes, so a page that failed to draw tries again. */
+  revision: number;
 }
 
-export function useDarkroom(initial: { mode?: DarkroomMode; year?: number | null; startId?: string | null }) {
-  const source = darkroomSource();
-  // Read once: the place from the last visit, unless this visit was opened onto a particular way in.
-  const place = useRef(initial.mode ? null : recallPlace()).current;
-  const [state, setState] = useState<DarkroomState>(() => {
-    return {
-      access: "checking",
-      years: [],
-      mode: place?.mode ?? initial.mode ?? "on-this-day",
-      year: place?.year ?? initial.year ?? null,
-      month: 0,
-      prints: place?.prints ?? [],
-      dayHas: null,
-      reach: null,
-      sequence: place ? "ready" : "idle",
-      more: place ? true : false,
-      index: place?.index ?? 0,
-      restored: Boolean(place),
-    };
-  });
-  const reader = useRef<Surprise | YearChapter | null>((place?.reader as Surprise | YearChapter | null) ?? null);
-  const reading = useRef(false);
-  const generation = useRef(0);
-  const live = useRef(true);
-  useEffect(() => {
-    live.current = true;
-    return () => {
-      live.current = false;
-    };
+export interface RoomParams {
+  mode?: DarkroomMode | null;
+  year?: number | null;
+  month?: number | null;
+  /** An asset id to open at. */
+  start?: string | null;
+}
+
+const isGranted = (a: LibraryAccess | "checking") => a === "full" || a === "limited";
+
+export function useDarkroom(params: RoomParams) {
+  const source = useMemo(() => darkroomSource(), []);
+  const visit = useMemo(() => (source ? new Visit(source) : null), [source]);
+  const [state, setState] = useState<DarkroomState>(() => ({
+    access: "checking",
+    view: { kind: "checking" },
+    where: null,
+    chapter: null,
+    loading: null,
+    years: visit?.freshYears() ?? null,
+    months: null,
+    day: "unknown",
+    missing: new Set(),
+    revision: 0,
+  }));
+  /** The state as of the last change, for callbacks that outlive a render. */
+  const live = useRef(state);
+  live.current = state;
+  const initial = useRef(params).current;
+
+  const mounted = useRef(true);
+  const focused = useRef(true);
+  /** The dealer of the chapter on the stage. */
+  const dealer = useRef<Dealer | null>(null);
+  /** Every open's number; an open overtaken by another keeps what it dealt rather than showing it. */
+  const opening = useRef(0);
+  const pagerGeneration = useRef(0);
+  const started = useRef(false);
+  const afterFirst = useRef(false);
+  /** Prints whose full image has drawn this visit. */
+  const loaded = useRef(new Set<string>());
+  const [loadTick, setLoadTick] = useState(0);
+
+  const patch = useCallback((p: Partial<DarkroomState> | ((s: DarkroomState) => Partial<DarkroomState>)) => {
+    if (!mounted.current) return;
+    setState((s) => ({ ...s, ...(typeof p === "function" ? p(s) : p) }));
   }, []);
 
-  const patch = useCallback((p: Partial<DarkroomState>) => {
-    if (live.current) setState((s) => ({ ...s, ...p }));
-  }, []);
+  /** Changes `live` at once as well, for the callbacks that read it before the next render. */
+  const commit = useCallback(
+    (p: Partial<DarkroomState>) => {
+      live.current = { ...live.current, ...p };
+      patch(p);
+    },
+    [patch],
+  );
 
-  // --- access -------------------------------------------------------------
-  const checkAccess = useCallback(async () => {
-    const access = await readAccess();
-    patch({ access });
-    return access;
-  }, [patch]);
+  // --- reading on ------------------------------------------------------------
 
-  const ask = useCallback(async () => {
-    const access = await requestAccess();
-    patch({ access });
-    return access;
-  }, [patch]);
-
-  // --- opening a way in ---------------------------------------------------
-  const open = useCallback(
-    async (
-      mode: DarkroomMode,
-      year: number | null = null,
-      opts: { startId?: string | null; refreshYears?: boolean; month?: number } = {},
-    ) => {
-      if (!source) return;
-      const gen = ++generation.current;
-      reader.current = null;
-      const month = opts.month ?? 0;
-      patch({ mode, year, month, prints: [], index: 0, sequence: "loading", more: false, reach: null, restored: false });
+  const loadYears = useCallback(
+    async (force = false): Promise<YearCount[] | null> => {
+      if (!visit) return null;
       try {
-        const y = await years(source, opts.refreshYears);
-        if (gen !== generation.current) return;
-        patch({ years: y });
-        let prints: Print[] = [];
-        let more = false;
-        let reach: DayReach | null = null;
-        let chosen = mode;
-        let chosenYear = year;
-        if (mode === "set-aside") {
-          prints = [...setAsidePrints()];
-        } else if (mode === "on-this-day") {
-          const day = await onThisDay(source, y);
-          prints = day.prints;
-          reach = day.reach;
-          patch({ dayHas: day.prints.length > 0 });
-        } else if (mode === "year") {
-          chosenYear = year ?? y[0]?.year ?? null;
-          if (chosenYear != null) {
-            const chapter = new YearChapter(source, chosenYear, 200, month);
-            reader.current = chapter;
-            prints = await chapter.next(BATCH.year);
-            more = !chapter.done;
-          }
-        } else {
-          const surprise = new Surprise(source, y, {
-            seed: (Date.now() ^ 0x5bd1e995) >>> 0,
-            // Seen lately, posted this year, or already on the bench: the member knows where those are.
-            skip: (id) => seenRecently(id) || developedRecently(id) || isSetAside(id),
-          });
-          reader.current = surprise;
-          prints = await surprise.next(BATCH.surprise);
-          more = !surprise.exhausted;
-          chosen = "surprise";
-        }
-        if (gen !== generation.current) return;
-        const start = opts.startId ? Math.max(0, prints.findIndex((p) => p.id === opts.startId)) : 0;
-        patch({
-          mode: chosen,
-          year: chosenYear,
-          prints,
-          reach,
-          more,
-          index: start,
-          sequence: prints.length > 0 ? "ready" : "empty",
-        });
+        const years = await visit.years(force);
+        if (live.current.years !== years) patch({ years });
+        return years;
       } catch {
-        if (gen === generation.current) patch({ sequence: "failed" });
+        return null;
       }
     },
-    [source, patch],
+    [visit, patch],
+  );
+
+  const loadMonths = useCallback(
+    async (year: number) => {
+      if (!visit) return;
+      try {
+        const counts = await visit.months(year);
+        patch({ months: { year, counts } });
+      } catch {
+        // Contents shows no month strip until it can.
+      }
+    },
+    [visit, patch],
+  );
+
+  const askDay = useCallback(async () => {
+    if (!visit) throw new Error("No library");
+    const result = await visit.askDay();
+    patch({ day: dayStateOf(result) });
+    return result;
+  }, [visit, patch]);
+
+  /** Batches for the chapter on the stage. */
+  const listen = useCallback(
+    (d: Dealer) => {
+      d.listener = (batch, more, failed) => {
+        patch((s) => {
+          const c = s.chapter;
+          if (!c || c.key !== d.key) return {};
+          // ANOTHER ROLL waits on its first batch with the stage faded.
+          const loading = s.loading?.jump && s.loading.mode === c.mode && s.where?.mode === c.mode ? null : s.loading;
+          return { chapter: { ...c, prints: appendNew(c.prints, batch), more, failed }, loading };
+        });
+      };
+    },
+    [patch],
+  );
+
+  // --- keeping the place -------------------------------------------------------
+
+  /** The chapter on the stage, kept in memory with its dealer. */
+  const keepShown = useCallback((leaving: boolean) => {
+    const c = live.current.chapter;
+    if (!c || live.current.view.kind !== "prints") return;
+    const d = dealer.current;
+    let index = c.index;
+    // Left from under the editor: a post may have moved the kept position
+    // on past the print it was developed from (`advancePlace`), and the
+    // room, which could not move meanwhile, must not move it back.
+    if (leaving && !focused.current) {
+      const kept = recallChapter(c.key);
+      if (kept && kept.reader === d) index = kept.index;
+    }
+    keepChapter(c.key, { prints: c.prints, index, reader: d, more: d ? d.more : c.more, reach: c.reach });
+  }, []);
+
+  const savePlaceNow = useCallback(() => {
+    const c = live.current.chapter;
+    if (!c || live.current.view.kind !== "prints") return;
+    savePlace({ mode: c.mode, year: c.year, month: c.month, index: c.index, prints: c.prints });
+  }, []);
+
+  const putAway = useCallback(() => {
+    keepShown(false);
+    savePlaceNow();
+    flushPlace();
+    flushHistory();
+  }, [keepShown, savePlaceNow]);
+
+  // --- showing -----------------------------------------------------------------
+
+  /** Reads that wait for the first print: the year index, the whole day, the open year's months. */
+  const afterFirstPrint = useCallback(() => {
+    if (afterFirst.current || !visit) return;
+    afterFirst.current = true;
+    setTimeout(() => {
+      if (!mounted.current) return;
+      void loadYears();
+      if (!visit.knownDay()) {
+        askDay()
+          .then((result) => {
+            // A deck restored without its reach learns it now.
+            patch((s) =>
+              s.chapter?.mode === "on-this-day" && s.chapter.reach == null ? { chapter: { ...s.chapter, reach: result.reach } } : {},
+            );
+          })
+          .catch(() => undefined);
+      }
+      const c = live.current.chapter;
+      if (c?.mode === "year" && c.year != null) void loadMonths(c.year);
+    }, 0);
+  }, [visit, loadYears, askDay, patch, loadMonths]);
+
+  const show = useCallback(
+    (c: Omit<Chapter, "generation" | "rebase" | "failed">, d: Dealer | null) => {
+      if (dealer.current && dealer.current !== d) dealer.current.release();
+      dealer.current = d;
+      if (d) listen(d);
+      pagerGeneration.current += 1;
+      const chapter: Chapter = { ...c, failed: false, generation: pagerGeneration.current, rebase: 0 };
+      commit({ chapter, view: { kind: "prints" }, where: { mode: c.mode, year: c.year, month: c.month }, loading: null });
+      savePlace({ mode: c.mode, year: c.year, month: c.month, index: c.index, prints: c.prints });
+      afterFirstPrint();
+    },
+    [listen, commit, afterFirstPrint],
+  );
+
+  const showEmpty = useCallback(
+    (why: EmptyWhy, where: Where | null) => {
+      dealer.current?.release();
+      dealer.current = null;
+      commit({ view: { kind: "empty", why }, where, chapter: null, loading: null });
+    },
+    [commit],
   );
 
   /**
-   * The first way in: On This Day when the day itself holds enough to
-   * stand on, otherwise Surprise — both lean on the old.
+   * Something dealt for a chapter that is no longer the one being opened
+   * is kept for when it is — unless that chapter has since been opened,
+   * or kept, another way, whose position must stand.
    */
-  const openDefault = useCallback(async () => {
-    if (!source) return;
-    const gen = ++generation.current;
-    patch({ sequence: "loading" });
-    try {
-      const y = await years(source);
-      if (gen !== generation.current) return;
-      const day = await onThisDay(source, y);
-      if (gen !== generation.current) return;
-      patch({ dayHas: day.prints.length > 0 });
-      if (day.reach === "day" && day.prints.length >= ON_THIS_DAY_OPENS_WITH) {
-        reader.current = null;
-        patch({ years: y, mode: "on-this-day", year: null, prints: day.prints, reach: day.reach, more: false, index: 0, sequence: "ready" });
+  const keepAside = useCallback(
+    (key: ChapterKey, prints: Print[], d: Dealer | null, reach: DayReach | null) => {
+      if (prints.length === 0 || live.current.chapter?.key === key || recallChapter(key)) {
+        if (d) visit?.drop(d);
         return;
       }
-      patch({ years: y });
-      await open("surprise");
-    } catch {
-      if (gen === generation.current) patch({ sequence: "failed" });
-    }
-  }, [source, patch, open]);
+      d?.release();
+      keepChapter(key, { prints, index: 0, reader: d, more: d ? d.more : false, reach });
+    },
+    [visit],
+  );
 
-  // --- reading on ---------------------------------------------------------
-  const readMore = useCallback(async () => {
-    const r = reader.current;
-    if (!r || reading.current) return;
-    reading.current = true;
-    const gen = generation.current;
+  // --- the shelf, let go of where the library no longer has it (§7.6) -----------
+
+  const pruneShelf = useCallback(async () => {
+    if (!visit || live.current.access !== "full") return;
+    const c = live.current.chapter;
+    const gone = await visit.goneFromShelf(c?.mode === "set-aside" ? { prints: c.prints, index: c.index } : null);
+    if (gone.length === 0 || !mounted.current) return;
+    pruneSetAside(gone);
+    patch((s) => ({ missing: new Set([...s.missing, ...gone]) }));
+  }, [visit, patch]);
+
+  // --- opening a chapter --------------------------------------------------------
+
+  /** The Set aside chapter, most recently set aside first. */
+  const openShelf = useCallback(
+    (key: ChapterKey, where: Where, at: (shelf: Print[]) => number) => {
+      const shelf = [...setAsidePrints()];
+      if (shelf.length === 0) return showEmpty("shelf", where);
+      show({ key, ...where, prints: shelf, index: Math.max(0, Math.min(at(shelf), shelf.length - 1)), more: false, reach: null }, null);
+      void pruneShelf();
+    },
+    [show, showEmpty, pruneShelf],
+  );
+
+  const open = useCallback(
+    async (spec: OpenSpec) => {
+      if (!visit) return;
+      const ticket = ++opening.current;
+      const still = () => ticket === opening.current && mounted.current;
+      const key = chapterKey(spec.mode, spec.year, spec.month);
+      const where: Where = { mode: spec.mode, year: spec.year, month: spec.month };
+      if (live.current.view.kind === "prints") {
+        keepShown(false);
+        dealer.current?.release();
+        dealer.current = null;
+      }
+      commit({ loading: { mode: spec.mode, year: spec.year, month: spec.month, since: Date.now(), jump: Boolean(spec.jump) } });
+
+      // Back to a chapter already visited: the same prints, the same deal.
+      const anew = spec.fresh || spec.pin || spec.shifted;
+      if (!anew && spec.jump && recallChapter(key)) {
+        // Ready at once, but a jump still fades: out first, then the chapter.
+        await new Promise((r) => setTimeout(r, JUMP_HALF_MS));
+        if (!still()) return;
+      }
+      const kept = anew ? null : recallChapter(key);
+      if (kept) {
+        if (spec.mode === "set-aside") {
+          const id = kept.prints[kept.index]?.id;
+          return openShelf(key, where, (shelf) => {
+            const i = id ? shelf.findIndex((p) => p.id === id) : -1;
+            return i >= 0 ? i : kept.index;
+          });
+        }
+        const d = kept.reader instanceof Dealer ? kept.reader : null;
+        const at = spec.startId || spec.startYear != null ? startIndex(kept.prints, spec) : kept.index;
+        show({ key, ...where, prints: kept.prints, index: at, more: d ? d.more : kept.more, reach: kept.reach }, d);
+        return;
+      }
+
+      try {
+        if (spec.mode === "set-aside") return openShelf(key, where, (shelf) => startIndex(shelf, spec));
+
+        if (spec.mode === "on-this-day") {
+          const day = await askDay();
+          if (!still()) return keepAside(key, day.prints, null, day.reach);
+          if (day.prints.length === 0) return showEmpty("day", where);
+          show({ key, ...where, prints: day.prints, index: startIndex(day.prints, spec), more: false, reach: day.reach }, null);
+          return;
+        }
+
+        if (spec.mode === "surprise") {
+          const first = await visit.oldest();
+          if (!still()) return;
+          if (first == null) return showEmpty(live.current.access === "limited" ? "selection" : "library", null);
+          const s = visit.surprise(first, { exclude: spec.keep ? [spec.keep.id] : [] });
+          const d = visit.surpriseDealer(key, surpriseReader(s));
+          let prints = await s.next(BATCH.surprise);
+          if (prints.length === 0 && !s.exhausted && !s.rollDone) {
+            // Nowhere yet to draw from: the year index, then again.
+            await loadYears();
+            prints = await s.next(BATCH.surprise);
+          }
+          const all = spec.keep ? [spec.keep, ...prints] : prints;
+          if (!still()) return keepAside(key, all, d, null);
+          const few = live.current.access === "limited" && s.exhausted && all.length < DEFAULT_DAY_MINIMUM;
+          if (all.length === 0 || few) {
+            visit.drop(d);
+            return showEmpty(live.current.access === "limited" ? "few" : "exhausted", where);
+          }
+          show({ key, ...where, prints: all, index: 0, more: d.more, reach: null }, d);
+          return;
+        }
+
+        // By year.
+        const year = spec.year ?? new Date().getFullYear();
+        const months = await visit.months(year);
+        if (!still()) return;
+        patch({ months: { year, counts: months } });
+        const pin = spec.pin ?? spec.keep ?? null;
+        const edit = visit.edit(year, months, { fromMonth: spec.month, pin, shifted: spec.shifted });
+        const d = visit.editDealer(key, editReader(edit));
+        let prints = await edit.next(BATCH.year);
+        for (let i = 0; pin && i < PIN_SEARCH && !prints.some((p) => p.id === pin.id) && !edit.done; i++) {
+          prints = appendNew(prints, await edit.next(BATCH.year));
+        }
+        if (!still()) return keepAside(key, prints, d, null);
+        const at = startIndex(prints, pin ? { startId: pin.id } : spec);
+        show({ key, ...where, year, prints, index: at, more: d.more, reach: null }, d);
+      } catch {
+        if (still()) showEmpty("failed", where);
+      }
+    },
+    [visit, commit, patch, keepShown, openShelf, show, showEmpty, keepAside, askDay, loadYears],
+  );
+
+  /**
+   * The first way in (§4.2): the day itself, and Surprise's cold start,
+   * asked together. The rule decides as soon as the day answers.
+   */
+  const openDefault = useCallback(async () => {
+    if (!visit) return;
+    const ticket = ++opening.current;
+    const still = () => ticket === opening.current && mounted.current;
+    const now = Date.now();
+    commit({ loading: { mode: null, year: null, month: 0, since: now, jump: false } });
     try {
-      const batch = r instanceof Surprise ? await r.next(BATCH.surprise) : await r.next(BATCH.year);
-      if (gen !== generation.current || !live.current) return;
-      const done = r instanceof Surprise ? r.exhausted : r.done;
-      setState((s) => {
-        const ids = new Set(s.prints.map((p) => p.id));
-        return { ...s, prints: [...s.prints, ...batch.filter((p) => !ids.has(p.id))], more: !done && batch.length > 0 };
-      });
-    } catch {
-      if (gen === generation.current) patch({ more: false });
-    } finally {
-      reading.current = false;
-    }
-  }, [patch]);
+      const first = await visit.oldest();
+      if (!still()) return;
+      if (first == null) return showEmpty(live.current.access === "limited" ? "selection" : "library", null);
+      if (first > now - REDISCOVERY_AGE_DAYS * DAY_MS) return showEmpty("tooNew", null);
 
-  const setIndex = useCallback((index: number) => {
-    setState((s) => (s.index === index ? s : { ...s, index }));
+      const dayAsked = visit.askDayOnly(now);
+      const surpriseKey = chapterKey("surprise", null, 0);
+      const s = visit.surprise(first);
+      const d = visit.surpriseDealer(surpriseKey, surpriseReader(s));
+      const dealt = s.next(BATCH.surprise).catch(() => [] as Print[]);
+
+      const day = await dayAsked;
+      if (!still()) {
+        void dealt.then((p) => keepAside(surpriseKey, p, d, null));
+        return;
+      }
+      if (day) patch({ day: dayStateOf(day) });
+      if (opensOnThisDay(day, dayFinished(), localDay(now))) {
+        show({ key: chapterKey("on-this-day", null, 0), mode: "on-this-day", year: null, month: 0, prints: day!.prints, index: 0, more: false, reach: "day" }, null);
+        // Surprise, already dealing, is kept for when Contents asks for it.
+        void dealt.then((p) => keepAside(surpriseKey, p, d, null));
+        return;
+      }
+      commit({ loading: { mode: "surprise", year: null, month: 0, since: now, jump: false } });
+      let prints = await dealt;
+      if (prints.length === 0 && !s.exhausted && !s.rollDone && still()) {
+        await loadYears();
+        prints = await s.next(BATCH.surprise);
+      }
+      if (!still()) return keepAside(surpriseKey, prints, d, null);
+      const where: Where = { mode: "surprise", year: null, month: 0 };
+      const few = live.current.access === "limited" && s.exhausted && prints.length < DEFAULT_DAY_MINIMUM;
+      if (prints.length === 0 || few) {
+        visit.drop(d);
+        return showEmpty(live.current.access === "limited" ? "few" : "exhausted", where);
+      }
+      show({ key: surpriseKey, ...where, prints, index: 0, more: d.more, reach: null }, d);
+    } catch {
+      if (still()) showEmpty("failed", null);
+    }
+  }, [visit, commit, patch, showEmpty, show, keepAside, loadYears]);
+
+  /** Back to where a visit within twelve hours left off, exactly, with no title card. */
+  const restore = useCallback(
+    (place: SavedPlace) => {
+      if (!visit) return;
+      const key = chapterKey(place.mode, place.year, place.month);
+      const where: Where = { mode: place.mode, year: place.year, month: place.month };
+      if (place.mode === "set-aside") return openShelf(key, where, (shelf) => placeIndex(shelf, place));
+      const kept = recallChapter(key);
+      const keptDealer = kept?.reader instanceof Dealer ? kept.reader : null;
+      // The same run of the app: the chapter is still in memory, its dealer with it.
+      if (kept && (keptDealer || place.mode === "on-this-day")) {
+        const more = keptDealer ? keptDealer.more : kept.more;
+        show({ key, ...where, prints: kept.prints, index: placeIndex(kept.prints, place), more, reach: kept.reach }, keptDealer);
+        return;
+      }
+      const deck = place.deck;
+      const index = placeIndex(deck, place);
+      if (place.mode === "on-this-day") {
+        show({ key, ...where, prints: deck, index, more: false, reach: null }, null);
+        return;
+      }
+      const deckIds = deck.map((p) => p.id);
+      if (place.mode === "surprise") {
+        const reader = visit.oldest().then((first) => surpriseReader(visit.surprise(first, { exclude: deckIds, alreadyDealt: deck.length })));
+        const d = visit.surpriseDealer(key, reader);
+        show({ key, ...where, prints: deck, index, more: d.more, reach: null }, d);
+        return;
+      }
+      const year = place.year ?? new Date(deck[0].takenAt).getFullYear();
+      const last = deck[deck.length - 1];
+      const reader = visit
+        .months(year)
+        .then((months) => editReader(visit.edit(year, months, { fromMonth: new Date(last.takenAt).getMonth(), exclude: deckIds })));
+      const d = visit.editDealer(key, reader, (p) => p.takenAt > last.takenAt);
+      show({ key, ...where, year, prints: deck, index, more: d.more, reach: null }, d);
+    },
+    [visit, openShelf, show],
+  );
+
+  /** Into the room proper: the params given, or the place kept, or the default rule. */
+  const begin = useCallback(() => {
+    started.current = true;
+    const mode = initial.mode ?? (initial.year != null ? "year" : null);
+    if (mode) {
+      void open({
+        mode,
+        year: mode === "year" ? initial.year ?? null : null,
+        month: mode === "year" ? Math.max(0, Math.min(11, initial.month ?? 0)) : 0,
+        startId: initial.start ?? null,
+        startYear: mode === "on-this-day" ? initial.year ?? null : null,
+        fresh: Boolean(initial.start),
+      });
+      return;
+    }
+    const place = readPlace();
+    if (place) restore(place);
+    else void openDefault();
+  }, [initial, open, restore, openDefault]);
+
+  // --- access ----------------------------------------------------------------
+
+  /** Puts up the page access calls for; with access and the first visit passed, goes in. */
+  const settleAccess = useCallback(
+    (access: LibraryAccess) => {
+      if (!mounted.current) return;
+      commit({ access });
+      if (access === "undetermined") return commit({ view: { kind: "firstVisit", access: "undetermined" } });
+      if (access === "denied") return commit({ view: { kind: "denied" }, chapter: null, where: null });
+      if (access === "unavailable") return commit({ view: { kind: "empty", why: "failed" }, chapter: null });
+      if (!introSeen()) return commit({ view: { kind: "firstVisit", access: "granted" } });
+      if (!started.current) begin();
+    },
+    [commit, begin],
+  );
+
+  const checkAccess = useCallback(async () => {
+    const access = await readAccess();
+    if (live.current.access === "denied" && isGranted(access)) {
+      // Let in from Settings: the first-visit page was passed on the way to the door.
+      markIntroSeen();
+      started.current = false;
+    }
+    settleAccess(access);
+  }, [settleAccess]);
+
+  /**
+   * The first-visit page's one word. CONTINUE asks iOS — the only place
+   * the room asks — and ENTER is the word when access is already given.
+   * True when the room may go in; the page then fades and the screen
+   * calls `begin`.
+   */
+  const enter = useCallback(async (): Promise<boolean> => {
+    const was = live.current.access;
+    let access: LibraryAccess = was === "checking" ? await readAccess() : was;
+    if (access === "undetermined") access = await requestAccess();
+    if (!mounted.current) return false;
+    if (!isGranted(access)) {
+      settleAccess(access);
+      return false;
+    }
+    markIntroSeen();
+    commit({ access });
+    return true;
+  }, [commit, settleAccess]);
+
+  // --- moving through a chapter ---------------------------------------------
+
+  /** The page the member has settled on. Under 2 ms: nothing is read, and only memory is written. */
+  const settle = useCallback((index: number) => {
+    const s = live.current;
+    const c = s.chapter;
+    if (!c || s.view.kind !== "prints" || s.loading) return;
+    const target = Math.max(0, Math.min(index, c.prints.length));
+    if (target === c.index) return;
+    const settled = (from: Chapter, missing: ReadonlySet<string>, full: boolean): Chapter => {
+      const dropped = dropOnSettle(
+        from.prints,
+        target,
+        (p, i) => (from.mode === "set-aside" && !isSetAside(p.id)) || (full && i < target && missing.has(p.id)),
+      );
+      return { ...from, prints: dropped.prints, index: dropped.index, rebase: dropped.rebased ? from.rebase + 1 : from.rebase };
+    };
+    const next = settled(c, s.missing, s.access === "full");
+    live.current = { ...s, chapter: next };
+    // Applied to whatever the chapter is by then: a batch may have landed in between.
+    setState((prev) =>
+      prev.chapter?.key === c.key ? { ...prev, chapter: settled(prev.chapter, prev.missing, prev.access === "full") } : prev,
+    );
+    const print = next.prints[next.index];
+    if (print) visit?.record(print);
+    savePlace({ mode: next.mode, year: next.year, month: next.month, index: next.index, prints: next.prints });
+    // The day seen to its end does not open the room again today.
+    if (!print && !next.more && next.mode === "on-this-day") finishDay(localDay());
+  }, [visit]);
+
+  // Close to the end: deal on.
+  const chapter = state.chapter;
+  useEffect(() => {
+    const d = dealer.current;
+    if (!chapter || !d || !chapter.more || chapter.failed || d.reading || state.view.kind !== "prints") return;
+    const kind = chapter.mode === "surprise" ? "surprise" : "year";
+    if (chapter.index >= chapter.prints.length - AHEAD[kind]) void d.read(BATCH[kind]);
+  }, [chapter, state.view.kind, state.years]);
+
+  /** The trailing page's TRY AGAIN: deal on, or start the chapter again if its reader could not be built. */
+  const readOn = useCallback(() => {
+    const c = live.current.chapter;
+    const d = dealer.current;
+    if (!c) return;
+    if (d?.reader) {
+      commit({ chapter: { ...c, failed: false, more: true } });
+      void d.read(c.mode === "surprise" ? BATCH.surprise : BATCH.year);
+      return;
+    }
+    void open({ mode: c.mode, year: c.year, month: c.month, fresh: true, startId: c.prints[c.prints.length - 1]?.id ?? null });
+  }, [commit, open]);
+
+  /** The error page's TRY AGAIN: the year index rebuilt, and the way in tried again. */
+  const retry = useCallback(() => {
+    visit?.forgetAnswers();
+    void loadYears(true);
+    const w = live.current.where;
+    if (w) {
+      void open({ mode: w.mode, year: w.year, month: w.month, fresh: true });
+    } else {
+      started.current = false;
+      void checkAccess();
+    }
+  }, [visit, loadYears, open, checkAccess]);
+
+  // --- the ways on -------------------------------------------------------------
+
+  /**
+   * A chapter chosen in Contents or on a page; `month` only from the
+   * month strip. False when it is the chapter already open, which the
+   * choice simply leaves as it is.
+   */
+  const choose = useCallback(
+    (mode: DarkroomMode, year: number | null = null, month: number | null = null): boolean => {
+      const w = live.current.where;
+      const here = live.current.view.kind === "prints" && w != null && w.mode === mode;
+      if (here && mode !== "year") return false;
+      if (here && w.year === year && (month == null || month === w.month)) return false;
+      // A month of the year already open is a jump inside it; anything else is a cut.
+      const jump = mode === "year" && w?.mode === "year" && w.year === year;
+      void open({ mode, year: mode === "year" ? year : null, month: mode === "year" ? month ?? 0 : 0, jump });
+      return true;
+    },
+    [open],
+  );
+
+  /** The caption thread: this print's year, at its month, with the print pinned in and current. */
+  const thread = useCallback(
+    (print: Print) => {
+      const d = new Date(print.takenAt);
+      void open({ mode: "year", year: d.getFullYear(), month: d.getMonth(), pin: print, jump: true });
+    },
+    [open],
+  );
+
+  /** MORE FROM: a second edit of the year, between the first's picks, without what was shown. */
+  const moreFrom = useCallback(() => {
+    const c = live.current.chapter;
+    if (c?.mode === "year" && c.year != null) void open({ mode: "year", year: c.year, month: 0, shifted: true, jump: true });
+  }, [open]);
+
+  const fromJanuary = useCallback(() => {
+    const c = live.current.chapter;
+    if (c?.mode === "year" && c.year != null) void open({ mode: "year", year: c.year, month: 0, jump: true });
+  }, [open]);
+
+  /** ANOTHER ROLL: the chapter carries on with a new roll, this visit's picks still excluded. */
+  const anotherRoll = useCallback(() => {
+    const c = live.current.chapter;
+    const d = dealer.current;
+    if (c?.mode !== "surprise") return;
+    if (!d || !d.anotherRoll(Date.now() >>> 0)) {
+      void open({ mode: "surprise", year: null, month: 0, fresh: true, jump: true });
+      return;
+    }
+    commit({
+      chapter: { ...c, more: true, failed: false },
+      loading: { mode: "surprise", year: null, month: 0, since: Date.now(), jump: true },
+    });
+    void d.read(BATCH.surprise);
+  }, [open, commit]);
+
+  // --- images ------------------------------------------------------------------
+
+  /** A print's full image has drawn. A print that had been gone is back. */
+  const imageLoaded = useCallback(
+    (id: string) => {
+      const first = !loaded.current.has(id);
+      loaded.current.add(id);
+      if (live.current.missing.has(id)) {
+        patch((s) => {
+          const missing = new Set(s.missing);
+          missing.delete(id);
+          return { missing };
+        });
+      }
+      const c = live.current.chapter;
+      if (first && c?.prints[c.index]?.id === id) setLoadTick((t) => t + 1);
+    },
+    [patch],
+  );
+
+  /** Drawn before this visit: likely still in memory, and needing no dissolve. */
+  const hasLoaded = useCallback((id: string) => loaded.current.has(id), []);
+
+  /** Photos said the photograph is not there. Under full access a set-aside reference to it is let go. */
+  const imageGone = useCallback(
+    (id: string) => {
+      if (live.current.missing.has(id)) return;
+      patch((s) => ({ missing: new Set([...s.missing, id]) }));
+      if (live.current.access === "full" && isSetAside(id)) pruneSetAside([id]);
+    },
+    [patch],
+  );
+
+  // Settled on long enough, with its image drawn: seen. Not on the shelf,
+  // which the member browses on purpose.
+  const currentId = chapter ? chapter.prints[chapter.index]?.id ?? null : null;
+  const shelfChapter = chapter?.mode === "set-aside";
+  useEffect(() => {
+    if (!currentId || shelfChapter || !loaded.current.has(currentId) || !focused.current) return;
+    const t = setTimeout(() => markSeen(currentId), SEEN_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [currentId, shelfChapter, loadTick]);
+
+  // --- focus and the app ---------------------------------------------------------
+
+  /** The room lost focus — to the editor, the picker, or leaving: the place and history go to disk. */
+  const blur = useCallback(() => {
+    focused.current = false;
+    putAway();
+  }, [putAway]);
+
+  const focus = useCallback(() => {
+    focused.current = true;
+    setLoadTick((t) => t + 1);
   }, []);
 
-  // Close to the end: read on.
   useEffect(() => {
-    if (state.sequence === "ready" && state.more && state.index >= state.prints.length - READ_AHEAD) readMore();
-  }, [state.index, state.prints.length, state.more, state.sequence, readMore]);
-
-  // Looked at long enough: seen. Only for the ways in that choose for the
-  // member — a year read in order, or the bench, is browsed on purpose.
-  const current = state.prints[state.index];
-  useEffect(() => {
-    if (!current || state.mode === "set-aside") return;
-    const t = setTimeout(() => markSeen(current.id), SEEN_AFTER_MS);
-    return () => clearTimeout(t);
-  }, [current, state.mode]);
-
-  // Keep the place, for coming back within the half hour.
-  useEffect(() => {
-    if (state.sequence !== "ready") return;
-    keepPlace({ mode: state.mode, year: state.year, prints: state.prints, index: state.index, reader: reader.current });
-  }, [state.sequence, state.mode, state.year, state.prints, state.index]);
-
-  // --- the library changing underneath ------------------------------------
-  // A limited selection changed, a photograph deleted, access given in
-  // Settings: re-read access when the app comes back, and the year index
-  // when Photos says the library changed. The sequence on screen is left
-  // as it is — a print that has gone is shown as gone, not yanked away.
-  useEffect(() => {
-    if (Platform.OS === "web") return;
-    const app = AppState.addEventListener("change", (s) => {
-      if (s === "active") checkAccess();
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "background") putAway();
+      else if (next === "active") {
+        const v = live.current.view.kind;
+        if (v === "denied" || v === "firstVisit" || live.current.access === "checking") void checkAccess();
+      }
     });
-    let library: { remove: () => void } | null = null;
+    return () => sub.remove();
+  }, [putAway, checkAccess]);
+
+  // --- the library changing underneath (§8.4, §9.5) -------------------------------
+
+  const libraryChanged = useCallback(
+    async (whole: boolean, deleted: readonly string[]) => {
+      if (!visit) return;
+      visit.libraryChanged(whole);
+      const access = await readAccess();
+      if (!mounted.current) return;
+      const before = live.current;
+      // A print that failed to draw may draw now: one shared again comes back.
+      const missing = whole ? new Set<string>() : new Set([...before.missing, ...deleted]);
+      commit({ access, missing, revision: before.revision + 1, years: whole ? null : before.years });
+      if (!isGranted(access)) return settleAccess(access);
+      const v = before.view;
+      // A page that said there was nothing, or that the library would not
+      // answer, looks again: photographs just shared, or arriving from
+      // iCloud on a new phone, appear without leaving the room.
+      if (v.kind === "empty" || v.kind === "checking") {
+        const w = before.where;
+        if (w && v.kind === "empty" && (v.why === "day" || v.why === "shelf" || v.why === "failed")) {
+          void open({ mode: w.mode, year: w.year, month: w.month, fresh: true });
+        } else if (started.current) void openDefault();
+        else if (introSeen()) begin();
+        return;
+      }
+      if (whole && v.kind === "prints" && before.chapter) {
+        // The selection changed: the chapter is dealt again, keeping the
+        // print in front of the member if it is still there to keep.
+        const c = before.chapter;
+        const print = c.prints[c.index] ?? null;
+        void open({ mode: c.mode, year: c.year, month: c.month, fresh: true, keep: print, startId: print?.id ?? null });
+      }
+      // Counted again now if Contents has shown them; otherwise when it next opens.
+      if (before.years != null) void loadYears(true);
+    },
+    [visit, commit, settleAccess, open, openDefault, begin, loadYears],
+  );
+
+  useEffect(() => {
+    if (Platform.OS === "web" || !source) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let whole = false;
+    const deleted = new Set<string>();
+    let sub: { remove: () => void } | null = null;
     try {
-      library = MediaLibrary.addListener(() => {
-        yearsCache = null;
-        checkAccess();
+      sub = MediaLibrary.addListener((event) => {
+        if (!event.hasIncrementalChanges) whole = true;
+        for (const a of event.deletedAssets ?? []) deleted.add(a.id);
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          timer = null;
+          const all = whole;
+          const ids = [...deleted];
+          whole = false;
+          deleted.clear();
+          void libraryChanged(all, ids);
+        }, LIBRARY_SETTLE_MS);
       });
     } catch {
-      library = null;
+      sub = null;
     }
     return () => {
-      app.remove();
-      library?.remove();
+      if (timer) clearTimeout(timer);
+      sub?.remove();
     };
-  }, [checkAccess]);
+  }, [source, libraryChanged]);
 
-  return { state, source, checkAccess, ask, open, openDefault, readMore, setIndex };
+  // --- mount and unmount -----------------------------------------------------------
+
+  useEffect(() => {
+    mounted.current = true;
+    if (source) void checkAccess();
+    else commit({ access: "unavailable", view: { kind: "empty", why: "failed" } });
+    return () => {
+      // Whatever is still being opened keeps what it deals for next time;
+      // the chapter on the stage is kept with its dealer, whose batch in
+      // flight goes into the kept position rather than nowhere.
+      opening.current += 1;
+      keepShown(true);
+      savePlaceNow();
+      flushPlace();
+      flushHistory();
+      dealer.current?.release();
+      dealer.current = null;
+      mounted.current = false;
+    };
+    // Once, for the life of the room.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const ending = useMemo(() => (chapter && !chapter.more ? endingOf(chapter, dealer.current) : null), [chapter]);
+
+  return {
+    state,
+    /** How the chapter on the stage ends, once nothing more will be dealt. */
+    ending,
+    enter,
+    begin,
+    checkAccess,
+    choose,
+    thread,
+    moreFrom,
+    fromJanuary,
+    anotherRoll,
+    settle,
+    readOn,
+    retry,
+    loadYears,
+    loadMonths,
+    pruneShelf,
+    imageLoaded,
+    imageGone,
+    hasLoaded,
+    blur,
+    focus,
+  };
 }
+
+export type Darkroom = ReturnType<typeof useDarkroom>;

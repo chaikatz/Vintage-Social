@@ -11,4 +11,11 @@ export interface VintagePagerModule {
    * when a pager was found and told.
    */
   keepToOneFinger(viewTag: number): Promise<boolean>;
+  /**
+   * The same rule for one React scroll view, found by its own tag: the
+   * Darkroom's page turner, so a pinch on a print never turns the page.
+   * Resolves true when the scroll view was found and told. Optional: older
+   * builds lack it.
+   */
+  keepScrollToOneFinger?(viewTag: number): Promise<boolean>;
 }

@@ -16,11 +16,11 @@ export interface Print {
   /** Upright pixel size, as Photos reports it. */
   width: number;
   height: number;
-  /** When the shutter fired, in milliseconds since the epoch. */
+  /** When the shutter fired, in milliseconds since the epoch. Negative before 1970. */
   takenAt: number;
   /** Photos' own subtypes: "screenshot", "panorama", "livePhoto", … */
   subtypes: readonly string[];
-  /** The file's name, when the library says it — used only for its extension. */
+  /** The file's name, when the library says it — read only for its extension and its shape, never stored. */
   filename?: string;
 }
 
@@ -30,22 +30,28 @@ export interface TimeRange {
   to: number;
 }
 
+/**
+ * One bounded question: the first few photographs of a stretch of time,
+ * from one end of it. There is no cursor to read on from. A cursor is a
+ * linear scan in Photos, and it fails outright when its photograph is
+ * deleted between two pages; a stretch of time does neither. To read
+ * further, the Darkroom asks about a different stretch.
+ */
 export interface PageRequest {
   range: TimeRange;
+  /** At most 150. */
   first: number;
-  /** The previous page's `endCursor`, to read on from it. */
-  after?: string | null;
   order: "asc" | "desc";
 }
 
 export interface Page {
   prints: Print[];
-  endCursor: string | null;
+  /** More photographs fall in the range than this page holds. */
   hasNextPage: boolean;
 }
 
 /**
- * The library, reduced to the four questions the Darkroom asks of it.
+ * The library, reduced to the three questions the Darkroom asks of it.
  * The phone answers them through expo-media-library; the browser review
  * build answers them from a small demo library; the tests answer them
  * from a fake. Every question is bounded — no answer is ever "the whole

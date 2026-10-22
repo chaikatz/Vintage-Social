@@ -8,8 +8,19 @@ import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 /**
  * The ordinary ways to a new post — the system picker and the camera —
  * ending in the parameters the editor opens on. Shared by the Post tab and
- * the Darkroom's "Library", so there is one way a picked photograph
- * reaches the editor, not two.
+ * the Darkroom's "Choose from your library", so there is one way a picked
+ * photograph reaches the editor, not two.
+ *
+ * Neither asks for the photo library. The system picker needs no
+ * permission: the member hands over one photograph, and its capture date
+ * is read from that file's own EXIF. But iOS passes the file's metadata
+ * over in one dictionary, GPS block and all — copied in as GPSLatitude,
+ * GPSLongitude and the rest. So the moment the picker returns, the
+ * dictionary is cut down to the few fields a capture date is read from,
+ * and nothing else of it is kept or passed on: VINTAGE does not read
+ * where a photograph was taken. A video carries no EXIF, so none is asked
+ * for; its date comes from the library, and only when access has already
+ * been given (`captureDateForAsset`).
  */
 
 export interface PickedParams {
@@ -22,14 +33,54 @@ export interface PickedParams {
   takenAt: string;
 }
 
+/**
+ * The EXIF fields a capture date is read from (`captureDateFrom` in
+ * utils/exif), and the only ones kept. Named one by one rather than by
+ * pattern, so a field that only looks like a date can never come along.
+ */
+const DATE_FIELDS = ["DateTimeOriginal", "DateTimeDigitized", "{Exif}DateTimeOriginal", "DateTime"] as const;
+
+function dateFields(from: Record<string, unknown>): Record<string, string> {
+  const kept: Record<string, string> = {};
+  for (const key of DATE_FIELDS) {
+    const value = from[key];
+    if (typeof value === "string") kept[key] = value;
+  }
+  return kept;
+}
+
+/**
+ * A picked file's EXIF with everything but its dates taken out — no GPS,
+ * no camera, no lens, nothing else. Some iOS payloads nest the EXIF block
+ * rather than flattening it, so the nested block is cut down the same
+ * way. Null when no date is left.
+ */
+export function datesOnly(exif: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!exif || typeof exif !== "object") return null;
+  const kept: Record<string, unknown> = dateFields(exif);
+  const nested = exif["{Exif}"];
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    const inner = dateFields(nested as Record<string, unknown>);
+    if (Object.keys(inner).length > 0) kept["{Exif}"] = inner;
+  }
+  return Object.keys(kept).length > 0 ? kept : null;
+}
+
+/** The picked asset as the rest of the app sees it: the same file, with only its dates left of the metadata. */
+function withDatesOnly(asset: ImagePicker.ImagePickerAsset): ImagePicker.ImagePickerAsset {
+  return { ...asset, exif: datesOnly(asset.exif) };
+}
+
 export async function paramsForPicked(asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video"): Promise<PickedParams> {
   // EXIF first, then the photo library — video carries no EXIF at all, so
-  // the library is the only place its real date exists.
-  const takenAt = await captureDateForAsset(asset);
+  // the library is the only place its real date exists. Only the dates and
+  // the library's identifier go on, whoever picked the asset.
+  const takenAt = await captureDateForAsset({ exif: datesOnly(asset.exif), assetId: asset.assetId });
   // A photograph arrives as the picker found it — HEIC or JPEG, perhaps
   // stored on its side — so it is decoded properly first: orientation
-  // applied, longest side capped, saved as JPEG the renderer can read.
-  // The size that comes back is the upright one the editor frames by.
+  // applied, longest side capped, saved as JPEG the renderer can read, with
+  // no metadata at all. The size that comes back is the upright one the
+  // editor frames by.
   let { uri, width, height } = asset;
   if (mediaType === "photo") {
     try {
@@ -68,10 +119,11 @@ export async function pickFromLibrary(mediaType: "photo" | "video"): Promise<Pic
     quality: 1,
     // Only honoured alongside allowsEditing; it caps the trimmer.
     videoMaxDuration: MAX_VIDEO_SECONDS,
-    exif: true,
+    // For the capture date only, and cut down to it below.
+    exif: !isVideo,
   });
   if (result.canceled || !result.assets[0]) return null;
-  const asset = result.assets[0];
+  const asset = withDatesOnly(result.assets[0]);
   if (isVideo && asset.duration != null && asset.duration > (MAX_VIDEO_SECONDS + 1) * 1000) {
     showAlert("Too long", `Videos on VINTAGE are at most ${MAX_VIDEO_SECONDS} seconds. Trim this one and try again.`);
     return null;
@@ -90,8 +142,9 @@ export async function takeForCompose(): Promise<PickedParams | null> {
     mediaTypes: ["images"],
     allowsEditing: false, // the editor frames it; the system editor would crop it square
     quality: 1,
+    // For the capture date only, and cut down to it below.
     exif: true,
   });
   if (result.canceled || !result.assets[0]) return null;
-  return paramsForPicked(result.assets[0], "photo");
+  return paramsForPicked(withDatesOnly(result.assets[0]), "photo");
 }

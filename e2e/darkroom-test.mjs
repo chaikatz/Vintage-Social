@@ -1,24 +1,38 @@
 // The Darkroom, walked through the real interface in the demo web build:
-// threshold → On This Day → swipe → set aside → contents → a year → its
-// months → the set-aside shelf → Surprise → develop into the editor.
+// the door on the Post tab → the first-visit page → On this day → a page
+// turn → set aside → Contents and its years → a year's months → a year
+// chapter → Surprise me → the Set aside chapter → the end of On this day
+// → DEVELOP into the editor, and back to the same print.
 //
 //   npm run build:web && npm run test:darkroom      (SHOT_DIR=… to keep screenshots)
 //
 // The browser build reads a small bundled demo library (src/darkroom/
-// demoSource.ts) — six of its photographs fall on today's date in earlier
-// years, so On This Day always has something to open on.
+// demoSource.ts): six of its photographs fall on today's date in earlier
+// years, so On this day always opens, and always ends after six. Demo
+// state lives in the page, so after signing in everything is reached by
+// tapping, never by loading a URL.
+//
+// The browser has no momentum scrolling to wait for, so a page turn here
+// scrolls the pager by one page width, as a swipe that lands would; the
+// room reads the page it settled on from the scroll position.
 import { chromium } from "playwright";
+
 const out = process.env.SHOT_DIR ?? null;
 const B = "http://127.0.0.1:8090";
+const W = 393;
+const H = 852;
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
-const ctx = await browser.newContext({ viewport: { width: 393, height: 852 }, deviceScaleFactor: out ? 3 : 1, isMobile: true, hasTouch: true });
+const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: out ? 3 : 1, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
+
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => {
   if (m.type() === "error" && !/ERR_|Failed to load resource|no supported source/.test(m.text())) errors.push("console: " + m.text());
 });
+// showAlert falls back to window.confirm on web; the room raises none, but sign-in might.
 page.on("dialog", (d) => d.accept());
+
 const results = [];
 const check = (name, ok, detail = "") => {
   results.push({ name, ok });
@@ -27,17 +41,49 @@ const check = (name, ok, detail = "") => {
 const wait = (ms) => page.waitForTimeout(ms);
 const seen = (l) => l.locator("visible=true");
 const byText = (t) => seen(page.getByText(t, { exact: true }));
-const shot = async (n) => out && page.screenshot({ path: `${out}/${n}.png` });
-const text = async () => (await page.textContent("body")).replace(/\s+/g, " ");
-const swipe = async () => {
-  await page.mouse.move(320, 420);
-  await page.mouse.down();
-  await page.mouse.move(40, 420, { steps: 8 });
-  await page.mouse.up();
+const byId = (id) => seen(page.locator(`[data-testid="${id}"]`));
+let shots = 0;
+const shot = async (name) => {
+  shots += 1;
+  if (out) await page.screenshot({ path: `${out}/darkroom-${String(shots).padStart(2, "0")}-${name}.png` });
+};
+const text = async () => ((await page.textContent("body")) ?? "").replace(/\s+/g, " ");
+/** Waits for a test id to be on screen; false rather than throwing when it never is. */
+const appears = async (id, timeout = 8000) =>
+  page
+    .locator(`[data-testid="${id}"]`)
+    .locator("visible=true")
+    .first()
+    .waitFor({ state: "visible", timeout })
+    .then(() => true)
+    .catch(() => false);
+/** The date on the print in front of the member. */
+const dateLabel = async () => ((await byId("darkroom-caption-date").first().textContent().catch(() => "")) ?? "").trim();
+const chapterHead = async () => ((await byId("darkroom-chapter").first().textContent().catch(() => "")) ?? "").trim();
+/** Turn `n` pages (negative: back), as a swipe that lands on the next page would. */
+const turn = async (n = 1) => {
+  await page.evaluate((pages) => {
+    const lists = [...document.querySelectorAll('[data-testid="darkroom-pager"]')].filter((e) => e.offsetParent !== null);
+    const list = lists[lists.length - 1];
+    if (list) list.scrollBy({ left: list.clientWidth * pages, behavior: "instant" });
+  }, n);
+  await wait(900);
+};
+/** Straight to the end of the chapter: the page after the last print. */
+const toEnd = async () => {
+  await page.evaluate(() => {
+    const lists = [...document.querySelectorAll('[data-testid="darkroom-pager"]')].filter((e) => e.offsetParent !== null);
+    const list = lists[lists.length - 1];
+    if (list) list.scrollTo({ left: list.scrollWidth, behavior: "instant" });
+  });
   await wait(1200);
 };
+const openContents = async () => {
+  await byId("darkroom-contents").first().click();
+  return appears("darkroom-contents-sheet", 5000);
+};
 
-// Signed in as a demo member.
+// --- signed in as a demo member ---------------------------------------------------
 await page.goto(B + "/", { waitUntil: "networkidle" });
 await wait(1500);
 await byText("Sign in").first().click();
@@ -48,75 +94,137 @@ await f.nth(1).fill("vintage-demo");
 await byText("Sign in").last().click();
 await wait(3000);
 
-// The door on the Post tab.
+// --- the door on the Post tab -----------------------------------------------------
 await page.goto(B + "/create", { waitUntil: "networkidle" });
 await wait(2200);
-check("The Post tab offers the Darkroom", /The Darkroom/.test(await text()) && /Enter the Darkroom/i.test(await text()));
-check("The ordinary picker is still one tap away", /From your library/.test(await text()));
-await shot("01-entry");
+const post = await text();
+check("The Post tab offers the Darkroom", /The Darkroom/.test(post) && /Your best photos aren’t new\./.test(post));
+check("The ordinary picker is still one tap away", /From your library/.test(post));
+await shot("entry");
 
-// First visit: the threshold.
-await page.goto(B + "/darkroom", { waitUntil: "networkidle" });
-await wait(2000);
-check("First visit opens on the threshold", /Your best photos aren’t new\./.test(await text()));
-await shot("02-threshold");
-await byText("Enter").first().click();
-await wait(3200);
-const day = await text();
-check("It opens On This Day when the date has photographs", /ON THIS DAY|On this day/i.test(day) && /years ago today/.test(day));
-await shot("03-on-this-day");
+// --- the first visit ----------------------------------------------------------------
+const door = seen(page.getByLabel("The Darkroom", { exact: true })).first();
+if (await door.count()) await door.click();
+else await page.goto(B + "/darkroom", { waitUntil: "networkidle" });
+const firstVisit = await appears("darkroom-page-firstVisit");
+check("First visit opens on the first-visit page", firstVisit && /One photograph at a time\./.test(await text()));
+const words = await seen(page.locator('[data-testid^="darkroom-word-"]')).allTextContents();
+check("The first-visit page has exactly one word", words.length === 1 && /^Enter$/i.test(words[0]?.trim() ?? ""), words.join(" · "));
+check("It promises nothing leaves the phone", /Nothing leaves it unless you post it\./.test(await text()));
+await shot("first-visit");
 
-const firstLabel = (await text()).match(/[A-Z]+ \d{1,2}, \d{4}/)?.[0];
-await swipe();
-const secondLabel = (await text()).match(/[A-Z]+ \d{1,2}, \d{4}/g) ?? [];
-check("A swipe moves to the next year's photograph", secondLabel.length > 0 && firstLabel !== undefined, firstLabel);
-await shot("04-next");
+// --- entering: On this day -----------------------------------------------------------
+await byId("darkroom-word-enter").first().click();
+const opened = await appears("darkroom-caption-date", 10000);
+await wait(900);
+const firstDate = await dateLabel();
+check("Entering opens On this day, on today’s date", opened && /on this day/i.test(await chapterHead()) && /years ago today/.test(await text()), firstDate);
+check("DEVELOP is the page’s one ruled word", (await byId("darkroom-develop").count()) > 0);
+await shot("discovery");
 
-await byText("Set aside").first().click();
-await wait(700);
-check("Set aside marks the print", (await seen(page.locator('[aria-label*="Set aside."]')).count()) > 0);
+// --- a page turn -----------------------------------------------------------------------
+await turn(1);
+const secondDate = await dateLabel();
+check("A page turn moves to the next year’s photograph", secondDate !== "" && secondDate !== firstDate, `${firstDate} → ${secondDate}`);
+await shot("on-this-day");
 
-await byText("Contents").first().click();
+// --- set aside ----------------------------------------------------------------------------
+// Set aside, the word turns from faint to the room's cream ink, beside its gold dot.
+const asideInk = () =>
+  page.evaluate(() => {
+    const word = [...document.querySelectorAll('[data-testid="darkroom-caption-word"]')].find((e) => e.offsetParent !== null);
+    const letters = word ? [...word.querySelectorAll("div")].find((d) => /set aside/i.test(d.textContent ?? "")) : null;
+    return letters ? getComputedStyle(letters).color : "";
+  });
+const before = await asideInk();
+await byId("darkroom-caption-word").first().click();
+await wait(600);
+const after = await asideInk();
+check("SET ASIDE marks the print", before !== after && /246, 236, 223/.test(after), `${before} → ${after}`);
+
+// --- Contents, and the years ------------------------------------------------------------------
+check("CONTENTS opens the sheet", await openContents());
 await wait(1500);
-const contents = await text();
-check("The contents list the ways in", /On this day/.test(contents) && /Surprise me/.test(contents));
-check("The contents list the years, oldest first", /2009/.test(contents) && contents.indexOf("2009") < contents.indexOf("2023"));
-check("The shelf is in the contents", /Set aside/.test(contents));
-await shot("05-contents");
+const sheet = await text();
+check("Contents lists the three ways in", /On this day/.test(sheet) && /Surprise me/.test(sheet) && /Set aside/.test(sheet));
+const yearLines = seen(page.locator('[data-testid^="darkroom-contents-1"], [data-testid^="darkroom-contents-2"]'));
+const yearCount = await yearLines.count();
+const yearTitles = (await yearLines.allTextContents()).map((t) => t.match(/\d{4}/)?.[0]).filter(Boolean).map(Number);
+check(
+  "Contents lists the years, oldest first",
+  yearCount >= 3 && yearTitles.every((y, i) => i === 0 || y > yearTitles[i - 1]),
+  yearTitles.join(", "),
+);
+check("Contents says everything is read on the phone", /Everything here is read on this iPhone\. Nothing is sent\./.test(sheet));
+await shot("contents");
 
-const years = seen(page.locator('[aria-label$=" photographs"]'));
-await years.nth(2).click();
-await wait(3400);
-check("A year opens as a chapter", /^\d{4}$/.test(((await seen(page.getByRole("heading")).first().textContent()) ?? "").trim()) || /\b20\d\d\b/.test(await text()));
-await shot("06-year");
+// --- a year, and its months -------------------------------------------------------------------
+const chosenYear = yearTitles[Math.min(2, yearTitles.length - 1)];
+await yearLines.nth(Math.min(2, yearCount - 1)).click();
+await wait(2600);
+check("A year opens as a chapter", (await chapterHead()) === String(chosenYear), await chapterHead());
+check("The year’s caption gives the weekday", /\bA (Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\b/.test(await text()));
 
-await byText("Contents").first().click();
-await wait(1500);
-check("The open year shows its months", (await seen(page.locator('[aria-label^="JAN "]')).count()) > 0);
-await shot("07-months");
-await seen(page.locator('[aria-label^="Set aside,"]')).first().click();
-await wait(3000);
-check("The shelf opens as its own chapter", /SET ASIDE|Set aside/.test(await text()) && /years ago/.test(await text()));
-await shot("08-set-aside");
+await openContents();
+await wait(1400);
+const months = seen(page.locator('[data-testid^="darkroom-month-"]'));
+check("The open year shows its twelve months", (await months.count()) === 12);
+await shot("months");
+const filled = seen(page.locator('[data-testid^="darkroom-month-"]:not([aria-disabled="true"])'));
+const filledCount = await filled.count();
+check("Months with photographs can be chosen; empty ones cannot", filledCount > 0 && filledCount < 12, `${filledCount} of 12`);
+await filled.nth(filledCount - 1).click();
+await wait(2600);
+check("A month opens the year from that month", (await chapterHead()) === String(chosenYear) && (await dateLabel()) !== "");
+await shot("year");
 
-await byText("Contents").first().click();
-await wait(1200);
-await seen(page.locator('[aria-label^="Surprise me,"]')).first().click();
-await wait(3200);
+// --- Surprise me -----------------------------------------------------------------------------------
+await openContents();
+await wait(900);
+await byId("darkroom-contents-surprise-me").first().click();
+await wait(2800);
 const surprise = await text();
-check("Surprise deals an older photograph", /years ago/.test(surprise));
-await shot("09-surprise");
+check("Surprise me deals an older photograph", /surprise me/i.test(await chapterHead()) && /(years ago|Last year)/.test(surprise));
+await shot("surprise");
 
-await byText("Develop").first().click();
+// --- Set aside ---------------------------------------------------------------------------------------
+await openContents();
+await wait(900);
+await byId("darkroom-contents-set-aside").first().click();
+await wait(2200);
+const shelfWord = ((await byId("darkroom-caption-word").first().textContent().catch(() => "")) ?? "").trim();
+check("The shelf opens as its own chapter, with PUT BACK", /set aside/i.test(await chapterHead()) && /put back/i.test(shelfWord), shelfWord);
+await shot("set-aside");
+
+// --- the end of On this day ---------------------------------------------------------------------------
+await openContents();
+await wait(900);
+await byId("darkroom-contents-on-this-day").first().click();
+await wait(2200);
+check("On this day comes back to the print it was left on", (await dateLabel()) === secondDate, await dateLabel());
+await toEnd();
+const ended = await appears("darkroom-end", 5000);
+check("On this day ends on its end page", ended && /That is everything from this (day|week|time of year)/.test(await text()));
+check("The end page hands on to another way in", /Surprise me/i.test(await text()) && /Choose a year/i.test(await text()));
+await shot("end");
+
+// --- DEVELOP into the editor, and back --------------------------------------------------------------------
+await turn(-1);
+const developed = await dateLabel();
+await byId("darkroom-develop").first().click();
 await wait(4500);
 const editor = await text();
-check("Develop opens the existing editor", /Share to VINTAGE/.test(editor) && /Film|FILM/.test(editor));
+check("DEVELOP opens the existing editor", /Share to VINTAGE/.test(editor) && /Film|FILM/.test(editor));
 check("The editor knows when the shutter fired", /Read from the file/.test(editor));
-await shot("10-editor");
+await shot("editor");
+await page.goBack();
+await wait(2200);
+check("Back from the editor, the room is as it was", (await dateLabel()) === developed && (await byId("darkroom-develop").count()) > 0, developed);
 
 console.log("\nJS errors:", errors.length ? errors.slice(0, 10) : "none");
+check("No page errors", errors.length === 0);
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) console.log("FAILED: " + failed.map((r) => r.name).join(" | "));
 await browser.close();
-process.exit(failed.length || errors.length ? 1 : 0);
+process.exit(failed.length ? 1 : 0);

@@ -1,255 +1,537 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-native", () => ({ Platform: { OS: "web" }, Linking: { openSettings: async () => undefined } }));
-vi.mock("expo-file-system", () => ({ File: class {}, Paths: { document: "" } }));
 vi.mock("expo-media-library", () => ({}));
 vi.mock("@/lib/env", () => ({ isDemoMode: () => false }));
+// The bundled photographs are images Metro resolves; here only their names matter.
+vi.mock("@/demo/photoAssets", () => ({
+  PHOTOS: new Proxy({}, { has: (_t, key) => typeof key === "string" && !key.startsWith("http"), get: () => 1 }),
+}));
 
-import { condense, editOccasion, isEligible, representative, spread, SCENE_GAP_MS } from "@/darkroom/eligibility";
+import { condense, isEligible, quality, REDISCOVERY_AGE_DAYS, representative } from "@/darkroom/eligibility";
 import {
   anniversary,
-  onThisDay,
-  REDISCOVERY_AGE_DAYS,
-  roundRobin,
-  Surprise,
-  windowAround,
-  YearChapter,
+  editSize,
   monthIndex,
+  monthSlots,
+  onThisDay,
+  opensOnThisDay,
+  ROLL_LENGTH,
+  Surprise,
   yearIndex,
+  YearEdit,
+  yearRange,
+  type SurpriseOptions,
+  type YearCount,
 } from "@/darkroom/discovery";
-import { agoLine, captionFor, fullDate, monthYear, yearsBetween } from "@/darkroom/labels";
+import {
+  captionFor,
+  countLabel,
+  fullDate,
+  MONTH_INITIALS,
+  monthDay,
+  monthName,
+  monthYear,
+  monthYearWords,
+  shortDay,
+  weekday,
+  yearsInWords,
+} from "@/darkroom/labels";
 import { accessFrom } from "@/darkroom/access";
-import { parseHistory, remember } from "@/darkroom/history";
-import { parseSetAside } from "@/darkroom/setAside";
-import { keepPlace, recallPlace, PLACE_KEPT_MS } from "@/darkroom/session";
+import { demoSourceAt } from "@/darkroom/demoSource";
 import type { LibrarySource, Page, PageRequest, Print, TimeRange } from "@/darkroom/types";
 
 // ---------------------------------------------------------------------------
-// A fake library that keeps count of what it is asked
+// A fake library that writes down every question it is asked
 // ---------------------------------------------------------------------------
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
+/** Local time, the way the Darkroom reads dates. */
+const at = (y: number, m: number, d: number, h = 12, min = 0, s = 0) => new Date(y, m, d, h, min, s).getTime();
+const NOW = at(2026, 9, 22, 12);
+
 let n = 0;
-function print(at: Date | number, over: Partial<Print> = {}): Print {
+function print(takenAt: number, over: Partial<Print> = {}): Print {
   n += 1;
-  return {
-    id: `p${n}`,
-    uri: `ph://p${n}`,
-    width: 4032,
-    height: 3024,
-    takenAt: typeof at === "number" ? at : at.getTime(),
-    subtypes: [],
-    ...over,
-  };
+  return { id: `p${n}`, uri: `ph://p${n}`, width: 4032, height: 3024, takenAt, subtypes: [], ...over };
 }
 
 class FakeLibrary implements LibrarySource {
   readonly prints: Print[];
-  calls = { count: [] as TimeRange[], page: [] as PageRequest[], oldest: 0 };
-  constructor(prints: Print[]) {
+  readonly calls = { count: [] as { range: TimeRange; subtype?: string }[], page: [] as PageRequest[], oldest: 0 };
+  inFlight = 0;
+  maxInFlight = 0;
+
+  constructor(prints: readonly Print[]) {
     this.prints = [...prints].sort((a, b) => a.takenAt - b.takenAt);
   }
-  async count(range: TimeRange, subtype?: "screenshot") {
-    this.calls.count.push(range);
-    return this.prints.filter(
-      (p) => p.takenAt >= range.from && p.takenAt < range.to && (!subtype || p.subtypes.includes(subtype)),
-    ).length;
+
+  private async answer<T>(value: () => T): Promise<T> {
+    this.inFlight += 1;
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    await null;
+    await null;
+    try {
+      return value();
+    } finally {
+      this.inFlight -= 1;
+    }
   }
-  async page(req: PageRequest): Promise<Page> {
-    this.calls.page.push(req);
-    let list = this.prints.filter((p) => p.takenAt >= req.range.from && p.takenAt < req.range.to);
-    if (req.order === "desc") list = list.reverse();
-    const start = req.after ? list.findIndex((p) => p.id === req.after) + 1 : 0;
-    const prints = list.slice(start, start + req.first);
-    return { prints, endCursor: prints[prints.length - 1]?.id ?? null, hasNextPage: start + req.first < list.length };
+
+  private within(range: TimeRange) {
+    return this.prints.filter((p) => p.takenAt >= range.from && p.takenAt < range.to);
   }
-  async oldest() {
+
+  count(range: TimeRange, subtype?: "screenshot") {
+    this.calls.count.push({ range, subtype });
+    return this.answer(() => this.within(range).filter((p) => !subtype || p.subtypes.includes(subtype)).length);
+  }
+
+  page(request: PageRequest): Promise<Page> {
+    this.calls.page.push(request);
+    return this.answer(() => {
+      let list = this.within(request.range);
+      if (request.order === "desc") list = list.reverse();
+      return { prints: list.slice(0, request.first), hasNextPage: list.length > request.first };
+    });
+  }
+
+  oldest() {
     this.calls.oldest += 1;
-    return this.prints[0]?.takenAt ?? null;
+    return this.answer(() => this.prints[0]?.takenAt ?? null);
   }
 }
 
-const year = (p: Print) => new Date(p.takenAt).getFullYear();
+const yearOf = (p: Print) => new Date(p.takenAt).getFullYear();
+const never = () => false;
+
+function surprise(lib: LibrarySource, over: Partial<SurpriseOptions> = {}) {
+  return new Surprise(lib, { now: NOW, seed: 7, oldest: null, seenWithin: never, held: never, ...over });
+}
+
+/** Photographs every `step` from `from`, `count` of them. */
+function series(from: number, count: number, step: number, over: Partial<Print> = {}): Print[] {
+  return Array.from({ length: count }, (_, i) => print(from + i * step, over));
+}
+
+/** A photograph on each of `days` days of a year, at noon, starting on the 3rd of January. */
+function yearOfDays(year: number, days: number, over: Partial<Print> = {}): Print[] {
+  return Array.from({ length: days }, (_, i) => print(at(year, 0, 3 + i, 12), over));
+}
 
 beforeEach(() => {
   n = 0;
 });
 
 // ---------------------------------------------------------------------------
+// Eligibility and quality
+// ---------------------------------------------------------------------------
 
-describe("what is worth showing", () => {
-  it("passes a camera frame and leaves out screenshots, thumbnails and screen-shaped images", () => {
-    const at = new Date(2016, 4, 3);
-    expect(isEligible(print(at))).toBe(true);
-    expect(isEligible(print(at, { width: 3024, height: 4032 }))).toBe(true);
-    expect(isEligible(print(at, { subtypes: ["screenshot"] }))).toBe(false);
-    expect(isEligible(print(at, { width: 240, height: 180 }))).toBe(false);
-    expect(isEligible(print(at, { width: 1170, height: 2532 }))).toBe(false);
-    expect(isEligible(print(at, { width: 1920, height: 1080 }))).toBe(true);
+describe("what may be shown", () => {
+  const t = at(2016, 4, 3);
+
+  it("passes a camera's frame either way up", () => {
+    expect(isEligible(print(t))).toBe(true);
+    expect(isEligible(print(t, { width: 3024, height: 4032 }))).toBe(true);
   });
 
-  it("leaves out a PNG or a GIF, which a camera never writes", () => {
-    const at = new Date(2016, 4, 3);
-    expect(isEligible(print(at, { filename: "IMG_0412.HEIC" }))).toBe(true);
-    expect(isEligible(print(at, { filename: "IMG_0413.JPG" }))).toBe(true);
-    expect(isEligible(print(at, { filename: "meme.PNG" }))).toBe(false);
-    expect(isEligible(print(at, { filename: "reaction.gif" }))).toBe(false);
+  it("leaves out screenshots, by subtype and by size", () => {
+    expect(isEligible(print(t, { subtypes: ["screenshot"] }))).toBe(false);
+    const screens = [
+      [640, 1136], [750, 1334], [828, 1792], [1080, 1920], [1125, 2436], [1170, 2532], [1179, 2556],
+      [1206, 2622], [1242, 2208], [1242, 2688], [1284, 2778], [1290, 2796], [1320, 2868],
+    ];
+    for (const [w, h] of screens) {
+      expect(isEligible(print(t, { width: w, height: h }))).toBe(false);
+      expect(isEligible(print(t, { width: h, height: w }))).toBe(false);
+    }
+    // A 16:9 camera frame that is not a screen's exact size is a photograph.
+    expect(isEligible(print(t, { width: 1080, height: 1921 }))).toBe(true);
   });
 
-  it("keeps a panorama, and refuses a photograph with no date or no size", () => {
-    const at = new Date(2016, 4, 3);
-    expect(isEligible(print(at, { width: 12000, height: 3000, subtypes: ["panorama"] }))).toBe(true);
+  it("leaves out what a camera never writes: PNG, GIF, WebP", () => {
+    expect(isEligible(print(t, { filename: "IMG_0412.HEIC" }))).toBe(true);
+    expect(isEligible(print(t, { filename: "IMG_0413.JPG" }))).toBe(true);
+    expect(isEligible(print(t, { filename: "meme.PNG" }))).toBe(false);
+    expect(isEligible(print(t, { filename: "reaction.gif" }))).toBe(false);
+    expect(isEligible(print(t, { filename: "sticker.webp" }))).toBe(false);
+  });
+
+  it("needs 320 pixels on the short side, and a shape no narrower than 1:2 unless it is a panorama", () => {
+    expect(isEligible(print(t, { width: 320, height: 427 }))).toBe(true);
+    expect(isEligible(print(t, { width: 319, height: 427 }))).toBe(false);
+    expect(isEligible(print(t, { width: 4000, height: 2000 }))).toBe(true);
+    expect(isEligible(print(t, { width: 4000, height: 1999 }))).toBe(false);
+    expect(isEligible(print(t, { width: 12000, height: 3000, subtypes: ["panorama"] }))).toBe(true);
+    expect(isEligible(print(t, { width: 0, height: 0 }))).toBe(false);
+  });
+
+  it("keeps photographs from before 1970, and refuses dates that only say the date was lost", () => {
+    expect(isEligible(print(at(1962, 6, 14)))).toBe(true);
+    expect(isEligible(print(at(1900, 0, 1, 0)))).toBe(true);
+    expect(isEligible(print(at(1899, 11, 31)))).toBe(false);
     expect(isEligible(print(0))).toBe(false);
-    expect(isEligible(print(at, { width: 0, height: 0 }))).toBe(false);
+    expect(isEligible(print(35 * HOUR))).toBe(false);
+    expect(isEligible(print(-35 * HOUR))).toBe(false);
+    expect(isEligible(print(37 * HOUR))).toBe(true);
+    expect(isEligible(print(-37 * HOUR))).toBe(true);
+    expect(isEligible(print(Date.UTC(2001, 0, 1)))).toBe(false);
+    expect(isEligible(print(Date.UTC(2001, 0, 1) + 1000))).toBe(true);
+    expect(isEligible(print(Number.NaN))).toBe(false);
+  });
+
+  it("keeps to photographs older than 90 days when told the time, except where recent ones are allowed", () => {
+    const recent = print(NOW - 89 * DAY);
+    const old = print(NOW - REDISCOVERY_AGE_DAYS * DAY);
+    expect(isEligible(recent)).toBe(true);
+    expect(isEligible(recent, { now: NOW })).toBe(false);
+    expect(isEligible(recent, { now: NOW, allowRecent: true })).toBe(true);
+    expect(isEligible(old, { now: NOW })).toBe(true);
   });
 });
 
-describe("a run of frames is one moment", () => {
-  it("folds a burst into its largest frame, and of equals the last", () => {
-    const t = new Date(2015, 6, 4, 20, 0).getTime();
+describe("how much a photograph weighs", () => {
+  it("is 1 for a camera's own frame", () => {
+    expect(quality(print(at(2016, 4, 3), { filename: "IMG_2041.HEIC" }))).toBe(1);
+  });
+
+  it("weighs a copy that came back through an app at 0.35", () => {
+    const t = at(2016, 4, 3);
+    expect(quality(print(t, { filename: "IMG-20160503-WA0007.jpg" }))).toBeCloseTo(0.35);
+    expect(quality(print(t, { filename: "3F2504E0-4F89-11D3-9A0C-0305E82C3301.jpg" }))).toBeCloseTo(0.35);
+    expect(quality(print(t, { filename: "image.jpeg" }))).toBeCloseTo(0.35);
+    expect(quality(print(t, { filename: "IMAGE.HEIC" }))).toBeCloseTo(0.35);
+  });
+
+  it("halves one too small for its era, with no floor before 2008", () => {
+    expect(quality(print(at(2006, 1, 1), { width: 640, height: 480 }))).toBe(1);
+    expect(quality(print(at(2010, 1, 1), { width: 960, height: 720 }))).toBeCloseTo(0.5); // 0.69 MP
+    expect(quality(print(at(2010, 1, 1), { width: 1200, height: 800 }))).toBe(1); // 0.96 MP
+    expect(quality(print(at(2015, 1, 1), { width: 1400, height: 1000 }))).toBeCloseTo(0.5); // 1.4 MP
+    expect(quality(print(at(2015, 1, 1), { width: 1600, height: 1000 }))).toBe(1); // 1.6 MP
+  });
+
+  it("weighs a panorama, or anything longer than 3:1, at 0.6, and multiplies the factors", () => {
+    expect(quality(print(at(2016, 1, 1), { width: 12000, height: 3000, subtypes: ["panorama"] }))).toBeCloseTo(0.6);
+    expect(quality(print(at(2016, 1, 1), { width: 2000, height: 2000, subtypes: ["panorama"] }))).toBeCloseTo(0.6);
+    expect(quality(print(at(2016, 1, 1), { width: 3100, height: 1000 }))).toBeCloseTo(0.6);
+    expect(quality(print(at(2016, 1, 1), { width: 3000, height: 1000 }))).toBe(1);
+    expect(
+      quality(print(at(2016, 1, 1), { width: 1300, height: 400, filename: "IMG-20160101-WA0001.jpg" })),
+    ).toBeCloseTo(0.35 * 0.5 * 0.6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Moments
+// ---------------------------------------------------------------------------
+
+describe("moments", () => {
+  it("fold a burst into its largest frame, and of equals the later one", () => {
+    const t = at(2015, 6, 4, 20);
     const burst = [print(t), print(t + 5_000), print(t + 40_000, { width: 4000, height: 3000 })];
     expect(representative(burst).id).toBe(burst[1].id);
-    const apart = print(t + SCENE_GAP_MS + 60_000);
-    expect(condense([...burst, apart]).map((p) => p.id)).toEqual([burst[1].id, apart.id]);
+    const apart = print(t + 40_000 + 91_000);
+    expect(condense([apart, ...burst]).map((p) => p.id)).toEqual([burst[1].id, apart.id]);
   });
 
-  it("spreads picks evenly, first and last included, and edits a long occasion to a few moments", () => {
-    expect(spread([1, 2, 3, 4, 5, 6, 7, 8, 9], 3)).toEqual([1, 5, 9]);
-    expect(spread([1, 2, 3], 1)).toEqual([2]);
-    expect(spread([1, 2], 5)).toEqual([1, 2]);
-    const scenes = Array.from({ length: 40 }, (_, i) => print(new Date(2014, 1, 1, 10, i * 3)));
-    const edit = editOccasion(scenes);
-    expect(edit).toHaveLength(4);
-    expect(edit[0].id).toBe(scenes[0].id);
-    expect(edit[3].id).toBe(scenes[39].id);
-    expect(editOccasion(scenes.slice(0, 1))).toHaveLength(1);
+  it("last no longer than five minutes, so a concert shot every minute is many moments, not one", () => {
+    const concert = series(at(2018, 5, 1, 20), 200, 60_000);
+    const moments = condense(concert);
+    // Six frames to a moment (0, 1, … 5 minutes), so 200 frames are 34 moments.
+    expect(moments).toHaveLength(34);
+    for (let i = 1; i < moments.length; i++) expect(moments[i].takenAt).toBeGreaterThan(moments[i - 1].takenAt);
+  });
+
+  it("read an import pile as one occasion and keep at most two of it", () => {
+    const t = at(2011, 2, 1, 9);
+    const pile = Array.from({ length: 25 }, (_, i) =>
+      print(t + (i % 7) * 100, { filename: i === 3 || i === 9 ? "scan.jpg" : "IMG-20110301-WA0001.jpg" }),
+    );
+    const later = print(t + 2 * MIN);
+    const moments = condense([...pile, later]);
+    expect(moments).toHaveLength(3);
+    // The pile's two are its weightiest frames.
+    expect(moments.slice(0, 2).map((p) => p.id).sort()).toEqual([pile[3].id, pile[9].id].sort());
+    expect(moments[2].id).toBe(later.id);
+    // Nineteen frames in one second are a burst: one moment.
+    expect(condense(Array.from({ length: 19 }, () => print(t)))).toHaveLength(1);
+  });
+
+  it("count a frame read twice once", () => {
+    const a = print(at(2012, 1, 1, 9));
+    const b = print(at(2012, 1, 1, 15));
+    expect(condense([a, b, a, b])).toHaveLength(2);
   });
 });
 
-describe("the contents page", () => {
+// ---------------------------------------------------------------------------
+// Contents
+// ---------------------------------------------------------------------------
+
+describe("the year index", () => {
   it("counts each year without its screenshots, oldest first, and leaves out empty years", async () => {
     const lib = new FakeLibrary([
-      print(new Date(2011, 3, 1)),
-      print(new Date(2011, 7, 1)),
-      print(new Date(2013, 1, 1)),
-      print(new Date(2013, 1, 2), { subtypes: ["screenshot"] }),
-      print(new Date(2014, 5, 1), { subtypes: ["screenshot"] }),
+      print(at(2011, 3, 1)),
+      print(at(2011, 7, 1)),
+      print(at(2013, 1, 1)),
+      print(at(2013, 1, 2), { subtypes: ["screenshot"] }),
+      print(at(2014, 5, 1), { subtypes: ["screenshot"] }),
     ]);
-    const years = await yearIndex(lib, new Date(2026, 9, 22).getTime());
-    expect(years).toEqual([
+    expect(await yearIndex(lib, NOW)).toEqual([
       { year: 2011, count: 2 },
       { year: 2013, count: 1 },
     ]);
+    expect(lib.calls.page).toHaveLength(0);
   });
 
-  it("opens only the decades that hold photographs", async () => {
-    const lib = new FakeLibrary([print(new Date(1962, 5, 1)), print(new Date(2019, 5, 1))]);
-    const years = await yearIndex(lib, new Date(2026, 9, 22).getTime());
+  it("opens only the decades that hold photographs, and counts years before 1970", async () => {
+    const lib = new FakeLibrary([print(at(1962, 5, 1)), print(at(2019, 5, 1))]);
+    const years = await yearIndex(lib, NOW);
     expect(years.map((y) => y.year)).toEqual([1962, 2019]);
     // Seven decades counted once each, then the eighteen years of the two filled
-    // decades (1962–69, 2010–19) twice each — all, and screenshots — not 65 years.
-    expect(lib.calls.count.length).toBe(7 + 18 * 2);
+    // decades (1962–69, 2010–19) twice each — all, and screenshots — not 65 years;
+    // and 1969 once more, for the lost dates at the turn of 1970.
+    expect(lib.calls.count).toHaveLength(7 + 18 * 2 + 1);
+    expect(lib.maxInFlight).toBeLessThanOrEqual(4);
   });
 
   it("is empty for an empty library", async () => {
-    expect(await yearIndex(new FakeLibrary([]))).toEqual([]);
+    expect(await yearIndex(new FakeLibrary([]), NOW)).toEqual([]);
+  });
+
+  it("does not offer a year whose only photographs carry a lost date", async () => {
+    const lib = new FakeLibrary([
+      print(0),
+      print(20 * HOUR),
+      print(Date.UTC(2001, 0, 1)),
+      print(Date.UTC(2001, 0, 1) + DAY),
+      print(at(2015, 3, 1)),
+    ]);
+    const years = await yearIndex(lib, NOW);
+    expect(years.map((y) => y.year)).toEqual([new Date(Date.UTC(2001, 0, 1) + DAY).getFullYear(), 2015]);
+    expect(years[0].count).toBe(1);
+  });
+
+  it("counts a year's months, January first, without screenshots", async () => {
+    const lib = new FakeLibrary([
+      print(at(2016, 0, 3)),
+      print(at(2016, 5, 3, 9)),
+      print(at(2016, 5, 3, 18)),
+      print(at(2016, 5, 4), { subtypes: ["screenshot"] }),
+      print(at(2016, 10, 1)),
+    ]);
+    expect(await monthIndex(lib, 2016)).toEqual([1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0]);
+    expect(lib.calls.count).toHaveLength(24);
+    expect(lib.maxInFlight).toBeLessThanOrEqual(4);
   });
 });
 
-describe("on this day", () => {
-  const now = new Date(2026, 9, 22, 12).getTime();
+// ---------------------------------------------------------------------------
+// On this day
+// ---------------------------------------------------------------------------
 
-  it("sweeps the years oldest first, one from each year before a second from any", async () => {
+describe("on this day", () => {
+  it("sweeps the years oldest first: each year's middle moment, then the rest of each year in time order", async () => {
     const lib = new FakeLibrary([
-      print(new Date(2012, 9, 22, 9)),
-      print(new Date(2012, 9, 22, 18)),
-      print(new Date(2019, 9, 22, 11)),
-      print(new Date(2023, 9, 22, 8)),
-      print(new Date(2023, 9, 22, 21)),
-      print(new Date(2026, 9, 22, 8)), // today itself is not a memory
-      print(new Date(2019, 9, 23, 8)), // the next day is not the day
+      print(at(2012, 9, 22, 9)),
+      print(at(2012, 9, 22, 13)),
+      print(at(2012, 9, 22, 18)),
+      print(at(2019, 9, 22, 11)),
+      print(at(2023, 9, 22, 8)),
+      print(at(2023, 9, 22, 21)),
+      print(at(2026, 9, 22, 8)), // today itself is not a memory
+      print(at(2019, 9, 23, 8)), // the next day is not the day
     ]);
-    const years = await yearIndex(lib, now);
-    const day = await onThisDay(lib, years, { now, minimum: 4 });
+    const day = await onThisDay(lib, { now: NOW });
     expect(day.reach).toBe("day");
-    expect(day.prints.map((p) => year(p))).toEqual([2012, 2019, 2023, 2012, 2023]);
+    const hours = day.prints.map((p) => `${yearOf(p)} ${new Date(p.takenAt).getHours()}`);
+    expect(hours).toEqual(["2012 13", "2019 11", "2023 8", "2012 9", "2012 18", "2023 21"]);
   });
 
-  it("reaches out to the week, then the time of year, when the day itself is thin", async () => {
-    const lib = new FakeLibrary([
-      print(new Date(2014, 9, 22, 9)),
-      print(new Date(2017, 9, 20, 9)),
-      print(new Date(2018, 9, 25, 9)),
-      print(new Date(2020, 9, 24, 9)),
-    ]);
-    const years = await yearIndex(lib, now);
-    const week = await onThisDay(lib, years, { now, minimum: 4 });
-    expect(week.reach).toBe("week");
-    expect(week.prints).toHaveLength(4);
+  it("finds its years from the oldest photograph alone, without counting anything", async () => {
+    const lib = new FakeLibrary([print(at(2009, 2, 1)), print(at(2014, 9, 22, 9)), print(at(2017, 9, 22, 9)), print(at(2020, 9, 22, 9))]);
+    const day = await onThisDay(lib, { now: NOW });
+    expect(day.prints.map(yearOf)).toEqual([2014, 2017, 2020]);
+    expect(lib.calls.count).toHaveLength(0);
+    expect(lib.calls.oldest).toBe(1);
+    // One day page for each year from 2009 to 2025.
+    expect(lib.calls.page).toHaveLength(17);
+  });
 
-    const sparse = new FakeLibrary([print(new Date(2014, 9, 22, 9)), print(new Date(2015, 10, 1, 9))]);
-    const season = await onThisDay(sparse, await yearIndex(sparse, now), { now, minimum: 2 });
-    expect(season.reach).toBe("season");
-    expect(season.prints).toHaveLength(2);
+  it("counts decades first when the oldest photograph is a century back, and finds that one too", async () => {
+    const lib = new FakeLibrary([print(at(1904, 9, 22, 10)), print(at(2016, 9, 22, 9)), print(at(2021, 9, 22, 9))]);
+    const day = await onThisDay(lib, { now: NOW });
+    expect(day.prints.map(yearOf)).toEqual([1904, 2016, 2021]);
+    expect(lib.calls.count).toHaveLength(13); // 1900s … 2020s
+    expect(lib.calls.page).toHaveLength(6 + 10 + 6); // 1904–09, the 2010s and 2020–25
+  });
+
+  it("uses the years it is given, leaving out this year and impossible ones", async () => {
+    const lib = new FakeLibrary([print(at(2014, 9, 22, 9)), print(at(2017, 9, 22, 9)), print(at(2020, 9, 22, 9))]);
+    const day = await onThisDay(lib, { now: NOW, years: [2020, 2014, 2017, 2026, 1850, 2014] });
+    expect(day.prints.map(yearOf)).toEqual([2014, 2017, 2020]);
+    expect(lib.calls.oldest).toBe(0);
+    expect(lib.calls.page).toHaveLength(3);
+  });
+
+  it("stays at the day when it holds three moments, so the room can open on it", async () => {
+    const lib = new FakeLibrary([print(at(2015, 9, 22, 9)), print(at(2018, 9, 22, 9)), print(at(2021, 9, 22, 9)), print(at(2019, 9, 24))]);
+    const day = await onThisDay(lib, { now: NOW });
+    expect(day.reach).toBe("day");
+    expect(day.prints).toHaveLength(3);
+    expect(opensOnThisDay(day)).toBe(true);
+    // Nothing wider than a day was read.
+    for (const r of lib.calls.page) expect(r.range.to - r.range.from).toBeLessThanOrEqual(DAY + HOUR);
+  });
+
+  it("reaches to the week, keeping the anniversary's own photographs even beside a heavy trip", async () => {
+    const trip: Print[] = [];
+    for (let d = 19; d <= 21; d++) trip.push(...series(at(2015, 9, d, 8), 120, 5 * MIN));
+    const onTheDay = [print(at(2015, 9, 22, 10)), print(at(2015, 9, 22, 19))];
+    const lib = new FakeLibrary([...trip, ...onTheDay]);
+    const day = await onThisDay(lib, { now: NOW });
+    expect(day.reach).toBe("week");
+    const ids = day.prints.map((p) => p.id);
+    for (const p of onTheDay) expect(ids).toContain(p.id);
+    expect(day.prints).toHaveLength(4);
+  });
+
+  it("reaches to the time of year when the week is thin too", async () => {
+    const lib = new FakeLibrary([print(at(2014, 9, 22, 9)), print(at(2015, 10, 1, 9)), print(at(2019, 9, 10, 9))]);
+    const day = await onThisDay(lib, { now: NOW });
+    expect(day.reach).toBe("season");
+    expect(day.prints.map(yearOf)).toEqual([2014, 2015, 2019]);
+  });
+
+  it("stops at the day when asked to, whatever it found", async () => {
+    const lib = new FakeLibrary([print(at(2014, 9, 22, 9)), print(at(2015, 9, 21, 9))]);
+    const day = await onThisDay(lib, { now: NOW, maxReach: "day" });
+    expect(day).toMatchObject({ reach: "day" });
+    expect(day.prints).toHaveLength(1);
+    expect(opensOnThisDay(day)).toBe(false);
+    for (const r of lib.calls.page) expect(r.range.to - r.range.from).toBeLessThanOrEqual(DAY + HOUR);
   });
 
   it("finds nothing, honestly, when there is nothing near the date", async () => {
-    const lib = new FakeLibrary([print(new Date(2015, 2, 1))]);
-    const day = await onThisDay(lib, await yearIndex(lib, now), { now });
+    const lib = new FakeLibrary([print(at(2015, 2, 1))]);
+    const day = await onThisDay(lib, { now: NOW });
     expect(day.prints).toEqual([]);
+    expect(opensOnThisDay(day)).toBe(false);
   });
 
-  it("gives the 29th of February to the 28th in a common year", () => {
+  it("takes at most four from a year, at least 45 minutes apart", async () => {
+    const lib = new FakeLibrary(series(at(2016, 9, 22, 8), 50, 10 * MIN));
+    const day = await onThisDay(lib, { now: NOW });
+    expect(day.prints).toHaveLength(4);
+    const times = day.prints.map((p) => p.takenAt).sort((a, b) => a - b);
+    for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(45 * MIN);
+    // A morning burst of three minutes is one moment, so it gives one print.
+    const burst = new FakeLibrary([...series(at(2016, 9, 22, 8), 4, MIN), ...series(at(2018, 9, 22, 9), 1, 0), ...series(at(2020, 9, 22, 9), 1, 0)]);
+    expect((await onThisDay(burst, { now: NOW })).prints).toHaveLength(3);
+  });
+
+  it("does not lose a heavy day's afternoon to its morning", async () => {
+    // A wedding: 500 frames, one every 100 seconds, from 08:00 to 21:51.
+    const lib = new FakeLibrary(series(at(2017, 9, 22, 8), 500, 100_000));
+    const day = await onThisDay(lib, { now: NOW });
+    const hours = day.prints.map((p) => new Date(p.takenAt).getHours());
+    expect(day.prints).toHaveLength(4);
+    expect(hours.some((h) => h >= 14 && h < 18)).toBe(true);
+    expect(hours.some((h) => h >= 20)).toBe(true);
+    expect(lib.calls.page.every((r) => r.first <= 150)).toBe(true);
+  });
+
+  it("gives the 29th of February to the 28th in a common year", async () => {
     expect(anniversary(2023, 1, 29).getDate()).toBe(28);
     expect(anniversary(2024, 1, 29).getDate()).toBe(29);
-    const w = windowAround(2023, 1, 29, 0);
-    expect(new Date(w.from).getDate()).toBe(28);
-    expect(w.to - w.from).toBe(DAY);
+    expect(anniversary(2023, 9, 22).getDate()).toBe(22);
+    const leapDay = at(2028, 1, 29, 12);
+    const lib = new FakeLibrary([print(at(2027, 1, 28, 9)), print(at(2024, 1, 29, 9)), print(at(2025, 1, 28, 9)), print(at(2025, 2, 1, 9))]);
+    const day = await onThisDay(lib, { now: leapDay });
+    expect(day.reach).toBe("day");
+    expect(day.prints.map(yearOf)).toEqual([2024, 2025, 2027]);
+    expect(captionFor(day.prints[2].takenAt, leapDay, "on-this-day", day.reach, null).line).toBe("One year ago today");
   });
 
-  it("caps how many come from any one year", async () => {
-    const heavy = Array.from({ length: 50 }, (_, i) => print(new Date(2016, 9, 22, 8, i * 10)));
-    const lib = new FakeLibrary(heavy);
-    const day = await onThisDay(lib, await yearIndex(lib, now), { now, perYear: 8 });
-    expect(day.prints).toHaveLength(8);
-  });
-
-  it("interleaves lists fairly", () => {
-    expect(roundRobin([[1, 2, 3], [4], [5, 6]])).toEqual([1, 4, 5, 2, 6, 3]);
+  it("is never longer than forty", async () => {
+    const prints: Print[] = [];
+    for (let y = 2006; y <= 2025; y++) for (let h = 8; h <= 20; h += 3) prints.push(print(at(y, 9, 22, h)));
+    const day = await onThisDay(new FakeLibrary(prints), { now: NOW });
+    expect(day.prints).toHaveLength(40);
+    // The first sweep has every year once, oldest first.
+    expect(day.prints.slice(0, 20).map(yearOf)).toEqual(Array.from({ length: 20 }, (_, i) => 2006 + i));
   });
 });
 
+// ---------------------------------------------------------------------------
+// Surprise me
+// ---------------------------------------------------------------------------
+
 describe("surprise", () => {
-  const now = new Date(2026, 9, 22, 12).getTime();
-  // Fifteen years, a few occasions a year, each a short run of frames.
-  const library = () => {
+  /** Years of photographs, a few occasions a month, each a short run of frames. */
+  const library = (from = 2010, to = 2026) => {
     const prints: Print[] = [];
-    for (let y = 2010; y <= 2026; y++) {
-      for (let m = 0; m < 12; m += 2) {
-        const t = new Date(y, m, 10, 15).getTime();
-        prints.push(print(t), print(t + 20_000), print(t + 3 * DAY));
+    for (let y = from; y <= to; y++) {
+      for (let m = 0; m < 12; m++) {
+        for (const d of [4, 17]) {
+          const t = at(y, m, d, 15);
+          prints.push(print(t), print(t + 20_000), print(t + 4 * HOUR, { width: 3024, height: 4032 }));
+        }
       }
     }
     return new FakeLibrary(prints);
   };
 
-  it("never offers anything from the last few months, and never the same year twice running", async () => {
+  it("deals a roll of 24 and no more, never from the last few months, never the same print twice", async () => {
     const lib = library();
-    const s = new Surprise(lib, await yearIndex(lib, now), { now, seed: 7 });
+    const s = surprise(lib, { years: await yearIndex(lib, NOW) });
     const picks = await s.next(30);
-    expect(picks.length).toBe(30);
-    for (const p of picks) expect(now - p.takenAt).toBeGreaterThanOrEqual(REDISCOVERY_AGE_DAYS * DAY);
-    for (let i = 1; i < picks.length; i++) expect(year(picks[i])).not.toBe(year(picks[i - 1]));
+    expect(picks).toHaveLength(ROLL_LENGTH);
+    expect(s.rollDone).toBe(true);
+    expect(s.exhausted).toBe(false);
+    expect(await s.next(3)).toEqual([]);
+    for (const p of picks) expect(NOW - p.takenAt).toBeGreaterThanOrEqual(REDISCOVERY_AGE_DAYS * DAY);
     expect(new Set(picks.map((p) => p.id)).size).toBe(picks.length);
   });
 
-  it("does not show two moments from the same occasion close together", async () => {
-    const lib = library();
-    const s = new Surprise(lib, await yearIndex(lib, now), { now, seed: 11 });
-    const picks = await s.next(20);
+  it("never repeats either of the last two picks' years", async () => {
+    const lib = library(2010, 2015);
+    const picks = await surprise(lib, { years: await yearIndex(lib, NOW) }).next(24);
+    expect(picks).toHaveLength(24);
+    for (let i = 1; i < picks.length; i++) {
+      expect(yearOf(picks[i])).not.toBe(yearOf(picks[i - 1]));
+      if (i > 1) expect(yearOf(picks[i])).not.toBe(yearOf(picks[i - 2]));
+    }
+  });
+
+  it("gives no year more than its share of a roll, however heavy", async () => {
+    const lib = library(2012, 2015);
+    const years: YearCount[] = [
+      { year: 2012, count: 1_000_000 },
+      { year: 2013, count: 10 },
+      { year: 2014, count: 10 },
+      { year: 2015, count: 10 },
+    ];
+    const picks = await surprise(lib, { years, seed: 3 }).next(24);
+    expect(picks).toHaveLength(24);
+    const per = new Map<number, number>();
+    for (const p of picks) per.set(yearOf(p), (per.get(yearOf(p)) ?? 0) + 1);
+    // max(2, ceil(24 / 4) + 1)
+    for (const count of per.values()) expect(count).toBeLessThanOrEqual(7);
+    expect(per.get(2012)).toBe(7);
+  });
+
+  it("keeps each pick six hours from the last eight", async () => {
+    // One year, a photograph every half hour for six weeks: plenty near any pick.
+    const lib = new FakeLibrary(series(at(2016, 3, 1, 0), 2000, 30 * MIN));
+    const picks = await surprise(lib, { years: await yearIndex(lib, NOW), seed: 5 }).next(24);
+    expect(picks).toHaveLength(24);
     for (let i = 0; i < picks.length; i++) {
       for (let j = Math.max(0, i - 8); j < i; j++) {
         expect(Math.abs(picks[i].takenAt - picks[j].takenAt)).toBeGreaterThanOrEqual(6 * HOUR);
@@ -257,126 +539,554 @@ describe("surprise", () => {
     }
   });
 
-  it("asks the library only small questions", async () => {
-    const lib = library();
-    const s = new Surprise(lib, await yearIndex(lib, now), { now, seed: 3 });
-    await s.next(12);
-    expect(lib.calls.page.every((r) => r.first <= 40)).toBe(true);
-    expect(lib.calls.page.length).toBeLessThanOrEqual(12 * 6 * 2);
+  it("after two of one shape, deals the other shape when there is one", async () => {
+    const prints: Print[] = [];
+    for (let i = 0; i < 1500; i++) {
+      const t = at(2017, 0, 1) + i * HOUR;
+      prints.push(print(t));
+      // The tall ones weigh less, so only the pacing brings them forward.
+      prints.push(print(t + 20 * MIN, { width: 3024, height: 4032, filename: "IMG-20170101-WA0001.jpg" }));
+    }
+    const lib = new FakeLibrary(prints);
+    const years = await yearIndex(lib, NOW);
+    const shape = (p: Print) => (p.height > p.width ? "tall" : "wide");
+    let tall = 0;
+    let runs = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const picks = await surprise(lib, { years, seed }).next(24);
+      tall += picks.filter((p) => shape(p) === "tall").length;
+      for (let i = 2; i < picks.length; i++) {
+        if (new Set([shape(picks[i]), shape(picks[i - 1]), shape(picks[i - 2])]).size === 1) runs += 1;
+      }
+    }
+    // By weight alone about one pick in four would be tall, and a third of
+    // all triples one shape. A run of three is left only where the six-hour
+    // rule took every frame of the other shape out of the window read.
+    expect(tall).toBeGreaterThan(240 * 0.4);
+    expect(runs).toBeLessThanOrEqual(2);
   });
 
-  it("passes over what was seen lately, until nothing else is left", async () => {
-    const lib = new FakeLibrary([print(new Date(2015, 4, 1)), print(new Date(2018, 4, 1))]);
-    const years = await yearIndex(lib, now);
-    const seenAll = new Surprise(lib, years, { now, seed: 1, skip: () => true });
-    expect((await seenAll.next(2)).length).toBe(2); // relaxed rather than empty
-    const seenOne = new Surprise(lib, years, { now, seed: 1, skip: (id) => id === "p1" });
-    expect((await seenOne.next(1))[0].id).toBe("p2");
+  it("halves the quiet window, 21 → 10 → 5 days, for the rest of the roll, before giving up", async () => {
+    const lib = library(2010, 2014);
+    const asked: number[] = [];
+    // Everything was seen a week ago.
+    const seenWithin = (_id: string, days: number) => {
+      asked.push(days);
+      return days > 7;
+    };
+    const s = surprise(lib, { years: await yearIndex(lib, NOW), seenWithin });
+    const picks = await s.next(24);
+    expect(picks).toHaveLength(24);
+    const steps = asked.filter((d, i) => i === 0 || d !== asked[i - 1]);
+    expect(steps).toEqual([21, 10, 5]);
+    // A new roll starts strict again.
+    s.anotherRoll(8);
+    asked.length = 0;
+    expect(await s.next(1)).toHaveLength(1);
+    expect(asked[0]).toBe(21);
+  });
+
+  it("deals at a quiet window of no days at all when everything was seen today", async () => {
+    const lib = library(2010, 2014);
+    const asked = new Set<number>();
+    const s = surprise(lib, {
+      years: await yearIndex(lib, NOW),
+      seenWithin: (_id, days) => {
+        asked.add(days);
+        return true;
+      },
+    });
+    expect(await s.next(24)).toHaveLength(24);
+    expect([...asked].sort((a, b) => a - b)).toEqual([5, 10, 21]);
+  });
+
+  it("never deals what is held — developed this year, or set aside", async () => {
+    const lib = library(2010, 2013);
+    const held = new Set(lib.prints.filter((_, i) => i % 2 === 0).map((p) => p.id));
+    const picks = await surprise(lib, { years: await yearIndex(lib, NOW), held: (id) => held.has(id) }).next(24);
+    expect(picks).toHaveLength(24);
+    for (const p of picks) expect(held.has(p.id)).toBe(false);
   });
 
   it("is the same deal for the same seed, and a different one for another", async () => {
-    const a = library();
-    const ya = await yearIndex(a, now);
-    const first = (await new Surprise(a, ya, { now, seed: 42 }).next(8)).map((p) => p.id);
-    const again = (await new Surprise(a, ya, { now, seed: 42 }).next(8)).map((p) => p.id);
-    const other = (await new Surprise(a, ya, { now, seed: 43 }).next(8)).map((p) => p.id);
-    expect(again).toEqual(first);
-    expect(other).not.toEqual(first);
+    const lib = library();
+    const years = await yearIndex(lib, NOW);
+    const oldest = lib.prints[0].takenAt;
+    const deal = async (seed: number) => (await surprise(lib, { years, oldest, seed }).next(12)).map((p) => p.id);
+    const first = await deal(42);
+    expect(await deal(42)).toEqual(first);
+    expect(await deal(43)).not.toEqual(first);
+  });
+
+  it("starts cold, from the library's whole span, before any year is counted", async () => {
+    const lib = library(2010, 2016);
+    const oldest = lib.prints[0].takenAt;
+    const s = surprise(lib, { oldest });
+    const first = await s.next(3);
+    expect(first).toHaveLength(3);
+    expect(lib.calls.count).toHaveLength(0);
+    for (const p of first) {
+      expect(p.takenAt).toBeGreaterThanOrEqual(oldest);
+      expect(NOW - p.takenAt).toBeGreaterThanOrEqual(REDISCOVERY_AGE_DAYS * DAY);
+    }
+    s.setYears(await yearIndex(lib, NOW));
+    const rest = await s.next(24);
+    expect(rest).toHaveLength(21);
+    expect(s.rollDone).toBe(true);
+  });
+
+  it("waits, rather than giving up, when it has neither an oldest date nor the years", async () => {
+    const lib = library(2010, 2014);
+    const s = surprise(lib);
+    expect(await s.next(3)).toEqual([]);
+    expect(s.exhausted).toBe(false);
+    expect(lib.calls.page).toHaveLength(0);
+    s.setYears(await yearIndex(lib, NOW));
+    expect(await s.next(3)).toHaveLength(3);
+  });
+
+  it("uses a year of one or two photographs only once the larger years have nothing left", async () => {
+    const lib = new FakeLibrary([print(at(2009, 5, 1)), ...yearOfDays(2012, 30), ...yearOfDays(2014, 30), ...yearOfDays(2016, 30)]);
+    const picks = await surprise(lib, { years: await yearIndex(lib, NOW) }).next(24);
+    expect(picks).toHaveLength(24);
+    expect(picks.some((p) => yearOf(p) === 2009)).toBe(false);
+  });
+
+  it("another roll deals new prints, keeping this visit's out", async () => {
+    const lib = library();
+    const s = surprise(lib, { years: await yearIndex(lib, NOW) });
+    const one = await s.next(24);
+    expect(s.rollDone).toBe(true);
+    s.anotherRoll(99);
+    expect(s.rollDone).toBe(false);
+    const two = await s.next(24);
+    expect(two).toHaveLength(24);
+    const shown = new Set(one.map((p) => p.id));
+    for (const p of two) expect(shown.has(p.id)).toBe(false);
+  });
+
+  it("restores a roll: the deck's prints count toward its 24 and are never dealt again", async () => {
+    const lib = library();
+    const years = await yearIndex(lib, NOW);
+    const deck = await surprise(lib, { years, seed: 1 }).next(10);
+    const restored = surprise(lib, { years, seed: 2, exclude: deck.map((p) => p.id), alreadyDealt: deck.length });
+    const rest = await restored.next(24);
+    expect(rest).toHaveLength(14);
+    expect(restored.rollDone).toBe(true);
+    const ids = new Set(deck.map((p) => p.id));
+    for (const p of rest) expect(ids.has(p.id)).toBe(false);
+  });
+
+  it("asks only small questions, and never counts", async () => {
+    const lib = library();
+    await surprise(lib, { years: await yearIndex(new FakeLibrary(lib.prints), NOW), oldest: lib.prints[0].takenAt }).next(24);
+    expect(lib.calls.count).toHaveLength(0);
+    expect(lib.calls.page.every((r) => r.first <= 40)).toBe(true);
+    expect(lib.maxInFlight).toBeLessThanOrEqual(4);
   });
 
   it("says when there is nothing old enough", async () => {
-    const lib = new FakeLibrary([print(now - 10 * DAY)]);
-    const s = new Surprise(lib, await yearIndex(lib, now), { now, seed: 1 });
+    const lib = new FakeLibrary([print(NOW - 10 * DAY), print(NOW - 30 * DAY)]);
+    const s = surprise(lib, { years: await yearIndex(lib, NOW), oldest: lib.prints[0].takenAt });
     expect(await s.next(5)).toEqual([]);
     expect(s.exhausted).toBe(true);
   });
+
+  it("says when everything is held, without asking forever", async () => {
+    const lib = library(2010, 2012);
+    const s = surprise(lib, { years: await yearIndex(lib, NOW), held: () => true });
+    expect(await s.next(5)).toEqual([]);
+    expect(s.exhausted).toBe(true);
+    expect(lib.calls.page.length).toBeLessThan(200);
+  });
+
+  describe("on small and skewed libraries", () => {
+    it("does not stall on two tiny years beside two large ones", async () => {
+      const prints: Print[] = [print(at(2012, 4, 1)), print(at(2014, 4, 1))];
+      for (const y of [2024, 2025]) for (let d = 0; d < 300; d++) for (const h of [9, 12, 15, 18]) prints.push(print(at(y, 0, 5 + d, h)));
+      const lib = new FakeLibrary(prints);
+      const years = await yearIndex(lib, NOW);
+      for (let seed = 1; seed <= 8; seed++) {
+        const s = surprise(lib, { years, oldest: lib.prints[0].takenAt, seed });
+        expect(await s.next(24)).toHaveLength(24);
+        expect(s.exhausted).toBe(false);
+        s.anotherRoll(seed + 100);
+        expect(await s.next(24)).toHaveLength(24);
+      }
+    });
+
+    it("deals every photograph of a limited selection of twenty, then says so", async () => {
+      // A shared weekend and a shared birthday: twenty moments, close together in time.
+      const prints = [...series(at(2019, 5, 1, 10), 12, 30 * MIN), ...series(at(2021, 2, 14, 12), 8, 20 * MIN)];
+      const lib = new FakeLibrary(prints);
+      for (let seed = 1; seed <= 4; seed++) {
+        const s = surprise(lib, { years: await yearIndex(lib, NOW), oldest: lib.prints[0].takenAt, seed });
+        const picks = await s.next(24);
+        expect(picks).toHaveLength(20);
+        expect(new Set(picks.map((p) => p.id)).size).toBe(20);
+        expect(s.exhausted).toBe(true);
+      }
+    });
+
+    it("deals a full roll from a selection of thirty in one small year and one large", async () => {
+      const prints = [...series(at(2018, 7, 3, 9), 27, 40 * MIN), ...series(at(2020, 1, 1, 12), 3, 2 * DAY)];
+      const lib = new FakeLibrary(prints);
+      for (let seed = 1; seed <= 4; seed++) {
+        const s = surprise(lib, { years: await yearIndex(lib, NOW), oldest: lib.prints[0].takenAt, seed });
+        expect(await s.next(24)).toHaveLength(24);
+        expect(s.rollDone).toBe(true);
+      }
+    });
+
+    it("puts away a heavy year whose frames are none of them photographs", async () => {
+      const junk = series(at(2015, 0, 1), 300, 6 * HOUR, { filename: "saved.PNG" });
+      const lib = new FakeLibrary([...junk, ...yearOfDays(2016, 30), ...yearOfDays(2018, 30)]);
+      const s = surprise(lib, { years: await yearIndex(lib, NOW), seed: 4 });
+      expect(await s.next(24)).toHaveLength(24);
+      expect(s.exhausted).toBe(false);
+    });
+
+    it("shows at most two of an import pile in a visit", async () => {
+      const pile = Array.from({ length: 40 }, () => print(at(2017, 3, 1, 10)));
+      const lib = new FakeLibrary([...pile, ...yearOfDays(2017, 10), ...yearOfDays(2019, 10)]);
+      const s = surprise(lib, { years: await yearIndex(lib, NOW), oldest: lib.prints[0].takenAt });
+      const picks = await s.next(24);
+      const fromPile = new Set(pile.map((p) => p.id));
+      expect(picks.filter((p) => fromPile.has(p.id)).length).toBeLessThanOrEqual(2);
+      expect(picks).toHaveLength(22);
+      expect(s.exhausted).toBe(true);
+    });
+
+    it("shows a year from before 1970", async () => {
+      const lib = new FakeLibrary(yearOfDays(1962, 5));
+      const s = surprise(lib, { years: await yearIndex(lib, NOW), oldest: lib.prints[0].takenAt });
+      const picks = await s.next(24);
+      expect(picks).toHaveLength(5);
+      expect(picks.every((p) => yearOf(p) === 1962)).toBe(true);
+    });
+  });
 });
 
-describe("a year as a chapter", () => {
-  it("reads in order, one moment per burst, a few moments per occasion, a page only when needed", async () => {
+// ---------------------------------------------------------------------------
+// By year
+// ---------------------------------------------------------------------------
+
+describe("a year as an edit", () => {
+  it("is about 2.5·√N, at least 12 or the whole of a small year, at most 120", () => {
+    expect(editSize(1204)).toBe(87);
+    expect(editSize(0)).toBe(0);
+    expect(editSize(5)).toBe(5);
+    expect(editSize(20)).toBe(12);
+    expect(editSize(100)).toBe(25);
+    expect(editSize(10_000)).toBe(120);
+  });
+
+  it("shares its slots by the square root of each month, by largest remainder, at least one to every month", () => {
+    expect(monthSlots([400, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 30)).toEqual([20, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    // Roots 10, 8, 6; quotas 4.17, 3.33, 2.5: floors 4, 3, 2, and the last slot to the largest remainder.
+    expect(monthSlots([100, 64, 36, 0, 0, 0, 0, 0, 0, 0, 0, 0], 10)).toEqual([4, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    // Fewer slots than months with photographs: the fullest months get one each.
+    expect(monthSlots([5, 50, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0], 2)).toEqual([0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const skewed = monthSlots([10_000, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 120);
+    expect(skewed.slice(1)).toEqual(Array(11).fill(1));
+    expect(skewed[0]).toBe(109);
+    const months = [50, 30, 0, 200, 100, 100, 300, 150, 74, 100, 50, 50];
+    const slots = monthSlots(months, editSize(1204));
+    expect(slots.reduce((a, b) => a + b, 0)).toBe(87);
+    months.forEach((m, i) => expect(slots[i] > 0).toBe(m > 0));
+  });
+
+  it("deals the edit in order, one print per slice, each slice its own page of time", async () => {
+    const months = [50, 30, 0, 200, 100, 100, 300, 150, 74, 100, 50, 50];
     const prints: Print[] = [];
-    // A morning burst, an afternoon of forty frames, an evening of two.
-    const morning = new Date(2016, 2, 5, 9).getTime();
-    prints.push(print(morning), print(morning + 2_000), print(morning + 4_000));
-    for (let i = 0; i < 40; i++) prints.push(print(new Date(2016, 2, 5, 14, i * 2).getTime()));
-    prints.push(print(new Date(2016, 2, 5, 22, 0)), print(new Date(2016, 2, 5, 22, 30)));
-    // A different month.
-    prints.push(print(new Date(2016, 7, 1, 12)));
+    months.forEach((count, m) => {
+      const from = at(2016, m, 1, 0);
+      const span = at(2016, m + 1, 1, 0) - from;
+      for (let i = 0; i < count; i++) prints.push(print(from + Math.floor(((i + 0.5) * span) / count)));
+    });
     const lib = new FakeLibrary(prints);
-    const chapter = new YearChapter(lib, 2016, 20);
-    const first = await chapter.next(1);
-    expect(lib.calls.page.length).toBe(1);
-    const rest = await chapter.next(50);
-    const all = [...first, ...rest];
+    const edit = new YearEdit(lib, 2016, { now: NOW, months: await monthIndex(lib, 2016), seenWithin: never });
+    expect(edit.size).toBe(87);
+    expect(edit.yearCount).toBe(1204);
+    const all = await edit.next(200);
+    expect(all).toHaveLength(87);
+    expect(edit.done).toBe(true);
     for (let i = 1; i < all.length; i++) expect(all[i].takenAt).toBeGreaterThan(all[i - 1].takenAt);
-    // morning: 1, afternoon: 4 (edited), evening 22:00 + 22:30 within 3h of each other: one occasion of 2 → 2, August: 1
-    expect(all).toHaveLength(1 + 4 + 2 + 1);
-    expect(chapter.done).toBe(true);
+    for (const r of lib.calls.page) {
+      expect(r).toMatchObject({ first: 40, order: "asc" });
+      expect(new Date(r.range.from).getMonth()).toBe(new Date(r.range.to - 1).getMonth());
+    }
+    // Paged by time: each page starts where the one before it ended, never by a cursor.
+    const starts = lib.calls.page.map((r) => r.range.from);
+    expect(lib.calls.page.slice(1).some((r) => r.range.from > starts[0])).toBe(true);
+    expect(lib.calls.page.every((r) => !("after" in r))).toBe(true);
   });
 
-  it("pages by time without a cursor, and gets past a pile of one timestamp", async () => {
-    const t = new Date(2018, 3, 1, 12).getTime();
-    const pile = Array.from({ length: 7 }, () => print(t, { width: 4032, height: 3024 }));
-    const later = [print(t + 2 * DAY), print(t + 4 * DAY), print(t + 6 * DAY)];
-    const lib = new FakeLibrary([...pile, ...later]);
-    const chapter = new YearChapter(lib, 2018, 3);
-    const all = await chapter.next(20);
-    // The pile is one moment; then each later day.
-    expect(all).toHaveLength(1 + 3);
-    expect(lib.calls.page.some((r) => r.after)).toBe(true); // the pile needed the cursor
-    expect(lib.calls.page.filter((r) => r.after).length).toBeLessThan(lib.calls.page.length);
+  it("passes a slot from an empty slice to the next, and drops one left at the end of the month", async () => {
+    // Three photographs in January: three slots, three slices of about ten days.
+    const passed = new FakeLibrary([print(at(2015, 0, 5, 12)), print(at(2015, 0, 25, 10)), print(at(2015, 0, 25, 15))]);
+    const one = new YearEdit(passed, 2015, { now: NOW, months: [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], seenWithin: never });
+    expect((await one.next(10)).map((p) => new Date(p.takenAt).getDate())).toEqual([5, 25, 25]);
+
+    const dropped = new FakeLibrary([print(at(2015, 0, 2, 9)), print(at(2015, 0, 4, 12)), print(at(2015, 0, 15, 12))]);
+    const two = new YearEdit(dropped, 2015, { now: NOW, months: [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], seenWithin: never });
+    expect(await two.next(10)).toHaveLength(2);
   });
 
-  it("does not split a burst that straddles a page boundary", async () => {
-    const t = new Date(2019, 0, 1, 12).getTime();
-    const lib = new FakeLibrary([print(t), print(t + 1000), print(t + 2000), print(t + 3000)]);
-    const chapter = new YearChapter(lib, 2019, 2);
-    expect(await chapter.next(10)).toHaveLength(1);
+  it("keeps a pick two hours from the one before it where it can", async () => {
+    // January's middle slice holds three moments; the first slice is empty, so the middle one picks two.
+    const lib = new FakeLibrary([print(at(2015, 0, 15, 10)), print(at(2015, 0, 15, 12)), print(at(2015, 0, 15, 13))]);
+    const edit = new YearEdit(lib, 2015, { now: NOW, months: [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], seenWithin: never });
+    expect((await edit.next(10)).map((p) => new Date(p.takenAt).getHours())).toEqual([10, 13]);
+    // Where it cannot, it takes the nearer one rather than nothing.
+    const close = new FakeLibrary([print(at(2015, 0, 15, 12)), print(at(2015, 0, 15, 13))]);
+    const tight = new YearEdit(close, 2015, { now: NOW, months: [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], seenWithin: never });
+    expect(await tight.next(10)).toHaveLength(2);
+  });
+
+  it("prefers a moment not seen lately, then the weightiest, then the one nearest the middle of its slice", async () => {
+    const nearMiddle = print(at(2015, 0, 16, 9));
+    const light = print(at(2015, 0, 12, 9), { filename: "IMG-20150112-WA0001.jpg" });
+    const far = print(at(2015, 0, 20, 9));
+    const lib = new FakeLibrary([nearMiddle, light, far]);
+    const months = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const pick = async (seen: Set<string>) =>
+      (await new YearEdit(lib, 2015, { now: NOW, months, seenWithin: (id) => seen.has(id) }).next(1))[0].id;
+    expect(await pick(new Set())).toBe(nearMiddle.id);
+    expect(await pick(new Set([nearMiddle.id]))).toBe(far.id);
+    expect(await pick(new Set([nearMiddle.id, far.id]))).toBe(light.id);
+  });
+
+  it("reads lazily: the month it needs, then two more ahead, no further", async () => {
+    const prints: Print[] = [];
+    for (let m = 0; m < 12; m++) for (let d = 1; d <= 28; d += 3) prints.push(print(at(2014, m, d, 12)));
+    const lib = new FakeLibrary(prints);
+    const edit = new YearEdit(lib, 2014, { now: NOW, months: await monthIndex(lib, 2014), seenWithin: never });
+    const first = await edit.next(1);
+    expect(new Date(first[0].takenAt).getMonth()).toBe(0);
+    const monthsRead = () => new Set(lib.calls.page.map((r) => new Date(r.range.from).getMonth()));
+    await edit.next(0);
+    expect([...monthsRead()].sort((a, b) => a - b)).toEqual([0, 1, 2]);
+    await edit.next(500);
+    expect(monthsRead().size).toBe(12);
+    expect(edit.done).toBe(true);
+  });
+
+  it("opens at a month and reads nothing before it", async () => {
+    const prints: Print[] = [];
+    for (let m = 0; m < 12; m++) prints.push(print(at(2014, m, 10)), print(at(2014, m, 20)));
+    const lib = new FakeLibrary(prints);
+    const edit = new YearEdit(lib, 2014, { now: NOW, months: await monthIndex(lib, 2014), fromMonth: 7, seenWithin: never });
+    // Twenty-four photographs make an edit of twelve, one a month.
+    expect(edit.size).toBe(12);
+    const all = await edit.next(100);
+    expect(all.map((p) => new Date(p.takenAt).getMonth())).toEqual([7, 8, 9, 10, 11]);
+    for (const r of lib.calls.page) expect(r.range.from).toBeGreaterThanOrEqual(at(2014, 7, 1, 0));
+  });
+
+  it("pins the print the member came from in its own slice's place, and opens there", async () => {
+    const prints: Print[] = [];
+    for (let m = 0; m < 12; m++) for (let d = 2; d <= 28; d += 2) prints.push(print(at(2016, m, d, 12)));
+    const lib = new FakeLibrary(prints);
+    const months = await monthIndex(lib, 2016);
+    const plain = await new YearEdit(lib, 2016, { now: NOW, months, fromMonth: 5, seenWithin: never }).next(200);
+    // A June print the edit would not have chosen, seen yesterday.
+    const pin = prints.find((p) => new Date(p.takenAt).getMonth() === 5 && !plain.some((q) => q.id === p.id))!;
+    const edit = new YearEdit(lib, 2016, { now: NOW, months, pin, seenWithin: (id) => id === pin.id });
+    const all = await edit.next(200);
+    expect(new Date(all[0].takenAt).getMonth()).toBe(5);
+    expect(edit.pinIndex).not.toBeNull();
+    expect(all[edit.pinIndex!].id).toBe(pin.id);
+    expect(all).toHaveLength(plain.length);
+  });
+
+  it("shows more of a year with shifted slices, never repeating what was shown", async () => {
+    const prints: Print[] = [];
+    for (let m = 0; m < 12; m++) for (let d = 1; d <= 28; d++) prints.push(print(at(2013, m, d, 12)));
+    const lib = new FakeLibrary(prints);
+    const months = await monthIndex(lib, 2013);
+    const first = await new YearEdit(lib, 2013, { now: NOW, months, seenWithin: never }).next(200);
+    const firstRanges = new Set(lib.calls.page.map((r) => `${r.range.from}-${r.range.to}`));
+    lib.calls.page.length = 0;
+    const more = await new YearEdit(lib, 2013, {
+      now: NOW,
+      months,
+      shifted: true,
+      exclude: first.map((p) => p.id),
+      seenWithin: never,
+    }).next(200);
+    expect(more.length).toBeGreaterThan(0);
+    const shown = new Set(first.map((p) => p.id));
+    for (const p of more) expect(shown.has(p.id)).toBe(false);
+    expect(lib.calls.page.some((r) => !firstRanges.has(`${r.range.from}-${r.range.to}`))).toBe(true);
+  });
+
+  it("shows the current year's recent photographs, the one place they appear", async () => {
+    const lib = new FakeLibrary([print(at(2026, 2, 3)), print(at(2026, 8, 30)), print(at(2026, 9, 10))]);
+    const all = await new YearEdit(lib, 2026, { now: NOW, months: await monthIndex(lib, 2026), seenWithin: never }).next(10);
+    expect(all).toHaveLength(3);
+  });
+
+  it("shows a year from before 1970", async () => {
+    const lib = new FakeLibrary(series(at(1962, 0, 4, 12), 40, 9 * DAY));
+    const years = await yearIndex(lib, NOW);
+    expect(years).toEqual([{ year: 1962, count: 40 }]);
+    const edit = new YearEdit(lib, 1962, { now: NOW, months: await monthIndex(lib, 1962), seenWithin: never });
+    const all = await edit.next(100);
+    expect(edit.size).toBe(16);
+    expect(all.length).toBeGreaterThanOrEqual(12);
+    expect(all.every((p) => yearOf(p) === 1962)).toBe(true);
   });
 });
 
-describe("a year by month", () => {
-  it("counts each month without screenshots, and can open the chapter at a month", async () => {
-    const lib = new FakeLibrary([
-      print(new Date(2016, 0, 3)),
-      print(new Date(2016, 5, 3, 9)),
-      print(new Date(2016, 5, 3, 18)),
-      print(new Date(2016, 5, 4), { subtypes: ["screenshot"] }),
-      print(new Date(2016, 10, 1)),
+// ---------------------------------------------------------------------------
+// Only bounded questions
+// ---------------------------------------------------------------------------
+
+describe("the library is asked only bounded questions", () => {
+  it("never a page longer than 150, never a cursor, never more than four at once", async () => {
+    const prints: Print[] = [...series(at(2017, 9, 22, 8), 500, 100_000), print(at(1962, 9, 22, 9))];
+    for (let y = 2008; y <= 2025; y++) for (let d = 0; d < 360; d += 2) prints.push(print(at(y, 0, 1 + d, 10)));
+    const lib = new FakeLibrary(prints);
+    const years = await yearIndex(lib, NOW);
+    const roll = surprise(lib, { years, oldest: lib.prints[0].takenAt });
+    await Promise.all([
+      onThisDay(lib, { now: NOW }),
+      onThisDay(lib, { now: at(2027, 1, 14) }),
+      roll.next(24),
+      new YearEdit(lib, 2017, { now: NOW, months: await monthIndex(lib, 2017), seenWithin: never }).next(200),
+      monthIndex(lib, 2012),
+      yearIndex(lib, NOW),
     ]);
-    expect(await monthIndex(lib, 2016)).toEqual([1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0]);
-    const fromJune = await new YearChapter(lib, 2016, 50, 5).next(10);
-    expect(fromJune.map((p) => new Date(p.takenAt).getMonth())).toEqual([5, 5, 10]);
+    expect(lib.calls.page.length).toBeGreaterThan(50);
+    for (const r of lib.calls.page) {
+      expect(Object.keys(r).sort()).toEqual(["first", "order", "range"]);
+      expect(r.first).toBeGreaterThan(0);
+      expect(r.first).toBeLessThanOrEqual(150);
+      expect(r.range.to).toBeGreaterThan(r.range.from);
+    }
+    expect(lib.maxInFlight).toBeLessThanOrEqual(4);
+    expect(lib.maxInFlight).toBeGreaterThan(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The demo library
+// ---------------------------------------------------------------------------
+
+describe("the demo library", () => {
+  const days = [NOW, at(2026, 0, 3), at(2028, 1, 29), at(2027, 2, 1), at(2026, 5, 15), at(2026, 11, 31)];
+
+  it("opens on its six anniversaries, holds several years, and deals a whole roll, whatever the day", async () => {
+    for (const today of days) {
+      const lib = demoSourceAt(today);
+      const day = await onThisDay(lib, { now: today });
+      expect(day.reach).toBe("day");
+      expect(day.prints).toHaveLength(6);
+      expect(opensOnThisDay(day)).toBe(true);
+      const years = await yearIndex(lib, today);
+      expect(years.length).toBeGreaterThanOrEqual(9);
+      const s = new Surprise(lib, { now: today, seed: 1, oldest: await lib.oldest(), years, seenWithin: never, held: never });
+      expect(await s.next(24)).toHaveLength(24);
+      expect(s.rollDone).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Labels
+// ---------------------------------------------------------------------------
 
 describe("labels", () => {
-  const now = new Date(2026, 9, 22).getTime();
   it("set the date like a catalogue", () => {
-    expect(monthYear(new Date(2018, 7, 14).getTime())).toBe("AUGUST 2018");
-    expect(fullDate(new Date(2018, 7, 14).getTime())).toBe("August 14, 2018");
-  });
-  it("caption each way in as an archive would", () => {
-    const day = new Date(2019, 9, 22, 9).getTime();
-    expect(captionFor(day, now, "on-this-day", "day", false)).toEqual({ label: "OCTOBER 22, 2019", line: "Seven years ago today" });
-    const near = new Date(2019, 9, 20, 9).getTime();
-    expect(captionFor(near, now, "on-this-day", "week", false).line).toBe("Seven years ago, this week");
-    expect(captionFor(near, now, "surprise", null, true)).toEqual({ label: "OCTOBER 2019", line: "Seven years ago · posted" });
-    expect(captionFor(new Date(2016, 7, 14).getTime(), now, "year", null, false)).toEqual({ label: "AUGUST 14, 2016", line: "Sunday" });
+    const t = at(2018, 7, 14);
+    expect(monthYear(t)).toBe("AUGUST 2018");
+    expect(monthYearWords(t)).toBe("August 2018");
+    expect(fullDate(t)).toBe("August 14, 2018");
+    expect(monthDay(NOW)).toBe("October 22");
+    expect(shortDay(NOW)).toBe("OCT 22");
+    expect(monthName(7)).toBe("August");
+    expect(MONTH_INITIALS).toEqual(["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]);
+    expect(weekday(at(2016, 7, 14))).toBe("Sunday");
   });
 
-  it("count a year only once its anniversary has passed, and say it in words", () => {
-    expect(yearsBetween(new Date(2019, 9, 23).getTime(), now)).toBe(6);
-    expect(yearsBetween(new Date(2019, 9, 22).getTime(), now)).toBe(7);
-    expect(agoLine(new Date(2019, 9, 22).getTime(), now, true)).toBe("Seven years ago today");
-    expect(agoLine(new Date(2025, 9, 1).getTime(), now)).toBe("One year ago");
-    expect(agoLine(new Date(2026, 1, 1).getTime(), now)).toBe("Earlier this year");
-    expect(agoLine(new Date(1990, 1, 1).getTime(), now)).toBe("36 years ago");
+  it("count with commas and spell years in words up to ninety-nine", () => {
+    expect(countLabel(0)).toBe("0");
+    expect(countLabel(999)).toBe("999");
+    expect(countLabel(1204)).toBe("1,204");
+    expect(countLabel(1_234_567)).toBe("1,234,567");
+    expect(yearsInWords(1)).toBe("One");
+    expect(yearsInWords(20)).toBe("Twenty");
+    expect(yearsInWords(21)).toBe("Twenty-one");
+    expect(yearsInWords(31)).toBe("Thirty-one");
+    expect(yearsInWords(99)).toBe("Ninety-nine");
+    expect(yearsInWords(100)).toBe("100");
+  });
+
+  it("caption On This Day by the anniversary, the same number for every print of a week", () => {
+    expect(captionFor(at(2019, 9, 22, 9), NOW, "on-this-day", "day", null)).toEqual({
+      label: "OCTOBER 22, 2019",
+      line: "Seven years ago today",
+      long: false,
+    });
+    expect(captionFor(at(2019, 9, 20, 9), NOW, "on-this-day", "week", null).line).toBe("Seven years ago this week");
+    expect(captionFor(at(2019, 9, 24, 9), NOW, "on-this-day", "week", null).line).toBe("Seven years ago this week");
+    expect(captionFor(at(2019, 10, 2, 9), NOW, "on-this-day", "season", null).line).toBe("Seven years ago, around this time");
+    expect(captionFor(at(2025, 9, 24, 9), NOW, "on-this-day", "week", null).line).toBe("One year ago this week");
+    expect(captionFor(at(2025, 10, 2, 9), NOW, "on-this-day", "season", null).line).toBe("One year ago, around this time");
+    // A print on the day itself says today, whatever the chapter's reach.
+    expect(captionFor(at(2019, 9, 22, 9), NOW, "on-this-day", "season", null).line).toBe("Seven years ago today");
+  });
+
+  it("caption On This Day across the new year and on the 29th of February", () => {
+    const jan2 = at(2027, 0, 2, 12);
+    expect(captionFor(at(2019, 11, 30, 9), jan2, "on-this-day", "week", null).line).toBe("Seven years ago this week");
+    expect(captionFor(at(2025, 11, 20, 9), jan2, "on-this-day", "season", null).line).toBe("One year ago, around this time");
+    const leapDay = at(2028, 1, 29, 12);
+    expect(captionFor(at(2027, 1, 28, 9), leapDay, "on-this-day", "day", null).line).toBe("One year ago today");
+    expect(captionFor(at(2027, 1, 28, 9), leapDay, "on-this-day", "week", null).line).toBe("One year ago today");
+    expect(captionFor(at(2024, 1, 29, 9), leapDay, "on-this-day", "day", null).line).toBe("Four years ago today");
+  });
+
+  it("caption Surprise and Set aside by the month, and the calendar decides under a year", () => {
+    expect(captionFor(at(2014, 7, 14), NOW, "surprise", null, null)).toEqual({
+      label: "AUGUST 2014",
+      line: "Twelve years ago",
+      long: false,
+    });
+    expect(captionFor(at(2025, 11, 20), NOW, "surprise", null, null).line).toBe("Last year");
+    expect(captionFor(at(2025, 9, 23), NOW, "surprise", null, null).line).toBe("Last year");
+    expect(captionFor(at(2025, 9, 1), NOW, "surprise", null, null).line).toBe("One year ago");
+    expect(captionFor(at(2026, 2, 1), NOW, "set-aside", null, null).line).toBe("Earlier this year");
+    expect(captionFor(at(2016, 7, 14), NOW, "set-aside", null, null)).toMatchObject({ label: "AUGUST 2016", line: "Ten years ago" });
+    expect(captionFor(at(1990, 1, 1), NOW, "surprise", null, null).line).toBe("Thirty-six years ago");
+    expect(captionFor(at(1962, 1, 1), NOW, "surprise", null, null).line).toBe("Sixty-four years ago");
+    expect(captionFor(at(1920, 1, 1), NOW, "surprise", null, null).line).toBe("106 years ago");
+  });
+
+  it("caption a year by its full date and weekday", () => {
+    expect(captionFor(at(2016, 7, 14), NOW, "year", null, null)).toEqual({
+      label: "AUGUST 14, 2016",
+      line: "A Sunday",
+      long: false,
+    });
+  });
+
+  it("say when a print was posted from this phone, which makes the line long", () => {
+    expect(captionFor(at(2019, 9, 22, 9), NOW, "on-this-day", "day", at(2026, 4, 3))).toEqual({
+      label: "OCTOBER 22, 2019",
+      line: "Seven years ago today · posted in May 2026",
+      long: true,
+    });
   });
 });
 
+// ---------------------------------------------------------------------------
+// Access
+// ---------------------------------------------------------------------------
+
 describe("library access", () => {
-  it("reads iOS's answer as one of five states", () => {
+  it("reads iOS's answer as one of the Darkroom's states", () => {
     expect(accessFrom({ status: "granted", granted: true, accessPrivileges: "all" })).toBe("full");
     expect(accessFrom({ status: "granted", granted: true, accessPrivileges: "limited" })).toBe("limited");
     expect(accessFrom({ status: "undetermined", granted: false })).toBe("undetermined");
@@ -384,34 +1094,39 @@ describe("library access", () => {
   });
 });
 
-describe("what the Darkroom remembers", () => {
-  it("keeps the most recent, letting the oldest go", () => {
-    const m = new Map<string, number>();
-    remember(m, "a", 1, 2);
-    remember(m, "b", 2, 2);
-    remember(m, "a", 3, 2);
-    remember(m, "c", 4, 2);
-    expect([...m.keys()]).toEqual(["a", "c"]);
+// ---------------------------------------------------------------------------
+// What the engine never touches
+// ---------------------------------------------------------------------------
+
+describe("the engine's privacy", () => {
+  const files = ["types", "eligibility", "discovery", "labels", "nativeSource", "demoSource"].map((f) =>
+    path.resolve(__dirname, "../src/darkroom", `${f}.ts`),
+  );
+  const forbidden = [
+    /\.location\b/,
+    /exif/i,
+    /getMomentsAsync/,
+    /\bfetch\(/,
+    /supabase/i,
+    /Image\.prefetch/,
+    /console\./,
+    /getAssetInfoAsync/,
+    /pairedVideoAsset/,
+    /getAlbums?Async/,
+    /\bafter\s*:/,
+  ];
+
+  it("reads no location, metadata, moments or albums, sends nothing, and pages without cursors", () => {
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const rule of forbidden) expect({ file: path.basename(file), hit: rule.test(source) }).toEqual({ file: path.basename(file), hit: false });
+    }
   });
 
-  it("refuses a stored file that does not fit, entry by entry", () => {
-    expect(parseHistory(null)).toBeNull();
-    expect(parseHistory({ seen: [["a", 1], ["", 2], ["b", "x"], 3], developed: "no" })).toEqual({
-      seen: [["a", 1]],
-      developed: [],
-    });
-    expect(parseSetAside({})).toBeNull();
-    expect(
-      parseSetAside([
-        { id: "a", uri: "ph://a", width: 10, height: 10, takenAt: 5, setAsideAt: 6 },
-        { id: "b", uri: "ph://b" },
-      ]),
-    ).toEqual([{ id: "a", uri: "ph://a", width: 10, height: 10, takenAt: 5, setAsideAt: 6, subtypes: [] }]);
-  });
-
-  it("holds the place for two hours, in memory", () => {
-    keepPlace({ mode: "year", year: 2016, prints: [], index: 3, reader: null }, 1_000);
-    expect(recallPlace(1_000 + PLACE_KEPT_MS - 1)?.index).toBe(3);
-    expect(recallPlace(1_000 + PLACE_KEPT_MS + 1)).toBeNull();
+  it("year ranges are local calendar years", () => {
+    const r = yearRange(2016);
+    expect(new Date(r.from).getFullYear()).toBe(2016);
+    expect(new Date(r.to - 1).getFullYear()).toBe(2016);
+    expect(new Date(r.to).getFullYear()).toBe(2017);
   });
 });

@@ -16,7 +16,7 @@ import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
 import { forgetPushToken } from "@/utils/push";
-import { forgetDarkroom } from "@/darkroom/forget";
+import { forgetDarkroom, memberLeft } from "@/darkroom/forget";
 
 interface SessionState {
   /** undefined while restoring the persisted session on launch. */
@@ -73,6 +73,25 @@ export async function enterApp(): Promise<void> {
   router.replace("/");
 }
 
+/**
+ * The Darkroom's memory on this phone — what it showed, the shelf, the
+ * place, the first-visit page — belongs to whoever is signed in. Forget it
+ * whenever that stops being true, however the session ended: a sign-out
+ * here, a sign-out everywhere from another device, a refresh token that
+ * expired or was revoked, or a different member signing in (`memberLeft`
+ * has the rule).
+ */
+function useForgetDarkroomOnLeave(userId: string | null, restoring: boolean): void {
+  // undefined until the first settled answer about who is signed in.
+  const owner = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (restoring) return;
+    const was = owner.current;
+    owner.current = userId;
+    if (memberLeft(was, userId)) forgetDarkroom();
+  }, [userId, restoring]);
+}
+
 /** A minimal fake Session so route gates behave identically in demo mode. */
 function demoSession(profile: ProfileRow): Session {
   return {
@@ -88,6 +107,7 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<ProfileRow | null>(() => demoCurrentProfile());
 
   useEffect(() => demoSubscribe(() => setProfile(demoCurrentProfile())), []);
+  useForgetDarkroomOnLeave(profile?.id ?? null, false);
 
   const value = useMemo<SessionState>(
     () => ({
@@ -103,6 +123,8 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
       },
       signOut: async () => {
         demoSignOut();
+        // The demo reads the phone's own library too: nothing of this member stays.
+        forgetDarkroom();
         await leaveToLanding();
       },
     }),
@@ -132,6 +154,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   // waitlist screen.
   const userId = session?.user?.id ?? null;
   const restoring = session === undefined;
+  useForgetDarkroomOnLeave(userId, restoring);
 
   // One read at a time: a second call while the first is still retrying
   // joins it instead of stacking another behind it.

@@ -32,7 +32,7 @@ What you post. Photographs and short films you publish, the filter you chose, yo
 
 Capture dates. With your permission, VINTAGE reads the date a photograph or film was taken from the file you choose, so the date stamp says when the shutter fired. VINTAGE does not read your location from your photographs and does not track where you are. A place on a post is the one you typed or picked by name.
 
-Your photo library, in the Darkroom. If you allow it, the Darkroom shows you photographs already on your phone so you can find one worth posting. It reads them, and the dates they were taken, on your phone. Nothing about your library — not the photographs, their dates, or how many there are — is sent to us or to anyone else. So that it does not repeat itself, the Darkroom keeps a short list on your phone of which photographs you looked at, set aside or posted; it holds only the library's own identifiers, and is deleted when you sign out or when you choose "Forget what the Darkroom has shown me" in Settings. Only a photograph you choose to post is uploaded.
+Your photo library, in the Darkroom. If you allow it, the Darkroom shows you photographs already on your phone so you can find one worth posting. It chooses them by the date each was taken and by what your library records about each one, such as its size and whether it is a screenshot — never by place, and never by looking at what is in the picture. It does not look through your Hidden album. Nothing about your library — not the photographs, their dates, or how many there are — is sent to us or to anyone else. So that it does not repeat itself, the Darkroom keeps a short list on your phone of the library’s own identifiers and when each was added: photographs you looked at, for up to two months; photographs you posted from it, for a year; and photographs you set aside, until you put them back. It also keeps where you left off, which it offers back for twelve hours. For the photographs you set aside and those around where you left off, it keeps the date each was taken and its size as well, so it can show them again. The list is deleted when you sign out. “Forget what the Darkroom has shown me” in Settings clears all of it but keeps the photographs you set aside. Like the rest of the app’s data on your phone, the list can be included in your phone’s own backup. When a photograph is kept in iCloud, iOS brings a screen-sized copy from your own iCloud account to show it, as Photos does; VINTAGE downloads the photograph itself only when you ask it to develop it. Only a photograph you choose to post is uploaded.
 
 Device token. If you allow notifications, a token that lets us send them to your phone. It is deleted when you sign out.
 
@@ -48,7 +48,7 @@ VINTAGE is members-only. Your profile and photographs are visible to approved me
 
 ## Where it is kept
 
-Data is stored with Supabase (database, authentication and file storage) and delivered through their infrastructure. Push notifications are delivered through Expo's push service and Apple. Invitation pages are hosted on Vercel.
+Data is stored with Supabase (database, authentication and file storage) and delivered through their infrastructure. Push notifications are delivered through Expo’s push service and Apple. Invitation pages are hosted on Vercel.
 
 ## Your choices
 

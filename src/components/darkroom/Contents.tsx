@@ -1,175 +1,223 @@
-import React from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, PixelRatio } from "react-native";
-import { Image } from "expo-image";
+import React, { useEffect, useRef } from "react";
+import { Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { countLabel, MONTH_INITIALS, shortDay } from "@/darkroom/labels";
-import { printSource } from "@/darkroom/printSource";
 import type { YearCount } from "@/darkroom/discovery";
+import { countLabel, monthDay, monthName } from "@/darkroom/labels";
 import type { DarkroomMode } from "@/darkroom/types";
-import type { SetAsidePrint } from "@/darkroom/setAside";
-import { room, roomType, untrack } from "./room";
+import type { Where } from "./chapter";
+import { useLook } from "./look";
+import { room } from "./room";
+import { RoomText, Rule } from "./Type";
 import { Word } from "./Word";
+import { dayFolio, LOOKING, photographs, type DayState } from "./words";
+
+/** At this type size a folio goes under its title rather than beside it. Rows only ever grow. */
+const STACK_AT = 1.6;
+/** The current line opens this far below the top of the sheet. */
+const OPEN_OFFSET = 96;
 
 /**
- * The Darkroom's contents page, set like the front of a photography book:
- * the chapters with dot leaders running to their folios, then the years
- * the library holds, oldest first, in the serif — the way an archive reads
- * forward — and, under the year that is open, its months. A gold rule
- * hangs in the margin beside where you are, like a ribbon.
+ * The Contents sheet, set like the front of a photobook: the three ways
+ * in, each with its folio set right on the same baseline, then the years
+ * the library holds, oldest first, the way an archive reads forward —
+ * and under the year that is open, its twelve months. A short gold
+ * ribbon hangs in the margin beside where you are. No dot leaders, no
+ * decades, no thumbnails.
  *
- * It is the one place the way in changes. Everything on it is read on
- * this phone.
+ * It is the one place the chapter changes. Every choice closes the sheet
+ * first; whatever pushes a screen or opens a picker waits for the sheet
+ * to have gone (`onDismiss`), since a screen pushed under an open sheet
+ * would be hidden behind it. The footer says, every time, that all of it
+ * is read on this iPhone.
  */
 export function Contents({
   visible,
   now,
-  mode,
-  year,
+  where,
   years,
   months,
-  dayHasPhotographs,
-  setAside,
+  monthInView,
+  day,
+  shelfCount,
+  prunedNote,
   limited,
+  toMonths,
   onChoose,
-  onMonth,
   onLibrary,
-  onChooseMore,
+  onShareMore,
   onSettings,
   onClose,
   onDismiss,
 }: {
   visible: boolean;
   now: number;
-  mode: DarkroomMode;
-  year: number | null;
-  years: readonly YearCount[];
-  /** The open year's twelve month counts, once known. */
-  months: number[] | null;
-  /** Null while unknown. */
-  dayHasPhotographs: boolean | null;
-  setAside: readonly SetAsidePrint[];
+  where: Where | null;
+  /** Oldest first; null until the year index has been read. */
+  years: readonly YearCount[] | null;
+  /** The open year's month counts. */
+  months: { year: number; counts: number[] } | null;
+  /** The month of the print in front of the member, in a year chapter. */
+  monthInView: number | null;
+  day: DayState;
+  shelfCount: number;
+  prunedNote: string | null;
   limited: boolean;
-  onChoose: (mode: DarkroomMode, year?: number | null) => void;
-  onMonth: (month: number) => void;
+  /** Opened from the caption thread in a year: open at the month strip. */
+  toMonths: boolean;
+  onChoose: (mode: DarkroomMode, year?: number | null, month?: number | null) => void;
   onLibrary: () => void;
-  onChooseMore: () => void;
+  onShareMore: () => void;
   onSettings: () => void;
   onClose: () => void;
-  /** After the sheet has gone — where a choice that pushes a screen is acted on. */
   onDismiss: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const large = PixelRatio.getFontScale() >= 1.6;
-  const decades = new Set(years.map((y) => Math.floor(y.year / 10)));
-  const span = years.length > 0 ? `${years[0].year} TO ${years[years.length - 1].year}` : "ANY YEAR";
+  const { width, fontScale } = useWindowDimensions();
+  const stacked = fontScale >= STACK_AT;
+  const scroll = useRef<ScrollView>(null);
+  const placed = useRef(false);
+  useEffect(() => {
+    if (!visible) placed.current = false;
+  }, [visible]);
+
+  /** The sheet opens scrolled so where you are is in view. */
+  const here = (e: LayoutChangeEvent) => {
+    if (placed.current) return;
+    placed.current = true;
+    scroll.current?.scrollTo({ y: Math.max(0, e.nativeEvent.layout.y - OPEN_OFFSET), animated: false });
+  };
+
+  const openYear = where?.mode === "year" ? where.year : null;
+  const nothingToday = day === "none";
+  const cell = Math.floor((width - 48) / 6);
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} onDismiss={onDismiss}>
-      <View style={styles.root}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+      onDismiss={onDismiss}
+    >
+      <View style={styles.root} onAccessibilityEscape={onClose} testID="darkroom-contents-sheet">
         <View style={styles.head}>
-          <Text style={roomType.eyebrow} accessibilityRole="header">
+          <RoomText kind="eyebrow" accessibilityRole="header" maxFontSizeMultiplier={2.4}>
             Contents
-          </Text>
-          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close the contents" style={styles.doneHit}>
-            <Text style={[roomType.eyebrow, styles.done]}>Done</Text>
+          </RoomText>
+          <Pressable
+            onPress={onClose}
+            hitSlop={12}
+            style={({ pressed }) => [styles.done, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Close the contents"
+            testID="darkroom-contents-done"
+          >
+            <RoomText kind="eyebrow" tone="soft" maxFontSizeMultiplier={2.4}>
+              Done
+            </RoomText>
           </Pressable>
         </View>
         <View style={styles.headRule} />
 
-        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 32 }]}>
+        <ScrollView ref={scroll} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 32 }]}>
           <Line
             title="On this day"
-            folio={dayHasPhotographs === false ? "NOTHING TODAY" : shortDay(now)}
-            current={mode === "on-this-day"}
-            disabled={dayHasPhotographs === false}
-            large={large}
+            folio={dayFolio(day, now)}
+            current={where?.mode === "on-this-day"}
+            disabled={nothingToday}
+            stacked={stacked}
+            label={nothingToday ? "On this day, nothing today" : `On this day, ${monthDay(now)}`}
             onPress={() => onChoose("on-this-day")}
+            onPlaced={where?.mode === "on-this-day" ? here : undefined}
           />
-          <Line title="Surprise me" folio={span} current={mode === "surprise"} large={large} onPress={() => onChoose("surprise")} />
-          {setAside.length > 0 ? (
-            <>
-              <Line
-                title="Set aside"
-                folio={countLabel(setAside.length)}
-                current={mode === "set-aside"}
-                large={large}
-                onPress={() => onChoose("set-aside")}
-              />
-              <View style={styles.shelf} accessible={false}>
-                {setAside.slice(0, 5).map((p) => (
-                  <Image
-                    key={p.id}
-                    source={printSource(p.uri)}
-                    style={styles.shelfPrint}
-                    contentFit="cover"
-                    cachePolicy="memory"
-                    recyclingKey={p.id}
-                    accessibilityIgnoresInvertColors
-                  />
-                ))}
-              </View>
-            </>
+          <Line
+            title="Surprise me"
+            folio="Any year"
+            current={where?.mode === "surprise"}
+            stacked={stacked}
+            label="Surprise me, any year"
+            onPress={() => onChoose("surprise")}
+            onPlaced={where?.mode === "surprise" ? here : undefined}
+          />
+          {shelfCount > 0 ? (
+            <Line
+              title="Set aside"
+              folio={countLabel(shelfCount)}
+              current={where?.mode === "set-aside"}
+              stacked={stacked}
+              label={`Set aside, ${photographs(shelfCount)}`}
+              onPress={() => onChoose("set-aside")}
+              onPlaced={where?.mode === "set-aside" ? here : undefined}
+            />
+          ) : null}
+          {prunedNote ? (
+            <RoomText kind="foot" maxFontSizeMultiplier={2.4} style={styles.pruned}>
+              {prunedNote}
+            </RoomText>
           ) : null}
 
-          {years.length > 0 ? (
-            <>
-              <View style={styles.section}>
-                <Text style={roomType.eyebrow}>By year</Text>
-                <View style={styles.sectionRule} />
-              </View>
-              {years.map((y, i) => {
-                const decadeStarts = decades.size > 1 && (i === 0 || Math.floor(years[i - 1].year / 10) !== Math.floor(y.year / 10));
-                const open = mode === "year" && year === y.year;
-                return (
-                  <View key={y.year}>
-                    {decadeStarts ? <Text style={styles.decade}>The {Math.floor(y.year / 10) * 10}s</Text> : null}
-                    <Line
-                      title={String(y.year)}
-                      folio={countLabel(y.count)}
-                      current={open}
-                      large={large}
-                      year
-                      accessibilityLabel={`${y.year}, ${countLabel(y.count)} photographs`}
-                      onPress={() => onChoose("year", y.year)}
-                    />
-                    {open && months ? (
-                      <View style={styles.months}>
-                        {MONTH_INITIALS.map((m, mi) => {
-                          const empty = (months[mi] ?? 0) === 0;
-                          return (
-                            <Pressable
-                              key={m}
-                              disabled={empty}
-                              onPress={() => onMonth(mi)}
-                              style={({ pressed }) => [styles.month, pressed && styles.pressed]}
-                              accessibilityRole="button"
-                              accessibilityLabel={`${m} ${y.year}`}
-                              accessibilityState={{ disabled: empty }}
-                            >
-                              <Text style={[styles.monthText, untrack(1.6), empty && styles.monthEmpty]}>{m}</Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </>
-          ) : null}
+          <View style={styles.section}>
+            <RoomText kind="eyebrow" maxFontSizeMultiplier={2.4}>
+              By year
+            </RoomText>
+            <View style={styles.sectionRule} />
+          </View>
+          {years == null ? (
+            <RoomText kind="foot" maxFontSizeMultiplier={2.4} style={styles.looking}>
+              {LOOKING}
+            </RoomText>
+          ) : (
+            years.map((y) => {
+              const isOpen = openYear === y.year;
+              const strip = isOpen && months?.year === y.year ? months.counts : null;
+              return (
+                <React.Fragment key={y.year}>
+                  <Line
+                    title={String(y.year)}
+                    folio={countLabel(y.count)}
+                    year
+                    current={isOpen}
+                    stacked={stacked}
+                    label={`${y.year}, ${photographs(y.count)}`}
+                    onPress={() => onChoose("year", y.year)}
+                    onPlaced={isOpen && !toMonths ? here : undefined}
+                  />
+                  {strip ? (
+                    <View style={styles.months} onLayout={toMonths ? here : undefined}>
+                      {strip.map((count, m) => (
+                        <Month
+                          key={m}
+                          month={m}
+                          year={y.year}
+                          count={count}
+                          inView={monthInView === m}
+                          width={cell}
+                          onPress={() => onChoose("year", y.year, m)}
+                        />
+                      ))}
+                    </View>
+                  ) : null}
+                </React.Fragment>
+              );
+            })
+          )}
 
           <View style={styles.foot}>
-            <Word label="Choose from your whole library" dim onPress={onLibrary} accessibilityHint="The ordinary photo picker." />
+            <Word label="Choose from your whole library" onPress={onLibrary} testID="darkroom-contents-library" />
             {limited ? (
               <>
-                <Text style={styles.footNote}>VINTAGE can see only the photographs you’ve shared with it.</Text>
+                <RoomText kind="foot" maxFontSizeMultiplier={2.4} style={styles.center}>
+                  VINTAGE can see only the photographs you’ve shared with it.
+                </RoomText>
                 <View style={styles.footRow}>
-                  <Word label="Share more" dim onPress={onChooseMore} />
-                  <Word label="Allow all in Settings" dim onPress={onSettings} />
+                  <Word label="Share more" onPress={onShareMore} />
+                  <Word label="Allow all in Settings" onPress={onSettings} />
                 </View>
               </>
             ) : null}
-            <Text style={styles.footNote}>Everything here is read on this iPhone. Nothing is sent.</Text>
+            <RoomText kind="foot" maxFontSizeMultiplier={2.4} style={styles.center}>
+              Everything here is read on this iPhone. Nothing is sent.
+            </RoomText>
           </View>
         </ScrollView>
       </View>
@@ -177,80 +225,111 @@ export function Contents({
   );
 }
 
-/** A line of the contents: the title, a dot leader, the folio; a gold ribbon beside where you are. */
+/** A line of the contents: the title, the folio on its baseline, and the ribbon beside where you are. */
 function Line({
   title,
   folio,
   current,
   disabled = false,
-  large,
+  stacked,
   year = false,
-  accessibilityLabel,
+  label,
   onPress,
+  onPlaced,
 }: {
   title: string;
   folio: string;
   current: boolean;
   disabled?: boolean;
-  large: boolean;
+  stacked: boolean;
   year?: boolean;
-  accessibilityLabel?: string;
+  label: string;
   onPress: () => void;
+  onPlaced?: (e: LayoutChangeEvent) => void;
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      onLayout={onPlaced}
       style={({ pressed }) => [styles.line, pressed && styles.pressed]}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? `${title}, ${folio}`}
+      accessibilityLabel={label}
       accessibilityState={{ selected: current, disabled }}
+      testID={`darkroom-contents-${title.toLowerCase().replace(/\s+/g, "-")}`}
     >
-      <View style={[styles.ribbon, { backgroundColor: current ? room.gold : "transparent" }]} />
-      <View style={large ? styles.lineStacked : styles.lineRow}>
-        <Text style={[year ? styles.yearTitle : styles.title, disabled && styles.titleDisabled]} maxFontSizeMultiplier={2.4}>
+      <View style={[styles.ribbon, { backgroundColor: current ? room.gold : "transparent" }]} accessible={false} />
+      <View style={stacked ? styles.lineStacked : styles.lineRow}>
+        <RoomText kind={year ? "contentsYear" : "contentsLine"} tone={disabled ? "faint" : "ink"} maxFontSizeMultiplier={2.4} style={styles.title}>
           {title}
-        </Text>
-        {large ? null : (
-          <Text style={styles.leader} numberOfLines={1} ellipsizeMode="clip" accessible={false}>
-            {" . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . ."}
-          </Text>
-        )}
-        <Text style={styles.folio} maxFontSizeMultiplier={1.6}>
+        </RoomText>
+        <RoomText kind={year ? "count" : "folio"} maxFontSizeMultiplier={2.4} style={stacked ? styles.folioUnder : null}>
           {folio}
-        </Text>
+        </RoomText>
       </View>
     </Pressable>
   );
 }
 
+/** One month of the open year: its initials, dimmed and closed when the month has no photographs. */
+function Month({
+  month,
+  year,
+  count,
+  inView,
+  width,
+  onPress,
+}: {
+  month: number;
+  year: number;
+  count: number;
+  inView: boolean;
+  width: number;
+  onPress: () => void;
+}) {
+  const look = useLook();
+  const empty = count === 0;
+  const name = `${monthName(month)} ${year}`;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={empty}
+      style={({ pressed }) => [styles.month, { width }, empty && styles.monthEmpty, pressed && styles.pressed]}
+      accessibilityRole="button"
+      accessibilityLabel={empty ? `${name}, no photographs` : name}
+      accessibilityState={{ disabled: empty, selected: inView }}
+      testID={`darkroom-month-${month}`}
+    >
+      <RoomText kind="month" tone={empty ? "faint" : "soft"} maxFontSizeMultiplier={2.4}>
+        {monthName(month).slice(0, 3)}
+      </RoomText>
+      <Rule width={14} color={room.gold} style={[styles.monthRule, { opacity: inView ? (look.contrast ? 1 : 0.8) : 0 }]} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: room.page },
-  head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 24, paddingTop: 18, paddingBottom: 12 },
-  doneHit: { minHeight: 44, justifyContent: "center" },
-  done: { color: room.soft },
+  root: { flex: 1, backgroundColor: room.well },
+  head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 18, paddingHorizontal: 24, minHeight: 62 },
+  done: { minHeight: 44, minWidth: 44, alignItems: "flex-end", justifyContent: "center" },
   headRule: { height: 1, backgroundColor: room.lineStrong, marginHorizontal: 24 },
   scroll: { paddingHorizontal: 24, paddingTop: 14 },
-  line: { flexDirection: "row", alignItems: "center", minHeight: 52, marginLeft: -20, paddingLeft: 0 },
+  line: { flexDirection: "row", alignItems: "center", minHeight: 52, marginLeft: -20 },
   ribbon: { width: 12, height: 1, marginRight: 8 },
-  lineRow: { flex: 1, flexDirection: "row", alignItems: "baseline" },
+  lineRow: { flex: 1, flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
   lineStacked: { flex: 1, paddingVertical: 8 },
-  title: { fontFamily: roomType.serif, fontSize: 21, lineHeight: 28, color: room.ink },
-  yearTitle: { fontFamily: roomType.serif, fontSize: 21, lineHeight: 28, color: room.ink, fontVariant: ["oldstyle-nums"] },
-  titleDisabled: { color: room.faint },
-  leader: { flex: 1, fontFamily: roomType.mono, fontSize: 11, color: room.lineStrong, marginHorizontal: 6, overflow: "hidden" },
-  folio: { fontFamily: roomType.mono, fontSize: 10, letterSpacing: 1.6, color: room.faint, textTransform: "uppercase" },
-  shelf: { flexDirection: "row", gap: 2, marginBottom: 10 },
-  shelfPrint: { width: 56, height: 56, backgroundColor: room.sunken },
+  title: { flexShrink: 1, marginRight: 12 },
+  folioUnder: { marginTop: 4 },
+  pruned: { marginTop: -6, marginBottom: 6 },
   section: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 32, marginBottom: 6 },
   sectionRule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: room.lineStrong },
-  decade: { fontFamily: roomType.serif, fontStyle: "italic", fontSize: 14, lineHeight: 20, color: room.faint, marginTop: 14 },
+  looking: { marginTop: 10 },
   months: { flexDirection: "row", flexWrap: "wrap", marginBottom: 8 },
-  month: { width: "16.66%", minHeight: 44, alignItems: "center", justifyContent: "center" },
-  monthText: { fontFamily: roomType.mono, fontSize: 10, color: room.soft },
-  monthEmpty: { color: room.faint, opacity: 0.4 },
+  month: { height: 44, alignItems: "center", justifyContent: "center" },
+  monthEmpty: { opacity: 0.4 },
+  monthRule: { marginTop: 4 },
   pressed: { opacity: 0.6 },
   foot: { marginTop: 36, alignItems: "center", gap: 10 },
   footRow: { flexDirection: "row", gap: 16 },
-  footNote: { fontFamily: roomType.serif, fontStyle: "italic", fontSize: 13, lineHeight: 19, color: room.faint, textAlign: "center" },
+  center: { textAlign: "center" },
 });

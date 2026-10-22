@@ -411,18 +411,67 @@ attribution and future re-processing.
 
 ## The Darkroom
 
-The member's own camera roll, one photograph at a time, from further back than they would scroll. It lives at `app/darkroom.tsx`, a pushed screen on the root stack, not a tab: the tabs are a swipeable pager and the Darkroom's own horizontal paging would fight it. It is entered from the Post tab (and from the "In your library" rows of On this day), and it is always printed on the dark page.
+The member's own camera roll, one photograph at a time, from further back
+than anyone scrolls. It is `app/darkroom.tsx`, a screen pushed on the root
+stack — not a tab, because the tab pager owns every sideways pan, and not a
+modal, because the editor has to open above it and come back to it. It is
+always printed on the dark page. Back is the left edge or the chevron;
+anywhere else a swipe turns the page. The way in is the door on the Post
+tab, under the three ordinary rows: ENTER, SET ASIDE when anything is set
+aside, and "You left off in August 2018." when the member was in the room
+within twelve hours. The "In your library" rows of On this day
+(`app/memories.tsx`) open it too. It exists on iOS and in the web demo only.
 
-- **Ways in** (`src/darkroom/discovery.ts`, pure and tested in `tests/darkroom.test.ts`):
-  - *On this day*: the same calendar date in earlier years, widening to the week and then the time of year when the day is thin. One from each year, oldest first, before a second from any.
-  - *Surprise me*: anywhere older than 90 days. Each pick draws a year, weighted by the square root of its count with a gentle lean to the old, then reads the 40 frames either side of a random moment in it. Never the same year twice running, and never two moments from one occasion close together.
-  - *By year*: the year read in order as a chapter. Bursts are one moment, occasions are edited to a few moments, and the chapter can open at any month.
-  - *Set aside*: references kept on the phone to come back to.
-- **Only metadata** is used: capture date, size, shape, Photos' subtypes and the file extension. Screenshots, PNGs and GIFs, thumbnails and screen-shaped images are skipped. Nothing looks at pixels, and the photographs' location is never read.
-- **Bounded questions only**: counts and pages of at most 150 through `expo-media-library` (`src/darkroom/nativeSource.ts`). The library is never enumerated. Images are drawn by `expo-image` from `ph://` at view size, memory cache only, one page either side.
-- **Develop** (`src/darkroom/develop.ts`) reads the one chosen photograph through the image manipulator's `ph://` path. That gives the current edited still, never a Live Photo's video, and brings it down from iCloud if needed, with a Cancel. It then opens the ordinary editor (`app/compose.tsx`) with the capture date. There is no second posting path.
-- **What it keeps on the phone**: identifiers of photographs looked at (passed over by Surprise for 21 days), posted from the Darkroom (for a year), and set aside. These live in small files under the app's documents folder and are deleted on sign-out or from Settings, "Forget what the Darkroom has shown me". Where the member was is kept in memory for two hours.
-- **In the browser** the Darkroom reads a small bundled demo library (`src/darkroom/demoSource.ts`). `npm run build:web && npm run test:darkroom` walks the whole flow.
+There are four chapters, chosen in Contents (the chapter name or CONTENTS
+in the running head). *On this day* is this date in earlier years, widening
+to the week and then the season when the day is thin: at most four moments
+a year, one from each year oldest first and then the rest, forty at most.
+*Surprise me* deals rolls of 24 from anywhere older than 90 days, weighted
+towards older and fuller years, and passes over what was looked at in the
+last three weeks, posted in the last year, or set aside. *By year* is an
+edit of the year, about 2.5 × √N photographs spread across its months,
+from any month to December. *Set aside* is the shelf, up to 500. Entry
+without a chapter resumes a place under twelve hours old, otherwise opens
+On this day when the day has three moments and was not finished today,
+otherwise Surprise me. Each chapter ends on an end page that hands on to
+another; there is no counter. The rules are pure and seeded, in
+`src/darkroom/` (`eligibility.ts`, `discovery.ts`, `labels.ts`).
+
+Privacy is the design. Library access is asked for in one place only,
+CONTINUE on the room's first-visit page; the Post tab never reads the
+library, `app/memories.tsx` never asks, and the ordinary picker
+(`src/utils/pickForCompose.ts`) needs no permission and cuts the picked
+file's EXIF down to its date fields the moment it arrives. The room asks
+the library only bounded questions — counts, pages of at most 150, time
+windows — and never reads location, EXIF, moments or albums. It makes no
+network request of its own; previews of iCloud photographs come through
+iOS at screen size, and a photograph kept in iCloud comes down only after
+DOWNLOAD AND DEVELOP. Images are cached in memory only. What it keeps on the phone:
+what was looked at and posted (`darkroom-history.json` in the cache
+folder, two months and a year), the shelf (`darkroom-set-aside.json`: id,
+date, size), the place (`darkroom-place.json`, twelve hours) and that the
+first-visit page was passed. Sign-out deletes all of it; Settings' "Forget
+what the Darkroom has shown me" deletes all but the shelf. The privacy
+policy (`src/legal/documents.ts`, `npm run build:legal`) says exactly this.
+
+DEVELOP hands one photograph to the ordinary editor (`app/compose.tsx`)
+with its capture date; there is no second posting path. The photograph is
+made by a small local module, `modules/vintage-library`: a 2048 px upright
+rendition through PhotoKit, local first, with progress and a STOP, no
+metadata, and never a Live Photo's video or the full-size original. The
+release binary must include it. A dev client without it falls back to the
+photo library's own file and the image manipulator
+(`src/darkroom/localFile.ts`, `develop.ts`). `modules/vintage-pager` keeps
+the room's page turns to one finger, so a pinch zooms the print instead of
+turning it.
+
+To review it in a browser, the web demo reads a small bundled library
+(`src/darkroom/demoSource.ts`) with six photographs on today's date in
+earlier years, so On this day always opens.
+`npm run build:web && npm run test:darkroom` walks it end to end: the
+first-visit page, entering, a page turn, set aside, a year in Contents,
+develop into the editor and back, and an end page. The unit tests are
+`tests/darkroom*.test.ts`.
 
 ## Media pipeline
 
