@@ -55,8 +55,12 @@ enum BakeTuning {
   /// How far the developed clip's length may drift from the source's before
   /// it is treated as cut short.
   static let durationTolerance: Double = 0.25
-  /// The lowest bitrate a size-correcting second pass will use.
-  static let lowestRetryBitrate: Int = 1_000_000
+  /// The lowest bitrate a size-correcting second pass will use. Measured
+  /// (x264 medium, 1080×1920 at 30 fps, held grain): below about 1.5 Mbps
+  /// detail falls away (SSIM-Y 0.959 at 1.5, 0.936 at 1), and VideoToolbox
+  /// needs more bits than x264 for the same picture. A clip that would need
+  /// less than this to fit is better refused than posted ruined.
+  static let lowestRetryBitrate: Int = 2_500_000
   /// A second pass aims this much under what the first pass's overshoot
   /// suggests, since rate control overshoots in proportion.
   static let retryMargin: Double = 0.95
