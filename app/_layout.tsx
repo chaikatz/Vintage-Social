@@ -8,9 +8,15 @@ import { colors, dark, type } from "@/theme";
 import { restoreAppearance } from "@/utils/appearance";
 import { useNotificationTaps } from "@/utils/push";
 import { KeyboardDone } from "@/components/KeyboardDone";
+import { startOutbox } from "@/uploads";
 
 // Before the first screen draws, so the page opens on the print it was left on.
 restoreAppearance();
+
+// Posts still on their way up when the app was last closed carry on from
+// where they stopped. Started here, once, above the navigator: the outbox
+// outlives every screen, and Home only reads it.
+startOutbox();
 
 /** A tapped notice goes where it points. Lives under the router, renders nothing. */
 function NotificationTaps() {

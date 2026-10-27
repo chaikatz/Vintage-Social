@@ -5,7 +5,7 @@
  * stage applies, in order: the composed color matrix, the fade lift toward
  * the filter's paper color, a radial vignette, and monochrome luminance
  * grain. Everything is driven by uniforms so one compiled program renders
- * all eight filters.
+ * every filter, in the preview and in the bake alike.
  */
 
 export const VERTEX_SHADER = `
@@ -36,6 +36,7 @@ uniform vec3 uFadeColor;
 uniform float uVignette;
 uniform float uGrain;
 uniform float uGrainSeed;
+uniform vec2 uGrainCells;
 
 varying vec2 vUV;
 varying vec2 vFrame;
@@ -62,11 +63,41 @@ void main() {
   color.rgb *= 1.0 - radial * uVignette * 0.55;
 
   // 4. Grain: monochrome luminance noise, slightly stronger in midtones.
+  //    One value per grain cell, and the cells are laid on the frame
+  //    rather than on the pixels it happens to be drawn into: the preview
+  //    has one cell per pixel of its own, and the bake, at its larger
+  //    size, draws those same cells, so it carries the grain the member
+  //    saw. The hash is taken at the cell's centre, which for the preview
+  //    is exactly the pixel centre it was always taken at.
+  vec2 cell = (floor(vFrame * uGrainCells) + 0.5) / uGrainCells;
   float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
   float midweight = 1.0 - abs(luma - 0.5) * 1.2;
-  float noise = hash(vFrame * 512.0) - 0.5;
+  float noise = hash(cell * 512.0) - 0.5;
   color.rgb += noise * uGrain * 0.14 * max(midweight, 0.25);
 
   gl_FragColor = vec4(clamp(color.rgb, 0.0, 1.0), color.a);
 }
 `;
+
+/**
+ * Every uniform the two stages declare. The renderer looks each one up
+ * once, when the program is linked: each lookup is a blocking round trip
+ * to the GL thread, and drawing used to make nine of them per frame.
+ * A missing name is a hard error there, because expo-gl turns a null
+ * location into location 0 and would quietly set the wrong uniform.
+ */
+export const UNIFORMS = [
+  "uUVScale",
+  "uUVOffset",
+  "uTexture",
+  "uColorMatrix",
+  "uColorOffset",
+  "uFade",
+  "uFadeColor",
+  "uVignette",
+  "uGrain",
+  "uGrainSeed",
+  "uGrainCells",
+] as const;
+
+export type UniformName = (typeof UNIFORMS)[number];

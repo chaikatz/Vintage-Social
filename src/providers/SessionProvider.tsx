@@ -17,6 +17,7 @@ import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
 import { forgetPushToken } from "@/utils/push";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
+import { forgetOutbox } from "@/uploads";
 
 interface SessionState {
   /** undefined while restoring the persisted session on launch. */
@@ -125,6 +126,7 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
         demoSignOut();
         // The demo reads the phone's own library too: nothing of this member stays.
         forgetDarkroom();
+        forgetOutbox();
         await leaveToLanding();
       },
     }),
@@ -153,6 +155,10 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       // seals it while auth keeps the same member, who must have it back
       // (empty) when they are next heard from. A claim already made in
       // this run costs nothing.
+      //
+      // Posts still going up go with the session: their uploads are made
+      // as the member who has just left.
+      if (event === "SIGNED_OUT") forgetOutbox();
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
     });
@@ -228,6 +234,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     // Nothing of this member stays for the next one to sign in on this phone.
     queryClient.clear();
     forgetDarkroom();
+    forgetOutbox();
     await leaveToLanding();
   }, []);
 

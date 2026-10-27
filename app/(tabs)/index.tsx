@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, type ViewToken } from "react-native";
+import { FlatList, StyleSheet, View, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
+import { PendingPostCard } from "@/components/PendingPostCard";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { PostSkeleton } from "@/components/Skeleton";
@@ -12,16 +13,49 @@ import { FEED_PAGE_SIZE, fetchFeedPage } from "@/api/posts";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { onHomeAgain } from "@/utils/homeRefresh";
+import { setOutboxProfileRefresher, usePendingPosts } from "@/uploads";
+import type { PostWithAuthor } from "@/types/db";
+
+/**
+ * The feed's pages as one list, each post once.
+ *
+ * Pages are fetched by offset. A post just published is put on top of the
+ * first page by hand (see src/uploads/feedCache.ts), which pushes every
+ * later post along by one, so the next page fetched starts with a post the
+ * list already has. Dropping repeats by id keeps that from showing twice.
+ */
+function flattenPages(pages: PostWithAuthor[][] | undefined): PostWithAuthor[] {
+  const seen = new Set<string>();
+  const out: PostWithAuthor[] = [];
+  for (const page of pages ?? []) {
+    for (const post of page) {
+      if (seen.has(post.id)) continue;
+      seen.add(post.id);
+      out.push(post);
+    }
+  }
+  return out;
+}
 
 /**
  * The home feed: the members you follow, newest first, and nothing else on
  * top of it. On This Day lives on the Create tab and the Memories screen,
  * where looking back is the point; the feed is for what is new.
+ *
+ * Above it, the member's own posts that are still on their way up. They
+ * are a header, never rows of the feed: the feed pages by offset, and a
+ * row the server does not know would shift every page and be offered to
+ * likes and comments that cannot exist yet. When one is posted, the feed
+ * gets the real row and the card steps aside for it.
  */
 export default function Home() {
   const router = useRouter();
-  const { session } = useSession();
+  const { session, refreshProfile } = useSession();
   const userId = session?.user?.id ?? "";
+
+  // The outbox lives outside React, so the profile re-read that moves the
+  // post count is lent to it from here.
+  useEffect(() => setOutboxProfileRefresher(refreshProfile), [refreshProfile]);
 
   const feed = useInfiniteQuery({
     queryKey: ["feed", userId],
@@ -32,8 +66,16 @@ export default function Home() {
     enabled: Boolean(userId),
   });
 
-  const posts = useMemo(() => (feed.data?.pages ?? []).flat(), [feed.data]);
+  const posts = useMemo(() => flattenPages(feed.data?.pages), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
+
+  // A finished post hands over to the feed's row the moment that row is
+  // there, so the two are never on screen together.
+  const outbox = usePendingPosts();
+  const pending = useMemo(() => {
+    const inFeed = new Set(postIds);
+    return outbox.filter((p) => p.draft.userId === userId && !(p.state === "done" && inFeed.has(p.id)));
+  }, [outbox, postIds, userId]);
 
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
@@ -90,6 +132,22 @@ export default function Home() {
     [likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onMore, router, visibleId, focused],
   );
 
+  // Only one clip plays at a time. A pending one may when it is the
+  // topmost and no card of the feed has taken the screen.
+  const header =
+    pending.length > 0 ? (
+      <View>
+        {pending.map((p, i) => (
+          <PendingPostCard
+            key={p.id}
+            pending={p}
+            active={focused && visibleId === null && i === 0}
+            onOpenProfile={(username) => router.push(`/user/${username}`)}
+          />
+        ))}
+      </View>
+    ) : null;
+
   return (
     <Screen padded={false}>
       <FlatList
@@ -103,6 +161,7 @@ export default function Home() {
           if (feed.hasNextPage && !feed.isFetchingNextPage) feed.fetchNextPage();
         }}
         onEndReachedThreshold={0.6}
+        ListHeaderComponent={header}
         ListEmptyComponent={
           feed.isLoading ? (
             <>
@@ -111,7 +170,7 @@ export default function Home() {
             </>
           ) : feed.isError ? (
             <LoadFailed what="your feed" onRetry={() => feed.refetch()} />
-          ) : (
+          ) : pending.length > 0 ? null : (
             <EmptyState
               title="A quiet start"
               body="Follow a few members from Search and their photographs will appear here, newest first."

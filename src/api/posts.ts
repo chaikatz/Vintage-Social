@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import type { CommentWithAuthor, PostRow, PostWithAuthor, ProfileRow } from "@/types/db";
-import { withRetry } from "@/utils/retry";
+import { withTimeout } from "@/utils/retry";
 
 export const FEED_PAGE_SIZE = 12;
 
@@ -120,20 +120,70 @@ export async function fetchExplore(viewerId: string, limit = 60): Promise<PostRo
   return (data ?? []) as PostRow[];
 }
 
-export async function createPost(post: NewPost): Promise<void> {
+/** An insert that has not answered in this long is called off and left to the caller's retry. */
+export const CREATE_POST_TIMEOUT_MS = 20_000;
+
+/**
+ * Insert the post row. This is the moment it exists: an AFTER INSERT
+ * trigger tells the author's followers straight away, so the caller must
+ * only get here once the media and thumbnail are both in storage.
+ *
+ * One attempt, bounded. The post outbox is the one retry layer for
+ * posting and runs this again on its own schedule. Each attempt has its
+ * own limit, through an AbortSignal PostgREST honours, because React
+ * Native's fetch has none and a stalled insert used to wait out the
+ * system's idle timeout first.
+ *
+ * The id is chosen on the phone, once per post. So a duplicate key (23505)
+ * on the primary key, the only unique constraint posts has, means an
+ * earlier attempt landed and only its reply was lost: that is the post
+ * being there, on any attempt, after a relaunch too.
+ */
+export async function createPost(
+  post: NewPost,
+  { timeoutMs = CREATE_POST_TIMEOUT_MS, signal }: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<void> {
   if (isDemoMode()) {
-    demo.demoCreatePost(post);
+    // The demo store keeps whatever it is given; a second insert of the
+    // same id would show the post twice, where the database refuses it.
+    if (!demo.demoFetchPost(post.id)) demo.demoCreatePost(post);
     return;
   }
-  // Tried again on a dropped connection. The id is chosen on the phone, so
-  // if the first attempt landed and only the reply was lost, the second is
-  // refused as a duplicate — which is the post being there.
-  await withRetry(async (attempt) => {
-    const { error } = await supabase.from("posts").insert(post);
-    if (!error) return;
-    if (attempt > 1 && error.code === "23505") return;
-    throw error;
-  });
+  await withTimeout(
+    timeoutMs,
+    async (abort) => {
+      const { error } = await supabase.from("posts").insert(post).abortSignal(abort);
+      if (!error) return;
+      if (error.code === "23505") return;
+      throw error;
+    },
+    { signal, what: "Saving the post" },
+  );
+}
+
+/**
+ * Whether the member's own post is in the database. Asked before a
+ * discarded draft's files are removed from storage: an insert that timed
+ * out may still have landed, and a post must never lose its photograph.
+ * Any doubt (no answer, an error) reads as "yes".
+ */
+export async function ownPostExists(postId: string, authorId: string, timeoutMs = 10_000): Promise<boolean> {
+  if (isDemoMode()) return demo.demoFetchPost(postId) != null;
+  try {
+    return await withTimeout(timeoutMs, async (abort) => {
+      const { data, error } = await supabase
+        .from("posts")
+        .select("id")
+        .eq("id", postId)
+        .eq("author_id", authorId)
+        .abortSignal(abort)
+        .maybeSingle();
+      if (error) return true;
+      return data != null;
+    });
+  } catch {
+    return true;
+  }
 }
 
 /**

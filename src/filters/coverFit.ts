@@ -31,7 +31,25 @@ export function coverUV(
 }
 
 /**
- * GPU renderer for VINTAGE filters. Used at full size in the create flow
- * (live preview + publish-time bake) and at thumbnail size in the filter
- * tray. Not used in feeds — feeds show the baked JPEG.
+ * The same cover fit as a rectangle of the photograph's own pixels: the
+ * part of the picture a frame of this shape shows.
+ *
+ * The bake needs it twice. Its size is the most detail the published
+ * picture can carry, so the bake is never drawn larger than it and never
+ * upscaled. And the browser draws the bake with `drawImage`, which takes
+ * a source rectangle rather than texture coordinates.
  */
+export function coverCropPx(
+  imageWidth: number,
+  imageHeight: number,
+  frameWidth: number,
+  frameHeight: number,
+): { x: number; y: number; width: number; height: number } {
+  const { scale, offset } = coverUV(imageWidth, imageHeight, frameWidth, frameHeight);
+  return {
+    x: offset[0] * imageWidth,
+    y: offset[1] * imageHeight,
+    width: scale[0] * imageWidth,
+    height: scale[1] * imageHeight,
+  };
+}
