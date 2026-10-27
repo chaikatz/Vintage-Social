@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,9 +13,6 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { showAlert } from "@/utils/alert";
-import { rememberPlace } from "@/utils/reverseGeocode";
-import { markDeveloped } from "@/darkroom/posted";
-import { useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -24,36 +22,67 @@ import { Button } from "@/components/Button";
 import { TextField } from "@/components/TextField";
 import { DateStamp } from "@/components/DateStamp";
 import { colors, hairline, radii, spacing, type } from "@/theme";
-import { FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters";
+import { BAKE_MAX_SIDE, FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters";
 import { isNoFilter } from "@/filters/presets";
 import type { FilteredImageHandle, FilterSpec } from "@/filters";
 import { FilterOverlay } from "@/components/FilterOverlay";
 import { cssFilterFor } from "@/filters/cssFilter";
-import { bakeVideo, canBakeVideo } from "@/filters/bakeVideo";
+import { canBakeVideo } from "@/filters/bakeVideo";
+import { prepareImage } from "@/media/nativeMedia";
 import { TagPicker, type Taggable } from "@/components/TagPicker";
 import { Avatar } from "@/components/Avatar";
-import { tagMembers } from "@/api/tags";
 import { PlacePicker, type PlaceChoice } from "@/components/PlacePicker";
 import { placeFields } from "@/api/places";
-import { mediaUrlString, ownedPath, prepareFeedImage, prepareThumbnail, uploadFile } from "@/api/media";
 import { isDemoMode } from "@/lib/env";
-import { createPost } from "@/api/posts";
+import { enqueuePost } from "@/uploads";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_CAPTION_LENGTH } from "@/utils/validation";
 import { dateStampText } from "@/utils/time";
-import { describePublishFailure, publishStep } from "@/utils/publishError";
+import { perfStart } from "@/utils/perf";
+import {
+  authorFrom,
+  bakesOnScreen,
+  buildPostDraft,
+  createShareGuard,
+  developForPost,
+  type ComposeChoices,
+  type DevelopInput,
+  type PlaceInput,
+} from "@/utils/composeDraft";
+
+/**
+ * The film tray draws fifteen swatches 70 pt square, about 210 px on a 3x
+ * phone. Each is its own renderer, and each used to decode the full 2048 px
+ * photograph (or a 4K poster frame) on the JS thread to draw that much.
+ * One small copy, made once, is all fifteen need.
+ */
+const TRAY_MAX_SIDE = 240;
+const TRAY_QUALITY = 0.85;
+/** A clip's still preview: the frame the film is judged on, at the feed's size. */
+const STILL_MAX_SIDE = 1440;
+const STILL_QUALITY = 0.9;
+
+/** Where Share is: choosing, developing the film into the photograph, or handed to the outbox. */
+type Phase = "editing" | "developing" | "posted";
+
+/** A picture on this phone and its pixel size. */
+interface Frame {
+  uri: string;
+  width: number;
+  height: number;
+}
 
 /**
  * The darkroom: choose a VINTAGE filter, optionally the amber date stamp,
- * name the place, write a caption, publish. Photos are baked with the
- * filter on-device before upload — and so is video, where the build can
- * (see `bakeVideo`) — and the stamp shows when the shutter fired rather
- * than when the post was made.
+ * name the place, write a caption, share. A photograph's film is developed
+ * here, through the renderer on screen; everything after that (preparing,
+ * uploading, saving, a clip's own bake) happens in the outbox, which keeps
+ * going on Home while the post shows as pending. The stamp shows when the
+ * shutter fired rather than when the post was made.
  */
 export default function Compose() {
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const { session, refreshProfile } = useSession();
+  const { session, profile } = useSession();
   const navigation = useNavigation();
   const params = useLocalSearchParams<{
     uri: string;
@@ -80,38 +109,90 @@ export default function Compose() {
   const [place, setPlace] = useState<PlaceChoice>(null);
   const [placing, setPlacing] = useState(false);
   const location = place?.kind === "place" ? place.place.name : place?.kind === "text" ? place.text : "";
-  const [busy, setBusy] = useState(false);
-  // What publishing is doing right now, said under the button. A bake and
-  // an upload can take a few seconds each; a spinner alone reads as stuck.
-  const [stage, setStage] = useState<string | null>(null);
   // Who was there. Sent with the post; each of them decides.
   const [tags, setTags] = useState<Taggable[]>([]);
   const [picking, setPicking] = useState(false);
 
+  // One post per visit to this screen. The id is the post's from the first
+  // tap: the outbox keys both uploads and the insert by it, so a Share that
+  // is tried again after a failure is the same post, never a second one.
+  const [postId] = useState(() => Crypto.randomUUID());
+  // Checked and set in the tap itself; the button only disables after a render.
+  const [guard] = useState(createShareGuard);
+  const [phase, setPhase] = useState<Phase>("editing");
+  const busy = phase !== "editing";
+  // Said under the button while the film is being developed, the one wait
+  // left on this screen. A spinner alone reads as stuck.
+  const [stage, setStage] = useState<string | null>(null);
+  // The tap-to-Home timing, ended when the screen actually leaves.
+  const leaveTimerRef = useRef<((extra?: Record<string, unknown>) => number) | null>(null);
+  const leftRef = useRef(false);
+
   const filteredRef = useRef<FilteredImageHandle>(null);
-  // The renderer could not read the file. Rare now that library originals
-  // are re-encoded first, but a black frame must never be what gets posted.
+  // The renderer could not read the file. Rare now that every photograph
+  // is decoded to a JPEG before it gets here, but a black frame must never
+  // be what gets posted: the photograph then goes up unbaked.
   const [renderFailed, setRenderFailed] = useState(false);
-  // The renderer has drawn its first frame of the film.
-  const [filmReady, setFilmReady] = useState(false);
   // Video: the still frame shows the film exactly; "motion" plays the clip
-  // with the play-time approximation, muted unless asked.
+  // over it with the play-time approximation, muted unless asked.
   const [motion, setMotion] = useState(false);
   const [previewMuted, setPreviewMuted] = useState(true);
   const bakes = isVideo && canBakeVideo();
-  // A video's poster frame, pulled once: it makes the filter tray show real
-  // frames instead of grey boxes, and it's the thumbnail the grid will use.
-  const [poster, setPoster] = useState<{ uri: string; width: number; height: number } | null>(null);
+
+  // The small copy every swatch in the tray draws from, and for a clip the
+  // still its film is shown on. Both come from one decode, made once.
+  const [tray, setTray] = useState<Frame | null>(null);
+  const [still, setStill] = useState<Frame | null>(null);
   useEffect(() => {
-    if (!isVideo || !uri) return;
+    if (!uri) return;
     let live = true;
-    VideoThumbnails.getThumbnailAsync(uri, { time: 500 })
-      .then((p) => live && setPoster({ uri: p.uri, width: p.width, height: p.height }))
-      .catch(() => undefined);
+    void (async () => {
+      if (!isVideo) {
+        try {
+          const small = await prepareImage(uri, { maxSide: TRAY_MAX_SIDE, quality: TRAY_QUALITY });
+          if (live) setTray(sized(small));
+        } catch {
+          // The swatches stay as empty wells; the films are still named under them.
+        }
+        return;
+      }
+      // A clip's poster frame, pulled once. The film is judged on it, and
+      // the tray shows real frames instead of empty wells. The outbox cuts
+      // its own poster from the finished clip, so this one is for the
+      // screen only.
+      let poster: Frame;
+      try {
+        const frame = await VideoThumbnails.getThumbnailAsync(uri, { time: 500 });
+        poster = { uri: frame.uri, width: frame.width, height: frame.height };
+      } catch {
+        return;
+      }
+      try {
+        // The frame comes out at the clip's own resolution, 4K from most
+        // phones. Brought down to the feed's size for the still, and to the
+        // tray's size from the same decode.
+        const prepared = await prepareImage(
+          poster.uri,
+          bakes
+            ? { maxSide: STILL_MAX_SIDE, quality: STILL_QUALITY, thumbSide: TRAY_MAX_SIDE, thumbQuality: TRAY_QUALITY }
+            : { maxSide: TRAY_MAX_SIDE, quality: TRAY_QUALITY },
+        );
+        if (!live) return;
+        if (bakes) {
+          setStill(sized(prepared));
+          setTray(prepared.thumb ? sized(prepared.thumb) : null);
+        } else {
+          setTray(sized(prepared));
+        }
+      } catch {
+        // One renderer can still read the full frame; fifteen should not.
+        if (live && bakes) setStill(poster);
+      }
+    })();
     return () => {
       live = false;
     };
-  }, [isVideo, uri]);
+  }, [uri, isVideo, bakes]);
 
   const nowIso = useMemo(() => new Date().toISOString(), []);
   // What the stamp says: when the shutter fired, falling back to now for
@@ -128,10 +209,18 @@ export default function Compose() {
 
   // The back gesture is off for this screen (see app/_layout.tsx) because a
   // stray swipe threw away a post someone had set up. The header button
-  // still works, and asks first once there are words worth keeping.
-  const [published, setPublished] = useState(false);
+  // still works, and asks first once there are words worth keeping. While
+  // the film is being developed the post is half made, so leaving is held
+  // and the back button is not offered; once the outbox has the post the
+  // screen may go, and does.
   const hasWritten = caption.trim().length > 0 || location.trim().length > 0;
-  usePreventRemove(hasWritten && !published && !busy, ({ data }) => {
+  usePreventRemove(phase === "developing" || (phase === "editing" && hasWritten), ({ data }) => {
+    // A render behind the guard: the post is already in the outbox.
+    if (guard.state === "shared") {
+      navigation.dispatch(data.action);
+      return;
+    }
+    if (guard.state === "sharing") return;
     showAlert("Discard this post?", "Your caption and location will be lost.", [
       { text: "Keep editing", style: "cancel" },
       {
@@ -141,203 +230,119 @@ export default function Compose() {
       },
     ]);
   });
+  useEffect(() => {
+    navigation.setOptions({ headerBackVisible: phase === "editing" });
+  }, [navigation, phase]);
 
-  const publish = async () => {
-    const userId = session?.user?.id;
-    if (!userId) return;
-    setBusy(true);
+  // Home, once the outbox has the post. Done after the render that turned
+  // the discard prompt off, so leaving is never mistaken for discarding.
+  // dismissTo pops back to the tabs that are already there: their route
+  // keeps its key and Home is not mounted again, where replacing the route
+  // rebuilt every tab while the feed refetched. Should something have been
+  // opened over this screen meanwhile (a tapped notification), the member
+  // is not pulled off it: the screen goes once it is back in front.
+  useEffect(() => {
+    if (phase !== "posted") return;
+    const leave = () => {
+      if (leftRef.current) return;
+      leftRef.current = true;
+      leaveTimerRef.current?.({ kind: isVideo ? "video" : "photo" });
+      leaveTimerRef.current = null;
+      router.dismissTo("/(tabs)");
+    };
+    if (navigation.isFocused()) {
+      leave();
+      return;
+    }
+    return navigation.addListener("focus", leave);
+  }, [phase, router, navigation, isVideo]);
+
+  /** The film into the photograph's pixels, at the feed's size, through the renderer on screen. */
+  const bakeOnScreen = async () => {
+    const done = perfStart("post.bake");
     try {
-      const postId = Crypto.randomUUID();
-      let mediaPath: string;
-      let thumbPath: string | null = null;
-      let finalWidth = width;
-      let finalHeight = height;
-      // Photographs always leave here with the filter in their pixels.
-      let baked = !isVideo;
-
-      if (isVideo) {
-        // The film goes into the clip first, where the build can do it, so
-        // the file that is uploaded already wears it and every surface
-        // simply plays it. If the bake fails the footage goes up as
-        // recorded and the look is applied at play time, as it always was.
-        let source = uri;
-        if (bakes && !isDemoMode()) {
-          // Even with no film the clip goes through the bake: it caps the
-          // size, brings HDR to standard range and writes MP4 — the shader
-          // is simply an identity then.
-          setStage(isNoFilter(filterId) ? "Preparing the clip…" : "Applying the film to the clip…");
-          try {
-            const out = await publishStep("render", () => bakeVideo(uri, filter));
-            source = out.uri;
-            finalWidth = out.width;
-            finalHeight = out.height;
-            baked = true;
-          } catch {
-            source = uri;
-            baked = false;
-          }
-        }
-
-        // The poster frame is what the profile grid draws — a grid square
-        // can't play a movie — and what a feed card shows until the clip
-        // starts. Cut from the finished clip so it matches what plays, and
-        // kept at feed size: a grid-sized frame blown up to the card read
-        // as a fuzzy video.
-        let posterUri: string | null = null;
-        try {
-          const poster = await VideoThumbnails.getThumbnailAsync(source, { time: 500 });
-          posterUri = (await prepareFeedImage(poster.uri)).uri;
-        } catch {
-          posterUri = null; // a missing poster frame shouldn't block publishing
-        }
-
-        if (isDemoMode()) {
-          mediaPath = uri; // demo mode keeps the local recording, no upload
-          thumbPath = posterUri;
-        } else {
-          setStage("Uploading the clip…");
-          const ext = source.split("?")[0].split(".").pop()?.toLowerCase() ?? "mp4";
-          mediaPath = await publishStep("media-upload", () =>
-            uploadFile(
-              "media",
-              ownedPath(userId, `${postId}.${ext}`),
-              source,
-              `video/${ext === "mov" ? "quicktime" : "mp4"}`,
-            ),
-          );
-          thumbPath = posterUri
-            ? await publishStep("thumbnail-upload", () =>
-                uploadFile("thumbnails", ownedPath(userId, `${postId}.jpg`), posterUri!, "image/jpeg"),
-              )
-            : null;
-        }
-      } else {
-        // Photographs are baked through the GL renderer: the filter ends up
-        // in the pixels. But a bake that cannot happen — the renderer never
-        // read the file, lost its context in the background, or is still
-        // loading a very large photograph — must not cost the post. Then
-        // the photograph goes up as it is, marked unbaked, and wears its
-        // film on screen the way an unbaked video does. Posting never
-        // fails because of the darkroom.
-        let source = uri;
-        if (!renderFailed) {
-          setStage("Baking the film in…");
-          try {
-            const shot = await publishStep("render", async () => {
-              const rendered = await filteredRef.current?.snapshot();
-              if (!rendered) throw new Error("The filter renderer isn’t ready yet");
-              return rendered;
-            });
-            source = shot.uri;
-          } catch {
-            baked = false;
-          }
-        } else {
-          baked = false;
-        }
-        const feedImage = await publishStep("resize", () => prepareFeedImage(source));
-        finalWidth = feedImage.width;
-        finalHeight = feedImage.height;
-        if (isDemoMode()) {
-          mediaPath = feedImage.uri; // keep the file locally, no upload
-        } else {
-          const thumb = await publishStep("resize", () => prepareThumbnail(source));
-          setStage("Uploading…");
-          mediaPath = await publishStep("media-upload", () =>
-            uploadFile("media", ownedPath(userId, `${postId}.jpg`), feedImage.uri, "image/jpeg"),
-          );
-          thumbPath = await publishStep("thumbnail-upload", () =>
-            uploadFile("thumbnails", ownedPath(userId, `${postId}.jpg`), thumb.uri, "image/jpeg"),
-          );
-        }
-      }
-
-      // The place is the one chosen, with its own point — never the phone's
-      // location, never a guess from the words. Words alone carry no point.
-      setStage("Saving…");
-      const chosen = place?.kind === "place" ? placeFields(place.place) : null;
-      await publishStep("post-insert", () =>
-        createPost({
-          id: postId,
-          author_id: userId,
-          media_type: isVideo ? "video" : "photo",
-          media_path: mediaPath,
-          thumb_path: thumbPath,
-          width: finalWidth,
-          height: finalHeight,
-          duration_seconds: isVideo ? Number(params.duration) || null : null,
-          filter_id: filterId,
-          filter_baked: baked,
-          show_date_stamp: stampOn,
-          caption: caption.trim(),
-          taken_at: takenAt,
-          location: chosen?.location ?? (location.trim() || null),
-          lat: chosen?.lat ?? null,
-          lng: chosen?.lng ?? null,
-          place_id: chosen?.place_id ?? null,
-        }),
-      );
-
-      // From here the post exists. Nothing below may turn into "Couldn't
-      // publish": the tags, the cache, the counts are each best-effort.
-      setPublished(true);
-
-      // Developed from the Darkroom: it remembers, on this phone, that this
-      // one has been shared and does not offer it again as a rediscovery,
-      // takes it off the shelf, and moves the room's place on past it.
-      if (params.assetId) markDeveloped(params.assetId);
-
-      // The town this was taken in, learned now so the places view on the
-      // profile already knows where the photograph goes.
-      if (chosen?.lat != null && chosen?.lng != null) {
-        rememberPlace({ lat: chosen.lat, lng: chosen.lng }).catch(() => undefined);
-      }
-
-      // The tags ride behind the post. Their failure is worth a word but
-      // never the photograph: it is already up.
-      if (tags.length > 0) {
-        try {
-          await tagMembers(postId, userId, tags.map((t) => t.id));
-        } catch {
-          showAlert("Posted, but the tags didn’t take", "The photograph is up. You can try tagging again later.");
-        }
-      }
-
-      // Warm the image cache with what was just uploaded, so the feed and
-      // the grid draw the new post at once instead of fetching it back
-      // from the CDN. Best-effort and brief: publishing never waits on it.
-      if (!isDemoMode()) {
-        const warm = [
-          isVideo ? null : mediaUrlString("media", mediaPath),
-          mediaUrlString("thumbnails", thumbPath),
-        ].filter((u): u is string => Boolean(u));
-        if (warm.length > 0) {
-          await Promise.race([
-            Image.prefetch(warm, "memory-disk").catch(() => false),
-            new Promise((resolve) => setTimeout(resolve, 1500)),
-          ]);
-        }
-      }
-
-      queryClient.invalidateQueries({ queryKey: ["feed"] });
-      queryClient.invalidateQueries({ queryKey: ["user-posts"] });
-      queryClient.invalidateQueries({ queryKey: ["explore"] });
-      // post_count lives on the profile row and is bumped by a trigger, so
-      // the number on your own grid only moves when the profile is re-read.
-      // It is re-read again on the next screen anyway; a slow answer here
-      // must not hold the darkroom open.
-      await Promise.race([refreshProfile().catch(() => undefined), new Promise((r) => setTimeout(r, 2500))]);
-      router.dismissAll();
-      router.replace("/(tabs)");
+      const out = await filteredRef.current?.bake({ maxSide: BAKE_MAX_SIDE });
+      done({ ok: out != null, width: out?.width ?? null, height: out?.height ?? null });
+      return out;
     } catch (err) {
-      showAlert("Couldn’t publish", describePublishFailure(err));
-    } finally {
-      setBusy(false);
-      setStage(null);
+      done({ ok: false, code: (err as { code?: unknown } | null)?.code ?? null });
+      throw err;
     }
   };
 
+  const share = async () => {
+    const userId = session?.user?.id;
+    if (!userId || !guard.begin()) return;
+    const toHome = perfStart("post.tap→home");
+    Keyboard.dismiss();
+
+    // Everything the post will say, as it stands at the tap. The screen is
+    // frozen from here (see the scroll content below), and nothing later
+    // reads the live state, so a word typed or a film tapped during the
+    // bake can neither go missing nor disagree with the pixels.
+    const kind = isVideo ? "video" : "photo";
+    const placeInput: PlaceInput =
+      place?.kind === "place"
+        ? { kind: "place", fields: placeFields(place.place) }
+        : place?.kind === "text"
+          ? { kind: "text", text: place.text }
+          : null;
+    const choices: ComposeChoices = {
+      postId,
+      userId,
+      kind,
+      duration: params.duration,
+      filterId,
+      showDateStamp: stampOn,
+      caption,
+      takenAt,
+      place: placeInput,
+      tagIds: tags.map((t) => t.id),
+      assetId: params.assetId ?? null,
+      author: authorFrom(profile, userId),
+    };
+    const develop: DevelopInput = {
+      kind,
+      uri,
+      width,
+      height,
+      filterId,
+      renderFailed,
+      canBakeVideo: canBakeVideo(),
+      demo: isDemoMode(),
+    };
+
+    setPhase("developing");
+    if (bakesOnScreen(develop)) setStage("Developing…");
+    try {
+      const developed = await developForPost(develop, bakeOnScreen);
+      setStage(null);
+      // A file copy and a small record on this phone; the outbox takes it
+      // from there, and its own copy outlives this screen and the
+      // Darkroom's developed file.
+      await enqueuePost(buildPostDraft(choices, developed));
+    } catch {
+      // Only keeping the post on this phone can fail here: the network is
+      // the outbox's business. The member is still on the screen, so
+      // nothing chosen is lost; Share is offered again.
+      guard.fail();
+      setStage(null);
+      setPhase("editing");
+      showAlert(
+        "Not shared yet",
+        "VINTAGE couldn’t keep a copy on this phone to send. It may be short of space. Everything you chose is still here; try again in a moment.",
+      );
+      return;
+    }
+    guard.succeed();
+    leaveTimerRef.current = toHome;
+    setPhase("posted");
+  };
+
   const stampLabel = dateStampText(stampIso);
+  // A clip plays over its still when asked to, and in place of it until the
+  // still exists or where the build cannot put the film into a clip.
+  const moving = isVideo && (!bakes || !still || motion);
 
   return (
     <KeyboardAvoidingView
@@ -346,44 +351,56 @@ export default function Compose() {
     >
       <ScrollView
         style={styles.root}
-        contentContainerStyle={styles.scroll}
+        // Frozen while the film is developed and the post handed over. This
+        // is a prop change on an ancestor of every renderer, which is safe
+        // only because ScrollView marks its content view collapsable={false}:
+        // it is always a native view, so Fabric never flattens it and the GL
+        // views under it never move.
+        contentContainerStyle={[styles.scroll, busy && styles.frozen]}
         keyboardShouldPersistTaps="handled"
         // Pulling the page down puts the keyboard away with the same
         // gesture, and the caption field is kept above it while it is up.
         keyboardDismissMode="interactive"
       >
         {/* The frame, full bleed, with the film stock struck across the
-            bottom-left the way a lab writes it on the sleeve. */}
+            bottom-left the way a lab writes it on the sleeve.
+
+            Each renderer is a direct child of this view, never wrapped in
+            a view of its own. A wrapper whose style comes and goes (an
+            opacity while the film loads) is flattened away and restored by
+            Fabric, which re-parents the GL view, and expo-gl destroys its
+            context when it is taken off its parent: filters stopped
+            changing and the bake failed. The plain picture stays mounted
+            under the renderer for good, so the frame is never bare while it
+            warms up; the GL frame is opaque and covers it once drawn. Held
+            in memory only: the file may be a developed copy that is deleted
+            if it is not posted, and must leave no copy in the image cache
+            on disk. */}
         <View style={[styles.preview, { aspectRatio: previewRatio }]}>
           {isVideo ? (
-            bakes && poster && !motion ? (
-              // One frame through the same renderer that bakes photographs:
-              // exactly the look the clip will be posted with.
-              <FilteredImage
-                uri={poster.uri}
-                width={poster.width}
-                height={poster.height}
-                filter={filter}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : (
-              <VideoPreview uri={uri} filter={filter} muted={previewMuted} />
-            )
-          ) : renderFailed ? (
-            // In memory only: a developed copy that is not posted must leave no trace on disk.
-            <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory" />
+            <>
+              {bakes && still ? (
+                <>
+                  <Image source={still.uri} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory" />
+                  {/* One frame through the same renderer that bakes
+                      photographs: the look the clip will be posted with. */}
+                  <FilteredImage
+                    uri={still.uri}
+                    width={still.width}
+                    height={still.height}
+                    filter={filter}
+                    style={StyleSheet.absoluteFill}
+                  />
+                </>
+              ) : null}
+              {/* Laid over the still rather than swapped for it, so playing
+                  and stopping never makes the still's renderer again. */}
+              {moving ? <VideoPreview uri={uri} filter={filter} muted={previewMuted} /> : null}
+            </>
           ) : (
             <>
-              {/* The photograph itself, at once, while the renderer warms up;
-                  the film is then drawn over it. Without it the frame showed
-                  its bare background first — cream, in the dark print. Held
-                  in memory only: the file may be a developed copy that is
-                  deleted if it is not posted, and must leave no copy in the
-                  image cache on disk. */}
-              {!filmReady ? (
-                <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory" />
-              ) : null}
-              <View style={[StyleSheet.absoluteFill, !filmReady && styles.filmWaiting]}>
+              <Image source={uri} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory" />
+              {!renderFailed ? (
                 <FilteredImage
                   ref={filteredRef}
                   uri={uri}
@@ -391,10 +408,9 @@ export default function Compose() {
                   height={height}
                   filter={filter}
                   style={StyleSheet.absoluteFill}
-                  onReady={() => setFilmReady(true)}
                   onError={() => setRenderFailed(true)}
                 />
-              </View>
+              ) : null}
             </>
           )}
           {stampOn ? <DateStamp iso={stampIso} /> : null}
@@ -406,7 +422,7 @@ export default function Compose() {
           ) : null}
           {isVideo ? (
             <View style={styles.previewControls}>
-              {bakes && poster ? (
+              {bakes && still ? (
                 <Pressable
                   style={styles.previewControl}
                   onPress={() => setMotion((m) => !m)}
@@ -415,7 +431,7 @@ export default function Compose() {
                   <Feather name={motion ? "pause" : "play"} size={14} color={colors.onShutter} />
                 </Pressable>
               ) : null}
-              {!bakes || !poster || motion ? (
+              {moving ? (
                 <Pressable
                   style={styles.previewControl}
                   onPress={() => setPreviewMuted((m) => !m)}
@@ -438,18 +454,19 @@ export default function Compose() {
             const selected = f.id === filterId;
             return (
               <Pressable key={f.id} style={styles.swatchWrap} onPress={() => selectFilter(f.id)}>
+                {/* The swatch is its own sunken well until the tray's copy
+                    exists, then the film drawn on that copy, at its own
+                    size so the crop is not stretched. */}
                 <View style={[styles.swatch, selected && styles.swatchSelected]}>
-                  {!isVideo || poster ? (
+                  {tray ? (
                     <FilteredImage
-                      uri={poster?.uri ?? uri}
-                      width={poster?.width ?? width}
-                      height={poster?.height ?? height}
+                      uri={tray.uri}
+                      width={tray.width}
+                      height={tray.height}
                       filter={f}
                       style={styles.swatchImage}
                     />
-                  ) : (
-                    <View style={[styles.swatchImage, styles.swatchVideo]} />
-                  )}
+                  ) : null}
                 </View>
                 {/* The selected stock is underscored in amber rather than
                     boxed in — a mark on the contact sheet, not a button. */}
@@ -556,6 +573,7 @@ export default function Compose() {
             label="Caption"
             value={caption}
             onChangeText={(t) => setCaption(t.slice(0, MAX_CAPTION_LENGTH))}
+            editable={!busy}
             multiline
             placeholder="Optional — keep it quiet."
           />
@@ -565,11 +583,16 @@ export default function Compose() {
       {/* The publish bar stays put, so the one thing this screen is for is
           never scrolled off the bottom. */}
       <View style={styles.footer}>
-        <Button title="Share to VINTAGE" onPress={publish} loading={busy} />
+        <Button title="Share to VINTAGE" onPress={share} loading={busy} />
         {stage ? <Text style={styles.stage}>{stage}</Text> : null}
       </View>
     </KeyboardAvoidingView>
   );
+}
+
+/** Just the picture's file and size, from a prepared image that may carry more. */
+function sized(file: Frame): Frame {
+  return { uri: file.uri, width: file.width, height: file.height };
 }
 
 /** A hairline ruled across the page with its name set into the left of it. */
@@ -610,6 +633,7 @@ function VideoPreview({ uri, filter, muted }: { uri: string; filter: FilterSpec;
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   scroll: { paddingBottom: spacing.xl },
+  frozen: { pointerEvents: "none" },
   grow: { flex: 1 },
 
   preview: {
@@ -617,7 +641,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.shutter,
     overflow: "hidden",
   },
-  filmWaiting: { opacity: 0 },
   previewFilm: { position: "absolute", left: spacing.lg, bottom: spacing.md },
   previewControls: {
     position: "absolute",
@@ -672,7 +695,6 @@ const styles = StyleSheet.create({
   },
   swatchSelected: { borderColor: colors.ink },
   swatchImage: { width: 70, height: 70 },
-  swatchVideo: { backgroundColor: colors.paperSunken },
   swatchRule: {
     height: 2,
     width: 22,

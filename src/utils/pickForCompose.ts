@@ -1,8 +1,9 @@
 import { Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { showAlert } from "@/utils/alert";
-import { prepareForDarkroom } from "@/api/media";
+import { prepareImage } from "@/media/nativeMedia";
 import { captureDateForAsset } from "@/utils/captureDate";
+import { clipSeconds, clipTooLong } from "@/utils/composeDraft";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 
 /**
@@ -71,33 +72,73 @@ function withDatesOnly(asset: ImagePicker.ImagePickerAsset): ImagePicker.ImagePi
   return { ...asset, exif: datesOnly(asset.exif) };
 }
 
-export async function paramsForPicked(asset: ImagePicker.ImagePickerAsset, mediaType: "photo" | "video"): Promise<PickedParams> {
+/**
+ * The editor's working copy of a photograph: long enough on its long side
+ * for the 1440 px bake to have room for the member's crop, and one JPEG
+ * generation at a quality that leaves the renderer's grain as grain.
+ */
+export const PICKED_MAX_SIDE = 2048;
+export const PICKED_QUALITY = 0.92;
+/** A second try comes after a breath, so a file still being written, or a moment of memory pressure, has passed. */
+const PREPARE_RETRY_PAUSE_MS = 250;
+
+/**
+ * A picked photograph decoded properly, or null when it could not be.
+ *
+ * It arrives as the picker found it, HEIC or JPEG, perhaps stored on its
+ * side, so it is decoded straight to the editor's size with its
+ * orientation applied, in sRGB, and saved as a JPEG with no metadata at
+ * all. The size that comes back is the upright one the editor frames by.
+ *
+ * There is no falling back to the original. The renderer reads JPEG and
+ * PNG only: handed a HEIC it draws a black frame and reports nothing, and
+ * that black frame was baked and posted. So a failure is tried once more,
+ * and then the member is told.
+ */
+async function prepareForEditor(uri: string): Promise<{ uri: string; width: number; height: number } | null> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const ready = await prepareImage(uri, { maxSide: PICKED_MAX_SIDE, quality: PICKED_QUALITY });
+      if (ready.uri && ready.width > 0 && ready.height > 0) {
+        return { uri: ready.uri, width: ready.width, height: ready.height };
+      }
+    } catch {
+      // Tried again below, then reported.
+    }
+    if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, PREPARE_RETRY_PAUSE_MS));
+  }
+  return null;
+}
+
+/**
+ * The editor's parameters for a picked asset. Null when a photograph could
+ * not be made readable; the member has been told, and stays where they were.
+ */
+export async function paramsForPicked(
+  asset: ImagePicker.ImagePickerAsset,
+  mediaType: "photo" | "video",
+): Promise<PickedParams | null> {
   // EXIF first, then the photo library — video carries no EXIF at all, so
   // the library is the only place its real date exists. Only the dates and
   // the library's identifier go on, whoever picked the asset.
   const takenAt = await captureDateForAsset({ exif: datesOnly(asset.exif), assetId: asset.assetId });
-  // A photograph arrives as the picker found it — HEIC or JPEG, perhaps
-  // stored on its side — so it is decoded properly first: orientation
-  // applied, longest side capped, saved as JPEG the renderer can read, with
-  // no metadata at all. The size that comes back is the upright one the
-  // editor frames by.
   let { uri, width, height } = asset;
   if (mediaType === "photo") {
-    try {
-      const ready = await prepareForDarkroom(uri);
-      uri = ready.uri;
-      width = ready.width;
-      height = ready.height;
-    } catch {
-      // Fall through with the original; the editor reports what it can't read.
+    const ready = await prepareForEditor(uri);
+    if (!ready) {
+      showAlert("Couldn’t open that photograph", "It couldn’t be read here. Try again in a moment, or choose another.");
+      return null;
     }
+    ({ uri, width, height } = ready);
   }
   return {
     uri,
     mediaType,
     width: String(width ?? 0),
     height: String(height ?? 0),
-    duration: String(asset.duration != null ? Math.round(asset.duration / 1000) : 0),
+    // Whole seconds, held to the 1 to 60 the posts table accepts; 0 when
+    // the picker did not say.
+    duration: String(clipSeconds(asset.duration)),
     // When the shutter actually fired, for the date stamp. Empty when
     // neither the file nor the library knew.
     takenAt: takenAt ?? "",
@@ -124,7 +165,10 @@ export async function pickFromLibrary(mediaType: "photo" | "video"): Promise<Pic
   });
   if (result.canceled || !result.assets[0]) return null;
   const asset = withDatesOnly(result.assets[0]);
-  if (isVideo && asset.duration != null && asset.duration > (MAX_VIDEO_SECONDS + 1) * 1000) {
+  // On iOS the trimmer holds a clip to the minute already. Where there is
+  // no trimmer a clip can be any length, and it is refused here, before
+  // any of it is developed or uploaded.
+  if (isVideo && clipTooLong(asset.duration)) {
     showAlert("Too long", `Videos on VINTAGE are at most ${MAX_VIDEO_SECONDS} seconds. Trim this one and try again.`);
     return null;
   }

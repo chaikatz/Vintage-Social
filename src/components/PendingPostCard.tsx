@@ -99,7 +99,8 @@ export function PendingPostCard({ pending, active = false, onOpenProfile }: Prop
         </View>
       </View>
 
-      <PostMedia post={media} active={active && !developing && !failed} />
+      {/* Not posted yet: held in memory, never written to the image cache on disk. */}
+      <PostMedia post={media} active={active && !developing && !failed} cachePolicy="memory" />
 
       <ProgressRule fraction={overallProgress(state, progress, draft.kind)} />
       <View style={styles.statusRow}>

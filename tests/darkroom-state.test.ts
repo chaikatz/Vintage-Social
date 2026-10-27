@@ -1148,7 +1148,8 @@ describe("guards", () => {
     const images = compose.match(/<Image\s+source=\{uri\}[^>]*\/>/g) ?? [];
     expect(images.length).toBeGreaterThan(0);
     for (const image of images) expect(image).toMatch(/cachePolicy="(memory|none)"/);
-    expect(compose).toMatch(/import \{ markDeveloped \} from "@\/darkroom\/posted"/);
+    // The print is marked developed once the server has the post, by the outbox that publishes it.
+    expect(read("src/uploads/outbox.ts")).toMatch(/import \{ markDeveloped \} from "@\/darkroom\/posted"/);
   });
 
   it("the session provider claims the Darkroom in both providers, and forgets it only when a session ends", () => {

@@ -490,7 +490,15 @@ async function preparePhoto(live: Live): Promise<void> {
   }
   const source = sourceOf(job);
   const stop = perfStart("prepare photo");
-  const out = await prepareImage(source, { maxSide: FEED_MAX, quality: PHOTO_QUALITY, thumbSide: THUMB_SIDE });
+  const d = job.draft;
+  // A photograph baked in the editor is already the final JPEG: one
+  // generation at feed size. Encoding it again would only cost detail, so it
+  // goes up as it is and only the thumbnail is made from it.
+  const sourceLong = Math.max(d.sourceWidth ?? Infinity, d.sourceHeight ?? Infinity);
+  const final = d.filterBaked && sourceLong <= FEED_MAX && /\.jpe?g$/i.test(source.split("?")[0]);
+  const out = final
+    ? { uri: source, width: d.sourceWidth as number, height: d.sourceHeight as number, thumb: undefined, via: "as-baked" }
+    : await prepareImage(source, { maxSide: FEED_MAX, quality: PHOTO_QUALITY, thumbSide: THUMB_SIDE });
   if (live.gone) return;
   const thumb = out.thumb ?? (await prepareImage(out.uri, { maxSide: THUMB_SIDE, quality: 0.8 }));
   if (live.gone) return;

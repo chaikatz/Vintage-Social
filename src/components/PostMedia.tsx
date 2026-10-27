@@ -41,6 +41,12 @@ interface Props {
   bare?: boolean;
   /** Load this one first; it is the photograph the screen is for. */
   priority?: "high" | "normal";
+  /**
+   * Where expo-image may keep what it draws. A post still on its way up is
+   * a local file (from the Darkroom, a developed copy), and must not be
+   * written into the image cache on disk: it is held in memory only.
+   */
+  cachePolicy?: "memory" | "memory-disk";
 }
 
 // Clamp between 4:5 portrait and 1.91:1 landscape, like classic photo feeds.
@@ -64,7 +70,14 @@ export function aspectRatio(width: number | null, height: number | null): number
  * tap is held for a beat so a double-tap only likes and never flickers
  * the sound on and off on its way to the heart.
  */
-export function PostMedia({ post, onDoubleTap, active = true, bare = false, priority = "normal" }: Props) {
+export function PostMedia({
+  post,
+  onDoubleTap,
+  active = true,
+  bare = false,
+  priority = "normal",
+  cachePolicy = "memory-disk",
+}: Props) {
   const lastTap = React.useRef(0);
   const singleTap = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const heart = React.useRef(new Animated.Value(0)).current;
@@ -235,6 +248,7 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
           cssFilter={live?.filter ?? null}
           active={active}
           onPress={handlePress}
+          cachePolicy={cachePolicy}
         />
         {live ? <FilterOverlay filter={filter} /> : null}
         {stamp}
@@ -270,7 +284,7 @@ export function PostMedia({ post, onDoubleTap, active = true, bare = false, prio
             contentFit="cover"
             transition={120}
             priority={priority}
-            cachePolicy="memory-disk"
+            cachePolicy={cachePolicy}
             recyclingKey={post.media_path}
           />
         </Animated.View>
@@ -310,12 +324,14 @@ function VideoMedia({
   cssFilter,
   active,
   onPress,
+  cachePolicy,
 }: {
   path: string;
   poster: string | null;
   cssFilter: string | null;
   active: boolean;
   onPress: () => void;
+  cachePolicy: "memory" | "memory-disk";
 }) {
   const url = mediaUrlString("media", path) ?? "";
   const muted = useVideoMuted();
@@ -381,7 +397,7 @@ function VideoMedia({
           source={posterUrl}
           style={[StyleSheet.absoluteFill, cssFilter ? ({ filter: cssFilter } as object) : null]}
           contentFit="cover"
-          cachePolicy="memory-disk"
+          cachePolicy={cachePolicy}
         />
       ) : null}
       <Pressable

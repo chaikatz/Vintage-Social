@@ -71,6 +71,12 @@ vi.mock("@/api/media", () => ({
   prepareForDarkroom: async (uri: string) => ({ uri: `${uri}.prepared.jpg`, width: 2048, height: 1536 }),
 }));
 
+// Picked photographs are now prepared by the native decoder (sRGB, straight to size).
+vi.mock("@/media/nativeMedia", () => ({
+  prepareImage: async (uri: string) => ({ uri: `${uri}.prepared.jpg`, width: 2048, height: 1536 }),
+  hasNativePrepare: () => true,
+}));
+
 // What the capture-date reader is handed, recorded, then read the real way.
 vi.mock("@/utils/captureDate", async () => {
   const { captureDateFrom } = await import("@/utils/exif");
