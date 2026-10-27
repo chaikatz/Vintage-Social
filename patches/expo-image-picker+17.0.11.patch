@@ -1,0 +1,16 @@
+diff --git a/node_modules/expo-image-picker/ios/MediaHandler.swift b/node_modules/expo-image-picker/ios/MediaHandler.swift
+index 6e4fbe1..ac5fe62 100644
+--- a/node_modules/expo-image-picker/ios/MediaHandler.swift
++++ b/node_modules/expo-image-picker/ios/MediaHandler.swift
+@@ -303,7 +303,10 @@ internal struct MediaHandler {
+ 
+     // Fast-path: if we have a PHAsset and passthrough preset, stream the full-size resource to avoid
+     // assets-library URLs that FileManager cannot copy.
+-    if options.videoExportPreset == .passthrough, let asset = mediaInfo[.phAsset] as? PHAsset {
++    // VINTAGE patch: never when the member edited the clip. The full-size resource is the
++    // untrimmed original; the trimmed movie the system editor exported is at mediaURL, and
++    // that is the one that was chosen.
++    if options.videoExportPreset == .passthrough, !options.allowsEditing, let asset = mediaInfo[.phAsset] as? PHAsset {
+       let resources = PHAssetResource.assetResources(for: asset)
+       if let resource = resources.first(where: { $0.type == .fullSizeVideo }) ?? resources.first(where: { $0.type == .video }) {
+         let originalFilename = resource.originalFilename
