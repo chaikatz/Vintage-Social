@@ -13,7 +13,8 @@ import { FEED_PAGE_SIZE, fetchFeedPage } from "@/api/posts";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { onHomeAgain } from "@/utils/homeRefresh";
-import { setOutboxProfileRefresher, usePendingPosts } from "@/uploads";
+import { notePostsInFeed, setOutboxProfileRefresher, usePendingPosts, type PendingState } from "@/uploads";
+import { pendingNeedsTop } from "@/uploads/store";
 import type { PostWithAuthor } from "@/types/db";
 
 /**
@@ -69,13 +70,17 @@ export default function Home() {
   const posts = useMemo(() => flattenPages(feed.data?.pages), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
 
-  // A finished post hands over to the feed's row the moment that row is
-  // there, so the two are never on screen together.
+  // A post hands over to the feed's row the moment that row is there, so
+  // the two are never on screen together. Whatever the card's state: a
+  // row in the feed is the server saying the post exists, even when the
+  // job never heard back from its insert, and the outbox is told so it can
+  // carry on from there rather than sit at "Couldn’t post".
   const outbox = usePendingPosts();
   const pending = useMemo(() => {
     const inFeed = new Set(postIds);
-    return outbox.filter((p) => p.draft.userId === userId && !(p.state === "done" && inFeed.has(p.id)));
+    return outbox.filter((p) => p.draft.userId === userId && !inFeed.has(p.id));
   }, [outbox, postIds, userId]);
+  useEffect(() => notePostsInFeed(postIds), [postIds]);
 
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
@@ -100,6 +105,19 @@ export default function Home() {
       }),
     [],
   );
+
+  // A new post's card is the list's header, at the very top. Coming back
+  // from compose keeps Home as it was (the tabs are not remounted), so a
+  // member who had scrolled down would land mid-feed with no sign of it.
+  // Taken to the top when a card appears, and when one fails while Home
+  // is out of sight, so the failure is the first thing seen on return
+  // (see pendingNeedsTop). Not by onHomeAgain: that also refetches.
+  const seenPending = useRef(new Map<string, PendingState>());
+  useEffect(() => {
+    if (pendingNeedsTop(seenPending.current, pending, focused)) {
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }
+  }, [pending, focused]);
 
   // Only the card actually on screen plays its video — see PostMedia for why
   // letting them all autoplay leaves some of them stuck on a black frame.
@@ -142,6 +160,8 @@ export default function Home() {
             key={p.id}
             pending={p}
             active={focused && visibleId === null && i === 0}
+            // Home stays mounted under the other tabs; a card only speaks up while it is in front.
+            focused={focused}
             onOpenProfile={(username) => router.push(`/user/${username}`)}
           />
         ))}

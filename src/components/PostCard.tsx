@@ -68,7 +68,7 @@ export function PostCard({
         </Pressable>
       </View>
 
-      <PostMedia post={post} onDoubleTap={() => like(true)} active={active} />
+      <PostMedia post={post} onDoubleTap={() => like(true)} active={active} recyclingKey={post.id} />
 
       <View style={styles.actions}>
         <Pressable

@@ -14,6 +14,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { showAlert } from "@/utils/alert";
 import * as Crypto from "expo-crypto";
+import { File } from "expo-file-system";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Image } from "expo-image";
@@ -46,6 +47,7 @@ import {
   createShareGuard,
   developForPost,
   type ComposeChoices,
+  type Developed,
   type DevelopInput,
   type PlaceInput,
 } from "@/utils/composeDraft";
@@ -55,11 +57,22 @@ import {
  * phone. Each is its own renderer, and each used to decode the full 2048 px
  * photograph (or a 4K poster frame) on the JS thread to draw that much.
  * One small copy, made once, is all fifteen need.
+ *
+ * A swatch is a square crop, so it is the copy's short side that fills it,
+ * while the cap is on the long side. 384 keeps a 9:16 clip's short side
+ * at 216 px and a 4:3 photograph's at 288, so no swatch is drawn enlarged;
+ * fifteen such textures are still only a few megabytes.
  */
-const TRAY_MAX_SIDE = 240;
+const TRAY_MAX_SIDE = 384;
 const TRAY_QUALITY = 0.85;
-/** A clip's still preview: the frame the film is judged on, at the feed's size. */
-const STILL_MAX_SIDE = 1440;
+/**
+ * A clip's still preview: the frame the film is judged on. A portrait clip
+ * fills the 4:5 frame by its width, so its short side is what spans the
+ * screen. 2048 on the long side, the size a photograph is edited at, gives
+ * a 9:16 clip 1152 px across, about a 3x phone's width; 1440 gave it 810,
+ * drawn half as large again and soft.
+ */
+const STILL_MAX_SIDE = 2048;
 const STILL_QUALITY = 0.9;
 
 /** Where Share is: choosing, developing the film into the photograph, or handed to the outbox. */
@@ -138,6 +151,8 @@ export default function Compose() {
   const [motion, setMotion] = useState(false);
   const [previewMuted, setPreviewMuted] = useState(true);
   const bakes = isVideo && canBakeVideo();
+  // Every file this screen makes for itself, deleted when it goes.
+  const files = useOwnFiles(uri);
 
   // The small copy every swatch in the tray draws from, and for a clip the
   // still its film is shown on. Both come from one decode, made once.
@@ -150,6 +165,7 @@ export default function Compose() {
       if (!isVideo) {
         try {
           const small = await prepareImage(uri, { maxSide: TRAY_MAX_SIDE, quality: TRAY_QUALITY });
+          files.keep(small.uri);
           if (live) setTray(sized(small));
         } catch {
           // The swatches stay as empty wells; the films are still named under them.
@@ -163,6 +179,7 @@ export default function Compose() {
       let poster: Frame;
       try {
         const frame = await VideoThumbnails.getThumbnailAsync(uri, { time: 500 });
+        files.keep(frame.uri);
         poster = { uri: frame.uri, width: frame.width, height: frame.height };
       } catch {
         return;
@@ -177,6 +194,8 @@ export default function Compose() {
             ? { maxSide: STILL_MAX_SIDE, quality: STILL_QUALITY, thumbSide: TRAY_MAX_SIDE, thumbQuality: TRAY_QUALITY }
             : { maxSide: TRAY_MAX_SIDE, quality: TRAY_QUALITY },
         );
+        files.keep(prepared.uri);
+        files.keep(prepared.thumb?.uri);
         if (!live) return;
         if (bakes) {
           setStill(sized(prepared));
@@ -192,7 +211,7 @@ export default function Compose() {
     return () => {
       live = false;
     };
-  }, [uri, isVideo, bakes]);
+  }, [uri, isVideo, bakes, files]);
 
   const nowIso = useMemo(() => new Date().toISOString(), []);
   // What the stamp says: when the shutter fired, falling back to now for
@@ -262,6 +281,7 @@ export default function Compose() {
     const done = perfStart("post.bake");
     try {
       const out = await filteredRef.current?.bake({ maxSide: BAKE_MAX_SIDE });
+      files.keep(out?.uri);
       done({ ok: out != null, width: out?.width ?? null, height: out?.height ?? null });
       return out;
     } catch (err) {
@@ -314,8 +334,9 @@ export default function Compose() {
 
     setPhase("developing");
     if (bakesOnScreen(develop)) setStage("Developing…");
+    let developed: Developed | null = null;
     try {
-      const developed = await developForPost(develop, bakeOnScreen);
+      developed = await developForPost(develop, bakeOnScreen);
       setStage(null);
       // A file copy and a small record on this phone; the outbox takes it
       // from there, and its own copy outlives this screen and the
@@ -333,6 +354,11 @@ export default function Compose() {
         "VINTAGE couldn’t keep a copy on this phone to send. It may be short of space. Everything you chose is still here; try again in a moment.",
       );
       return;
+    } finally {
+      // The bake has done its work either way: the outbox has taken its
+      // own copy, or Share develops the film again. Only a file this
+      // screen made goes, never the photograph it was opened on.
+      files.drop(developed?.sourceUri);
     }
     guard.succeed();
     leaveTimerRef.current = toHome;
@@ -593,6 +619,58 @@ export default function Compose() {
 /** Just the picture's file and size, from a prepared image that may carry more. */
 function sized(file: Frame): Frame {
   return { uri: file.uri, width: file.width, height: file.height };
+}
+
+/**
+ * The files a screen makes for itself (the tray's copy, a clip's poster
+ * frame and still, the film's bake), deleted when it goes.
+ *
+ * None of them is the post: the outbox copies what it sends into its own
+ * folder before Share returns. Nor is the photograph the screen was opened
+ * on, which belongs to whoever opened it; the Darkroom deletes its own
+ * developed copy when it is in front again. But a print developed in the
+ * Darkroom and not posted must leave nothing of itself on the phone, and
+ * the caches these land in are only swept days later, or never. `keep`
+ * notes one, `drop` deletes one this screen made, now. A file that
+ * arrives after the screen has gone is deleted as it arrives.
+ */
+function useOwnFiles(source: string) {
+  const made = useRef(new Set<string>());
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    const files = made.current;
+    return () => {
+      open.current = false;
+      for (const file of files) throwAway(file);
+      files.clear();
+    };
+  }, []);
+  return useMemo(
+    () => ({
+      keep(file: string | null | undefined) {
+        if (!file || file === source) return;
+        if (open.current) made.current.add(file);
+        else throwAway(file);
+      },
+      drop(file: string | null | undefined) {
+        if (!file || !made.current.delete(file)) return;
+        throwAway(file);
+      },
+    }),
+    [source],
+  );
+}
+
+/** Delete a file on this phone, quietly. One that cannot go now is in the caches, which iOS clears in time. */
+function throwAway(file: string): void {
+  if (Platform.OS === "web" || !file.startsWith("file:")) return;
+  try {
+    const f = new File(file);
+    if (f.exists) f.delete();
+  } catch {
+    // Left where it is.
+  }
 }
 
 /** A hairline ruled across the page with its name set into the left of it. */

@@ -163,12 +163,20 @@ export async function createPost(
 
 /**
  * Whether the member's own post is in the database. Asked before a
- * discarded draft's files are removed from storage: an insert that timed
- * out may still have landed, and a post must never lose its photograph.
- * Any doubt (no answer, an error) reads as "yes".
+ * discarded draft is removed: an insert that timed out may still have
+ * landed, and then the post is live and its followers have been told.
+ *
+ * Three answers, because each drives something different. "yes" only when
+ * the row came back, "no" only when the server answered without it, and
+ * "unknown" for no answer or an error. A caller must never treat
+ * "unknown" as either of the others: as "no" a live post would lose its
+ * photograph, and as "yes" a post that never landed would be taken for
+ * done and its files deleted.
  */
-export async function ownPostExists(postId: string, authorId: string, timeoutMs = 10_000): Promise<boolean> {
-  if (isDemoMode()) return demo.demoFetchPost(postId) != null;
+export type PostPresence = "yes" | "no" | "unknown";
+
+export async function ownPostExists(postId: string, authorId: string, timeoutMs = 10_000): Promise<PostPresence> {
+  if (isDemoMode()) return demo.demoFetchPost(postId) != null ? "yes" : "no";
   try {
     return await withTimeout(timeoutMs, async (abort) => {
       const { data, error } = await supabase
@@ -178,11 +186,11 @@ export async function ownPostExists(postId: string, authorId: string, timeoutMs 
         .eq("author_id", authorId)
         .abortSignal(abort)
         .maybeSingle();
-      if (error) return true;
-      return data != null;
+      if (error) return "unknown";
+      return data != null ? "yes" : "no";
     });
   } catch {
-    return true;
+    return "unknown";
   }
 }
 

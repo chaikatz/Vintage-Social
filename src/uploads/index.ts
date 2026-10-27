@@ -8,6 +8,8 @@ export {
   discardPost,
   enqueuePost,
   forgetOutbox,
+  holdPost,
+  notePostsInFeed,
   retryPost,
   setOutboxProfileRefresher,
   startOutbox,

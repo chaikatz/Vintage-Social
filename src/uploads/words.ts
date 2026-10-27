@@ -16,6 +16,9 @@ export function stateLine(state: PendingState, progress: number | null, kind: Po
   const pct = percent(progress);
   const amount = pct == null ? "" : ` ${pct}%`;
   switch (state) {
+    case "queued":
+      // One post goes up at a time; this one has not started.
+      return "Waiting its turn";
     case "preparing":
       return kind === "video" ? "Preparing the clip…" : "Preparing the photograph…";
     case "developing":
@@ -39,7 +42,7 @@ export function stateLine(state: PendingState, progress: number | null, kind: Po
  * How much of the whole post is done, for the progress rule: developing a
  * clip is most of the wait, the upload is most of a photograph's. The
  * rule only ever moves forward through a post, whatever step it is on.
- * Null for the states that are not moving (waiting, failed).
+ * Null for the states that are not moving (queued, waiting, failed).
  */
 export function overallProgress(state: PendingState, progress: number | null, kind: PostDraft["kind"]): number | null {
   const p = progress == null || !Number.isFinite(progress) ? 0 : Math.min(1, Math.max(0, progress));
@@ -79,7 +82,7 @@ export function accessibilityLine(state: PendingState, progress: number | null, 
 }
 
 /** Why a post gave up, for the line under "Couldn’t post." */
-export type FailureReason = "develop" | "prepare" | "too-large" | "upload" | "save" | "signed-out";
+export type FailureReason = "develop" | "prepare" | "too-large" | "upload" | "save" | "unconfirmed" | "signed-out";
 
 export function failureWords(reason: FailureReason, kind: PostDraft["kind"]): string {
   switch (reason) {
@@ -88,11 +91,16 @@ export function failureWords(reason: FailureReason, kind: PostDraft["kind"]): st
     case "prepare":
       return kind === "video" ? "The clip couldn’t be read." : "The photograph couldn’t be read.";
     case "too-large":
-      return "The clip is too large to post.";
+      // Developed again, the same clip comes out the same size, so the
+      // useful advice is a shorter one rather than another go.
+      return "The clip is too large to post. Try a shorter one.";
     case "upload":
       return kind === "video" ? "The clip didn’t upload." : "The photograph didn’t upload.";
     case "save":
       return "The post wasn’t saved.";
+    case "unconfirmed":
+      // The insert went out and no answer came back: it may well be up.
+      return "It may have been saved. Retry to check.";
     case "signed-out":
       return "Sign in again to post this.";
   }

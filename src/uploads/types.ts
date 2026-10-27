@@ -34,6 +34,7 @@ export interface PostDraft {
 }
 
 export type PendingState =
+  | "queued"
   | "preparing"
   | "developing"
   | "uploading"
@@ -59,6 +60,14 @@ export interface PendingPost {
    */
   previewThumbUri: string | null;
   previewBaked: boolean;
+  /**
+   * Whether Discard may be offered: true while nothing can have been
+   * published yet (the insert has never been sent and the job is still
+   * preparing or uploading), and whenever the post has failed. Once the
+   * insert has gone out the post may exist, and `discardPost` asks the
+   * server before it removes anything.
+   */
+  canDiscard: boolean;
 }
 
 /** Where a job has got to. Each is written to disk once it is reached. */

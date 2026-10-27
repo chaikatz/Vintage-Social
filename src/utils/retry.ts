@@ -22,14 +22,21 @@
  * failed"), NSURLSession through a native upload task ("The network
  * connection was lost.", "A server with the specified hostname could not
  * be found.", which is what a phone with no signal says about DNS), and
- * our own timeouts below ("… timed out").
+ * our own timeouts below ("… timed out"). Safari's fetch says only "Load
+ * failed", and postgrest-js prefixes the error's name ("TypeError: Load
+ * failed"); the pattern is held to exactly that, because a bare "load
+ * failed" also matches the end of "Upload failed …", which is a refusal.
+ *
+ * A native upload task's own failure is not classified here by its text:
+ * storageUpload reads the NSURLError code instead, which does not depend
+ * on the wording or the phone's language.
  */
 export function isTransient(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as Record<string, unknown>;
   const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
   if (
-    /network request failed|network error|failed to fetch|load failed|timed? ?out|socket|econnreset|etimedout|the internet connection appears to be offline|could not connect|network connection was lost|not connected to the internet|hostname could not be found/.test(
+    /network request failed|network error|failed to fetch|(^|: )load failed$|timed? ?out|socket|econnreset|etimedout|the internet connection appears to be offline|could not connect|network connection was lost|not connected to the internet|hostname could not be found/.test(
       message,
     )
   ) {

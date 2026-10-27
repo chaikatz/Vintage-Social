@@ -1,8 +1,9 @@
 import { Platform } from "react-native";
 import * as MediaLibrary from "expo-media-library";
-import { prepareForDarkroom } from "@/api/media";
+import { prepareImage } from "@/media/nativeMedia";
 import { captureDateFromEpoch } from "./exif";
 import { sameNightWindow } from "./memories";
+import { PICKED_MAX_SIDE, PICKED_QUALITY } from "./pickForCompose";
 
 /**
  * Reading the member's own photo library — and only reading it.
@@ -127,9 +128,15 @@ export async function composeParamsFor(photo: LibraryPhoto): Promise<{
     const original = info.localUri ?? info.uri;
     if (!original) return null;
     // The library hands back the original file — HEIC, on its side — which
-    // the filter renderer cannot read. Decode it properly first; the size
-    // that comes back is the upright one.
-    const ready = await prepareForDarkroom(original);
+    // the filter renderer cannot read. It is decoded straight to the
+    // editor's size, upright and in sRGB, exactly as a picked photograph
+    // is (see `pickForCompose`). The image manipulator decoded the whole
+    // original at background priority, which is slow in Low Power Mode,
+    // and leaves a Display P3 photograph in P3, which the renderer would
+    // read as sRGB. The size that comes back is the upright one, and a
+    // decode with no picture in it is no photograph to open.
+    const ready = await prepareImage(original, { maxSide: PICKED_MAX_SIDE, quality: PICKED_QUALITY });
+    if (!ready.uri || !(ready.width > 0) || !(ready.height > 0)) return null;
     return {
       uri: ready.uri,
       mediaType: "photo",

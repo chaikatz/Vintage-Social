@@ -34,21 +34,23 @@ const REFRESH_MARGIN_MS = 5 * 60_000;
 const STILL_USABLE_MS = 30_000;
 const AUTH_TIMEOUT_MS = 15_000;
 
-/** The slowest uplink we plan for, in bytes per second (about 0.4 Mbps). */
-const FLOOR_BYTES_PER_SECOND = 48_000;
-/** An upload that has sent nothing for this long, while it could have, is stuck. */
-const STALL_MS = 60_000;
-const TICK_MS = 1000;
-
 /**
- * How long an upload of this size may run, counting only the time it could
- * actually make progress (see `clockRunning`). Generous on purpose: a slow
- * uplink must still be able to finish, and a real stall is caught sooner
- * by the stall limit.
+ * An upload that has sent nothing for this long, while it could have, is
+ * stuck. This is the only limit: there is no overall deadline, because an
+ * upload that is still moving, however slowly, is closer to done than a
+ * fresh one, and every new attempt starts again from the first byte. A
+ * server that takes the whole body and never answers is caught here too,
+ * since nothing more is sent after the last byte.
  */
-export function uploadDeadlineMs(bytes: number): number {
-  return 45_000 + Math.ceil(Math.max(0, bytes) / FLOOR_BYTES_PER_SECOND) * 1000;
-}
+const STALL_MS = 60_000;
+/**
+ * The same, for a task created while the app was away and that has not
+ * sent a byte. iOS treats a background-session task created from the
+ * background as discretionary and may hold it for Wi-Fi and power; once
+ * the app is back in front a new task, created now, is not held back.
+ */
+const DEFERRED_START_MS = 5_000;
+const TICK_MS = 1000;
 
 /** Storage refused the file. `status` is the HTTP status; `statusCode` is what storage said in the body, when it said. */
 export class StorageUploadError extends Error {
@@ -56,7 +58,9 @@ export class StorageUploadError extends Error {
   readonly statusCode: string | number | undefined;
   readonly body: string;
   constructor(status: number, body: string) {
-    let message = `Upload failed with HTTP ${status}`;
+    // Worded to match none of isTransient's patterns: the status alone
+    // decides whether it is worth another go.
+    let message = `Storage refused the file (HTTP ${status})`;
     let statusCode: string | number | undefined;
     try {
       const json = JSON.parse(body) as { statusCode?: string | number; message?: string; error?: string };
@@ -86,13 +90,44 @@ export class NotSignedInError extends Error {
 /**
  * A refusal because the access token had run out. The next attempt asks
  * for a new one first; URLSession would otherwise go on sending the old.
+ *
+ * Storage says so with a 401 or 403. PostgREST's error reaches the insert
+ * as the parsed body with no status at all: `{ code: "PGRST303", message:
+ * "JWT expired" }` (PGRST301 on older servers). That happens when the
+ * phone's clock runs behind, so supabase-js still believes the token is
+ * good and would never refresh it by itself.
  */
 export function isExpiredAuth(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  const e = err as { status?: unknown; statusCode?: unknown; message?: unknown };
+  const e = err as { status?: unknown; statusCode?: unknown; message?: unknown; code?: unknown };
   const code = Number(e.statusCode ?? e.status ?? NaN);
   const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
-  return (code === 401 || code === 403) && /jwt|exp"? claim|token|expired/.test(message);
+  if (code === 401 || code === 403) return /jwt|exp"? claim|token|expired/.test(message);
+  if (Number.isFinite(code)) return false;
+  return /^PGRST30[13]$/.test(String(e.code ?? "")) || /jwt expired/.test(message);
+}
+
+/**
+ * The session could not be read because the keychain is locked: the
+ * phone is, and iOS has woken the app to finish a background upload. The
+ * session is kept in SecureStore with its default "when unlocked"
+ * protection, so every read throws "User interaction is not allowed."
+ * until the member unlocks the phone. supabase-js reads it before each
+ * request, so the insert fails the same way, wrapped by postgrest-js into
+ * an error whose message carries SecureStore's.
+ *
+ * Nothing is wrong with the post. It waits for the app to be open.
+ */
+export function isSessionUnavailable(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { message?: unknown; code?: unknown; cause?: unknown };
+  const text = [e.message, (e.cause as { message?: unknown } | undefined)?.message]
+    .filter((m): m is string => typeof m === "string")
+    .join(" ");
+  // Only the locked phone's own signal: any other keychain failure (a
+  // missing entitlement, a corrupt item) would never clear by waiting, and
+  // must surface as a failure the member can act on.
+  return /user interaction is not allowed|errSecInteractionNotAllowed|-25308/i.test(text);
 }
 
 /** A storage answer that means the object is already there: for a key named by a fresh post id, that is success. */
@@ -138,15 +173,23 @@ export interface StorageUploadOptions {
   onProgress?: (sentBytes: number, totalBytes: number) => void;
   signal?: AbortSignal;
   /**
+   * Hand the task to a background session, which carries on while the app
+   * is away and waits out a lost connection instead of failing. Only the
+   * post outbox wants that: it shows the wait on the pending card. A
+   * screen waiting on an upload (an avatar's Save) needs the foreground
+   * session, which fails at once with no connection so it can say so.
+   */
+  background?: boolean;
+  /**
    * Whether the clock that bounds the upload should run right now. The
    * outbox answers false while the app is in the background or the phone
    * has no connection: a background session simply waits then, and that
    * wait is not the upload being slow.
    */
   clockRunning?: () => boolean;
-  /** Override the size-scaled limit (tests). */
-  deadlineMs?: number;
+  /** Override the stall limits (tests). */
   stallMs?: number;
+  deferredStartMs?: number;
 }
 
 export interface StorageUploadResult {
@@ -154,6 +197,51 @@ export interface StorageUploadResult {
   bytes: number;
   /** Storage already had it: an earlier attempt landed before its reply was lost. */
   alreadyThere: boolean;
+}
+
+/**
+ * A task iOS was holding back, given up so that a new one can start from
+ * the foreground. Not a failure of the upload, and not counted as one.
+ */
+export class UploadRestart extends Error {
+  constructor() {
+    super("The upload is starting again from the foreground");
+    this.name = "UploadRestart";
+  }
+}
+
+/**
+ * URLSession errors that another attempt cannot change: a malformed or
+ * unsupported address, a file that is missing or unreadable, and the
+ * file-handling errors (-3000 to -3007).
+ */
+function isPermanentUrlError(code: number): boolean {
+  return code === -1000 || code === -1002 || code === -1100 || code === -1102 || (code <= -3000 && code >= -3007);
+}
+
+/**
+ * What a rejected upload task means. Storage's refusals come back as a
+ * resolved status, so a rejection is always the connection itself:
+ * expo-file-system rejects with "Unable to upload the file: '<NSError
+ * description>'", which names the NSURLErrorDomain code. The code decides,
+ * not the description: the description of -997 ("Lost connection to
+ * background transfer service"), -1020 or -1200 matches no phrase
+ * isTransient knows, and is in the phone's language besides. Anything
+ * that is not a permanent error comes back worded as a network error, so
+ * the caller's own limit on attempts bounds it.
+ */
+export function classifyUploadRejection(err: unknown): unknown {
+  const e = (err ?? {}) as { message?: unknown; code?: unknown };
+  const message = typeof e.message === "string" ? e.message : String(err);
+  const urlCode = /NSURLErrorDomain Code=(-?\d+)/.exec(message)?.[1];
+  if (urlCode != null) {
+    if (isPermanentUrlError(Number(urlCode))) return err;
+  } else if (e.code !== "ERR_FILESYSTEM_CANNOT_UPLOAD") {
+    // Not from URLSession at all (a module missing from the build, a bad
+    // argument): as it is.
+    return err;
+  }
+  return Object.assign(new Error(`Network error: ${message}`), { cause: err, urlCode: urlCode == null ? null : Number(urlCode) });
 }
 
 function fileSize(uri: string): number {
@@ -168,7 +256,9 @@ function fileSize(uri: string): number {
  * Upload `fileUri` to `bucket/path` natively. Resolves when Storage has
  * the object (including when it already did), rejects with a
  * `StorageUploadError` carrying the status, a `TimeoutError` when the
- * upload stalls or overruns, or an AbortError when `signal` fires.
+ * upload stalls, a network error when the connection failed, an
+ * `UploadRestart` when a task created while the app was away never
+ * started, or an AbortError when `signal` fires.
  */
 export async function uploadToStorage(
   bucket: string,
@@ -184,7 +274,6 @@ export async function uploadToStorage(
   if (signal?.aborted) throw abortError();
 
   const bytes = fileSize(fileUri);
-  const deadline = options.deadlineMs ?? uploadDeadlineMs(bytes);
   const stallLimit = options.stallMs ?? STALL_MS;
   const clockRunning = options.clockRunning ?? (() => true);
   const url = `${supabaseUrl.replace(/\/+$/, "")}/storage/v1/object/${bucket}/${path}`;
@@ -195,13 +284,19 @@ export async function uploadToStorage(
   // the timer was too) is not counted as time spent either.
   let active = 0;
   let lastProgressAt = 0;
+  let progressed = false;
+  // Created while the app was away (or offline): see DEFERRED_START_MS.
+  const createdPaused = !clockRunning();
+  const deferredLimit = options.deferredStartMs ?? DEFERRED_START_MS;
   const task = LegacyFileSystem.createUploadTask(
     url,
     fileUri,
     {
       httpMethod: "POST",
       uploadType: LegacyFileSystem.FileSystemUploadType.BINARY_CONTENT,
-      sessionType: LegacyFileSystem.FileSystemSessionType.BACKGROUND,
+      sessionType: options.background
+        ? LegacyFileSystem.FileSystemSessionType.BACKGROUND
+        : LegacyFileSystem.FileSystemSessionType.FOREGROUND,
       headers: {
         authorization: `Bearer ${token}`,
         apikey: supabaseAnonKey,
@@ -212,6 +307,7 @@ export async function uploadToStorage(
     },
     (progress) => {
       lastProgressAt = active;
+      progressed = true;
       options.onProgress?.(progress.totalBytesSent, progress.totalBytesExpectedToSend || bytes);
     },
   );
@@ -233,14 +329,20 @@ export async function uploadToStorage(
       last = t;
       if (!clockRunning()) return;
       active += dt;
-      if (active > deadline || active - lastProgressAt > stallLimit) fail(new TimeoutError("The upload"));
+      // Made while the app was away and still not started now that it is
+      // back: iOS is holding it. A task made now, in front, is not held.
+      if (createdPaused && !progressed && active > deferredLimit) fail(new UploadRestart());
+      else if (active - lastProgressAt > stallLimit) fail(new TimeoutError("The upload"));
     }, TICK_MS);
     onAbort = () => fail(abortError());
     signal?.addEventListener("abort", onAbort);
   });
 
   try {
-    const result = await Promise.race([task.uploadAsync(), watchdog]);
+    const upload = task.uploadAsync().catch((err: unknown) => {
+      throw classifyUploadRejection(err);
+    });
+    const result = await Promise.race([upload, watchdog]);
     // A cancelled task resolves with nothing.
     if (!result) throw abortError();
     if (result.status >= 200 && result.status < 300) {

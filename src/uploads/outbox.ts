@@ -2,10 +2,11 @@ import { AppState, Platform, type AppStateStatus } from "react-native";
 import NetInfo from "@react-native-community/netinfo";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import { File } from "expo-file-system";
+import { Image } from "expo-image";
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import { queryClient } from "@/lib/queryClient";
-import { uploadFile } from "@/api/media";
+import { mediaUrlString, uploadFile } from "@/api/media";
 import { createPost, ownPostExists, type NewPost } from "@/api/posts";
 import { tagMembers } from "@/api/tags";
 import { prepareImage } from "@/media/nativeMedia";
@@ -17,7 +18,7 @@ import { showAlert } from "@/utils/alert";
 import { ownedPath } from "@/utils/storagePath";
 import { abortError, backoffDelay, isAbortError, isTransient, withTimeout } from "@/utils/retry";
 import { perfLog, perfStart, shortId } from "@/utils/perf";
-import { NotSignedInError, freshAccessToken, isExpiredAuth } from "./storageUpload";
+import { NotSignedInError, UploadRestart, freshAccessToken, isExpiredAuth, isSessionUnavailable } from "./storageUpload";
 import * as disk from "./jobFiles";
 import { setPendingPosts } from "./store";
 import { confirmedRow, placeConfirmedPost } from "./feedCache";
@@ -67,6 +68,17 @@ const STORAGE_LIMIT_BYTES = 50 * 1024 * 1024;
 const MAX_NETWORK_ATTEMPTS = 4;
 /** Tries of local work (a decode, a bake) before the same. */
 const MAX_LOCAL_ATTEMPTS = 3;
+/**
+ * Stops that are not the job's fault but arrive with the app in front (a
+ * bake interrupted by an event that raced the member's return, the media
+ * server resetting, a keychain read refused as the phone locked): taken
+ * again straight away this many times, uncounted, before they are not.
+ */
+const MAX_FOREGROUND_RETRIES = 2;
+/** How long a discard waits for the job's own work to stop before it removes what reached storage. */
+const DISCARD_WIND_DOWN_MS = 5000;
+/** How often a post held by an open "Discard this post?" looks again. */
+const HOLD_POLL_MS = 200;
 const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 30_000;
 const TAG_ATTEMPTS = 3;
@@ -102,13 +114,27 @@ interface Live {
   reportedPct: number | null;
   /** Failed tries of the current step. */
   attempts: number;
-  /** Storage refused the token: ask auth for a new one before the next upload. */
+  /** Of the current step, the uncounted tries after a stop with the app in front (MAX_FOREGROUND_RETRIES). */
+  foregroundRetries: number;
+  /** Storage or PostgREST refused the token: ask auth for a new one before the next upload or insert. */
   forceRefresh: boolean;
+  /**
+   * An insert of this post went out and no answer came back, in this run
+   * or in one the app was closed during: it may have landed, whatever a
+   * later attempt is told.
+   */
+  insertUnanswered: boolean;
   /** The post exists; its card has handed over to the feed's row. */
   retired: boolean;
   /** Discarded or forgotten: anything still in flight for it must stop and write nothing. */
   gone: boolean;
+  /** A discard is asking the server whether the post exists: nothing may run it meanwhile. */
+  discarding: boolean;
+  /** "Discard this post?" is on screen: the insert is not sent until it is answered. */
+  held: boolean;
   ctl: AbortController | null;
+  /** The run in progress, so a discard can wait for it to stop. */
+  run: Promise<void> | null;
   span: ((extra?: Record<string, unknown>) => number) | null;
 }
 
@@ -178,6 +204,9 @@ function visibleState(live: Live): PendingState {
   // A background upload goes on waiting for the network by itself; the
   // card says what it is waiting for rather than that it is uploading.
   if (!connected() && (job.step === "upload" || job.step === "insert")) return "waiting-network";
+  // One job runs at a time. One that has not started is only waiting
+  // behind it, and saying it is preparing or developing would not be true.
+  if (!live.running && [...jobs.values()].some((other) => other !== live && other.running && !other.gone)) return "queued";
   switch (job.step) {
     case "prepare":
       return job.draft.kind === "video" && job.draft.bakeVideo ? "developing" : "preparing";
@@ -216,10 +245,23 @@ function publish(): void {
       createdAt: live.job.createdAt,
       previewThumbUri: look.thumb,
       previewBaked: look.baked,
+      canDiscard: canDiscard(live.job),
     });
   }
   list.sort((a, b) => b.createdAt - a.createdAt);
   setPendingPosts(list);
+}
+
+/**
+ * Nothing can have been published while the insert has never been sent:
+ * a discard then only has to stop the work and clear up. A failed post
+ * may be discarded too; if its insert went out, discardPost asks first.
+ */
+function canDiscard(job: OutboxJob): boolean {
+  if (job.failed) return true;
+  // Up to the moment the insert is sent — a post waiting for a connection
+  // with both files already up has published nothing yet either.
+  return !job.insertTried && job.step !== "follow-up" && job.step !== "done";
 }
 
 /** Progress, passed on a whole percent at a time: a byte count per callback would re-render Home for nothing. */
@@ -252,10 +294,16 @@ function newLive(job: OutboxJob): Live {
     progress: null,
     reportedPct: null,
     attempts: 0,
+    foregroundRetries: 0,
     forceRefresh: false,
+    // From disk there is no telling how the last insert ended.
+    insertUnanswered: job.step === "insert" && job.insertTried,
     retired: false,
     gone: false,
+    discarding: false,
+    held: false,
     ctl: null,
+    run: null,
     span: null,
   };
 }
@@ -267,7 +315,7 @@ function newLive(job: OutboxJob): Live {
 function nextRunnable(): Live | null {
   let best: Live | null = null;
   for (const live of jobs.values()) {
-    if (live.gone || live.running || live.waiting || live.job.failed || live.job.step === "done") continue;
+    if (live.gone || live.running || live.discarding || live.waiting || live.job.failed || live.job.step === "done") continue;
     if (!best || live.job.createdAt < best.job.createdAt) best = live;
   }
   return best;
@@ -290,7 +338,10 @@ function pump(): Promise<void> {
       while (gen === generation) {
         const next = nextRunnable();
         if (!next) break;
-        await runJob(next);
+        const running = runJob(next);
+        next.run = running;
+        await running;
+        if (next.run === running) next.run = null;
       }
     } finally {
       if (pumpPromise === promise) pumpPromise = null;
@@ -344,9 +395,11 @@ async function runJob(live: Live): Promise<void> {
         await runStep(live, step, ctl.signal);
         if (!alive()) return;
         live.attempts = 0;
+        live.foregroundRetries = 0;
         live.progress = null;
         live.reportedPct = null;
-        live.forceRefresh = live.forceRefresh && step !== "upload";
+        // Both send the member's token; a fresh one has been used by now.
+        live.forceRefresh = live.forceRefresh && step !== "upload" && step !== "insert";
         persist(live);
         publish();
       } catch (err) {
@@ -390,6 +443,35 @@ function fail(live: Live, reason: FailureReason, step: JobStep, err?: unknown): 
   return "stop";
 }
 
+function waitForForeground(live: Live): "stop" {
+  live.waiting = "foreground";
+  return "stop";
+}
+
+/**
+ * A stop that only the app being open again would end, heard with the app
+ * already in front: nothing will say "active" again to end a wait, so it
+ * is taken again now, uncounted, a bounded number of times. Null once the
+ * app is not in front or those are used up.
+ */
+function againInForeground(live: Live): "retry" | null {
+  if (appState !== "active" || live.foregroundRetries >= MAX_FOREGROUND_RETRIES) return null;
+  live.foregroundRetries += 1;
+  // runJob counts every retry; this one is given back.
+  live.attempts -= 1;
+  return "retry";
+}
+
+/** A bake refusal no second go would change: the same clip comes out the same. */
+function deterministicBakeFailure(err: unknown): FailureReason | null {
+  const e = err && typeof err === "object" ? (err as { code?: unknown; message?: unknown }) : {};
+  // Some bridges fold the code into the message only (see isInterruptedBake).
+  const text = typeof e.message === "string" ? e.message : "";
+  if (e.code === "E_BAKE_TOO_LARGE" || /\bE_BAKE_TOO_LARGE\b/.test(text)) return "too-large";
+  if (e.code === "E_BAKE_INPUT" || /\bE_BAKE_INPUT\b/.test(text)) return "prepare";
+  return null;
+}
+
 /** After a step threw: wait, try again, or give up. */
 function decide(live: Live, step: JobStep, err: unknown): "retry" | "stop" {
   if (err instanceof WaitFor) {
@@ -397,30 +479,64 @@ function decide(live: Live, step: JobStep, err: unknown): "retry" | "stop" {
     return "stop";
   }
   if (err instanceof GiveUp) return fail(live, err.reason, step, err);
+  // The keychain is locked because the phone is: iOS woke the app to
+  // finish a background upload, and the session cannot be read until the
+  // member unlocks it. The post waits for the app to be open, never
+  // fails. Nobody signed in, heard while the app is away, may be the same
+  // locked keychain, so that waits too and is looked at again in front.
+  if (isSessionUnavailable(err) || (err instanceof NotSignedInError && appState !== "active")) {
+    const again = againInForeground(live);
+    if (again) return again;
+    if (appState !== "active") return waitForForeground(live);
+    // Still unreadable with the app open and the retries spent: not the
+    // locked phone after all. Say so, with Retry and Discard, rather than
+    // "Will finish when VINTAGE is open" on an open VINTAGE.
+    return fail(live, step === "insert" && live.insertUnanswered ? "unconfirmed" : reasonFor(live, step), step, err);
+  }
   if (err instanceof NotSignedInError) return fail(live, "signed-out", step, err);
-  // The app left the front mid-bake. Not a failure of the bake: it runs
-  // again from the start once the app is active.
-  if (step === "prepare" && live.job.draft.kind === "video" && isInterruptedBake(err)) {
-    live.waiting = "foreground";
-    return "stop";
+  if (step === "prepare" && live.job.draft.kind === "video") {
+    // The app left the front mid-bake. Not a failure of the bake: it runs
+    // again from the start once the app is active. With the app in front
+    // (the return raced the stop, or the media server reset under it) it
+    // runs again now, and only a source that keeps stopping is counted.
+    if (isInterruptedBake(err)) {
+      if (appState !== "active") return waitForForeground(live);
+      const again = againInForeground(live);
+      if (again) return again;
+    }
+    const reason = deterministicBakeFailure(err);
+    if (reason) return fail(live, reason, step, err);
+  }
+  // A task iOS held back, restarted from the foreground: not a try that failed.
+  if (err instanceof UploadRestart) {
+    live.attempts -= 1;
+    return "retry";
   }
   const lastTry = live.attempts + 1 >= (step === "prepare" ? MAX_LOCAL_ATTEMPTS : MAX_NETWORK_ATTEMPTS);
   if (step === "prepare") return lastTry ? fail(live, reasonFor(live, step), step, err) : "retry";
+  const unanswered = isTransient(err) || isAbortError(err);
+  if (step === "insert" && unanswered && live.job.insertTried) live.insertUnanswered = true;
+  // An insert that went out with no answer back may well have landed;
+  // "wasn’t saved" would not be true. Retry finds out (23505 is done).
+  const givenUp = (): FailureReason => (step === "insert" && live.insertUnanswered ? "unconfirmed" : reasonFor(live, step));
   if (isExpiredAuth(err)) {
     live.forceRefresh = true;
-    return lastTry ? fail(live, reasonFor(live, step), step, err) : "retry";
+    // Refused before the row was looked at, so an earlier attempt that
+    // went unanswered may still be the one that landed.
+    return lastTry ? fail(live, givenUp(), step, err) : "retry";
   }
-  if (isTransient(err) || isAbortError(err)) {
+  if (unanswered) {
     // No connection is not a try that failed: wait for one.
     if (!connected()) {
       live.waiting = "network";
       return "stop";
     }
-    return lastTry ? fail(live, reasonFor(live, step), step, err) : "retry";
+    return lastTry ? fail(live, givenUp(), step, err) : "retry";
   }
   // A refusal (a policy, a constraint, a file too large): another go would
-  // be refused the same way.
-  return fail(live, reasonFor(live, step), step, err);
+  // be refused the same way. An earlier insert that went unanswered may
+  // still be the one that landed, so the words stay honest about that.
+  return fail(live, givenUp(), step, err);
 }
 
 async function runStep(live: Live, step: JobStep, signal: AbortSignal): Promise<void> {
@@ -499,9 +615,19 @@ async function preparePhoto(live: Live): Promise<void> {
   const out = final
     ? { uri: source, width: d.sourceWidth as number, height: d.sourceHeight as number, thumb: undefined, via: "as-baked" }
     : await prepareImage(source, { maxSide: FEED_MAX, quality: PHOTO_QUALITY, thumbSide: THUMB_SIDE });
-  if (live.gone) return;
+  // Discarded or forgotten meanwhile: no copy of the photograph is kept.
+  const made = (uri: string | undefined) => (uri && uri !== source ? uri : null);
+  if (live.gone) {
+    removeLoose(made(out.uri));
+    removeLoose(made(out.thumb?.uri));
+    return;
+  }
   const thumb = out.thumb ?? (await prepareImage(out.uri, { maxSide: THUMB_SIDE, quality: 0.8 }));
-  if (live.gone) return;
+  if (live.gone) {
+    removeLoose(made(out.uri));
+    removeLoose(made(thumb.uri));
+    return;
+  }
   // A preparer that handed the source straight back must not have it moved away.
   const keep = (uri: string) => (uri === source ? "copy" : "move");
   job.files.media = disk.adoptIntoJob(job.id, out.uri, "media.jpg", keep(out.uri));
@@ -545,7 +671,11 @@ async function prepareVideo(live: Live, signal: AbortSignal): Promise<void> {
         if (!live.gone) setProgress(live, fraction);
       },
     });
-    if (live.gone) return;
+    // Discarded just as it finished: the developed clip is not kept either.
+    if (live.gone) {
+      removeLoose(out.uri);
+      return;
+    }
     job.files.media = disk.adoptIntoJob(job.id, out.uri, "media.mp4");
     const bytes = out.bytes || disk.fileBytes(resolve(job, job.files.media));
     stop({
@@ -592,7 +722,20 @@ async function prepareVideo(live: Live, signal: AbortSignal): Promise<void> {
     };
   }
   if (!job.files.thumb || !disk.fileExists(resolve(job, job.files.thumb))) {
-    job.files.thumb = await makePoster(job);
+    const poster = await makePoster(live);
+    if (live.gone) return;
+    job.files.thumb = poster;
+  }
+}
+
+/** Best-effort removal of a file a step made in the cache folder. */
+function removeLoose(uri: string | null | undefined): void {
+  if (!uri || !uri.startsWith("file:")) return;
+  try {
+    const f = new File(uri);
+    if (f.exists) f.delete();
+  } catch {
+    // In the cache folder; iOS clears it.
   }
 }
 
@@ -600,24 +743,38 @@ async function prepareVideo(live: Live, signal: AbortSignal): Promise<void> {
  * The poster frame: what the grid draws and what a card shows until the
  * clip starts. Cut from the clip that will be posted, so it matches what
  * plays, and kept at feed size. A clip without one still posts.
+ *
+ * A discard or a sign-out can land while a frame is being cut. Adopting
+ * it then would make the job's folder again and leave a frame of the clip
+ * in it after the member was promised everything was deleted, so after
+ * each wait a job that has gone keeps nothing.
  */
-async function makePoster(job: OutboxJob): Promise<string | null> {
+async function makePoster(live: Live): Promise<string | null> {
+  const { job } = live;
   const clip = resolve(job, job.files.media);
   if (!clip) return null;
+  let frame: { uri: string } | null = null;
+  let poster: { uri: string } | null = null;
   try {
-    const frame = await VideoThumbnails.getThumbnailAsync(clip, { time: 500 });
-    const poster = await prepareImage(frame.uri, { maxSide: FEED_MAX, quality: POSTER_QUALITY });
-    const name = disk.adoptIntoJob(job.id, poster.uri, "thumb.jpg");
-    if (frame.uri !== poster.uri && frame.uri.startsWith("file:")) {
-      try {
-        const raw = new File(frame.uri);
-        if (raw.exists) raw.delete();
-      } catch {
-        // In the cache folder; iOS clears it.
-      }
+    frame = await VideoThumbnails.getThumbnailAsync(clip, { time: 500 });
+    if (live.gone) {
+      removeLoose(frame.uri);
+      return null;
     }
+    poster = await prepareImage(frame.uri, { maxSide: FEED_MAX, quality: POSTER_QUALITY });
+    if (live.gone) {
+      removeLoose(frame.uri);
+      if (poster.uri !== frame.uri) removeLoose(poster.uri);
+      return null;
+    }
+    const name = disk.adoptIntoJob(job.id, poster.uri, "thumb.jpg");
+    if (frame.uri !== poster.uri) removeLoose(frame.uri);
     return name;
   } catch {
+    if (live.gone) {
+      removeLoose(frame?.uri);
+      if (poster && poster.uri !== frame?.uri) removeLoose(poster.uri);
+    }
     return null;
   }
 }
@@ -672,6 +829,8 @@ async function uploadStep(live: Live, signal: AbortSignal): Promise<void> {
     parts.map(async (part, i) => {
       await uploadFile(part.bucket, part.key, part.uri, part.type, {
         retry: false,
+        // Goes on while the app is away, and waits out a lost connection.
+        background: true,
         signal,
         accessToken,
         clockRunning,
@@ -731,9 +890,20 @@ async function insertStep(live: Live, signal: AbortSignal): Promise<void> {
     return;
   }
   if (!connected()) throw new WaitFor("network");
+  // The last insert was refused for an expired token that supabase-js
+  // still took for good (the phone's clock is behind): a new one first.
+  // Refreshing through auth updates the session supabase-js sends.
+  if (live.forceRefresh && !demo()) await freshAccessToken(true);
+  if (live.gone || signal.aborted) return;
+  // The member is being asked "Discard this post?": nothing is published
+  // while they decide, so whichever they choose is what happens.
+  while (live.held && !live.gone && !signal.aborted) await new Promise((r) => setTimeout(r, HOLD_POLL_MS));
+  if (live.gone || signal.aborted) return;
   if (!job.insertTried) {
     job.insertTried = true;
     persist(live);
+    // From here it may be published: the card stops offering Discard.
+    publish();
   }
   const stop = perfStart("insert");
   await createPost(newPostFor(job), { signal });
@@ -744,16 +914,26 @@ async function insertStep(live: Live, signal: AbortSignal): Promise<void> {
   confirm(live);
 }
 
-/** The server has it: the feed's row takes the card's place, drawn from the files already on the phone. */
+/**
+ * The server has it: the feed's row takes the card's place, drawn from the
+ * files already on the phone.
+ *
+ * The card lets go once the row is in the feed for good, which is not
+ * always at once: a refresh or a next page already out when the row was
+ * put in overwrites it on landing, and the row is put back after that.
+ * Home hides a card whose row it has, so the two are never on screen
+ * together, and the card is not gone while the row is not there yet.
+ */
 function confirm(live: Live): void {
   const { job } = live;
+  let placed: Promise<boolean> = Promise.resolve(false);
   if (job.prepared) {
     const look = preview(job);
     // A photograph keeps the very file the card was drawing, so the image
     // cache already has it decoded; a clip the developed file and poster.
     const mediaUri = job.draft.kind === "photo" ? look.uri : resolve(job, job.files.media) ?? look.uri;
     try {
-      placeConfirmedPost(
+      placed = placeConfirmedPost(
         queryClient,
         job.draft.userId,
         confirmedRow({
@@ -771,10 +951,13 @@ function confirm(live: Live): void {
   live.span?.({ id: shortId(job.id), kind: job.draft.kind });
   live.span = null;
   publish();
-  setTimeout(() => {
+  const retire = () => {
     live.retired = true;
     publish();
-  }, config.doneGraceMs);
+  };
+  // With no feed loaded to take its place, "Posted" stays a moment.
+  const later = () => setTimeout(retire, config.doneGraceMs);
+  void placed.then((inFeed) => (inFeed ? retire() : later()), later);
 }
 
 // ---------------------------------------------------------------------------
@@ -803,10 +986,32 @@ async function followUpStep(live: Live, signal: AbortSignal): Promise<void> {
   } catch {
     // As above.
   }
+  warmImageCache(live);
   if (d.tagIds.length > 0) await sendTags(live, signal);
   if (live.gone) return;
   job.step = "done";
   job.finishedAt = Date.now();
+}
+
+/**
+ * The feed's row draws from the phone's own files until the next refetch
+ * swaps them for storage keys. Fetching the stored copies into the image
+ * cache now means that swap draws at once, at full size, instead of
+ * dropping back to the small thumbnail while the photograph downloads.
+ * A clip's player is not an image; it is left alone. Fire and forget.
+ */
+function warmImageCache(live: Live): void {
+  const { job } = live;
+  if (demo() || job.draft.kind !== "photo" || !job.prepared) return;
+  try {
+    const urls = [
+      mediaUrlString("media", mediaKey(job)),
+      job.uploaded.thumb ? mediaUrlString("thumbnails", thumbKey(job)) : null,
+    ].filter((url): url is string => Boolean(url));
+    if (urls.length > 0) void Image.prefetch(urls, "memory-disk").catch(() => undefined);
+  } catch {
+    // Only a head start: without it the refetch downloads them as before.
+  }
 }
 
 /**
@@ -823,6 +1028,8 @@ async function sendTags(live: Live, signal: AbortSignal): Promise<void> {
     } catch (err) {
       if (signal.aborted || live.gone) throw abortError();
       if ((err as { code?: unknown }).code === "23505") return;
+      // The phone locked before the tags went: they wait for the app to be open.
+      if (isSessionUnavailable(err)) throw err;
       if (isTransient(err)) {
         if (!connected()) throw new WaitFor("network");
         if (attempt < TAG_ATTEMPTS) {
@@ -890,12 +1097,23 @@ export async function enqueuePost(draft: PostDraft): Promise<void> {
 export { usePendingPosts } from "./store";
 
 /** Try a failed post again from the step it stopped at; also nudges one that is waiting. */
+/**
+ * Hold a post before its insert while the member is asked whether to
+ * discard it, and let it go again. A post already sent is not affected:
+ * discardPost tells the member it is on its way.
+ */
+export function holdPost(id: string, held: boolean): void {
+  const live = jobs.get(id);
+  if (live) live.held = held;
+}
+
 export function retryPost(id: string): void {
   const live = jobs.get(id);
-  if (!live || live.gone) return;
+  if (!live || live.gone || live.discarding) return;
   if (live.job.failed) {
     live.job.failed = null;
     live.attempts = 0;
+    live.foregroundRetries = 0;
     persist(live);
   }
   live.waiting = null;
@@ -904,18 +1122,118 @@ export function retryPost(id: string): void {
 }
 
 /**
- * Give up on a post that has not gone up: its files on the phone, and
- * whatever of it already reached storage, which nothing would ever point
- * at. Unless the row might exist: an insert that timed out may have
- * landed, and a post must never lose its photograph, so then storage is
- * asked first and left alone on any doubt.
+ * The server has the post after all, although the job never heard so:
+ * an insert whose every reply was lost. It is treated as the insert
+ * succeeding, so the row goes into the feed and the follow-ups (the tags,
+ * the Darkroom's record) still happen.
+ */
+function adoptAsPosted(live: Live): void {
+  const { job } = live;
+  job.failed = null;
+  job.step = "follow-up";
+  live.attempts = 0;
+  live.foregroundRetries = 0;
+  live.waiting = null;
+  persist(live);
+  confirm(live);
+  void pump();
+}
+
+/**
+ * The feed has these posts from the server. A job still unsure whether
+ * its insert landed has its answer: the row exists. Home tells the outbox
+ * what its feed holds, so a card that would otherwise sit at "Couldn’t
+ * post" beside its own live post hands over to it instead. A row is only
+ * ever in the feed because the server sent it, or because this outbox
+ * put it there after a successful insert, so it is a definite yes.
+ */
+export function notePostsInFeed(ids: readonly string[]): void {
+  if (ids.length === 0 || jobs.size === 0) return;
+  const inFeed = new Set(ids);
+  for (const live of [...jobs.values()]) {
+    if (live.gone || live.running || live.discarding) continue;
+    if (live.job.step !== "insert" || !live.job.insertTried || !inFeed.has(live.job.id)) continue;
+    adoptAsPosted(live);
+  }
+}
+
+/** Waits for a run to stop, but never longer than `ms`: some of what a step waits on cannot be called off. */
+function windDown(run: Promise<void> | null, ms: number): Promise<void> {
+  if (!run) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms);
+    void run.finally(() => {
+      clearTimeout(t);
+      resolve();
+    });
+  });
+}
+
+/**
+ * Give up on a post: its work stopped (a bake or upload under way is
+ * cancelled), its files on the phone deleted, and whatever of it reached
+ * storage removed, which nothing would ever point at.
+ *
+ * Unless the post may exist. Once the insert has been sent it may have
+ * landed with only its reply lost, and then it is live and its followers
+ * have been told. So the server is asked first, and only a definite "no"
+ * lets the discard go ahead. A "yes" makes the job what it is, posted,
+ * and says so. No answer keeps the post as it was and says that too:
+ * deleting its files would leave a live post without its photograph.
  */
 export async function discardPost(id: string): Promise<void> {
   const live = jobs.get(id);
-  if (!live || live.gone) return;
+  if (!live || live.gone || live.discarding) return;
   const { job } = live;
-  // It is posted; there is nothing left to discard.
-  if (job.step === "follow-up" || job.step === "done") return;
+  const what = job.draft.kind === "video" ? "The clip" : "The photograph";
+  // Posted while the question was open: say so, never stay silent.
+  if (job.step === "follow-up" || job.step === "done") {
+    showAlert("It was posted after all", `${what} is up, so it wasn’t discarded. You can delete it from the post.`);
+    return;
+  }
+  // The insert is out and not failed: it is about to be live, and pulling
+  // its files now could leave a published post without its photograph.
+  if (!job.failed && !canDiscard(job)) {
+    showAlert("It’s on its way", `${what} is being posted now. You can delete it from the post once it’s up.`);
+    return;
+  }
+
+  if (job.insertTried) {
+    live.discarding = true;
+    // Nothing may send the insert again while the answer is out. A job at
+    // this point has normally failed and is not running; one that is gets
+    // stopped, and its run waited for, before the question is asked.
+    try {
+      live.ctl?.abort();
+    } catch {
+      // Already stopped.
+    }
+    let presence: "yes" | "no" | "unknown";
+    try {
+      await windDown(live.run, DISCARD_WIND_DOWN_MS);
+      presence = await ownPostExists(id, job.draft.userId);
+    } finally {
+      live.discarding = false;
+    }
+    // Forgotten meanwhile (a sign-out): nothing of it is left to touch.
+    if (live.gone || jobs.get(id) !== live) return;
+    if (presence === "yes") {
+      adoptAsPosted(live);
+      showAlert("It was posted after all", `${what} is up, so it wasn’t discarded. You can delete it from the post.`);
+      return;
+    }
+    if (presence === "unknown") {
+      publish();
+      // Stopped above if it was running; let it carry on.
+      void pump();
+      showAlert(
+        "Not discarded yet",
+        "VINTAGE couldn’t check whether it was posted, so it’s kept for now. Try again in a moment.",
+      );
+      return;
+    }
+  }
+
   live.gone = true;
   try {
     live.ctl?.abort();
@@ -928,7 +1246,9 @@ export async function discardPost(id: string): Promise<void> {
   if (demo()) return;
   const mayHaveUploaded = job.uploaded.media || job.uploaded.thumb || job.step === "upload" || job.step === "insert";
   if (!mayHaveUploaded) return;
-  if (job.insertTried && (await ownPostExists(id, job.draft.userId))) return;
+  // An upload told to stop a moment ago may still be landing: let the run
+  // wind down first, so what is removed is not put back just after.
+  await windDown(live.run, DISCARD_WIND_DOWN_MS);
   const remove = (bucket: "media" | "thumbnails", key: string) =>
     withTimeout(15_000, () => supabase.storage.from(bucket).remove([key])).catch(() => undefined);
   await Promise.all([

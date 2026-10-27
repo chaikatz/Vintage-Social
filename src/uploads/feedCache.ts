@@ -1,4 +1,4 @@
-import type { InfiniteData, QueryClient } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query";
 import type { PostRow, PostWithAuthor } from "@/types/db";
 import type { PostDraft, PreparedMedia } from "./types";
 
@@ -77,6 +77,37 @@ function withoutAuthor(row: PostWithAuthor): PostRow {
   return rest;
 }
 
+/** Whether the feed's pages hold the row. */
+export function feedHas(data: InfiniteData<PostWithAuthor[]> | undefined, id: string): boolean {
+  return Boolean(data?.pages?.some((page) => page.some((p) => p.id === id)));
+}
+
+/**
+ * Resolves once a fetch of this query that is already out has finished:
+ * true then, or at once when none is out; false if the query is dropped
+ * from the cache first. A fetch that started before the post existed
+ * ends by writing pages read without it (a refetch reads them afresh, and
+ * a next page is added to the pages as they were when it began), so
+ * whatever was put in by hand meanwhile is gone when it lands.
+ */
+function fetchSettled(queryClient: QueryClient, key: QueryKey): Promise<boolean> {
+  const cache = queryClient.getQueryCache();
+  const query = cache.find({ queryKey: key, exact: true });
+  if (!query || query.state.fetchStatus === "idle") return Promise.resolve(query != null);
+  return new Promise((resolve) => {
+    const unsubscribe = cache.subscribe((event) => {
+      if (event.query !== query) return;
+      if (event.type === "removed") {
+        unsubscribe();
+        resolve(false);
+      } else if (event.type === "updated" && query.state.fetchStatus === "idle") {
+        unsubscribe();
+        resolve(true);
+      }
+    });
+  });
+}
+
 /**
  * Prepend into ['feed', userId] and ['user-posts', userId], then mark both
  * stale without refetching. The feed pages by offset: the prepended row
@@ -84,12 +115,41 @@ function withoutAuthor(row: PostWithAuthor): PostRow {
  * wasted work, and the next page simply repeats one row, which Home drops
  * by id. When the feed has nothing loaded yet there is nothing to put the
  * row into, so that one query is refetched instead.
+ *
+ * A pull to refresh or a next page already on its way would overwrite the
+ * row (and the stale mark) when it lands, so where one is out the row is
+ * put back once it has. Resolves, after that, with whether the feed holds
+ * the row: the pending card hands over to it then, and not before.
  */
-export function placeConfirmedPost(queryClient: QueryClient, userId: string, row: PostWithAuthor): void {
+export function placeConfirmedPost(queryClient: QueryClient, userId: string, row: PostWithAuthor): Promise<boolean> {
   const feedKey = ["feed", userId];
+  const gridKey = ["user-posts", userId];
+  const placeInFeed = (refetchType: "none" | "active") => {
+    queryClient.setQueryData<InfiniteData<PostWithAuthor[]>>(feedKey, (data) => prependToFeed(data, row));
+    // After the write: setting the data clears the stale mark.
+    void queryClient.invalidateQueries({ queryKey: feedKey, refetchType });
+  };
+  const placeInGrid = () => {
+    queryClient.setQueryData<PostRow[]>(gridKey, (list) => prependToList(list, withoutAuthor(row)));
+    void queryClient.invalidateQueries({ queryKey: gridKey, refetchType: "none" });
+  };
   const hadFeed = queryClient.getQueryData(feedKey) != null;
-  queryClient.setQueryData<InfiniteData<PostWithAuthor[]>>(feedKey, (data) => prependToFeed(data, row));
-  queryClient.setQueryData<PostRow[]>(["user-posts", userId], (list) => prependToList(list, withoutAuthor(row)));
-  void queryClient.invalidateQueries({ queryKey: feedKey, refetchType: hadFeed ? "none" : "active" });
-  void queryClient.invalidateQueries({ queryKey: ["user-posts", userId], refetchType: "none" });
+  placeInFeed(hadFeed ? "none" : "active");
+  placeInGrid();
+  if (fetchOut(queryClient, gridKey)) {
+    void fetchSettled(queryClient, gridKey).then((alive) => {
+      if (alive) placeInGrid();
+    });
+  }
+  const inFeed = () => feedHas(queryClient.getQueryData<InfiniteData<PostWithAuthor[]>>(feedKey), row.id);
+  if (!fetchOut(queryClient, feedKey)) return Promise.resolve(inFeed());
+  return fetchSettled(queryClient, feedKey).then((alive) => {
+    if (alive) placeInFeed("none");
+    return inFeed();
+  });
+}
+
+function fetchOut(queryClient: QueryClient, key: QueryKey): boolean {
+  const status = queryClient.getQueryState(key)?.fetchStatus;
+  return status != null && status !== "idle";
 }

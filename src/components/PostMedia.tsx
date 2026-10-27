@@ -1,6 +1,7 @@
 import React from "react";
-import { Animated, Easing, PanResponder, Pressable, StyleSheet, View, type GestureResponderEvent } from "react-native";
+import { Animated, Easing, PanResponder, Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from "react-native";
 import { useEvent } from "expo";
+import { File } from "expo-file-system";
 import { holdTabSwipe } from "@/utils/tabSwipe";
 import { Image } from "expo-image";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -47,6 +48,17 @@ interface Props {
    * written into the image cache on disk: it is held in memory only.
    */
   cachePolicy?: "memory" | "memory-disk";
+  /**
+   * What identifies the picture across renders. expo-image empties the
+   * view when this changes, and a clip keeps the file it started on only
+   * while it stays the same. Defaults to the media path; a feed card
+   * passes the post's id, because a post of the member's own first
+   * arrives with the outbox's file on this phone and the next refetch
+   * swaps it for the storage address. Keyed on the path, that swap
+   * dropped the photograph to its thumbnail until the full frame had been
+   * downloaded again, and started the clip over from the network.
+   */
+  recyclingKey?: string;
 }
 
 // Clamp between 4:5 portrait and 1.91:1 landscape, like classic photo feeds.
@@ -77,6 +89,7 @@ export function PostMedia({
   bare = false,
   priority = "normal",
   cachePolicy = "memory-disk",
+  recyclingKey,
 }: Props) {
   const lastTap = React.useRef(0);
   const singleTap = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -117,8 +130,12 @@ export function PostMedia({
         clearTimeout(singleTap.current);
         singleTap.current = null;
       }
-      bloom();
-      onDoubleTap?.();
+      // The heart says a like was made, so it blooms only where a double
+      // tap likes something: never on a post still on its way up.
+      if (onDoubleTap) {
+        bloom();
+        onDoubleTap();
+      }
       return;
     }
     lastTap.current = now;
@@ -162,6 +179,7 @@ export function PostMedia({
   );
 
   const frame = [styles.media, bare && styles.bare, { aspectRatio: ratio }];
+  const pictureKey = recyclingKey ?? post.media_path;
 
   // Pinch a photograph to look closer. It grows about the point between
   // the fingers and springs back when they lift — a look, not a mode. Two
@@ -249,6 +267,7 @@ export function PostMedia({
           active={active}
           onPress={handlePress}
           cachePolicy={cachePolicy}
+          recyclingKey={pictureKey}
         />
         {live ? <FilterOverlay filter={filter} /> : null}
         {stamp}
@@ -285,7 +304,7 @@ export function PostMedia({
             transition={120}
             priority={priority}
             cachePolicy={cachePolicy}
-            recyclingKey={post.media_path}
+            recyclingKey={pictureKey}
           />
         </Animated.View>
       ) : null}
@@ -325,6 +344,7 @@ function VideoMedia({
   active,
   onPress,
   cachePolicy,
+  recyclingKey,
 }: {
   path: string;
   poster: string | null;
@@ -332,8 +352,10 @@ function VideoMedia({
   active: boolean;
   onPress: () => void;
   cachePolicy: "memory" | "memory-disk";
+  recyclingKey: string;
 }) {
-  const url = mediaUrlString("media", path) ?? "";
+  const fresh = mediaUrlString("media", path) ?? "";
+  const url = useSteadySource(fresh, recyclingKey);
   const muted = useVideoMuted();
   const player = useVideoPlayer(url, (p) => {
     p.loop = true;
@@ -371,13 +393,14 @@ function VideoMedia({
   activeRef.current = active;
   React.useEffect(() => {
     if (status === "readyToPlay" && active && !player.playing) player.play();
-    if (status === "error" && !retried.current && url) {
+    if (status === "error" && !retried.current && fresh) {
       retried.current = true;
       // Read `active` when the retry lands, not when it was asked for: a
-      // card scrolled away in the meantime must stay quiet.
-      player.replaceAsync(url).then(() => activeRef.current && player.play()).catch(() => undefined);
+      // card scrolled away in the meantime must stay quiet. The retry goes
+      // to the post's own address, in case a kept file is what failed.
+      player.replaceAsync(fresh).then(() => activeRef.current && player.play()).catch(() => undefined);
     }
-  }, [status, error, active, player, url]);
+  }, [status, error, active, player, fresh]);
   const [stalled, setStalled] = React.useState(false);
   React.useEffect(() => {
     if (!active || isPlaying) {
@@ -436,6 +459,35 @@ function VideoMedia({
       </Pressable>
     </View>
   );
+}
+
+/**
+ * The address a card's clip plays from, held steady for the card's life.
+ *
+ * The player is made for its source, so a new address is a new player:
+ * the clip starts again and buffers. A post of the member's own first
+ * arrives with the outbox's file on this phone, and the next feed refetch
+ * swaps that for the storage address of the same clip. So while the card
+ * is still the same post (its recycling key) and the file it started on
+ * is still here, it goes on playing that file. Anything else plays the
+ * address it is given.
+ */
+function useSteadySource(fresh: string, key: string): string {
+  const [first] = React.useState(() => ({ key, uri: fresh }));
+  return React.useMemo(() => {
+    if (first.key !== key || first.uri === fresh || !first.uri.startsWith("file:")) return fresh;
+    return fileStillHere(first.uri) ? first.uri : fresh;
+  }, [first, key, fresh]);
+}
+
+/** Whether a file on this phone is still there. Never in the browser, which has no such files. */
+function fileStillHere(uri: string): boolean {
+  if (Platform.OS === "web") return false;
+  try {
+    return new File(uri).exists;
+  } catch {
+    return false;
+  }
 }
 
 const styles = StyleSheet.create({

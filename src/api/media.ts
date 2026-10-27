@@ -110,6 +110,14 @@ export interface UploadFileOptions {
    * what made a flaky connection cost half a minute.
    */
   retry?: boolean;
+  /**
+   * Native only: let the upload carry on while the app is away, in a
+   * background session. Off by default, because a background session
+   * never fails for want of a connection, it waits for one: right for the
+   * post outbox, which says so on its card, and wrong for a screen with a
+   * spinner (an avatar's Save), which must hear "offline" at once.
+   */
+  background?: boolean;
   /** Bytes sent so far, of how many. Native only; the browser path has no progress. */
   onProgress?: (sentBytes: number, totalBytes: number) => void;
   signal?: AbortSignal;
@@ -180,6 +188,7 @@ export async function uploadFile(
         signal: options.signal,
         clockRunning: options.clockRunning,
         accessToken: options.accessToken,
+        background: options.background === true,
       });
       return;
     }

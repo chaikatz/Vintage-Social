@@ -3,16 +3,23 @@ import { AccessibilityInfo, Animated, Easing, Platform, Pressable, StyleSheet, T
 import { colors, spacing, type } from "@/theme";
 import { showAlert } from "@/utils/alert";
 import { useReducedMotion } from "@/utils/useReducedMotion";
-import { discardPost, retryPost, type PendingPost } from "@/uploads";
-import { accessibilityLine, overallProgress, stateLine } from "@/uploads/words";
+import { discardPost, holdPost, retryPost, type PendingPost } from "@/uploads";
+import { overallProgress, stateLine } from "@/uploads/words";
 import { Avatar } from "./Avatar";
 import { Byline } from "./PostCard";
 import { PostMedia } from "./PostMedia";
+import { announcement, clipMayPlay, offersDiscard, offersRetry, statusAccessibility } from "./pendingCardWords";
 
 interface Props {
   pending: PendingPost;
   /** Whether its clip may play: on screen, with no feed card playing. Never while the clip is being developed. */
   active?: boolean;
+  /**
+   * Whether Home is the screen in front. It stays mounted under the other
+   * tabs and the screens pushed over it, and a change of state is only
+   * said aloud while it is in front. Defaults to true.
+   */
+  focused?: boolean;
   onOpenProfile?: (username: string) => void;
 }
 
@@ -32,9 +39,11 @@ interface Props {
  * saying what is happening, and a one-point rule that fills as it goes.
  * Nothing on it can be liked, commented on or sent: the post does not
  * exist yet. When it fails it says so plainly and offers Retry and
- * Discard; a lost connection is not a failure, only a wait.
+ * Discard; a lost connection is not a failure, only a wait. Until the
+ * post could have been published it can be discarded at any moment, so
+ * the wrong photograph, or one shared offline, can still be taken back.
  */
-export function PendingPostCard({ pending, active = false, onOpenProfile }: Props) {
+export function PendingPostCard({ pending, active = false, focused = true, onOpenProfile }: Props) {
   const { draft, state, progress } = pending;
   const createdAt = useMemo(() => new Date(pending.createdAt).toISOString(), [pending.createdAt]);
 
@@ -56,30 +65,41 @@ export function PendingPostCard({ pending, active = false, onOpenProfile }: Prop
 
   const line = stateLine(state, progress, draft.kind);
   const failed = state === "failed";
-  const developing = state === "developing" || state === "preparing";
+  const retry = offersRetry(pending);
+  const discard = offersDiscard(pending);
+  const spoken = statusAccessibility(state, progress, draft.kind);
 
-  // VoiceOver hears a change of state, not every percent. Android's live
-  // region on the line does the same job there.
+  // VoiceOver hears a change of state, not every percent, and only while
+  // Home is in front (see `announcement`). Android's live region on the
+  // line does the same job there, and is quiet too while Home is behind.
+  // The state is followed while hidden as well, so coming back to Home
+  // does not announce a change that happened elsewhere.
   const lastState = useRef(state);
   useEffect(() => {
-    if (lastState.current === state) return;
+    const words = announcement(lastState.current, state, draft.kind, focused);
     lastState.current = state;
-    if (Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(stateLine(state, null, draft.kind));
-  }, [state, draft.kind]);
+    if (words && Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(words);
+  }, [state, draft.kind, focused]);
 
   const confirmDiscard = () => {
+    // Nothing is published while the question is open: the outbox holds
+    // the post before its insert until it is answered.
+    holdPost(pending.id, true);
     showAlert(
       "Discard this post?",
       `${draft.kind === "video" ? "The clip" : "The photograph"} and its caption will be deleted from this phone.`,
       [
-        { text: "Keep it", style: "cancel" },
-        { text: "Discard", style: "destructive", onPress: () => void discardPost(pending.id) },
+        { text: "Keep it", style: "cancel", onPress: () => holdPost(pending.id, false) },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => void discardPost(pending.id).finally(() => holdPost(pending.id, false)),
+        },
       ],
     );
   };
 
   const tagged = draft.tagIds.length;
-  const pct = progress == null ? undefined : Math.round(Math.min(1, Math.max(0, progress)) * 100);
 
   return (
     <View style={styles.card}>
@@ -100,41 +120,49 @@ export function PendingPostCard({ pending, active = false, onOpenProfile }: Prop
       </View>
 
       {/* Not posted yet: held in memory, never written to the image cache on disk. */}
-      <PostMedia post={media} active={active && !developing && !failed} cachePolicy="memory" />
+      <PostMedia post={media} active={active && clipMayPlay(state)} cachePolicy="memory" />
 
       <ProgressRule fraction={overallProgress(state, progress, draft.kind)} />
       <View style={styles.statusRow}>
-        <Text
-          style={[styles.state, failed && styles.stateFailed]}
-          accessibilityRole="progressbar"
-          accessibilityLabel={accessibilityLine(state, progress, draft.kind)}
-          accessibilityValue={pct == null ? undefined : { min: 0, max: 100, now: pct }}
-          accessibilityLiveRegion="polite"
+        {/* The words are spoken from a View: on iOS a Text's accessibility
+            element carries its label but never its value, and the percent
+            lives in the value. */}
+        <View
+          style={styles.stateWrap}
+          accessible
+          accessibilityRole={spoken.role}
+          accessibilityLabel={spoken.label}
+          accessibilityValue={spoken.value}
+          accessibilityLiveRegion={focused ? "polite" : "none"}
         >
-          {line}
-        </Text>
-        {failed ? (
-          <>
-            <Pressable
-              onPress={() => retryPost(pending.id)}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Retry posting"
-            >
-              <Text style={styles.action}>Retry</Text>
-            </Pressable>
-            <Text style={styles.dot} accessible={false}>
-              ·
-            </Text>
-            <Pressable
-              onPress={confirmDiscard}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Discard this post"
-            >
-              <Text style={[styles.action, styles.discard]}>Discard</Text>
-            </Pressable>
-          </>
+          <Text style={[styles.state, failed && styles.stateFailed]} accessible={false}>
+            {line}
+          </Text>
+        </View>
+        {retry ? (
+          <Pressable
+            onPress={() => retryPost(pending.id)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Retry posting"
+          >
+            <Text style={styles.action}>Retry</Text>
+          </Pressable>
+        ) : null}
+        {retry && discard ? (
+          <Text style={styles.dot} accessible={false}>
+            ·
+          </Text>
+        ) : null}
+        {discard ? (
+          <Pressable
+            onPress={confirmDiscard}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Discard this post"
+          >
+            <Text style={[styles.action, styles.discard]}>Discard</Text>
+          </Pressable>
         ) : null}
       </View>
       {failed && pending.error ? <Text style={styles.reason}>{pending.error}</Text> : null}
@@ -214,6 +242,7 @@ const styles = StyleSheet.create({
     minHeight: 30,
   },
   // A counter, so the typewriter face the stamp and the byline use.
+  stateWrap: { flexShrink: 1 },
   state: {
     fontFamily: type.mono,
     fontSize: 12,

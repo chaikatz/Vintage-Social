@@ -22,9 +22,11 @@ import type { PostDraft } from "@/uploads";
  * The compose screen's hand-over to the outbox, without a phone: the clip
  * length the posts table accepts, the guard against a second tap, the
  * develop decision for each kind of post, the draft built from the
- * choices frozen at the tap, and the picker's refusal to pass on a
- * photograph the renderer cannot read. A last block reads compose itself,
- * for the renderer layout that has regressed once already.
+ * choices frozen at the tap, the picker's refusal to pass on a
+ * photograph the renderer cannot read, and the library's way into the
+ * editor going the same way. A last block reads compose itself, for the
+ * renderer layout that has regressed once already, the sizes its copies
+ * are made at, and the files it leaves behind.
  */
 
 const phone = vi.hoisted(() => ({
@@ -34,6 +36,8 @@ const phone = vi.hoisted(() => ({
   /** Each call takes the next answer; a function is called, an Error is thrown. */
   prepareAnswers: [] as unknown[],
   alerts: [] as { title: string; message?: string }[],
+  /** What the photo library says about an asset; an Error is thrown. */
+  assetInfo: null as null | Error | Record<string, unknown>,
 }));
 
 vi.mock("react-native", () => ({
@@ -63,6 +67,13 @@ vi.mock("@/media/nativeMedia", () => ({
   },
 }));
 
+vi.mock("expo-media-library", () => ({
+  getAssetInfoAsync: async () => {
+    if (phone.assetInfo instanceof Error) throw phone.assetInfo;
+    return phone.assetInfo;
+  },
+}));
+
 vi.mock("@/utils/captureDate", () => ({
   captureDateForAsset: async () => null,
 }));
@@ -79,6 +90,7 @@ beforeEach(() => {
   phone.prepareCalls.length = 0;
   phone.prepareAnswers.length = 0;
   phone.alerts.length = 0;
+  phone.assetInfo = null;
 });
 
 // ---------------------------------------------------------------------------
@@ -544,6 +556,57 @@ describe("the picker hands the editor only what the renderer can read", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The library's way in
+// ---------------------------------------------------------------------------
+
+describe("a photograph opened from On this day or That night", () => {
+  const photo = { id: "ASSET-9", uri: "ph://ASSET-9", width: 4032, height: 3024, creationTime: 0 };
+
+  it("is prepared the way a picked one is, at the editor's size and quality", async () => {
+    const { composeParamsFor } = await import("@/utils/library");
+    const { PICKED_MAX_SIDE, PICKED_QUALITY } = await import("@/utils/pickForCompose");
+    phone.assetInfo = { localUri: "file:///library/IMG_0042.HEIC", uri: "ph://ASSET-9", creationTime: 0 };
+    const params = await composeParamsFor(photo);
+    expect(phone.prepareCalls).toEqual([
+      { uri: "file:///library/IMG_0042.HEIC", opts: { maxSide: PICKED_MAX_SIDE, quality: PICKED_QUALITY } },
+    ]);
+    expect(params).toMatchObject({
+      uri: "file:///library/IMG_0042.HEIC.prepared.jpg",
+      mediaType: "photo",
+      width: "2048",
+      height: "1536",
+      duration: "0",
+    });
+  });
+
+  it("never goes through the old manipulator prepare", () => {
+    const library = code("src/utils/library.ts");
+    expect(library).not.toMatch(/prepareForDarkroom|resizeJpeg|expo-image-manipulator/);
+    expect(library).toMatch(/from "@\/media\/nativeMedia"/);
+  });
+
+  it("opens nothing when the decode has no picture in it, or fails", async () => {
+    const { composeParamsFor } = await import("@/utils/library");
+    phone.assetInfo = { localUri: "file:///library/IMG_0043.HEIC", creationTime: 0 };
+    phone.prepareAnswers.push({ uri: "file:///x.jpg", width: 0, height: 1536 });
+    expect(await composeParamsFor(photo)).toBeNull();
+    phone.prepareAnswers.push({ uri: "", width: 2048, height: 1536 });
+    expect(await composeParamsFor(photo)).toBeNull();
+    phone.prepareAnswers.push(new Error("ImageIO could not read it"));
+    expect(await composeParamsFor(photo)).toBeNull();
+  });
+
+  it("opens nothing when the library has no file for it", async () => {
+    const { composeParamsFor } = await import("@/utils/library");
+    phone.assetInfo = { localUri: null, uri: null, creationTime: 0 };
+    expect(await composeParamsFor(photo)).toBeNull();
+    phone.assetInfo = new Error("not in the library any more");
+    expect(await composeParamsFor(photo)).toBeNull();
+    expect(phone.prepareCalls).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Compose itself
 // ---------------------------------------------------------------------------
 
@@ -585,7 +648,6 @@ describe("compose", () => {
 
   it("draws every swatch from the tray's own small copy, at that copy's size", () => {
     expect(compose).toMatch(/maxSide: TRAY_MAX_SIDE, quality: TRAY_QUALITY/);
-    expect(compose).toMatch(/const TRAY_MAX_SIDE = 240;/);
     expect(compose).toMatch(/const TRAY_QUALITY = 0\.85;/);
     const swatch = compose.match(/<FilteredImage\s+uri=\{tray\.uri\}[\s\S]*?\/>/)?.[0] ?? "";
     expect(swatch).toMatch(/width=\{tray\.width\}/);
@@ -634,5 +696,114 @@ describe("compose", () => {
 
   it("bakes a film at the feed's size", () => {
     expect(compose).toMatch(/filteredRef\.current\?\.bake\(\{ maxSide: BAKE_MAX_SIDE \}\)/);
+  });
+});
+
+/** A numeric constant as compose declares it. */
+function constant(source: string, name: string): number {
+  const found = source.match(new RegExp(`const ${name} = (\\d+);`));
+  expect(found, name).not.toBeNull();
+  return Number(found![1]);
+}
+
+/**
+ * How much larger than its own pixels a prepared copy is drawn: cover-fit
+ * into a frame `frameW` by `frameH` device pixels, from a source of
+ * `srcW` by `srcH` brought down to `maxSide` on its long side.
+ */
+function magnification(srcW: number, srcH: number, maxSide: number, frameW: number, frameH: number): number {
+  const scale = Math.min(1, maxSide / Math.max(srcW, srcH));
+  const w = Math.round(srcW * scale);
+  const h = Math.round(srcH * scale);
+  return Math.max(frameW / w, frameH / h);
+}
+
+describe("the copies compose draws from", () => {
+  const compose = code("app/compose.tsx");
+  const tray = constant(compose, "TRAY_MAX_SIDE");
+  const still = constant(compose, "STILL_MAX_SIDE");
+  /** The swatch is 70 pt square; 3x is the densest phone. */
+  const swatch = 70 * 3;
+
+  it("give every swatch at least its own size in pixels, by the short side, photographs and clips alike", () => {
+    for (const [w, h] of [
+      [4032, 3024],
+      [3024, 4032],
+      [1080, 1920],
+      [1920, 1080],
+      [3840, 2160],
+      [2048, 2048],
+    ]) {
+      expect(magnification(w, h, tray, swatch, swatch), `${w}x${h}`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("use the tray's size for a photograph's copy and for a clip's, from the one decode", () => {
+    expect(compose).toMatch(/prepareImage\(uri, \{ maxSide: TRAY_MAX_SIDE, quality: TRAY_QUALITY \}\)/);
+    expect(compose).toMatch(/thumbSide: TRAY_MAX_SIDE, thumbQuality: TRAY_QUALITY/);
+    expect(compose).toMatch(/: \{ maxSide: TRAY_MAX_SIDE, quality: TRAY_QUALITY \}/);
+  });
+
+  it("draw a portrait clip's still at about its own pixels across a 3x phone", () => {
+    expect(compose).toMatch(/maxSide: STILL_MAX_SIDE, quality: STILL_QUALITY/);
+    // The preview is the screen's width, and 4:5 at its tallest.
+    const frame = (points: number) => [points * 3, Math.round((points * 3 * 5) / 4)] as const;
+    // A 1080p clip keeps every pixel its poster frame has: there is no
+    // more to draw it with. 1440 cut it to 810 across, 1.46x at 393 pt.
+    for (const points of [393, 430]) {
+      const [w, h] = frame(points);
+      expect(magnification(1080, 1920, still, w, h), `${points} pt`).toBe(magnification(1080, 1920, Infinity, w, h));
+    }
+    // A 4K clip is brought down to about the screen's width, not below it.
+    for (const [points, limit] of [
+      [393, 1.05],
+      [430, 1.15],
+    ]) {
+      const [w, h] = frame(points);
+      expect(magnification(2160, 3840, still, w, h), `${points} pt`).toBeLessThanOrEqual(limit);
+    }
+    // A landscape clip was never short of pixels, and is not now.
+    expect(magnification(1920, 1080, still, 1290, Math.round(1290 / 1.91))).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("what compose leaves on the phone", () => {
+  const compose = code("app/compose.tsx");
+  const own = compose.slice(compose.indexOf("function useOwnFiles"), compose.indexOf("function throwAway"));
+  const share = compose.slice(compose.indexOf("const share = async"), compose.indexOf("const stampLabel"));
+
+  it("notes every file it makes: the tray's copy, the poster frame, the still, and the bake", () => {
+    for (const made of [
+      /files\.keep\(small\.uri\)/,
+      /files\.keep\(frame\.uri\)/,
+      /files\.keep\(prepared\.uri\)/,
+      /files\.keep\(prepared\.thumb\?\.uri\)/,
+      /files\.keep\(out\?\.uri\)/,
+    ]) {
+      expect(compose).toMatch(made);
+    }
+  });
+
+  it("deletes them all when the screen goes, and one that arrives after it has gone", () => {
+    expect(own).toMatch(/return \(\) => \{[\s\S]*?for \(const file of files\) throwAway\(file\);/);
+    expect(own).toMatch(/if \(open\.current\) made\.current\.add\(file\);\s*else throwAway\(file\);/);
+  });
+
+  it("deletes the bake as soon as the outbox has its own copy", () => {
+    const enqueue = share.indexOf("await enqueuePost(");
+    const drop = share.indexOf("files.drop(developed?.sourceUri)");
+    expect(enqueue).toBeGreaterThan(-1);
+    expect(drop).toBeGreaterThan(enqueue);
+    expect(share.slice(enqueue, drop)).toMatch(/\} finally \{/);
+  });
+
+  it("never deletes the photograph or clip it was opened on, which is the Darkroom's or the picker's", () => {
+    // Never noted, so never dropped, and the screen deletes nothing else.
+    expect(own).toMatch(/if \(!file \|\| file === source\) return;/);
+    expect(own).toMatch(/if \(!file \|\| !made\.current\.delete\(file\)\) return;/);
+    expect(compose).toMatch(/const files = useOwnFiles\(uri\);/);
+    expect(compose.match(/throwAway\(/g)?.length).toBe(4);
+    expect(compose).not.toMatch(/files\.(keep|drop)\(uri\)/);
+    expect(compose).not.toMatch(/new File\(uri\)/);
   });
 });
