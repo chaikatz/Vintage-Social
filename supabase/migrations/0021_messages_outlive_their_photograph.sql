@@ -32,8 +32,10 @@
 -- foreign key's SET NULL runs as the table's owner and is not affected.
 -- No policy is changed.
 --
--- One transaction. Idempotent: create or replace, drop ... if exists, and
--- a revoke and grant that end in the same state however often they run.
+-- No begin or commit of its own, like the other migrations: the runner
+-- applies each file in one transaction. Idempotent: create or replace,
+-- drop ... if exists, and a revoke and grant that end in the same state
+-- however often they run.
 --
 -- Rollback, while no message has neither words nor a photograph (once a
 -- deletion has gone through there will be some, and the CHECK cannot be
@@ -46,8 +48,6 @@
 --   alter table public.messages
 --     add constraint messages_check check (char_length(body) > 0 or post_id is not null);
 --   commit;
-
-begin;
 
 -- ---------------------------------------------------------------------------
 -- words, a photograph, or both: when a message is written
@@ -87,4 +87,3 @@ alter table public.messages drop constraint if exists messages_check;
 revoke update on public.messages from anon, authenticated;
 grant update (read_at) on public.messages to authenticated;
 
-commit;
