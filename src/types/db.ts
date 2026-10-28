@@ -469,9 +469,12 @@ export type ConversationWithPeer = ConversationRow & {
   unread_count: number;
 };
 
-/** A message joined with the photograph it shares, when it shares one. */
+/**
+ * A message joined with the photograph it shares, when it shares one:
+ * null when there is none to show, undefined while it could not be read.
+ */
 export type MessageWithPost = MessageRow & {
-  post: PostWithAuthor | null;
+  post: PostWithAuthor | null | undefined;
 };
 
 /** An activity item joined with actor and post preview. */

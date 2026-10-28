@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   calls: [] as string[],
   deleteAnswer: { data: [] as { id: string }[] | null, error: null as unknown },
   lookAnswer: { data: null as { id: string } | null, error: null as unknown },
+  thread: { data: [] as unknown[], error: null as unknown },
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -42,6 +43,10 @@ vi.mock("@/lib/supabase", () => ({
             h.calls.push(`look ${table} ${columns} ${column}=${value}`);
             return h.lookAnswer;
           },
+          order: async () => {
+            h.calls.push(`read ${table} ${column}=${value}`);
+            return h.thread;
+          },
         }),
       }),
     }),
@@ -49,6 +54,7 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 const { deleteOwnPost } = await import("@/api/posts");
+const { fetchMessages } = await import("@/api/messages");
 const { errorMessage } = await import("@/utils/errorMessage");
 const demo = await import("@/demo/store");
 const { PHOTOGRAPH_UNAVAILABLE, inboxPreview, photographUnavailable } = await import("@/utils/messageText");
@@ -60,6 +66,7 @@ beforeEach(() => {
   h.calls.length = 0;
   h.deleteAnswer = { data: [], error: null };
   h.lookAnswer = { data: null, error: null };
+  h.thread = { data: [], error: null };
 });
 
 // ---------------------------------------------------------------------------
@@ -167,11 +174,51 @@ describe("a message whose photograph cannot be shown", () => {
     expect(photographUnavailable({ body: "look", post: shared })).toBe(false);
   });
 
+  it("says nothing of a photograph not read yet", () => {
+    expect(photographUnavailable({ body: "", post: undefined })).toBe(false);
+  });
+
   it("reads the same in the inbox", () => {
     expect(inboxPreview(null)).toBe("Say something.");
     expect(inboxPreview({ body: "look", post_id: null })).toBe("look");
     expect(inboxPreview({ body: "", post_id: "p1" })).toBe("Sent a photograph");
     expect(inboxPreview({ body: "", post_id: null })).toBe(PHOTOGRAPH_UNAVAILABLE);
+  });
+});
+
+describe("a photograph in a thread, as the thread reads it", () => {
+  // What the thread read of a photograph is kept across polls by post id, so each test sends its own.
+  const sentWith = (postId: string) => ({
+    id: `m-${postId}`,
+    conversation_id: "c1",
+    sender_id: "u2",
+    body: "",
+    post_id: postId,
+    created_at: "2026-10-01T00:00:00.000Z",
+    read_at: null,
+  });
+  const reads = (postId: string) => h.calls.filter((c) => c.startsWith("look posts") && c.endsWith(`id=${postId}`)).length;
+
+  it("does not take a failed read for gone, and reads it again on the next poll", async () => {
+    h.thread = { data: [sentWith("p-blip")], error: null };
+    h.lookAnswer = { data: null, error: { message: "TypeError: Network request failed", details: "", hint: "", code: "" } };
+    const [first] = await fetchMessages("c1");
+    expect(first.post).toBeUndefined();
+    expect(photographUnavailable(first)).toBe(false);
+
+    h.lookAnswer = { data: { id: "p-blip" }, error: null };
+    const [next] = await fetchMessages("c1");
+    expect(next.post).toMatchObject({ id: "p-blip" });
+    expect(reads("p-blip")).toBe(2);
+  });
+
+  it("says it is no longer available when the server answers without it, and keeps that answer", async () => {
+    h.thread = { data: [sentWith("p-hidden")], error: null };
+    const [first] = await fetchMessages("c1");
+    expect(first.post).toBeNull();
+    expect(photographUnavailable(first)).toBe(true);
+    await fetchMessages("c1");
+    expect(reads("p-hidden")).toBe(1);
   });
 });
 
@@ -214,6 +261,21 @@ describe("the delete, as the screens do it", () => {
     expect(refused).toBeGreaterThan(deleted);
     expect(outbox).toBeGreaterThan(refused);
     expect(screens).toBeGreaterThan(outbox);
+  });
+
+  it("holds the outbox's insert while the delete is out, and lets it go only on a refusal", () => {
+    const run = /const deletePost = useCallback\([\s\S]*?\n {2}\);/.exec(actions)?.[0] ?? "";
+    const held = run.indexOf("holdPost(post.id, true)");
+    const deleted = run.indexOf("await deleteOwnPost(post.id)");
+    const caught = run.indexOf("catch (err)");
+    const released = run.indexOf("holdPost(post.id, false)");
+    const refused = run.indexOf("return;");
+    expect(held).toBeGreaterThan(-1);
+    expect(deleted).toBeGreaterThan(held);
+    expect(caught).toBeGreaterThan(deleted);
+    expect(released).toBeGreaterThan(caught);
+    expect(refused).toBeGreaterThan(released);
+    expect(run.match(/holdPost\(/g)).toHaveLength(2);
   });
 
   it("asks the server for the deleted row and looks again when none came back", () => {

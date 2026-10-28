@@ -13,9 +13,13 @@ import type { MessageRow } from "@/types/db";
  */
 export const PHOTOGRAPH_UNAVAILABLE = "This photograph is no longer available.";
 
-/** A message with no words whose photograph the reader cannot see: it shows `PHOTOGRAPH_UNAVAILABLE`. */
+/**
+ * A message with no words whose photograph the reader cannot see: it shows
+ * `PHOTOGRAPH_UNAVAILABLE`. Only null says so: undefined is a photograph
+ * whose read failed, and nothing is said of it until it is read.
+ */
 export function photographUnavailable(message: { body: string; post: unknown }): boolean {
-  return !message.post && !message.body;
+  return message.post === null && !message.body;
 }
 
 /**

@@ -353,7 +353,7 @@ const { getPendingPosts, subscribePendingPosts, pendingNeedsTop } = await import
 const { parseJob, readJob } = await import("@/uploads/jobFiles");
 const { stateLine, overallProgress, accessibilityLine } = await import("@/uploads/words");
 const { prependToFeed, prependToList, placeConfirmedPost } = await import("@/uploads/feedCache");
-const { InfiniteQueryObserver, QueryClient } = await import("@tanstack/react-query");
+const { InfiniteQueryObserver, QueryClient, QueryObserver } = await import("@tanstack/react-query");
 const { Image } = await import("expo-image");
 const VideoThumbnails = await import("expo-video-thumbnails");
 const { uploadToStorage, StorageUploadError, UploadRestart, isExpiredAuth, isSessionUnavailable } = await import(
@@ -1554,11 +1554,35 @@ describe("a post the member deleted", () => {
     expect(readJob(draft.id)).toBeNull();
   });
 
+  it("sends no insert again while the delete is out, so a retry cannot put the post back", async () => {
+    // The first insert's reply is lost, and the retry waits out its backoff
+    // while the member deletes the post from its row on the server.
+    let wake!: () => void;
+    const backoff = new Promise<void>((r) => (wake = r));
+    __outboxTesting.setSleep(() => backoff);
+    h.state.insertBehavior = async () => ({ error: { message: "TypeError: Network request failed", details: "", hint: "", code: "" } });
+    const draft = photoDraft();
+    await enqueuePost(draft);
+    await waitUntil(() => count("insert:posts") === 1);
+
+    // As deletePost does: held before the delete is sent, and dropped once it is done.
+    holdPost(draft.id, true);
+    wake();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(count("insert:posts")).toBe(1);
+    notePostDeleted(draft.id);
+    await idle();
+    expect(count("insert:posts")).toBe(1);
+    expect(getPendingPosts()).toHaveLength(0);
+  });
+
   it("places nothing in the feed when an insert that was already out answers afterwards", async () => {
     seedCaches();
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    h.state.insertBehavior = async () => {
+    let sent: AbortSignal | undefined;
+    h.state.insertBehavior = async (_row, signal) => {
+      sent = signal;
       await gate;
       return { error: null };
     };
@@ -1566,6 +1590,8 @@ describe("a post the member deleted", () => {
     await enqueuePost(draft);
     await waitUntil(() => count("insert:posts") === 1);
     notePostDeleted(draft.id);
+    // Called off, so a request that has not reached the server yet never does.
+    expect(sent?.aborted).toBe(true);
     release();
     await idle();
     const feed = queryClient.getQueryData<InfiniteData<PostWithAuthor[]>>(["feed", "u1"])!;
@@ -1576,12 +1602,17 @@ describe("a post the member deleted", () => {
   });
 
   it("leaves every other post alone, and an id it never held is no matter", async () => {
+    seedCaches();
     const kept = photoDraft({ tagIds: [] });
     await enqueuePost(kept);
     notePostDeleted("00000000-0000-4000-8000-ffffffffffff");
     await idle();
     expect(h.inserts).toHaveLength(1);
     expect(readJob(kept.id)?.step).toBe("done");
+    // A post deleted earlier in the run keeps no later one out of the feed or the grid.
+    const feed = queryClient.getQueryData<InfiniteData<PostWithAuthor[]>>(["feed", "u1"])!;
+    expect(feed.pages.flat().map((p) => p.id)).toContain(kept.id);
+    expect(queryClient.getQueryData<PostRow[]>(["user-posts", "u1"])!.map((p) => p.id)).toContain(kept.id);
   });
 
   it("is never put back into the feed or the grid by a read that lands after the delete", async () => {
@@ -1599,10 +1630,24 @@ describe("a post the member deleted", () => {
       initialPageParam: 0,
       getNextPageParam: (last, pages) => (last.length < 12 ? undefined : pages.length),
     });
+    // The grid is read again too, as the Post tab does when it comes to the front.
+    const { author: _a, ...row } = existing;
+    let gridGated = false;
+    const grid = new QueryObserver<PostRow[], Error>(qc, {
+      queryKey: ["user-posts", "u1"],
+      queryFn: async () => {
+        if (!gridGated) return [];
+        await gate;
+        return [{ ...row, id: "g0" }];
+      },
+    });
     const unsubscribe = observer.subscribe(() => undefined);
+    const unsubscribeGrid = grid.subscribe(() => undefined);
     await observer.refetch();
-    qc.setQueryData<PostRow[]>(["user-posts", "u1"], []);
+    await grid.refetch();
+    gridGated = true;
     const next = observer.fetchNextPage();
+    const regrid = grid.refetch();
     await Promise.resolve();
 
     const placed = placeConfirmedPost(qc, "u1", { ...existing, id: "DELETED-1" });
@@ -1615,16 +1660,22 @@ describe("a post the member deleted", () => {
 
     release();
     await next;
+    await regrid;
+    await new Promise((r) => setTimeout(r, 0));
     expect(await placed).toBe(false);
     const ids = qc.getQueryData<InfiniteData<PostWithAuthor[]>>(["feed", "u1"])!.pages.flat().map((p) => p.id);
     expect(ids).not.toContain("DELETED-1");
     expect(ids).toContain("q0");
-    expect(qc.getQueryData<PostRow[]>(["user-posts", "u1"])!.map((p) => p.id)).not.toContain("DELETED-1");
+    const gridIds = qc.getQueryData<PostRow[]>(["user-posts", "u1"])!.map((p) => p.id);
+    expect(gridIds).not.toContain("DELETED-1");
+    expect(gridIds).toContain("g0");
 
     // Nor placed at all once deleted.
     expect(await placeConfirmedPost(qc, "u1", { ...existing, id: "DELETED-1" })).toBe(false);
     expect(qc.getQueryData<InfiniteData<PostWithAuthor[]>>(["feed", "u1"])!.pages.flat().map((p) => p.id)).not.toContain("DELETED-1");
+    expect(qc.getQueryData<PostRow[]>(["user-posts", "u1"])!.map((p) => p.id)).not.toContain("DELETED-1");
     unsubscribe();
+    unsubscribeGrid();
   });
 });
 
