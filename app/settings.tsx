@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
@@ -67,7 +68,7 @@ export default function Settings() {
         // Turning something on is also a reason to make sure the phone is registered.
         if (on && pushSupported()) registerForPush(userId);
       })
-      .catch((err) => showAlert("Couldn’t save", err instanceof Error ? err.message : String(err)));
+      .catch((err) => showAlert("Couldn’t save", errorMessage(err, "Try again in a moment.")));
   };
 
   const requests = useQuery({
@@ -121,7 +122,7 @@ export default function Settings() {
       queryClient.invalidateQueries();
       router.back();
     } catch (err) {
-      showAlert("Couldn’t save", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t save", errorMessage(err, "Your changes aren’t saved yet. Try again in a moment."));
     } finally {
       setBusy(false);
     }
@@ -159,7 +160,10 @@ export default function Settings() {
                     await signOut();
                   } catch (err) {
                     setDeleting(false);
-                    showAlert("Couldn’t delete the account", err instanceof Error ? err.message : String(err));
+                    showAlert(
+                      "Couldn’t delete the account",
+                      errorMessage(err, "Your account is still here. Try again in a moment."),
+                    );
                   }
                 },
               },

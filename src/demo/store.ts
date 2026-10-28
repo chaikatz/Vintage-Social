@@ -287,11 +287,24 @@ export function demoUpdateCaption(postId: string, caption: string): void {
   emit();
 }
 
+/**
+ * As the database does it: only the author's own post goes (anyone else's
+ * is refused, where RLS deletes nothing and the app then finds it still
+ * there), one already gone is no error, its likes, comments, tags and
+ * notices go with it, and a message that carried it stays without it.
+ */
 export function demoDeletePost(postId: string): void {
+  const post = state.posts.find((p) => p.id === postId);
+  if (!post) return;
+  if (post.author_id !== state.currentUserId) throw new Error("Only the author can delete a post.");
   state.posts = state.posts.filter((p) => p.id !== postId);
   state.likes = state.likes.filter((l) => l.post_id !== postId);
   state.comments = state.comments.filter((c) => c.post_id !== postId);
+  state.tags = state.tags.filter((t) => t.post_id !== postId);
+  state.activity = state.activity.filter((a) => a.post_id !== postId);
+  for (const m of state.messages) if (m.post_id === postId) m.post_id = null;
   recomputeCounts(state);
+  emit();
 }
 
 export function demoFetchMyLikes(userId: string, postIds: string[]): Set<string> {

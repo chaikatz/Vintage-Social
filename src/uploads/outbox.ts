@@ -21,7 +21,7 @@ import { perfLog, perfStart, shortId } from "@/utils/perf";
 import { NotSignedInError, UploadRestart, freshAccessToken, isExpiredAuth, isSessionUnavailable } from "./storageUpload";
 import * as disk from "./jobFiles";
 import { setPendingPosts } from "./store";
-import { confirmedRow, placeConfirmedPost } from "./feedCache";
+import { confirmedRow, markPostDeleted, placeConfirmedPost } from "./feedCache";
 import { failureWords, type FailureReason } from "./words";
 import type { JobStep, OutboxJob, PendingPost, PendingState, PostDraft } from "./types";
 
@@ -1155,6 +1155,28 @@ export function notePostsInFeed(ids: readonly string[]): void {
     if (live.job.step !== "insert" || !live.job.insertTried || !inFeed.has(live.job.id)) continue;
     adoptAsPosted(live);
   }
+}
+
+/**
+ * The member deleted this post, and the server said so. Whatever the
+ * outbox still holds for it lets go. A job that never heard its insert
+ * land ("It may have been saved") would otherwise keep its card and its
+ * Retry, and a Retry would insert the post again under the same id, which
+ * nothing collides with any more. One still at work is stopped where it
+ * is; its files on the phone go, and storage is left as it is for every
+ * deleted post. The feed is told as well, so a confirmed row waiting to be
+ * put back after a read lands is not.
+ */
+export function notePostDeleted(id: string): void {
+  markPostDeleted(id);
+  const live = jobs.get(id);
+  if (!live || live.gone) return;
+  try {
+    live.ctl?.abort();
+  } catch {
+    // Already stopped.
+  }
+  drop(live);
 }
 
 /** Waits for a run to stop, but never longer than `ms`: some of what a step waits on cannot be called off. */
