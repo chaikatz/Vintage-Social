@@ -1,5 +1,14 @@
-import React, { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import React, { useMemo, useRef, useState } from "react";
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, spacing, type } from "@/theme";
 import { eraSummary, type Era } from "@/utils/memories";
@@ -11,6 +20,7 @@ import {
   ERA_RULE,
   ERA_STRIP,
   PRINT_GAP,
+  chaptersNear,
   eraHeading,
   eraMeta,
   eraMore,
@@ -20,6 +30,7 @@ import {
   erasFootnote,
   leadPrint,
   printLabel,
+  type ChapterSpan,
 } from "./eraBook";
 import type { PostRow } from "@/types/db";
 
@@ -51,11 +62,14 @@ interface Props {
  *
  * What the eras leave out is said at the foot, as the map says what it
  * could not place: photographs with no capture date, and those alone in
- * their place and year. Every print is the grid's own small copy, filtered
- * and postered as the grid draws it (PhotoTile), never the full photograph.
+ * their place and year. Every print is drawn as the grid draws it
+ * (PhotoTile), filtered and postered alike, from the grid's small copy.
+ * Only a lead is drawn larger than that copy stays sharp at, so once its
+ * chapter comes within a screen of view, a photograph's lead is drawn
+ * from the photograph itself; chapters far down the page never load it.
  */
 export function EraList({ posts, onOpenPost, header, member, loading, onRefresh, refreshing }: Props) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   // The strip's squares span the page between its margins; the lead is
   // measured in them.
@@ -75,11 +89,23 @@ export function EraList({ posts, onOpenPost, header, member, loading, onRefresh,
       return next;
     });
 
+  // Where each chapter lies down the page, and how far it is scrolled:
+  // the chapters near the screen, by title, have their leads drawn full.
+  const spans = useRef(new Map<string, ChapterSpan>());
+  const offset = useRef(0);
+  const [near, setNear] = useState<ReadonlySet<string>>(() => new Set());
+  const look = () => setNear((prev) => chaptersNear(prev, spans.current, offset.current, height));
+
   return (
     <ScrollView
       style={styles.root}
       contentContainerStyle={{ paddingBottom: Math.max(spacing.xxl * 2, insets.bottom + spacing.xxl) }}
       refreshControl={onRefresh ? <RefreshControl refreshing={refreshing ?? false} onRefresh={onRefresh} tintColor={colors.inkFaint} /> : undefined}
+      onScroll={(e) => {
+        offset.current = e.nativeEvent.contentOffset.y;
+        look();
+      }}
+      scrollEventThrottle={100}
     >
       {header}
       {loading ? (
@@ -95,8 +121,14 @@ export function EraList({ posts, onOpenPost, header, member, loading, onRefresh,
               first={i === 0}
               cell={cell}
               expanded={open.has(era.title)}
+              near={near.has(era.title)}
               onToggle={() => toggle(era.title)}
               onOpen={(post) => onOpenPost(post, era.title)}
+              onLayout={(e) => {
+                const { y, height: tall } = e.nativeEvent.layout;
+                spans.current.set(era.title, { top: y, height: tall });
+                look();
+              }}
             />
           ))}
           {footnote ? (
@@ -117,15 +149,20 @@ function Chapter({
   first,
   cell,
   expanded,
+  near,
   onToggle,
   onOpen,
+  onLayout,
 }: {
   era: Era<PostRow>;
   first: boolean;
   cell: number;
   expanded: boolean;
+  /** On the screen or within a screen of it, now or before: the lead is drawn full. */
+  near: boolean;
   onToggle: () => void;
   onOpen: (post: PostRow) => void;
+  onLayout: (e: LayoutChangeEvent) => void;
 }) {
   const [lead] = era.posts;
   const leadSize = leadPrint(aspectRatio(lead.width, lead.height), cell);
@@ -135,7 +172,7 @@ function Chapter({
   const more = eraMore(era, expanded);
 
   return (
-    <View style={[styles.chapter, first && styles.chapterFirst]}>
+    <View style={[styles.chapter, first && styles.chapterFirst]} onLayout={onLayout}>
       {first ? null : <View style={styles.rule} />}
       <Text style={styles.title} accessibilityRole="header" accessibilityLabel={eraHeading(era)}>
         {era.title}
@@ -148,6 +185,7 @@ function Chapter({
           post={lead}
           size={leadSize.width}
           height={leadSize.height}
+          full={near}
           onPress={() => onOpen(lead)}
           accessibilityLabel={printLabel(lead)}
         />

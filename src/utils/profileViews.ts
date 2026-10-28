@@ -1,4 +1,4 @@
-import { eraPosts, sortByTaken } from "./memories";
+import { eraOf, sortByTaken } from "./memories";
 import type { PostRow } from "@/types/db";
 
 /**
@@ -41,18 +41,22 @@ export function opensGallery(view: ProfileView, post: { tagged_in?: boolean }): 
 /**
  * What the gallery holds, in its order: the author's photographs as the
  * grid it was opened from orders them or, opened from an era, that era
- * alone, newest capture first. The era is found again by its title among
- * the eras of the same rows, so it is the one the profile showed. If it
- * has since come apart (a photograph deleted, the place rewritten), the
- * whole taken order stands in, and `era` is null.
+ * alone, newest capture first. The era is found again among the eras of
+ * the same rows as the one that holds the photograph tapped, so it is the
+ * one the profile showed, and `era` is its own title. The title in the
+ * address only says an era was opened: an address can change a title on
+ * its way (a place written with a `%` in it). If the photograph is in no
+ * era now (deleted, or its era come apart), the whole taken order stands
+ * in, and `era` is null.
  */
-export function galleryRows<T extends Pick<PostRow, "taken_at" | "created_at" | "location">>(
+export function galleryRows<T extends Pick<PostRow, "id" | "taken_at" | "created_at" | "location">>(
   rows: T[],
   sort: GridSort | undefined,
   era: string | undefined,
+  postId: string | undefined,
 ): { rows: T[]; era: string | null } {
-  const inEra = era ? eraPosts(rows, era) : null;
-  if (era && inEra) return { rows: inEra, era };
+  const held = era && postId ? eraOf(rows, postId) : null;
+  if (held) return { rows: held.posts, era: held.title };
   return { rows: sort === "taken" || era ? sortByTaken(rows) : rows, era: null };
 }
 

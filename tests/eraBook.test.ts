@@ -4,6 +4,8 @@ import {
   ERA_STRIP,
   LANDSCAPE_LEAD,
   PRINT_GAP,
+  chapterNear,
+  chaptersNear,
   eraHeading,
   eraMeta,
   eraMore,
@@ -19,8 +21,9 @@ import { eraSummary, groupEras, type Era } from "@/utils/memories";
 
 /**
  * A profile read as eras, in words and measures: what a chapter says
- * under its name, how big its lead print is, what opens it in place, what
- * the foot of the page counts, and what is said when there are no eras.
+ * under its name, how big its lead print is, which chapters are near
+ * enough to draw it full, what opens it in place, what the foot of the
+ * page counts, and what is said when there are no eras.
  * Dates are local-time strings, so none of this depends on the zone.
  */
 
@@ -108,6 +111,53 @@ describe("a chapter's prints", () => {
       "Photograph, Oct 26, 2026. Last ferry of the evening.",
     );
     expect(printLabel(post("b", "2026-10-26T18:00:00", null, { media_type: "video", caption: "  " }))).toBe("Film, Oct 26, 2026");
+  });
+});
+
+describe("the chapters near the screen", () => {
+  // An 800 pt screen, scrolled 2000 pt down: near is from 1200 to 3600.
+  const screen = 800;
+  const offset = 2000;
+
+  it("are the ones on it, and those within a screen of it either way", () => {
+    expect(chapterNear({ top: 2100, height: 600 }, offset, screen)).toBe(true); // on screen
+    expect(chapterNear({ top: 1500, height: 600 }, offset, screen)).toBe(true); // just above
+    expect(chapterNear({ top: 3500, height: 600 }, offset, screen)).toBe(true); // a screen below
+    expect(chapterNear({ top: 400, height: 6000 }, offset, screen)).toBe(true); // runs through it
+  });
+
+  it("are not the ones further off", () => {
+    expect(chapterNear({ top: 500, height: 600 }, offset, screen)).toBe(false); // ends at 1100
+    expect(chapterNear({ top: 600, height: 600 }, offset, screen)).toBe(false); // ends right at 1200
+    expect(chapterNear({ top: 3600, height: 600 }, offset, screen)).toBe(false); // starts right at 3600
+    expect(chapterNear({ top: 9000, height: 600 }, offset, screen)).toBe(false);
+  });
+
+  it("at the top of the page are the first two screens' worth", () => {
+    expect(chapterNear({ top: 300, height: 700 }, 0, screen)).toBe(true);
+    expect(chapterNear({ top: 1500, height: 700 }, 0, screen)).toBe(true);
+    expect(chapterNear({ top: 1700, height: 700 }, 0, screen)).toBe(false);
+  });
+
+  const page = new Map([
+    ["Lisbon 2023", { top: 300, height: 700 }],
+    ["Kyoto 2022", { top: 1000, height: 700 }],
+    ["Summer 2021", { top: 1700, height: 700 }],
+    ["Paris 2019", { top: 2400, height: 700 }],
+  ]);
+
+  it("are gathered by title as the page is scrolled, and stay once they have been", () => {
+    const opened = chaptersNear(new Set(), page, 0, screen);
+    expect([...opened]).toEqual(["Lisbon 2023", "Kyoto 2022"]);
+    const further = chaptersNear(opened, page, 2400, screen);
+    expect([...further].sort()).toEqual(["Kyoto 2022", "Lisbon 2023", "Paris 2019", "Summer 2021"]);
+    // Scrolled back to the top: the ones far below now stay as they are.
+    expect(chaptersNear(further, page, 0, screen)).toBe(further);
+  });
+
+  it("are the same set when a scroll brings none nearer, so nothing is drawn again", () => {
+    const opened = chaptersNear(new Set(), page, 0, screen);
+    expect(chaptersNear(opened, page, 100, screen)).toBe(opened);
   });
 });
 
