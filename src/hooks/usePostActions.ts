@@ -7,7 +7,7 @@ import { errorMessage } from "@/utils/errorMessage";
 import { perfLog, shortId } from "@/utils/perf";
 import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
 import { blockMember } from "@/api/blocks";
-import { notePostDeleted } from "@/uploads";
+import { holdPost, notePostDeleted } from "@/uploads";
 import { INLINE_COMMENTS } from "@/components/PostCard";
 import { useSession } from "@/providers/SessionProvider";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
@@ -143,15 +143,20 @@ export function usePostActions(userId: string, postIds: string[]) {
    * lets go of anything it still holds for it, then the post leaves every
    * screen at once and the screen it was deleted from closes.
    *
+   * While the server is asked, the outbox sends no insert for the post: a
+   * retry sent meanwhile could land after the delete and put it back.
+   *
    * A refusal leaves everything as it was and says so in the member's
    * words; the database's own stay in the development log.
    */
   const deletePost = useCallback(
     async (post: PostWithAuthor, afterDelete?: () => void) => {
       const what = post.media_type === "video" ? "clip" : "photograph";
+      holdPost(post.id, true);
       try {
         await deleteOwnPost(post.id);
       } catch (err) {
+        holdPost(post.id, false);
         const e = err as { code?: unknown; status?: unknown } | null;
         perfLog("post delete failed", { id: shortId(post.id), code: e?.code ?? null, status: e?.status ?? null });
         showAlert(`Couldn’t delete this ${what}`, errorMessage(err, "Nothing was removed. Try again in a moment."));
