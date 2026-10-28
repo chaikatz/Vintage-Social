@@ -13,6 +13,7 @@ import { getFilter } from "@/filters";
 import { cssFilterFor } from "@/filters/cssFilter";
 import { needsDisplayFilter } from "@/utils/displayFilter";
 import { useVideoMuted, toggleVideoMuted } from "@/utils/videoSound";
+import { clipTiming, type ClipSurface } from "@/utils/videoTiming";
 import { DateStamp } from "./DateStamp";
 import { FilterOverlay } from "./FilterOverlay";
 import type { PostRow } from "@/types/db";
@@ -59,6 +60,17 @@ interface Props {
    * downloaded again, and started the clip over from the network.
    */
   recyclingKey?: string;
+  /**
+   * Whether a clip may have its player yet. A list that draws many cards
+   * at once makes players only for the card on screen and its neighbours
+   * (the gallery, see src/utils/videoWindow.ts); every other clip is its
+   * poster in the same frame, so nothing moves when the player arrives.
+   * Defaults to true: Home, the single post and the pending card always
+   * have one. A photograph ignores it.
+   */
+  warm?: boolean;
+  /** Where the card is, for the development build's start-up timings only (src/utils/videoTiming.ts). */
+  surface?: ClipSurface;
 }
 
 // Clamp between 4:5 portrait and 1.91:1 landscape, like classic photo feeds.
@@ -90,6 +102,8 @@ export function PostMedia({
   priority = "normal",
   cachePolicy = "memory-disk",
   recyclingKey,
+  warm = true,
+  surface,
 }: Props) {
   const lastTap = React.useRef(0);
   const singleTap = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -260,15 +274,25 @@ export function PostMedia({
   if (isVideo) {
     return (
       <View style={frame}>
-        <VideoMedia
-          path={post.media_path}
-          poster={post.thumb_path}
-          cssFilter={live?.filter ?? null}
-          active={active}
-          onPress={handlePress}
-          cachePolicy={cachePolicy}
-          recyclingKey={pictureKey}
-        />
+        {warm ? (
+          <VideoMedia
+            path={post.media_path}
+            poster={post.thumb_path}
+            cssFilter={live?.filter ?? null}
+            active={active}
+            onPress={handlePress}
+            cachePolicy={cachePolicy}
+            recyclingKey={pictureKey}
+            surface={surface}
+          />
+        ) : (
+          <VideoPoster
+            poster={post.thumb_path}
+            cssFilter={live?.filter ?? null}
+            onPress={handlePress}
+            cachePolicy={cachePolicy}
+          />
+        )}
         {live ? <FilterOverlay filter={filter} /> : null}
         {stamp}
         {heartOverlay}
@@ -345,6 +369,7 @@ function VideoMedia({
   onPress,
   cachePolicy,
   recyclingKey,
+  surface,
 }: {
   path: string;
   poster: string | null;
@@ -353,6 +378,7 @@ function VideoMedia({
   onPress: () => void;
   cachePolicy: "memory" | "memory-disk";
   recyclingKey: string;
+  surface?: ClipSurface;
 }) {
   const fresh = mediaUrlString("media", path) ?? "";
   const url = useSteadySource(fresh, recyclingKey);
@@ -410,6 +436,7 @@ function VideoMedia({
     const t = setTimeout(() => setStalled(true), 2500);
     return () => clearTimeout(t);
   }, [active, isPlaying, status]);
+  useClipTiming(path, active, isPlaying, surface, recyclingKey);
 
   const posterUrl = mediaUrl("thumbnails", poster);
 
@@ -460,6 +487,69 @@ function VideoMedia({
     </View>
   );
 }
+
+/**
+ * A clip that has no player yet: its poster, exactly where VideoMedia
+ * draws it, with the same tap. The frame around it is the card's own, so
+ * the card is the height it will be when the player arrives.
+ */
+function VideoPoster({
+  poster,
+  cssFilter,
+  onPress,
+  cachePolicy,
+}: {
+  poster: string | null;
+  cssFilter: string | null;
+  onPress: () => void;
+  cachePolicy: "memory" | "memory-disk";
+}) {
+  const posterUrl = mediaUrl("thumbnails", poster);
+  return (
+    <Pressable onPress={onPress} style={StyleSheet.absoluteFill}>
+      {posterUrl ? (
+        <Image
+          source={posterUrl}
+          style={[StyleSheet.absoluteFill, cssFilter ? ({ filter: cssFilter } as object) : null]}
+          contentFit="cover"
+          cachePolicy={cachePolicy}
+        />
+      ) : null}
+    </Pressable>
+  );
+}
+
+/**
+ * The development build's start-up timing for a clip (src/utils/videoTiming.ts):
+ * told when the card comes on screen, when it leaves, and when its clip is
+ * first seen playing. Chosen once, when the module loads, so a release
+ * build calls an empty function and does none of it.
+ */
+const useClipTiming: (
+  path: string,
+  active: boolean,
+  playing: boolean,
+  surface: ClipSurface | undefined,
+  key: string,
+) => void = clipTiming
+  ? (path, active, playing, surface, key) => {
+      const shown = React.useRef(false);
+      React.useEffect(() => {
+        if (active && !shown.current) clipTiming?.shown(path, surface ?? null, key === path ? null : key);
+        else if (!active && shown.current) clipTiming?.hidden(path);
+        shown.current = active;
+      }, [active, path, surface, key]);
+      React.useEffect(() => {
+        if (active && playing) clipTiming?.moving(path);
+      }, [active, playing, path]);
+      React.useEffect(
+        () => () => {
+          if (shown.current) clipTiming?.hidden(path);
+        },
+        [path],
+      );
+    }
+  : () => undefined;
 
 /**
  * The address a card's clip plays from, held steady for the card's life.

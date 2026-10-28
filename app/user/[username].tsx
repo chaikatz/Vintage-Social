@@ -22,6 +22,8 @@ import { fetchTaggedPosts } from "@/api/tags";
 import { openConversation } from "@/api/messages";
 import { blockMember, fetchBlockedIds, unblockMember } from "@/api/blocks";
 import { sortByTaken } from "@/utils/memories";
+import { seedAuthor, seedPost } from "@/utils/profileSeed";
+import { clipTiming } from "@/utils/videoTiming";
 import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
@@ -253,10 +255,19 @@ export default function UserProfile() {
   );
 
   // A tagged photograph belongs to its author's gallery, not this one.
-  const openPost = (p: GridPost) =>
-    view === "timeline" || view === "map" || view === "places" || p.tagged_in
-      ? router.push(`/post/${p.id}`)
-      : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
+  // Either way the next screen is handed what this one already holds, so
+  // it draws, and its clip starts loading, without a round trip first.
+  const openPost = (p: GridPost) => {
+    if (view === "timeline" || view === "map" || view === "places" || p.tagged_in) {
+      seedPost(queryClient, p, profile, postsQ.dataUpdatedAt);
+      clipTiming?.asked(p, "post");
+      router.push(`/post/${p.id}`);
+      return;
+    }
+    seedAuthor(queryClient, profile, postsQ.dataUpdatedAt);
+    clipTiming?.asked(p, "gallery");
+    router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
+  };
   const shown = locked ? [] : rows;
 
   return (

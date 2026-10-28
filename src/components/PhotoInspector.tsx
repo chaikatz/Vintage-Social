@@ -12,6 +12,7 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import { Image } from "expo-image";
+import { useEvent } from "expo";
 import { useVideoPlayer, VideoView } from "expo-video";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
@@ -273,6 +274,16 @@ function Film({ post, width, height }: { post: PostRow; width: number; height: n
     if (!muted) player.volume = 1;
     player.play();
   }, [player, muted]);
+
+  // The feed's nudge (see VideoMedia in PostMedia): a play() asked for
+  // before the file has loaded can be lost on the way, and the film sat on
+  // its poster until it was tapped. So it is asked again the moment the
+  // player says it is ready. A film exists only while its page is the one
+  // on screen, so being mounted is being active.
+  const { status } = useEvent(player, "statusChange", { status: player.status, error: undefined });
+  useEffect(() => {
+    if (status === "readyToPlay" && !player.playing) player.play();
+  }, [status, player]);
 
   const poster = mediaUrl("thumbnails", post.thumb_path);
   return (

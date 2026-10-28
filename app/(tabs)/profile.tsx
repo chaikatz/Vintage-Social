@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { ProfileHeader } from "@/components/ProfileHeader";
@@ -17,6 +17,8 @@ import { colors, spacing } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
 import { sortByTaken } from "@/utils/memories";
+import { seedAuthor, seedPost } from "@/utils/profileSeed";
+import { clipTiming } from "@/utils/videoTiming";
 import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 
@@ -28,6 +30,7 @@ import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
  */
 export default function OwnProfile() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { session, profile, isAdmin, refreshProfile } = useSession();
   const userId = session?.user?.id ?? "";
   const [view, setView] = useState<ProfileView>("posted");
@@ -108,10 +111,19 @@ export default function OwnProfile() {
   );
 
   // A tagged photograph belongs to its author's gallery; yours open in yours.
-  const openPost = (p: GridPost) =>
-    view === "timeline" || view === "map" || view === "places" || p.tagged_in
-      ? router.push(`/post/${p.id}`)
-      : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
+  // Either way the next screen is handed what this one already holds, so
+  // it draws, and its clip starts loading, without a round trip first.
+  const openPost = (p: GridPost) => {
+    if (view === "timeline" || view === "map" || view === "places" || p.tagged_in) {
+      seedPost(queryClient, p, profile, posts.dataUpdatedAt);
+      clipTiming?.asked(p, "post");
+      router.push(`/post/${p.id}`);
+      return;
+    }
+    seedAuthor(queryClient, profile, posts.dataUpdatedAt);
+    clipTiming?.asked(p, "gallery");
+    router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
+  };
 
   return (
     <Screen padded={false}>

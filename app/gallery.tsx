@@ -10,6 +10,7 @@ import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { sortByTaken } from "@/utils/memories";
+import { isWarm, warmWindow } from "@/utils/videoWindow";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import type { PostWithAuthor } from "@/types/db";
@@ -79,12 +80,16 @@ export default function Gallery() {
   const heights = useRef(new Map<string, number>());
   const settled = useRef(false);
   const [ready, setReady] = useState(false);
+  // The last card reported on screen once the list was showing; the clips
+  // that have a player are the ones around it.
+  const [seenId, setSeenId] = useState<string | null>(null);
 
   useEffect(() => {
     // A different photograph or order: measure again.
     heights.current.clear();
     settled.current = false;
     setReady(false);
+    setSeenId(null);
   }, [postId, sort]);
 
   const settle = useCallback(() => {
@@ -142,11 +147,21 @@ export default function Gallery() {
   // Only the card on screen plays its video — see PostMedia for why. The
   // tapped row is on screen first, so it starts as the active card.
   const [visibleId, setVisibleId] = useState<string | null>(postId ?? null);
+  // And only it and its neighbours have a player at all (see
+  // src/utils/videoWindow.ts). The window follows the card reported on
+  // screen once the list is showing: what is reported while it is still
+  // hidden at the top, being measured, is not where the reader is.
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((v) => v.isViewable);
-    setVisibleId((first?.item as { id: string } | undefined)?.id ?? null);
+    const id = (first?.item as { id: string } | undefined)?.id ?? null;
+    setVisibleId(id);
+    if (id && readyRef.current) setSeenId(id);
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 120 }).current;
+  const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
+  const warm = warmWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
 
   const loading = !postsQ.isFetched || !authorQ.isFetched;
 
@@ -161,7 +176,8 @@ export default function Gallery() {
         style={ready ? undefined : styles.hidden}
         // Every card up to and past the tapped one is drawn at once, so the
         // ones above it can be measured. Capped so a very long history
-        // does not draw itself entirely before showing anything.
+        // does not draw itself entirely before showing anything. A clip
+        // among them is its poster, at its own height, and makes no player.
         initialNumToRender={Math.min(startIndex + 3, MEASURE_LIMIT)}
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         onViewableItemsChanged={onViewableItemsChanged}
@@ -176,7 +192,7 @@ export default function Gallery() {
             <EmptyState title="Nothing here yet" body="This member hasn’t posted a photograph." />
           )
         }
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <View onLayout={(e) => onCardLayout(item.id, e)}>
             <PostCard
               post={{ ...item, like_count: likeCountFor(item) }}
@@ -189,6 +205,8 @@ export default function Gallery() {
               comments={commentsFor(item)}
               onMore={(p) => onMore(p, () => router.back())}
               active={ready && focused && item.id === visibleId}
+              warm={isWarm(index, warm)}
+              surface="gallery"
             />
           </View>
         )}
