@@ -9,6 +9,7 @@ import { colors, spacing, type } from "@/theme";
 import { fetchConversations } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
+import { inboxPreview } from "@/utils/messageText";
 import type { ConversationWithPeer } from "@/types/db";
 
 /**
@@ -62,9 +63,7 @@ function ConversationRow({
 }) {
   const last = conversation.last_message;
   const unread = conversation.unread_count > 0;
-  const preview = last
-    ? last.body || (last.post_id ? "Sent a photograph" : "")
-    : "Say something.";
+  const preview = inboxPreview(last);
 
   return (
     <Pressable style={styles.row} onPress={onPress}>

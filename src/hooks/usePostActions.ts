@@ -1,10 +1,13 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "expo-router";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { rewritePostEverywhere } from "@/utils/postCache";
+import { removePostEverywhere, rewritePostEverywhere } from "@/utils/postCache";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
+import { perfLog, shortId } from "@/utils/perf";
 import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
 import { blockMember } from "@/api/blocks";
+import { notePostDeleted } from "@/uploads";
 import { INLINE_COMMENTS } from "@/components/PostCard";
 import { useSession } from "@/providers/SessionProvider";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
@@ -136,12 +139,41 @@ export function usePostActions(userId: string, postIds: string[]) {
   );
 
   /**
-   * Your own post can be deleted; anyone else's can be reported. Nothing is
-   * removed automatically — an admin reviews every report by hand.
+   * Your own post deleted, for good, once the server says so. The outbox
+   * lets go of anything it still holds for it, then the post leaves every
+   * screen at once and the screen it was deleted from closes.
+   *
+   * A refusal leaves everything as it was and says so in the member's
+   * words; the database's own stay in the development log.
+   */
+  const deletePost = useCallback(
+    async (post: PostWithAuthor, afterDelete?: () => void) => {
+      const what = post.media_type === "video" ? "clip" : "photograph";
+      try {
+        await deleteOwnPost(post.id);
+      } catch (err) {
+        const e = err as { code?: unknown; status?: unknown } | null;
+        perfLog("post delete failed", { id: shortId(post.id), code: e?.code ?? null, status: e?.status ?? null });
+        showAlert(`Couldn’t delete this ${what}`, errorMessage(err, "Nothing was removed. Try again in a moment."));
+        return;
+      }
+      notePostDeleted(post.id);
+      afterDelete?.();
+      void removePostEverywhere(queryClient, post.id);
+      refreshProfile().catch(() => undefined);
+    },
+    [queryClient, refreshProfile],
+  );
+
+  /**
+   * Your own post can be deleted, after one question; anyone else's can be
+   * reported. Nothing is removed automatically — an admin reviews every
+   * report by hand.
    */
   const onMore = useCallback(
     (post: PostWithAuthor, afterDelete?: () => void) => {
       if (post.author_id === userId) {
+        const what = post.media_type === "video" ? "clip" : "photograph";
         showAlert("Your post", undefined, [
           {
             text: "Edit caption",
@@ -153,19 +185,15 @@ export function usePostActions(userId: string, postIds: string[]) {
           {
             text: "Delete post",
             style: "destructive",
-            onPress: async () => {
-              try {
-                await deleteOwnPost(post.id);
-              } catch (err) {
-                showAlert("Couldn’t delete", err instanceof Error ? err.message : String(err));
-                return;
-              }
-              queryClient.invalidateQueries({ queryKey: ["feed"] });
-              queryClient.invalidateQueries({ queryKey: ["user-posts"] });
-              queryClient.invalidateQueries({ queryKey: ["explore"] });
-              refreshProfile().catch(() => undefined);
-              afterDelete?.();
-            },
+            onPress: () =>
+              showAlert(
+                `Delete this ${what}?`,
+                "It’s removed for good. A message it was sent in says it’s no longer available.",
+                [
+                  { text: "Delete", style: "destructive", onPress: () => void deletePost(post, afterDelete) },
+                  { text: "Cancel", style: "cancel" },
+                ],
+              ),
           },
           { text: "Cancel", style: "cancel" },
         ]);
@@ -193,7 +221,7 @@ export function usePostActions(userId: string, postIds: string[]) {
                         await blockMember(post.author_id);
                         queryClient.invalidateQueries();
                       } catch (err) {
-                        showAlert("That didn’t work", err instanceof Error ? err.message : String(err));
+                        showAlert("That didn’t work", errorMessage(err, "Try again in a moment."));
                       }
                     },
                   },
@@ -205,7 +233,7 @@ export function usePostActions(userId: string, postIds: string[]) {
         ]);
       }
     },
-    [userId, router, queryClient, refreshProfile, seed],
+    [userId, router, queryClient, seed, deletePost],
   );
 
   return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenPost, onOpenLikes, commentsFor };

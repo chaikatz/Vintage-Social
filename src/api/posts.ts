@@ -214,13 +214,30 @@ export async function updateCaption(postId: string, caption: string): Promise<vo
   if (!data || data.length === 0) throw new Error("Only the author can change a caption.");
 }
 
+/**
+ * Delete your own post, and be sure of the answer.
+ *
+ * The delete asks for the deleted row back. A DELETE that row-level
+ * security filters out, and one for a post that is already gone, both
+ * succeed with nothing deleted, so "no error" alone used to be taken for
+ * done either way. When nothing came back the post is looked for: if it
+ * is not there it was deleted already, by an earlier tap whose reply was
+ * lost, and that is what was asked for; if it is still there it was not
+ * deleted, and the caller is told.
+ *
+ * Its files stay in storage, as they always have.
+ */
 export async function deleteOwnPost(postId: string): Promise<void> {
   if (isDemoMode()) {
     demo.demoDeletePost(postId);
     return;
   }
-  const { error } = await supabase.from("posts").delete().eq("id", postId);
+  const { data, error } = await supabase.from("posts").delete().eq("id", postId).select("id");
   if (error) throw error;
+  if ((data ?? []).length > 0) return;
+  const { data: still, error: lookError } = await supabase.from("posts").select("id").eq("id", postId).maybeSingle();
+  if (lookError) throw lookError;
+  if (still) throw new Error("Only the author can delete a post.");
 }
 
 /** Who liked a post, newest first. Shown only for your own posts (app/likes.tsx). */

@@ -77,6 +77,20 @@ function withoutAuthor(row: PostWithAuthor): PostRow {
   return rest;
 }
 
+/**
+ * Posts the member deleted in this run of the app. A confirmed post is put
+ * back into the feed and the grid after a read that was already out lands
+ * (below), and that read may have left before the delete did; a post
+ * deleted meanwhile is not put back. Ids are never reused, so remembering
+ * them until the app closes costs nothing.
+ */
+const deletedIds = new Set<string>();
+
+/** The member deleted this post: never place it again. Called through the outbox's notePostDeleted. */
+export function markPostDeleted(id: string): void {
+  deletedIds.add(id);
+}
+
 /** Whether the feed's pages hold the row. */
 export function feedHas(data: InfiniteData<PostWithAuthor[]> | undefined, id: string): boolean {
   return Boolean(data?.pages?.some((page) => page.some((p) => p.id === id)));
@@ -120,16 +134,20 @@ function fetchSettled(queryClient: QueryClient, key: QueryKey): Promise<boolean>
  * row (and the stale mark) when it lands, so where one is out the row is
  * put back once it has. Resolves, after that, with whether the feed holds
  * the row: the pending card hands over to it then, and not before.
+ *
+ * A post the member has deleted is never placed, at first or later.
  */
 export function placeConfirmedPost(queryClient: QueryClient, userId: string, row: PostWithAuthor): Promise<boolean> {
   const feedKey = ["feed", userId];
   const gridKey = ["user-posts", userId];
   const placeInFeed = (refetchType: "none" | "active") => {
+    if (deletedIds.has(row.id)) return;
     queryClient.setQueryData<InfiniteData<PostWithAuthor[]>>(feedKey, (data) => prependToFeed(data, row));
     // After the write: setting the data clears the stale mark.
     void queryClient.invalidateQueries({ queryKey: feedKey, refetchType });
   };
   const placeInGrid = () => {
+    if (deletedIds.has(row.id)) return;
     queryClient.setQueryData<PostRow[]>(gridKey, (list) => prependToList(list, withoutAuthor(row)));
     void queryClient.invalidateQueries({ queryKey: gridKey, refetchType: "none" });
   };

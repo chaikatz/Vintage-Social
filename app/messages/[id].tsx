@@ -26,6 +26,8 @@ import {
 } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
+import { PHOTOGRAPH_UNAVAILABLE, photographUnavailable } from "@/utils/messageText";
 import { postAge } from "@/utils/time";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
@@ -84,7 +86,7 @@ export default function Thread() {
       queryClient.invalidateQueries({ queryKey: ["messages", id] });
       queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
     },
-    onError: (err) => showAlert("Couldn’t send", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t send", errorMessage(err, "Your words are still here. Try again in a moment.")),
   });
 
   return (
@@ -165,6 +167,9 @@ function Bubble({
         {message.body ? (
           <Text style={[styles.body, mine && styles.textMine]}>{message.body}</Text>
         ) : null}
+        {photographUnavailable(message) ? (
+          <Text style={[styles.unavailable, mine && styles.unavailableMine]}>{PHOTOGRAPH_UNAVAILABLE}</Text>
+        ) : null}
         <Text style={[styles.age, mine && styles.ageMine]}>{postAge(message.created_at)}</Text>
       </View>
     </View>
@@ -207,6 +212,8 @@ const styles = StyleSheet.create({
   bubbleMine: { backgroundColor: colors.shutter, borderColor: colors.shutter },
   body: { ...type.body, fontSize: 14 },
   textMine: { color: colors.onShutter },
+  unavailable: { fontFamily: type.serif, fontStyle: "italic", fontSize: 13, color: colors.inkSoft },
+  unavailableMine: { color: colors.onShutter, opacity: 0.75 },
   age: { fontSize: 10, color: colors.inkFaint, marginTop: 4, textAlign: "right" },
   ageMine: { color: colors.onShutter, opacity: 0.6 },
   shared: { marginBottom: spacing.xs + 2 },

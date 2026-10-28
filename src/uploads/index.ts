@@ -9,6 +9,7 @@ export {
   enqueuePost,
   forgetOutbox,
   holdPost,
+  notePostDeleted,
   notePostsInFeed,
   retryPost,
   setOutboxProfileRefresher,

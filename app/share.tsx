@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
@@ -70,7 +71,12 @@ export default function Share() {
       router.back();
     } catch (err) {
       queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
-      showAlert("Couldn’t send to everyone", `${err instanceof Error ? err.message : String(err)}\n\nThe members still ticked have not had it; send again to reach them.`);
+      // Why, when the error says it in words fit to show; then what is true either way.
+      const why = errorMessage(err, "");
+      showAlert(
+        "Couldn’t send to everyone",
+        [why, "The members still ticked have not had it; send again to reach them."].filter(Boolean).join("\n\n"),
+      );
     } finally {
       setBusy(false);
     }

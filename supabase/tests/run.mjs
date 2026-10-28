@@ -156,6 +156,25 @@ try {
     }
   }
 
+  // Deleting a photograph that was sent in a message, and what a message
+  // may become after. Rolls back, so the files below find what they expect.
+  if (res.status === 0 && process.exitCode !== 1) {
+    process.stdout.write("· supabase/tests/06_post_deletion.sql … ");
+    const deletion = psql(["-U", "vintage_owner", "-f", join(here, "06_post_deletion.sql")], {
+      allowFail: true,
+    });
+    if (deletion.status !== 0) {
+      console.log("FAILED");
+      process.stdout.write(deletion.stdout ?? "");
+      process.stderr.write(deletion.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log("ok");
+      const note = (deletion.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+      if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+    }
+  }
+
   const seedSql = join(here, "..", "production", "08_house_accounts.sql");
   if (existsSync(seedSql) && res.status === 0) {
     console.log("");

@@ -343,6 +343,7 @@ const {
   enqueuePost,
   forgetOutbox,
   holdPost,
+  notePostDeleted,
   notePostsInFeed,
   retryPost,
   setOutboxProfileRefresher,
@@ -1488,6 +1489,142 @@ describe("an insert that landed with every reply lost", () => {
     expect(readJob(draft.id)?.step).toBe("done");
     expect(tagMembers).toHaveBeenCalledTimes(1);
     expect(count("insert:posts")).toBe(4);
+  });
+});
+
+describe("a post the member deleted", () => {
+  const jobFiles = (id: string) => [...h.files.keys()].filter((f) => f.startsWith(`file:///docs/outbox/${id}/`));
+
+  it("lets go of a job that never heard its insert land, so Retry can never post it again", async () => {
+    insertsLandButRepliesAreLost();
+    const draft = photoDraft();
+    await enqueuePost(draft);
+    await idle();
+    expect(getPendingPosts()[0]).toMatchObject({ id: draft.id, state: "failed", error: "It may have been saved. Retry to check." });
+    const inserts = count("insert:posts");
+
+    // Deleted from the profile grid, where the server's row was showing.
+    h.state.postExists = false;
+    notePostDeleted(draft.id);
+    expect(getPendingPosts()).toHaveLength(0);
+    expect(readJob(draft.id)).toBeNull();
+    expect(jobFiles(draft.id)).toEqual([]);
+
+    retryPost(draft.id);
+    notePostsInFeed([draft.id]);
+    await discardPost(draft.id);
+    await idle();
+    expect(count("insert:posts")).toBe(inserts);
+    expect(h.calls).not.toContain("select:posts");
+    // Storage is left as it is for every deleted post.
+    expect(h.removed).toEqual([]);
+    expect(tagMembers).not.toHaveBeenCalled();
+    expect(showAlert).not.toHaveBeenCalled();
+  });
+
+  it("is let go after a relaunch too, and stays gone", async () => {
+    insertsLandButRepliesAreLost();
+    const draft = photoDraft();
+    await enqueuePost(draft);
+    await idle();
+    __outboxTesting.relaunch();
+    startOutbox();
+    await idle();
+    expect(getPendingPosts()[0]).toMatchObject({ id: draft.id, state: "failed" });
+    const inserts = count("insert:posts");
+
+    notePostDeleted(draft.id);
+    __outboxTesting.relaunch();
+    startOutbox();
+    await idle();
+    expect(getPendingPosts()).toHaveLength(0);
+    expect(count("insert:posts")).toBe(inserts);
+  });
+
+  it("stops a job still at work where it is, and inserts nothing", async () => {
+    const draft = photoDraft();
+    await enqueuePost(draft);
+    holdPost(draft.id, true);
+    await waitUntil(() => readJob(draft.id)?.uploaded.media === true && readJob(draft.id)?.uploaded.thumb === true);
+    notePostDeleted(draft.id);
+    holdPost(draft.id, false);
+    await idle();
+    expect(h.inserts).toHaveLength(0);
+    expect(getPendingPosts()).toHaveLength(0);
+    expect(readJob(draft.id)).toBeNull();
+  });
+
+  it("places nothing in the feed when an insert that was already out answers afterwards", async () => {
+    seedCaches();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    h.state.insertBehavior = async () => {
+      await gate;
+      return { error: null };
+    };
+    const draft = photoDraft();
+    await enqueuePost(draft);
+    await waitUntil(() => count("insert:posts") === 1);
+    notePostDeleted(draft.id);
+    release();
+    await idle();
+    const feed = queryClient.getQueryData<InfiniteData<PostWithAuthor[]>>(["feed", "u1"])!;
+    expect(feed.pages.flat().map((p) => p.id)).toEqual(["older-post"]);
+    expect(queryClient.getQueryData<PostRow[]>(["user-posts", "u1"])!.map((p) => p.id)).toEqual(["older-post"]);
+    expect(getPendingPosts()).toHaveLength(0);
+    expect(tagMembers).not.toHaveBeenCalled();
+  });
+
+  it("leaves every other post alone, and an id it never held is no matter", async () => {
+    const kept = photoDraft({ tagIds: [] });
+    await enqueuePost(kept);
+    notePostDeleted("00000000-0000-4000-8000-ffffffffffff");
+    await idle();
+    expect(h.inserts).toHaveLength(1);
+    expect(readJob(kept.id)?.step).toBe("done");
+  });
+
+  it("is never put back into the feed or the grid by a read that lands after the delete", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const page = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => ({ ...existing, id: `${prefix}${i}` }));
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const observer = new InfiniteQueryObserver<PostWithAuthor[], Error, InfiniteData<PostWithAuthor[]>, string[], number>(qc, {
+      queryKey: ["feed", "u1"],
+      queryFn: async ({ pageParam }) => {
+        if (pageParam === 0) return page(12, "p");
+        await gate;
+        return page(3, "q");
+      },
+      initialPageParam: 0,
+      getNextPageParam: (last, pages) => (last.length < 12 ? undefined : pages.length),
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    await observer.refetch();
+    qc.setQueryData<PostRow[]>(["user-posts", "u1"], []);
+    const next = observer.fetchNextPage();
+    await Promise.resolve();
+
+    const placed = placeConfirmedPost(qc, "u1", { ...existing, id: "DELETED-1" });
+    // The member deletes it before the next page lands; the screens drop it.
+    notePostDeleted("DELETED-1");
+    qc.setQueryData<InfiniteData<PostWithAuthor[]>>(["feed", "u1"], (data) =>
+      data && { ...data, pages: data.pages.map((p) => p.filter((row) => row.id !== "DELETED-1")) },
+    );
+    qc.setQueryData<PostRow[]>(["user-posts", "u1"], (list) => list?.filter((row) => row.id !== "DELETED-1"));
+
+    release();
+    await next;
+    expect(await placed).toBe(false);
+    const ids = qc.getQueryData<InfiniteData<PostWithAuthor[]>>(["feed", "u1"])!.pages.flat().map((p) => p.id);
+    expect(ids).not.toContain("DELETED-1");
+    expect(ids).toContain("q0");
+    expect(qc.getQueryData<PostRow[]>(["user-posts", "u1"])!.map((p) => p.id)).not.toContain("DELETED-1");
+
+    // Nor placed at all once deleted.
+    expect(await placeConfirmedPost(qc, "u1", { ...existing, id: "DELETED-1" })).toBe(false);
+    expect(qc.getQueryData<InfiniteData<PostWithAuthor[]>>(["feed", "u1"])!.pages.flat().map((p) => p.id)).not.toContain("DELETED-1");
+    unsubscribe();
   });
 });
 
