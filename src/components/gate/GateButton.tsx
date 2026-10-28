@@ -16,12 +16,20 @@ export function GateButton({
   onPress,
   variant = "outline",
   loading = false,
+  disabled = false,
+  accessibilityHint,
+  maxFontSizeMultiplier,
   style,
 }: {
   title: string;
   onPress: () => void;
   variant?: "solid" | "outline" | "quiet";
   loading?: boolean;
+  /** Inert without looking it: something else on the screen is opening. */
+  disabled?: boolean;
+  accessibilityHint?: string;
+  /** Where the label stops growing with the text size, for a bar that has to keep its letters on one line. */
+  maxFontSizeMultiplier?: number;
   style?: ViewStyle;
 }) {
   const solid = variant === "solid";
@@ -39,14 +47,17 @@ export function GateButton({
         style,
       ]}
       onPress={onPress}
-      disabled={loading}
+      disabled={loading || disabled}
       accessibilityRole="button"
+      accessibilityHint={accessibilityHint}
     >
       {loading ? (
         <ActivityIndicator size="small" color={ink} />
       ) : (
         <>
-          <Text style={[styles.label, solid && styles.labelSolid]}>{title}</Text>
+          <Text style={[styles.label, solid && styles.labelSolid]} maxFontSizeMultiplier={maxFontSizeMultiplier}>
+            {title}
+          </Text>
           {quiet ? <View style={[styles.quietRule, { width: ruleWidth(title) }]} /> : <Feather name="arrow-right" size={18} color={ink} style={styles.arrow} />}
         </>
       )}

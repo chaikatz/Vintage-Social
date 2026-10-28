@@ -1,14 +1,20 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View, type LayoutRectangle } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { Image } from "expo-image";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import Feather from "@expo/vector-icons/Feather";
+import { useQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
-import { colors, spacing, type } from "@/theme";
+import { GateButton } from "@/components/gate/GateButton";
 import { ruleWidth } from "@/components/gate/rule";
+import { todaysPrint } from "@/components/onThisDayPrint";
+import { colors, spacing, type } from "@/theme";
+import { fetchUserPosts } from "@/api/posts";
+import { useSession } from "@/providers/SessionProvider";
 import { pickFromLibrary, takeForCompose, type PickedParams } from "@/utils/pickForCompose";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 import { darkroomAvailable } from "@/darkroom/source";
+import { monthDay } from "@/darkroom/labels";
 import { placeLine } from "@/darkroom/session";
 import { useSetAside } from "@/darkroom/setAside";
 
@@ -18,101 +24,142 @@ import { useSetAside } from "@/darkroom/setAside";
  * One photograph per post. Short videos are allowed but live in the same
  * feed and grid as everything else — there is no separate video surface.
  *
- * Set like the rest of VINTAGE: a serif line, then quiet rows ruled off
- * with hairlines. The ordinary ways in come first, one tap each — the
- * library, the camera, a short clip — because they are the habit, and the
- * Darkroom never stands between a member and the picture they came with.
- * Under them is the door to the Darkroom — the camera roll, one
- * print at a time, from further back than anyone scrolls — and then On
- * this day, what the member posted on this date in other years. Nothing
- * here is a card, a plate or a dark block; the Darkroom itself is the
- * dark room.
+ * There are two natural ways to begin, and the page is set so each is
+ * plain at a glance. The Darkroom leads in type: the camera roll, one
+ * print at a time, from further back than anyone scrolls. It is the
+ * thing only VINTAGE does, so it has the largest line on the page, but it
+ * is words on paper with nothing around them, and it never stands
+ * between a member and the picture they came with. Under a rule is the
+ * library, and the library has the page's one solid bar, low enough for
+ * the thumb: one tap to the system picker, as it always was. The camera
+ * and a short clip are quiet words beneath it. Then On this day, what the
+ * member posted on this date in other years. Nothing here is a card, a
+ * plate or a dark block; the Darkroom itself is the dark room.
  *
  * This tab never reads the photo library. It may be on screen, or
  * preloaded beside one, without the member having gone near the
  * Darkroom, so it cannot be the thing that asks iOS for the library or
  * looks through it. What it says about the Darkroom it reads from the
- * Darkroom's own small files on this phone.
+ * Darkroom's own small files on this phone. The one photograph it may
+ * show is one the member has already posted, read from the server once
+ * the tab is in front.
  */
 export default function Create() {
   const router = useRouter();
-  // Reading the capture date and decoding the photograph take a moment;
-  // without a guard a second tap in that moment opened the editor twice.
-  const [opening, setOpening] = useState(false);
+  // Reading the capture date and decoding the photograph take a moment,
+  // and a button only goes quiet once React has rendered: two taps in the
+  // same frame both got through and opened the editor twice. The ref is
+  // checked and set in the tap itself, before anything awaits. `busy` is
+  // for the eye only: it says which way in is opening, so only that one
+  // shows it, and the others rest until it is done.
+  const opening = useRef(false);
+  const [busy, setBusy] = useState<Way | null>(null);
 
-  const openWith = async (get: () => Promise<PickedParams | null>) => {
-    if (opening) return;
-    setOpening(true);
+  const openWith = async (way: Way, get: () => Promise<PickedParams | null>) => {
+    if (opening.current) return;
+    opening.current = true;
+    setBusy(way);
     try {
       const params = await get();
       if (params) router.push({ pathname: "/compose", params });
     } finally {
-      setOpening(false);
+      opening.current = false;
+      setBusy(null);
     }
   };
 
   const native = Platform.OS !== "web";
   const door = darkroomAvailable();
+  const held = busy !== null;
+  // Focus re-renders the tab, so the running head turns over with the day;
+  // On this day waits for it before asking the server for anything.
+  const focused = useIsFocused();
 
   return (
     <Screen padded={false} scroll>
       <View style={styles.body}>
-        <Text style={styles.eyebrow}>New post</Text>
-        <Text style={styles.heading}>Share a photograph.</Text>
-        <Text style={styles.sub}>One picture at a time. You choose the film and the date stamp next.</Text>
-
-        <View style={styles.rule} />
-        <Row
-          icon="image"
-          title="From your library"
-          body="A photograph you've already taken"
-          onPress={() => openWith(() => pickFromLibrary("photo"))}
-          primary
-          busy={opening}
-        />
-        {native ? (
-          <>
-            <View style={styles.hairline} />
-            <Row icon="camera" title="Camera" body="Take one now" onPress={() => openWith(takeForCompose)} />
-          </>
-        ) : null}
-        <View style={styles.hairline} />
-        <Row
-          icon="film"
-          title="Short video"
-          body={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`}
-          onPress={() => openWith(() => pickFromLibrary("video"))}
-        />
-        <View style={styles.rule} />
+        <View style={styles.head} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Text style={styles.headWord} maxFontSizeMultiplier={TYPE_CAP}>
+            New post
+          </Text>
+          <Text style={styles.headWord} maxFontSizeMultiplier={TYPE_CAP}>
+            {monthDay(Date.now())}
+          </Text>
+        </View>
 
         {door ? (
           <>
-            <DarkroomDoor />
-            <View style={styles.hairline} />
+            <DarkroomDoor held={held} />
+            <View style={styles.rule} />
           </>
         ) : null}
-        <Row
-          icon="sun"
-          title="On this day"
-          body="What you posted on this date in other years"
-          onPress={() => router.push("/memories")}
-        />
-        <View style={styles.rule} />
 
-        <Text style={styles.note}>Nothing here is ranked. A photograph is seen by the people who follow you, in the order it was posted.</Text>
+        <View style={[styles.drawer, !door && styles.drawerFirst]}>
+          <Text style={styles.eyebrow} accessibilityRole="header" maxFontSizeMultiplier={TYPE_CAP}>
+            From your library
+          </Text>
+          {/* Under the door the library answers it; alone it says what the page is for. */}
+          <Text style={styles.heading} maxFontSizeMultiplier={TYPE_CAP}>
+            {door ? "Or the one you came with." : "Share a photograph."}
+          </Text>
+          <Text style={styles.sub} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
+            One picture at a time. You choose the film and the date stamp next.
+          </Text>
+          <GateButton
+            title="Choose a photograph"
+            variant="solid"
+            onPress={() => openWith("photo", () => pickFromLibrary("photo"))}
+            loading={busy === "photo"}
+            disabled={held}
+            accessibilityHint="Opens your photo library. Nothing is shared until you post."
+            maxFontSizeMultiplier={BAR_TYPE_CAP}
+            style={styles.bar}
+          />
+          <View style={styles.ways}>
+            {native ? (
+              <QuietWay
+                label="Camera"
+                hint="Take one now"
+                busy={busy === "camera"}
+                held={held}
+                onPress={() => openWith("camera", takeForCompose)}
+              />
+            ) : null}
+            <QuietWay
+              label="Short video"
+              hint={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`}
+              busy={busy === "video"}
+              held={held}
+              onPress={() => openWith("video", () => pickFromLibrary("video"))}
+            />
+          </View>
+        </View>
+
+        <OnThisDay held={held} focused={focused} />
+
+        <Text style={styles.note} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
+          Nothing here is ranked. A photograph is seen by the people who follow you, in the order it was posted.
+        </Text>
       </View>
     </Screen>
   );
 }
 
-/** The door's type stops growing here, as the Darkroom's own word pages do. */
-const DOOR_TYPE_CAP = 2.4;
+type Way = "photo" | "camera" | "video";
+
+/** The page's type stops growing here, as the Darkroom's own word pages do. */
+const TYPE_CAP = 2.4;
+/** The bar's capitals keep to one line clear of its arrow at the largest sizes. */
+const BAR_TYPE_CAP = 1.8;
 /** ENTER's box: 4 above the letters, then the rule 7 below them, 1 high, then 4 more. */
 const ENTER_PAD = 4;
 const ENTER_RULE_GAP = 7;
 /** SET ASIDE stands this far to the right of ENTER, on the same line of letters. */
 const SET_ASIDE_GAP = 28;
 const TOUCH = 44;
+/** The print on the On this day line: a small 4 × 5, the shape the feed gives a portrait. */
+const PRINT_WIDTH = 44;
+const PRINT_HEIGHT = 55;
 
 /**
  * The door to the Darkroom, in type only.
@@ -126,7 +173,7 @@ const TOUCH = 44;
  * than inside it, so VoiceOver can reach both; it is laid over the door's
  * last line, where ENTER's letters are measured to be.
  */
-function DarkroomDoor() {
+function DarkroomDoor({ held }: { held: boolean }) {
   const router = useRouter();
   const shelf = useSetAside();
   const [returnLine, setReturnLine] = useState<string | null>(null);
@@ -147,8 +194,8 @@ function DarkroomDoor() {
   const [doorAt, setDoorAt] = useState<{ x: number; y: number } | null>(null);
   let setAsideAt: { left: number; top: number } | null = null;
   if (enter && doorAt) {
-    // Same type as ENTER, so the same height of letters; the 44 pt target
-    // is centred on them, and so the two words share a line.
+    // The 44 pt target is centred on ENTER's letters, so the two words
+    // share a line whatever the text size.
     const letters = Math.max(0, enter.height - ENTER_PAD * 2 - ENTER_RULE_GAP - 1);
     const target = Math.max(TOUCH, letters);
     setAsideAt = {
@@ -163,22 +210,24 @@ function DarkroomDoor() {
       <Pressable
         onLayout={(e) => setDoorAt({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y })}
         onPress={() => router.push("/darkroom")}
-        style={({ pressed }) => pressed && styles.rowPressed}
+        disabled={held}
+        style={({ pressed }) => pressed && styles.pressed}
         accessibilityRole="button"
         accessibilityLabel="The Darkroom"
         accessibilityHint="Your photographs, one at a time, from further back."
       >
-        <Text style={styles.doorEyebrow} maxFontSizeMultiplier={DOOR_TYPE_CAP}>
+        <Text style={styles.doorEyebrow} maxFontSizeMultiplier={TYPE_CAP}>
           The Darkroom
         </Text>
-        <Text style={styles.doorTitle} maxFontSizeMultiplier={DOOR_TYPE_CAP}>
+        {/* Two lines on every phone, broken after "photos" rather than leaving "new." alone. */}
+        <Text style={styles.doorTitle} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
           Your best photos aren’t new.
         </Text>
-        <Text style={[styles.doorBody, returnLine ? styles.doorReturn : null]} maxFontSizeMultiplier={DOOR_TYPE_CAP}>
+        <Text style={styles.doorLine} maxFontSizeMultiplier={TYPE_CAP}>
           {returnLine ?? "From further back than you’d think to look."}
         </Text>
         <View style={styles.enter} onLayout={(e) => setEnter(e.nativeEvent.layout)}>
-          <Text style={styles.word} maxFontSizeMultiplier={DOOR_TYPE_CAP}>
+          <Text style={styles.enterWord} maxFontSizeMultiplier={TYPE_CAP}>
             Enter
           </Text>
           <View style={[styles.enterRule, { width: ruleWidth("Enter") }]} />
@@ -187,12 +236,14 @@ function DarkroomDoor() {
       {n > 0 && setAsideAt ? (
         <Pressable
           onPress={() => router.push({ pathname: "/darkroom", params: { mode: "set-aside" } })}
-          style={({ pressed }) => [styles.setAside, setAsideAt, pressed && styles.rowPressed]}
+          disabled={held}
+          style={({ pressed }) => [styles.setAside, setAsideAt, pressed && styles.pressed]}
           accessibilityRole="button"
           accessibilityLabel={`Set aside, ${n} ${n === 1 ? "photograph" : "photographs"}`}
           accessibilityHint="Opens the photographs you set aside."
         >
-          <Text style={[styles.word, styles.setAsideWord]} numberOfLines={1} maxFontSizeMultiplier={DOOR_TYPE_CAP}>
+          {/* Never held to one line: it carries no rule, so it keeps its tracking whole and cannot be cut to "SET ASID…". */}
+          <Text style={styles.setAsideWord} maxFontSizeMultiplier={TYPE_CAP}>
             Set aside
           </Text>
         </Pressable>
@@ -201,107 +252,176 @@ function DarkroomDoor() {
   );
 }
 
-function Row({
-  icon,
-  title,
-  body,
+/**
+ * One of the quieter ways in, as a line of capitals: the camera, a short
+ * clip. While it is the one opening, a small spinner stands where its
+ * letters were, in a box the same size, so nothing beside it moves.
+ */
+function QuietWay({
+  label,
+  hint,
+  busy,
+  held,
   onPress,
-  primary = false,
-  busy = false,
 }: {
-  icon: React.ComponentProps<typeof Feather>["name"];
-  title: string;
-  body: string;
+  label: string;
+  hint: string;
+  busy: boolean;
+  held: boolean;
   onPress: () => void;
-  primary?: boolean;
-  busy?: boolean;
 }) {
   return (
     <Pressable
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       onPress={onPress}
-      disabled={busy}
+      disabled={held}
+      hitSlop={{ left: 8, right: 8 }}
+      style={({ pressed }) => [styles.way, pressed && styles.pressed]}
       accessibilityRole="button"
-      accessibilityLabel={title}
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      accessibilityState={{ busy, disabled: held }}
     >
-      <View style={[styles.ring, primary && styles.ringPrimary]}>
-        {busy ? (
-          <ActivityIndicator size="small" color={colors.inkSoft} />
-        ) : (
-          <Feather name={icon} size={18} color={primary ? colors.onShutter : colors.ink} />
-        )}
-      </View>
-      <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowBody}>{body}</Text>
-      </View>
-      <Feather name="chevron-right" size={16} color={colors.inkFaint} />
+      <Text style={[styles.wayWord, busy && styles.hidden]} maxFontSizeMultiplier={TYPE_CAP}>
+        {label}
+      </Text>
+      {busy ? <ActivityIndicator size="small" color={colors.inkSoft} style={StyleSheet.absoluteFill} /> : null}
     </Pressable>
   );
 }
 
+/**
+ * On this day, as a line of type. When the member posted a photograph on
+ * this date in an earlier year, the line becomes that memory's sentence
+ * and the photograph stands at its end as one small print. It is read
+ * from the posts the profile and On this day already share, only once
+ * the tab is in front; on a day with no memory nothing more is drawn.
+ */
+function OnThisDay({ held, focused }: { held: boolean; focused: boolean }) {
+  const router = useRouter();
+  const { session } = useSession();
+  const userId = session?.user?.id ?? "";
+  const posts = useQuery({
+    queryKey: ["user-posts", userId],
+    queryFn: () => fetchUserPosts(userId),
+    enabled: Boolean(userId) && focused,
+    // A memory changes once a day, and a new post reaches this cache on its own.
+    staleTime: 10 * 60_000,
+  });
+  const day = startOfDay(Date.now());
+  const print = useMemo(() => todaysPrint(posts.data, new Date(day)), [posts.data, day]);
+  const line = print?.headline ?? "What you posted on this date in other years";
+
+  return (
+    <View style={styles.daySection}>
+      <View style={styles.hairline} />
+      <Pressable
+        onPress={() => router.push("/memories")}
+        disabled={held}
+        style={({ pressed }) => [styles.day, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel="On this day"
+        accessibilityHint={line}
+      >
+        <View style={styles.dayText}>
+          <Text style={styles.dayTitle} maxFontSizeMultiplier={TYPE_CAP}>
+            On this day
+          </Text>
+          <Text style={styles.dayLine} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
+            {line}
+          </Text>
+        </View>
+        {print?.source != null ? (
+          <Image
+            source={print.source}
+            style={[styles.print, print.filter ? ({ filter: print.filter } as object) : null]}
+            contentFit="cover"
+            transition={200}
+            recyclingKey={print.id}
+            accessibilityIgnoresInvertColors
+          />
+        ) : null}
+      </Pressable>
+      <View style={styles.hairline} />
+    </View>
+  );
+}
+
+function startOfDay(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+const caps = { textTransform: "uppercase" as const };
+
 const styles = StyleSheet.create({
   body: { paddingHorizontal: spacing.lg },
+  pressed: { opacity: 0.6 },
+  hidden: { opacity: 0 },
 
-  eyebrow: {
-    fontFamily: type.mono,
-    fontSize: 10,
-    letterSpacing: 2.4,
-    textTransform: "uppercase",
-    color: colors.inkFaint,
-    marginTop: spacing.xl,
-  },
-  heading: { ...type.title, fontSize: 26, marginTop: spacing.sm },
-  sub: { ...type.caption, marginTop: spacing.xs, lineHeight: 19 },
+  // The running head, as a book carries one: what the page is, and the day.
+  head: { flexDirection: "row", justifyContent: "space-between", gap: spacing.lg, marginTop: spacing.lg },
+  headWord: { fontFamily: type.mono, fontSize: 10, letterSpacing: 2.4, ...caps, color: colors.inkFaint },
 
-  rule: { height: 1, backgroundColor: colors.borderStrong, marginTop: spacing.xl },
-  hairline: { height: 1, backgroundColor: colors.border },
-
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: spacing.md + 2,
-  },
-  rowPressed: { opacity: 0.6 },
-  ring: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ringPrimary: { backgroundColor: colors.shutter, borderColor: colors.shutter },
-  rowText: { flex: 1 },
-  rowTitle: { fontSize: 15, fontWeight: "600", color: colors.ink },
-  rowBody: { fontSize: 12, color: colors.inkFaint, marginTop: 2 },
-
-  door: { paddingTop: spacing.xl, paddingBottom: 20 },
-  doorEyebrow: {
-    fontFamily: type.mono,
-    fontSize: 10,
-    letterSpacing: 2.4,
-    textTransform: "uppercase",
-    color: colors.inkFaint,
-  },
-  doorTitle: { fontFamily: type.serif, fontSize: 22, lineHeight: 29, color: colors.ink, marginTop: spacing.sm },
-  doorBody: { fontSize: 13, lineHeight: 19, color: colors.inkSoft, marginTop: 6, maxWidth: 320 },
-  // RETURN: where the member left off, in the serif's italic.
-  doorReturn: { fontFamily: type.serif, fontStyle: "italic" },
-  enter: { alignSelf: "flex-start", marginTop: spacing.lg, paddingVertical: ENTER_PAD },
-  word: {
-    fontFamily: type.mono,
-    fontSize: 11,
-    letterSpacing: 2.4,
-    marginRight: -2.4,
-    textTransform: "uppercase",
+  door: { paddingTop: spacing.xxl + spacing.sm, paddingBottom: spacing.xl + spacing.xs },
+  // The only accent on the page: burnt sienna on paper, gold on the dark print.
+  doorEyebrow: { fontFamily: type.mono, fontSize: 10, letterSpacing: 2.4, ...caps, color: colors.accent },
+  doorTitle: {
+    fontFamily: type.serif,
+    fontSize: 32,
+    lineHeight: 39,
+    letterSpacing: 0.2,
     color: colors.ink,
+    marginTop: spacing.md,
+    maxWidth: 330,
   },
+  // The room's own voice, the serif's italic, for the default and the return line alike.
+  doorLine: {
+    fontFamily: type.serif,
+    fontStyle: "italic",
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.inkSoft,
+    marginTop: spacing.sm,
+  },
+  enter: { alignSelf: "flex-start", marginTop: spacing.lg + spacing.xs, paddingVertical: ENTER_PAD },
+  enterWord: { fontFamily: type.mono, fontSize: 12, letterSpacing: 3, marginRight: -3, ...caps, color: colors.ink },
   enterRule: { height: 1, backgroundColor: colors.ink, opacity: 0.8, marginTop: ENTER_RULE_GAP, alignSelf: "center" },
   setAside: { position: "absolute", minHeight: TOUCH, justifyContent: "center" },
-  setAsideWord: { color: colors.inkFaint },
+  // Its trailing tracking is kept (no negative margin): the box is as wide as its letters.
+  setAsideWord: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 2.2, ...caps, color: colors.inkSoft },
 
-  note: { ...type.caption, fontSize: 12, lineHeight: 18, color: colors.inkFaint, marginTop: spacing.xxl, paddingBottom: spacing.xl },
+  rule: { height: 1, backgroundColor: colors.borderStrong },
+  hairline: { height: 1, backgroundColor: colors.border },
+
+  drawer: { paddingTop: spacing.xl + spacing.xs },
+  drawerFirst: { paddingTop: spacing.xxl + spacing.sm },
+  eyebrow: { fontFamily: type.mono, fontSize: 10, letterSpacing: 2.4, ...caps, color: colors.inkFaint },
+  heading: { ...type.title, lineHeight: 29, marginTop: spacing.sm + 2 },
+  sub: { ...type.caption, lineHeight: 19, marginTop: spacing.xs },
+  bar: { height: undefined, minHeight: 52, paddingVertical: spacing.md, marginTop: spacing.lg + spacing.xs },
+  ways: { flexDirection: "row", gap: spacing.xl + spacing.xs, marginTop: spacing.xs },
+  way: { minHeight: TOUCH, justifyContent: "center" },
+  wayWord: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 2.2, ...caps, color: colors.inkSoft },
+
+  daySection: { marginTop: spacing.lg },
+  day: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.lg,
+    minHeight: PRINT_HEIGHT + (spacing.md + 2) * 2,
+    paddingVertical: spacing.md + 2,
+  },
+  dayText: { flex: 1 },
+  dayTitle: { fontFamily: type.serif, fontSize: 17, lineHeight: 22, color: colors.ink },
+  dayLine: { fontSize: 12, lineHeight: 17, color: colors.inkFaint, marginTop: 3 },
+  print: { width: PRINT_WIDTH, height: PRINT_HEIGHT, backgroundColor: colors.paperSunken },
+
+  note: {
+    ...type.caption,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.inkFaint,
+    marginTop: spacing.xl,
+    paddingBottom: spacing.xl,
+  },
 });
