@@ -327,9 +327,8 @@ describe("migration 0021", () => {
     expect(statements).not.toMatch(/\bpolicy\b/i);
   });
 
-  it("is one transaction that can be run again", () => {
-    expect(statements.trim().startsWith("begin;")).toBe(true);
-    expect(statements.trim().endsWith("commit;")).toBe(true);
+  it("leaves the transaction to the runner, like the others, and can be run again", () => {
+    expect(statements).not.toMatch(/^\s*(begin|commit);/m);
     expect(statements).toMatch(/create or replace function/);
     expect(statements).toMatch(/drop trigger if exists messages_not_empty on public\.messages;/);
   });
