@@ -136,9 +136,12 @@ export default function Create() {
             />
           </View>
           {/* On the page as well as in the hint: off iOS no trimmer holds a clip to the limit. */}
-          <Text style={styles.waysNote} pointerEvents="none" lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
-            Clips up to {MAX_VIDEO_SECONDS} seconds, in the same feed and grid.
-          </Text>
+          {/* A View, not the Text, refuses the taps: Android's Text ignores pointerEvents. */}
+          <View style={styles.waysNote} pointerEvents="none">
+            <Text style={styles.waysNoteText} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
+              Clips up to {MAX_VIDEO_SECONDS} seconds, in the same feed and grid.
+            </Text>
+          </View>
         </View>
 
         <OnThisDay held={held} focused={focused} day={today} />
@@ -460,7 +463,8 @@ const styles = StyleSheet.create({
   way: { minHeight: TOUCH, justifyContent: "center" },
   wayWord: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 2.2, ...caps, color: colors.inkSoft },
   // Drawn up under the words it glosses, into the empty foot of their touch boxes, and never takes their taps.
-  waysNote: { fontSize: 12, lineHeight: 17, color: colors.inkFaint, marginTop: -spacing.sm },
+  waysNote: { marginTop: -spacing.sm },
+  waysNoteText: { fontSize: 12, lineHeight: 17, color: colors.inkFaint },
 
   daySection: { marginTop: spacing.lg },
   day: {

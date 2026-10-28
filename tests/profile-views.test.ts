@@ -64,12 +64,20 @@ describe("the gallery an era opens", () => {
     expect(shown.rows.map((p) => p.id)).toEqual(["new", "x", "s1"]);
   });
 
-  it("falls back the same for a photograph in no era, or none named", () => {
-    for (const id of ["x", "gone", undefined]) {
-      const shown = galleryRows(rows, "taken", "St. Barths 2023", id);
-      expect(shown.era).toBeNull();
-      expect(shown.rows.map((p) => p.id)).toEqual(["new", "x", "s2", "s1"]);
-    }
+  it("falls back the same for a photograph that is in no era", () => {
+    const shown = galleryRows(rows, "taken", "St. Barths 2023", "x");
+    expect(shown.era).toBeNull();
+    expect(shown.rows.map((p) => p.id)).toEqual(["new", "x", "s2", "s1"]);
+  });
+
+  it("keeps the rest of the era when the photograph tapped leaves while the gallery is open", () => {
+    const trip = [...rows, post("s3", "2023-04-07T12:00:00", "St. Barths", "2024-01-02T12:00:00")];
+    const left = trip.filter((p) => p.id !== "s1");
+    expect(galleryRows(left, "taken", "St. Barths 2023", "s1")).toEqual({ rows: [left[3], left[2]], era: "St. Barths 2023" });
+    // And by the title alone when no photograph was named.
+    expect(galleryRows(trip, "taken", "St. Barths 2023", undefined).era).toBe("St. Barths 2023");
+    // Gone, and its title no longer an era: the whole taken order.
+    expect(galleryRows(rows, "taken", "Somewhere else 1999", "gone").era).toBeNull();
   });
 
   // What expo-router hands the gallery: the title encoded once on the way

@@ -212,6 +212,29 @@ describe("a photograph in a thread, as the thread reads it", () => {
     expect(reads("p-blip")).toBe(2);
   });
 
+  it("keeps showing a photograph it has read when a later read fails, and asks again on the next poll", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      h.thread = { data: [sentWith("p-shown")], error: null };
+      h.lookAnswer = { data: { id: "p-shown" }, error: null };
+      const [first] = await fetchMessages("c1");
+      expect(first.post).toMatchObject({ id: "p-shown" });
+
+      // Past the five minutes a read is kept for, the server fails to answer.
+      vi.setSystemTime(Date.now() + 6 * 60_000);
+      h.lookAnswer = { data: null, error: { message: "TypeError: Network request failed", details: "", hint: "", code: "" } };
+      const [blip] = await fetchMessages("c1");
+      expect(blip.post).toMatchObject({ id: "p-shown" });
+      expect(photographUnavailable(blip)).toBe(false);
+
+      h.lookAnswer = { data: { id: "p-shown" }, error: null };
+      await fetchMessages("c1");
+      expect(reads("p-shown")).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("says it is no longer available when the server answers without it, and keeps that answer", async () => {
     h.thread = { data: [sentWith("p-hidden")], error: null };
     const [first] = await fetchMessages("c1");

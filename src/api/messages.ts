@@ -104,21 +104,39 @@ export async function fetchMessages(conversationId: string): Promise<MessageWith
 }
 
 const SHARED_POST_TTL_MS = 5 * 60_000;
-const sharedPosts = new Map<string, { at: number; post: Promise<PostWithAuthor | null | undefined> }>();
+interface SharedRead {
+  at: number;
+  post: Promise<PostWithAuthor | null | undefined>;
+  /** The server's last answer: undefined until it has given one. */
+  known: PostWithAuthor | null | undefined;
+}
+const sharedPosts = new Map<string, SharedRead>();
 /**
  * The post, or null when the server answered without it (it has gone, or
- * the reader may not see it). A read that failed is undefined and is not
- * kept: no answer is not taken for gone, and the next poll asks again.
+ * the reader may not see it). A read that fails is not kept: no answer is
+ * not taken for gone. It stands on the server's last answer, or undefined
+ * if there has not been one, and the next poll asks again.
  */
 function sharedPost(postId: string): Promise<PostWithAuthor | null | undefined> {
   const cached = sharedPosts.get(postId);
   if (cached && Date.now() - cached.at < SHARED_POST_TTL_MS) return cached.post;
-  const post: Promise<PostWithAuthor | null | undefined> = fetchPost(postId).catch(() => {
-    if (sharedPosts.get(postId)?.post === post) sharedPosts.delete(postId);
-    return undefined;
-  });
-  sharedPosts.set(postId, { at: Date.now(), post });
-  return post;
+  const known = cached?.known;
+  const read: SharedRead = { at: Date.now(), post: Promise.resolve(known), known };
+  read.post = fetchPost(postId).then(
+    (post) => {
+      read.known = post;
+      return post;
+    },
+    () => {
+      if (sharedPosts.get(postId) === read) {
+        if (known === undefined) sharedPosts.delete(postId);
+        else read.at = 0;
+      }
+      return known;
+    },
+  );
+  sharedPosts.set(postId, read);
+  return read.post;
 }
 
 export async function sendMessage(

@@ -75,14 +75,16 @@ describe("the ways in", () => {
 
   it("says the clip's limit on the page, where no trimmer may hold a clip to it", () => {
     expect(tab).toMatch(/import \{ MAX_VIDEO_SECONDS \} from "@\/utils\/validation"/);
-    const note = tab.match(/<Text style=\{styles\.waysNote\}[^>]*>([^<]*)<\/Text>/)?.[1] ?? "";
+    const note = tab.match(/<Text style=\{styles\.waysNoteText\}[^>]*>([^<]*)<\/Text>/)?.[1] ?? "";
     expect(note.trim()).toBe("Clips up to {MAX_VIDEO_SECONDS} seconds, in the same feed and grid.");
     // Under the ways on every platform, and still in the clip's hint.
     const under = tab.slice(tab.indexOf('label="Short video"'), tab.indexOf("<OnThisDay"));
     expect(under).toContain("styles.waysNote");
     expect(under).not.toMatch(/Platform\.OS|native \?/);
-    // It is drawn up into the foot of their touch boxes, so it lets their taps through.
-    expect(tab).toMatch(/<Text style=\{styles\.waysNote\} pointerEvents="none"/);
+    // It is drawn up into the foot of their touch boxes, so it lets their taps through, from a
+    // View: Android's Text ignores pointerEvents.
+    expect(tab).toMatch(/<View style=\{styles\.waysNote\} pointerEvents="none">\s*<Text style=\{styles\.waysNoteText\}/);
+    expect(tab).not.toMatch(/<Text[^>]*pointerEvents/);
     expect(tab).toMatch(/hint=\{`Up to \$\{MAX_VIDEO_SECONDS\} seconds, same feed, same grid`\}/);
   });
 });
