@@ -124,13 +124,13 @@ export default function OwnProfile() {
       router.push(`/post/${p.id}`);
       return;
     }
-    seedAuthor(queryClient, profile, posts.dataUpdatedAt);
+    seedAuthor(queryClient, profile, 0);
     clipTiming?.asked(p, "gallery");
     router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
   };
   // A print in an era opens your gallery held to that era, in taken order.
   const openEra = (p: PostRow, era: string) => {
-    seedAuthor(queryClient, profile, posts.dataUpdatedAt);
+    seedAuthor(queryClient, profile, 0);
     clipTiming?.asked(p, "gallery");
     router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken", era } });
   };

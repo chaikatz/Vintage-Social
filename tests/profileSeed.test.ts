@@ -5,8 +5,9 @@ import type { PostRow, ProfileRow } from "@/types/db";
 
 /**
  * What a profile hands the screen a tap opens: the gallery's author and a
- * single post with its author, in the shapes those screens ask for, aged
- * as the grid is so they still read again when it is stale.
+ * single post with its author, in the shapes those screens ask for. The
+ * author is aged as its profile row, the post goes in stale, and neither
+ * replaces a newer copy, so both still read again when they should.
  */
 
 const profile = {
@@ -51,10 +52,23 @@ describe("seeding the gallery's author", () => {
     expect(qc.getQueryData(["profile-by-id", "u1"])).toBe(fresher);
   });
 
-  it("is stale when the grid is, so the gallery still reads it again", () => {
+  it("is stale when the profile row is, so the gallery still reads it again", () => {
     const qc = client();
     seedAuthor(qc, profile, Date.now() - 60_000);
     expect(qc.getQueryCache().find({ queryKey: ["profile-by-id", "u1"] })?.isStaleByTime(30_000)).toBe(true);
+  });
+
+  it("with no age, as your own page gives it, never replaces a copy and seeds a missing one stale", () => {
+    const qc = client();
+    const held = { ...profile, avatar_url: "u1/new.jpg" } as ProfileRow;
+    qc.setQueryData(["profile-by-id", "u1"], held, { updatedAt: 1 });
+    seedAuthor(qc, profile, 0);
+    expect(qc.getQueryData(["profile-by-id", "u1"])).toBe(held);
+
+    const fresh = client();
+    seedAuthor(fresh, profile, 0);
+    expect(fresh.getQueryData(["profile-by-id", "u1"])).toBe(profile);
+    expect(fresh.getQueryCache().find({ queryKey: ["profile-by-id", "u1"] })?.isStaleByTime(30_000)).toBe(true);
   });
 });
 
@@ -66,7 +80,14 @@ describe("seeding a single post", () => {
       ...row("p1"),
       author: { id: "u1", username: "tomas.lindqvist", full_name: "Tomas Lindqvist", avatar_url: "u1/avatar.jpg" },
     });
-    expect(qc.getQueryState(["post", "p1"])?.dataUpdatedAt).toBe(2_000);
+  });
+
+  it("goes in stale however new the grid looks, so the post still reads itself again", () => {
+    // A like anywhere rewrites every grid and stamps it now, rows and all.
+    const qc = client();
+    seedPost(qc, row("p1"), profile, Date.now());
+    expect(qc.getQueryState(["post", "p1"])?.status).toBe("success");
+    expect(qc.getQueryCache().find({ queryKey: ["post", "p1"] })?.isStaleByTime(30_000)).toBe(true);
   });
 
   it("leaves a photograph you were tagged in to be read as before", () => {
@@ -89,5 +110,14 @@ describe("seeding a single post", () => {
     qc.setQueryData(["post", "p5"], fresher, { updatedAt: 9_000 });
     seedPost(qc, row("p5"), profile, 2_000);
     expect(qc.getQueryData(["post", "p5"])).toBe(fresher);
+  });
+
+  it("replaces a copy older than the grid, and one it seeded before", () => {
+    const qc = client();
+    qc.setQueryData(["post", "p6"], { ...row("p6"), like_count: 0, author: { id: "u1" } }, { updatedAt: 1_000 });
+    seedPost(qc, row("p6"), profile, 2_000);
+    expect(qc.getQueryData<{ like_count: number }>(["post", "p6"])?.like_count).toBe(2);
+    seedPost(qc, { ...row("p6"), like_count: 3 } as PostRow, profile, 3_000);
+    expect(qc.getQueryData<{ like_count: number }>(["post", "p6"])?.like_count).toBe(3);
   });
 });

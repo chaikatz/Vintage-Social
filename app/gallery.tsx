@@ -43,7 +43,7 @@ export default function Gallery() {
     authorId: string;
     postId?: string;
     sort?: "posted" | "taken";
-    /** Opened from an era on a profile: its title, and the gallery holds that era alone. */
+    /** Opened from an era on a profile: its title, and the gallery holds the era of `postId` alone. */
     era?: string;
   }>();
 
@@ -59,7 +59,7 @@ export default function Gallery() {
   });
 
   // In the grid's order, or the era's alone (see galleryRows).
-  const shown = useMemo(() => galleryRows(postsQ.data ?? [], sort, era), [postsQ.data, sort, era]);
+  const shown = useMemo(() => galleryRows(postsQ.data ?? [], sort, era, postId), [postsQ.data, sort, era, postId]);
 
   // Every post here shares one author, so the join is a local attach rather
   // than a second round trip per row.

@@ -251,7 +251,9 @@ export default function UserProfile() {
               : `Ask to follow ${profile.username} to see their photographs.`}
           </Text>
         </View>
-      ) : (postsQ.data ?? []).length > 1 ? (
+      ) : (postsQ.data ?? []).length > 1 || view !== "posted" ? (
+        // Kept while another view is chosen, so it can always be left:
+        // down to one photograph, Eras has no era to show and hides it.
         <GridSortToggle value={view} onChange={setView} />
       ) : null}
     </>
@@ -267,13 +269,13 @@ export default function UserProfile() {
       router.push(`/post/${p.id}`);
       return;
     }
-    seedAuthor(queryClient, profile, postsQ.dataUpdatedAt);
+    seedAuthor(queryClient, profile, profileQ.dataUpdatedAt);
     clipTiming?.asked(p, "gallery");
     router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
   };
   // A print in an era opens their gallery held to that era, in taken order.
   const openEra = (p: PostRow, era: string) => {
-    seedAuthor(queryClient, profile, postsQ.dataUpdatedAt);
+    seedAuthor(queryClient, profile, profileQ.dataUpdatedAt);
     clipTiming?.asked(p, "gallery");
     router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken", era } });
   };

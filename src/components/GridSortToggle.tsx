@@ -21,7 +21,11 @@ const EDGE = spacing.lg;
  * the contact sheet, not a segmented control.
  *
  * There is no label in front of them: the six words say what they are,
- * and VoiceOver hears the group's name. They fit abreast on most phones.
+ * and the group's name is spoken with the first, as "Profile view,
+ * Posted". VoiceOver reads no name for a group that is not itself an
+ * element, and the row must not be one, or it would swallow the six
+ * radios; it keeps its name for the readers that announce a group.
+ * They fit abreast on most phones.
  * Where they do not (the narrowest, or with larger text) the row scrolls,
  * and it opens with the current view in sight. The row is drawn afresh
  * with each view, so it is put there each time it is drawn, before it is
@@ -66,6 +70,7 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
             {i > 0 ? <Text style={styles.divider}>·</Text> : null}
             <Option
               label={label}
+              spoken={i === 0 ? `Profile view, ${label}` : label}
               active={value === view}
               onPress={() => onChange(view)}
               onLayout={(e) => {
@@ -83,17 +88,26 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
 
 function Option({
   label,
+  spoken,
   active,
   onPress,
   onLayout,
 }: {
   label: string;
+  spoken: string;
   active: boolean;
   onPress: () => void;
   onLayout: (e: LayoutChangeEvent) => void;
 }) {
   return (
-    <Pressable onPress={onPress} onLayout={onLayout} hitSlop={8} accessibilityRole="radio" accessibilityState={{ selected: active }}>
+    <Pressable
+      onPress={onPress}
+      onLayout={onLayout}
+      hitSlop={8}
+      accessibilityRole="radio"
+      accessibilityLabel={spoken}
+      accessibilityState={{ selected: active }}
+    >
       <Text style={[styles.option, active && styles.optionOn]}>{label}</Text>
     </Pressable>
   );

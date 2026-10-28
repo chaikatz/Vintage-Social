@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  eraPosts,
+  eraOf,
   eraSummary,
   groupEras,
   memoryHeadline,
@@ -132,22 +132,28 @@ describe("what the eras leave out", () => {
   });
 });
 
-describe("one era, by its title", () => {
+describe("the era a photograph is in", () => {
   const posts = [
     post("a", "2023-04-02T12:00:00", "St. Barths"),
     post("b", "2023-04-05T12:00:00", "St. Barths"),
     post("c", "2023-04-03T12:00:00", "St. Barths"),
     post("d", "2021-07-10T12:00:00", null),
+    post("e", "2024-03-01T12:00:00", "Kyoto"),
+    post("f", "2024-03-02T12:00:00", "Kyoto"),
   ];
 
-  it("is the era groupEras made, newest capture first", () => {
-    expect(eraPosts(posts, "St. Barths 2023")?.map((p) => p.id)).toEqual(["b", "c", "a"]);
-    expect(eraPosts(posts, "St. Barths 2023")).toEqual(groupEras(posts)[0].posts);
+  it("is the era groupEras made, newest capture first, whichever of its photographs asks", () => {
+    for (const id of ["a", "b", "c"]) {
+      expect(eraOf(posts, id)?.title).toBe("St. Barths 2023");
+      expect(eraOf(posts, id)?.posts.map((p) => p.id)).toEqual(["b", "c", "a"]);
+    }
+    expect(eraOf(posts, "a")).toEqual(groupEras(posts).find((e) => e.title === "St. Barths 2023"));
+    expect(eraOf(posts, "f")?.title).toBe("Kyoto 2024");
   });
 
-  it("is null once the rows no longer make it", () => {
-    expect(eraPosts(posts, "Summer 2021")).toBeNull(); // one photograph is not an era
-    expect(eraPosts(posts, "Kyoto 2024")).toBeNull();
+  it("is null for a photograph in no era, or no longer among the rows", () => {
+    expect(eraOf(posts, "d")).toBeNull(); // one photograph is not an era
+    expect(eraOf(posts, "gone")).toBeNull();
   });
 });
 

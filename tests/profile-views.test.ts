@@ -54,19 +54,57 @@ describe("the gallery an era opens", () => {
   ];
 
   it("holds that era alone, newest capture first", () => {
-    expect(galleryRows(rows, "taken", "St. Barths 2023")).toEqual({ rows: [rows[3], rows[1]], era: "St. Barths 2023" });
+    expect(galleryRows(rows, "taken", "St. Barths 2023", "s1")).toEqual({ rows: [rows[3], rows[1]], era: "St. Barths 2023" });
   });
 
   it("falls back to the whole taken order once the era has come apart", () => {
     const left = rows.filter((p) => p.id !== "s2");
-    const shown = galleryRows(left, "taken", "St. Barths 2023");
+    const shown = galleryRows(left, "taken", "St. Barths 2023", "s1");
     expect(shown.era).toBeNull();
     expect(shown.rows.map((p) => p.id)).toEqual(["new", "x", "s1"]);
   });
 
+  it("falls back the same for a photograph in no era, or none named", () => {
+    for (const id of ["x", "gone", undefined]) {
+      const shown = galleryRows(rows, "taken", "St. Barths 2023", id);
+      expect(shown.era).toBeNull();
+      expect(shown.rows.map((p) => p.id)).toEqual(["new", "x", "s2", "s1"]);
+    }
+  });
+
+  // What expo-router hands the gallery: the title encoded once on the way
+  // out, then decoded twice on the way in.
+  const throughAddress = (title: string) => {
+    const once = new URL(`/gallery?era=${encodeURIComponent(title)}`, "https://vintage.example").searchParams.get("era") ?? "";
+    try {
+      return decodeURIComponent(once);
+    } catch {
+      return once;
+    }
+  };
+
+  it("finds the era by its photograph, whatever the address made of its title", () => {
+    for (const place of ["Studio %41", "Bar 50%25", "Café & Bar", "東京 🗼", "A+B/C?d=e#f"]) {
+      const trip = [
+        post("t1", "2024-05-02T12:00:00", place, "2024-05-03T12:00:00"),
+        post("t2", "2024-05-04T12:00:00", place, "2024-05-05T12:00:00"),
+        ...rows,
+      ];
+      const title = `${place} 2024`;
+      const shown = galleryRows(trip, "taken", throughAddress(title), "t1");
+      expect(shown.era).toBe(title);
+      expect(shown.rows.map((p) => p.id)).toEqual(["t2", "t1"]);
+    }
+    expect(throughAddress("Studio %41 2024")).toBe("Studio A 2024"); // the address really does change it
+  });
+
+  it("titles the gallery with the era's own title, not the address's", () => {
+    expect(galleryRows(rows, "taken", "Somewhere else 1999", "s2").era).toBe("St. Barths 2023");
+  });
+
   it("is the grid's own order without one", () => {
-    expect(galleryRows(rows, "posted", undefined)).toEqual({ rows, era: null });
-    expect(galleryRows(rows, "taken", undefined).rows.map((p) => p.id)).toEqual(["new", "x", "s2", "s1"]);
+    expect(galleryRows(rows, "posted", undefined, "s1")).toEqual({ rows, era: null });
+    expect(galleryRows(rows, "taken", undefined, "s1").rows.map((p) => p.id)).toEqual(["new", "x", "s2", "s1"]);
   });
 });
 
@@ -95,8 +133,13 @@ describe("the toggle, read from the source", () => {
     expect(toggle).not.toMatch(/label="(Posted|Taken|Timeline|Eras|Map|Places)"/);
   });
 
-  it("drops the visible label, and keeps the group's name for VoiceOver", () => {
+  it("drops the visible label, and speaks the group's name with the first option", () => {
     expect(toggle).not.toMatch(/Profile view:/);
+    // VoiceOver reads no name off a row that is not itself an element, and
+    // making the row one would swallow the radios.
+    expect(toggle).toMatch(/spoken=\{i === 0 \? `Profile view, \$\{label\}` : label\}/);
+    expect(toggle).toMatch(/accessibilityRole="radio"\s+accessibilityLabel=\{spoken\}/);
+    expect(toggle).not.toMatch(/\baccessible\b/);
   });
 
   it("opens with the current option in view, without a visible scroll", () => {
@@ -126,6 +169,11 @@ describe("Eras on the profiles, read from the source", () => {
     expect(branch).toMatch(/member=\{profile\.username\}/);
   });
 
+  it("can always be left on a member's page, however few photographs remain", () => {
+    // One photograph makes no era: without the toggle, Eras would hide it.
+    expect(member).toMatch(/\(postsQ\.data \?\? \[\]\)\.length > 1 \|\| view !== "posted" \? \(\s*<GridSortToggle /);
+  });
+
   it("sit between the timeline and the grid in both screens, every view here guarded", () => {
     expect(member).toMatch(/view === "timeline" && !locked \?[\s\S]*?view === "eras" && !locked \?/);
     expect(own).toMatch(/view === "timeline" \?[\s\S]*?view === "eras" \?/);
@@ -143,9 +191,30 @@ describe("Eras on the profiles, read from the source", () => {
 describe("the Eras view, read from the source", () => {
   const list = code("src/components/EraList.tsx");
 
-  it("draws every print as the grid's small copy", () => {
+  it("draws every print with the grid's own tile, so each is filtered and postered as the grid's are", () => {
     expect(list).toMatch(/import \{ PhotoTile \} from "\.\/PhotoGrid"/);
-    expect(list).not.toMatch(/mediaUrl|<Image\b|expo-image/);
+    expect(list).not.toMatch(/mediaUrl|<Image\b|expo-image|needsDisplayFilter|cssFilterFor/);
+  });
+
+  it("draws only a lead full size, and only once its chapter has come near the screen", () => {
+    expect(list.match(/<PhotoTile\b[\s\S]*?\/>/g)?.filter((t) => /\bfull=/.test(t))).toEqual([
+      expect.stringMatching(/post=\{lead\}[\s\S]*full=\{near\}/),
+    ]);
+    expect(list).toMatch(/near=\{near\.has\(era\.title\)\}/);
+    expect(list).toMatch(/setNear\(\(prev\) => chaptersNear\(prev, spans\.current, offset\.current, height\)\)/);
+    expect(list).toMatch(/onScroll=\{\(e\) => \{\s*offset\.current = e\.nativeEvent\.contentOffset\.y;\s*look\(\);/);
+    expect(list).toMatch(/scrollEventThrottle=\{100\}/);
+    expect(list).toMatch(/spans\.current\.set\(era\.title, \{ top: y, height: tall \}\);\s*look\(\);/);
+  });
+
+  it("gives a full lead the photograph over its small copy, and a film only its poster", () => {
+    const tile = code("src/components/PhotoGrid.tsx");
+    expect(tile).toMatch(/const large = full && !isVideo \? mediaUrl\("media", post\.media_path\) : null;/);
+    expect(tile).toMatch(/const url = large \?\? small;/);
+    expect(tile).toMatch(/placeholder=\{large \? small : undefined\}\s*placeholderContentFit="cover"/);
+    // The film's look is the post's, whichever copy is drawn.
+    expect(tile).toMatch(/const live = needsDisplayFilter\(post\) \? cssFilterFor\(getFilter\(post\.filter_id\)\)\.filter : null;/);
+    expect(tile.match(/<Image\b/g)).toHaveLength(1);
   });
 
   it("gathers with the eras On this day uses", () => {
@@ -170,7 +239,7 @@ describe("the gallery, read from the source", () => {
 
   it("reads the era from its address and holds it through galleryRows", () => {
     expect(gallery).toMatch(/const \{ authorId, postId, sort, era \} = useLocalSearchParams/);
-    expect(gallery).toMatch(/galleryRows\(postsQ\.data \?\? \[\], sort, era\)/);
+    expect(gallery).toMatch(/galleryRows\(postsQ\.data \?\? \[\], sort, era, postId\)/);
     expect(gallery).toMatch(/title: shown\.era \?\? authorQ\.data\?\.username \?\? ""/);
   });
 });

@@ -166,7 +166,7 @@ describe("players", () => {
     const found: Record<string, number> = {};
     for (const file of [...walk(path.join(root, "app")), ...walk(path.join(root, "src"))]) {
       const rel = path.relative(root, file).split(path.sep).join("/");
-      const n = code(rel).match(/useVideoPlayer\(/g)?.length ?? 0;
+      const n = code(rel).match(/\b(?:useVideoPlayer|createVideoPlayer)\(|\bnew VideoPlayer\b/g)?.length ?? 0;
       if (n > 0) found[rel] = n;
     }
     expect(found).toEqual(Object.fromEntries(Object.entries(ALLOWED).map(([f, { count }]) => [f, count])));
@@ -180,13 +180,24 @@ describe("players", () => {
 });
 
 describe("the profiles", () => {
-  for (const file of ["app/(tabs)/profile.tsx", "app/user/[username].tsx"]) {
+  // The author is aged as the profile row it is: a member's page has that
+  // row's own age; your own page's session profile has none, so 0.
+  const authorAge: Record<string, string> = {
+    "app/(tabs)/profile.tsx": "0",
+    "app/user/[username].tsx": "profileQ.dataUpdatedAt",
+  };
+  for (const [file, age] of Object.entries(authorAge)) {
     const screen = code(file);
     const open = screen.slice(screen.indexOf("const openPost = "), screen.indexOf("};", screen.indexOf("const openPost = ")));
 
     it(`hand the next screen what they hold, before opening it (${file})`, () => {
       expect(open).toMatch(/seedPost\(queryClient, p, profile, posts?Q?\.dataUpdatedAt\);[\s\S]*?router\.push\(`\/post\/\$\{p\.id\}`\)/);
-      expect(open).toMatch(/seedAuthor\(queryClient, profile, posts?Q?\.dataUpdatedAt\);[\s\S]*?router\.push\(\{ pathname: "\/gallery"/);
+      expect(open).toMatch(/seedAuthor\([^)]*\);[\s\S]*?router\.push\(\{ pathname: "\/gallery"/);
+    });
+
+    it(`age the author by its own row, in the post and the era alike (${file})`, () => {
+      const seeds = screen.match(/seedAuthor\([^)]*\)/g);
+      expect(seeds).toEqual([`seedAuthor(queryClient, profile, ${age})`, `seedAuthor(queryClient, profile, ${age})`]);
     });
 
     it(`time a tap only in a development build (${file})`, () => {

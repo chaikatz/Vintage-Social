@@ -77,14 +77,50 @@ export const LANDSCAPE_LEAD = 1.25;
  * The lead print's size, at its own proportions (already clamped as the
  * feed clamps them, so never taller than 4:5). A portrait or a square is
  * three of the strip's squares wide, with the fourth column left as a
- * margin beside it; a landscape takes all four. It is drawn from the same
- * 480 px copy as the squares, a little enlarged, as the photograph at the
- * top of On this day is.
+ * margin beside it; a landscape takes all four. That is about twice the
+ * 480 px copy the squares are drawn from, which looks soft on a phone, so
+ * a photograph's lead is drawn from the photograph itself once its
+ * chapter comes near the screen (`chaptersNear`), over that copy until it
+ * is in. A film's lead stays its poster.
  */
 export function leadPrint(ratio: number, cell: number): { width: number; height: number } {
   const columns = ratio >= LANDSCAPE_LEAD ? ERA_STRIP : ERA_STRIP - 1;
   const width = cell * columns + PRINT_GAP * (columns - 1);
   return { width: Math.round(width), height: Math.round(width / ratio) };
+}
+
+/** Where a chapter lies down the page, as it reports it. */
+export type ChapterSpan = { top: number; height: number };
+
+/**
+ * Whether a chapter is on the screen, or within a screen of it either way.
+ * `offset` is how far the page is scrolled, `screen` the height it is
+ * seen through.
+ */
+export function chapterNear(chapter: ChapterSpan, offset: number, screen: number): boolean {
+  return chapter.top < offset + screen * 2 && chapter.top + chapter.height > offset - screen;
+}
+
+/**
+ * The chapters, by title, whose leads are drawn from the photograph
+ * itself: those near the screen now, added to those that already were, as
+ * a lead once sharp stays so. Only the chapters near a reader ever load
+ * the larger file. `already` itself when none is new, so a scroll that
+ * brings no chapter nearer draws nothing again.
+ */
+export function chaptersNear(
+  already: ReadonlySet<string>,
+  chapters: ReadonlyMap<string, ChapterSpan>,
+  offset: number,
+  screen: number,
+): ReadonlySet<string> {
+  let next: Set<string> | null = null;
+  for (const [title, chapter] of chapters) {
+    if (already.has(title) || !chapterNear(chapter, offset, screen)) continue;
+    next ??= new Set(already);
+    next.add(title);
+  }
+  return next ?? already;
 }
 
 /** `12 without a date · 5 on their own`: what the eras leave out, or null when they leave nothing. */

@@ -245,9 +245,16 @@ check("An era says how many photographs it holds", /\d+ photographs/i.test(eras)
 await shot("13b-eras");
 await seen(page.getByLabel(/^(Photograph|Film), /)).first().click();
 await wait(2600);
+// All of Tomas's photographs are in the era, so the cards are the same
+// either way: what tells is the gallery's title, which is the era's only
+// once the gallery has found the era again. The eras behind it still hold
+// those words, out of sight, so only a heading in view counts.
+const eraTitle = await seen(page.getByRole("heading", { name: /^Stockholm \d{4}$/ })).count();
 check(
   "An era's print opens the gallery, held to that era",
-  /\/gallery\?.*era=Stockholm/.test(page.url()) && /Last ferry|a mirror today|opened for the season/.test(await text()),
+  /\/gallery\?.*era=Stockholm/.test(page.url()) &&
+    eraTitle > 0 &&
+    /Last ferry|a mirror today|opened for the season/.test(await text()),
   page.url(),
 );
 await shot("13c-era-gallery");

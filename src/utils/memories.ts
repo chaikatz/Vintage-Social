@@ -151,17 +151,18 @@ export function eraSummary<T extends Pick<PostRow, "taken_at" | "created_at" | "
 }
 
 /**
- * One era's photographs, newest capture first, found by its title among
- * the eras `groupEras` makes of `posts`. A screen handed only the title
- * (the gallery, opened from an era on a profile) works it out again from
- * the same rows by the same rule, so it holds the era the profile showed.
- * Null when the rows no longer make that era.
+ * The era a photograph is in, its photographs newest capture first, found
+ * among the eras `groupEras` makes of `posts` (a photograph is in one at
+ * most). A screen handed only the photograph (the gallery, opened from an
+ * era on a profile) works it out again from the same rows by the same
+ * rule, so it holds the era the profile showed. Null when the photograph
+ * is in none, or is no longer among the rows.
  */
-export function eraPosts<T extends Pick<PostRow, "taken_at" | "created_at" | "location">>(
+export function eraOf<T extends Pick<PostRow, "id" | "taken_at" | "created_at" | "location">>(
   posts: T[],
-  title: string,
-): T[] | null {
-  return groupEras(posts).find((e) => e.title === title)?.posts ?? null;
+  id: string,
+): Era<T> | null {
+  return groupEras(posts).find((e) => e.posts.some((p) => p.id === id)) ?? null;
 }
 
 // ---------------------------------------------------------------------------

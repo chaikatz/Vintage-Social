@@ -47,19 +47,23 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
 /**
  * One square of the grid: the photograph, or a film's poster, with its
  * small marks. Given a `height` it is a print of other proportions, as the
- * lead of an era is, drawn from the same small copy. A label makes it an
- * image button VoiceOver can name.
+ * lead of an era is, drawn from the same small copy; and `full`, it is a
+ * photograph drawn from itself, over that copy until it is in. A label
+ * makes it an image button VoiceOver can name.
  */
 export function PhotoTile({
   post,
   size,
   height,
+  full,
   onPress,
   accessibilityLabel,
 }: {
   post: GridPost;
   size: number;
   height?: number;
+  /** Drawn too large for the small copy to stay sharp. A film keeps its poster all the same. */
+  full?: boolean;
   onPress: () => void;
   accessibilityLabel?: string;
 }) {
@@ -67,9 +71,13 @@ export function PhotoTile({
   // movie, which an <Image> cannot draw — so a video with no poster
   // gets a marked placeholder rather than an empty hole in the grid.
   const isVideo = post.media_type === "video";
-  const url = isVideo
+  const small = isVideo
     ? mediaUrl("thumbnails", post.thumb_path)
     : mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path);
+  // The small copy stays on screen, at the same fit, until the photograph
+  // has come in over it, so nothing blinks or moves.
+  const large = full && !isVideo ? mediaUrl("media", post.media_path) : null;
+  const url = large ?? small;
   // Same rule as the feed: only unbaked media needs the filter applied
   // here, so a square matches the photograph it opens.
   const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
@@ -83,6 +91,8 @@ export function PhotoTile({
       {url ? (
         <Image
           source={url}
+          placeholder={large ? small : undefined}
+          placeholderContentFit="cover"
           style={[styles.cell, live ? ({ filter: live } as object) : null]}
           contentFit="cover"
           transition={60}
