@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View, type LayoutRectangle } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, AppState, Platform, Pressable, StyleSheet, Text, View, type LayoutRectangle } from "react-native";
 import { Image } from "expo-image";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
@@ -32,9 +32,10 @@ import { useSetAside } from "@/darkroom/setAside";
  * between a member and the picture they came with. Under a rule is the
  * library, and the library has the page's one solid bar, low enough for
  * the thumb: one tap to the system picker, as it always was. The camera
- * and a short clip are quiet words beneath it. Then On this day, what the
- * member posted on this date in other years. Nothing here is a card, a
- * plate or a dark block; the Darkroom itself is the dark room.
+ * and a short clip are quiet words beneath it, and the clip's limit is
+ * a line under them. Then On this day, what the member posted on this
+ * date in other years. Nothing here is a card, a plate or a dark block;
+ * the Darkroom itself is the dark room.
  *
  * This tab never reads the photo library. It may be on screen, or
  * preloaded beside one, without the member having gone near the
@@ -71,8 +72,9 @@ export default function Create() {
   const native = Platform.OS !== "web";
   const door = darkroomAvailable();
   const held = busy !== null;
-  // Focus re-renders the tab, so the running head turns over with the day;
-  // On this day waits for it before asking the server for anything.
+  // One date for the running head and On this day, turning over with the
+  // clock; On this day waits for focus before asking the server for anything.
+  const today = useToday();
   const focused = useIsFocused();
 
   return (
@@ -83,7 +85,7 @@ export default function Create() {
             New post
           </Text>
           <Text style={styles.headWord} maxFontSizeMultiplier={TYPE_CAP}>
-            {monthDay(Date.now())}
+            {monthDay(today)}
           </Text>
         </View>
 
@@ -133,9 +135,13 @@ export default function Create() {
               onPress={() => openWith("video", () => pickFromLibrary("video"))}
             />
           </View>
+          {/* On the page as well as in the hint: off iOS no trimmer holds a clip to the limit. */}
+          <Text style={styles.waysNote} pointerEvents="none" lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
+            Clips up to {MAX_VIDEO_SECONDS} seconds, in the same feed and grid.
+          </Text>
         </View>
 
-        <OnThisDay held={held} focused={focused} />
+        <OnThisDay held={held} focused={focused} day={today} />
 
         <Text style={styles.note} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
           Nothing here is ranked. A photograph is seen by the people who follow you, in the order it was posted.
@@ -149,8 +155,10 @@ type Way = "photo" | "camera" | "video";
 
 /** The page's type stops growing here, as the Darkroom's own word pages do. */
 const TYPE_CAP = 2.4;
-/** The bar's capitals keep to one line clear of its arrow at the largest sizes. */
+/** The bar's capitals stop growing here: one line from 375 pt up, two on the narrowest phones. */
 const BAR_TYPE_CAP = 1.8;
+/** GateButton's arrow is 18 wide, 16 in from the edge: the label keeps clear of it on both sides, so it stays centred. */
+const BAR_INSET = 36;
 /** ENTER's box: 4 above the letters, then the rule 7 below them, 1 high, then 4 more. */
 const ENTER_PAD = 4;
 const ENTER_RULE_GAP = 7;
@@ -296,7 +304,7 @@ function QuietWay({
  * from the posts the profile and On this day already share, only once
  * the tab is in front; on a day with no memory nothing more is drawn.
  */
-function OnThisDay({ held, focused }: { held: boolean; focused: boolean }) {
+function OnThisDay({ held, focused, day }: { held: boolean; focused: boolean; day: number }) {
   const router = useRouter();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
@@ -307,7 +315,6 @@ function OnThisDay({ held, focused }: { held: boolean; focused: boolean }) {
     // A memory changes once a day, and a new post reaches this cache on its own.
     staleTime: 10 * 60_000,
   });
-  const day = startOfDay(Date.now());
   const print = useMemo(() => todaysPrint(posts.data, new Date(day)), [posts.data, day]);
   const line = print?.headline ?? "What you posted on this date in other years";
 
@@ -319,8 +326,8 @@ function OnThisDay({ held, focused }: { held: boolean; focused: boolean }) {
         disabled={held}
         style={({ pressed }) => [styles.day, pressed && styles.pressed]}
         accessibilityRole="button"
-        accessibilityLabel="On this day"
-        accessibilityHint={line}
+        accessibilityLabel={print ? `On this day. ${print.headline}` : "On this day"}
+        accessibilityHint="Opens what you posted on this date in other years."
       >
         <View style={styles.dayText}>
           <Text style={styles.dayTitle} maxFontSizeMultiplier={TYPE_CAP}>
@@ -346,9 +353,44 @@ function OnThisDay({ held, focused }: { held: boolean; focused: boolean }) {
   );
 }
 
+/**
+ * Today, from its first moment, local time: the one date the running head
+ * and On this day both read, so they never disagree. It turns over at
+ * midnight, and is read again each time the app comes back to the front,
+ * since a phone put away overnight holds its timers until then.
+ */
+function useToday(): number {
+  const [today, setToday] = useState(() => startOfDay(Date.now()));
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // A timer that wakes a moment early sets the same day and waits again.
+    const turn = () => {
+      const now = Date.now();
+      setToday(startOfDay(now));
+      clearTimeout(timer);
+      timer = setTimeout(turn, tomorrow(now) - now);
+    };
+    turn();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") turn();
+    });
+    return () => {
+      clearTimeout(timer);
+      sub.remove();
+    };
+  }, []);
+  return today;
+}
+
 function startOfDay(ms: number): number {
   const d = new Date(ms);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** The first moment of the next day, local time, however long a day the clocks make it. */
+function tomorrow(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
 }
 
 const caps = { textTransform: "uppercase" as const };
@@ -359,7 +401,15 @@ const styles = StyleSheet.create({
   hidden: { opacity: 0 },
 
   // The running head, as a book carries one: what the page is, and the day.
-  head: { flexDirection: "row", justifyContent: "space-between", gap: spacing.lg, marginTop: spacing.lg },
+  // At the largest sizes on the narrowest phones the day goes under it.
+  head: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    columnGap: spacing.lg,
+    rowGap: spacing.xs,
+    marginTop: spacing.lg,
+  },
   headWord: { fontFamily: type.mono, fontSize: 10, letterSpacing: 2.4, ...caps, color: colors.inkFaint },
 
   door: { paddingTop: spacing.xxl + spacing.sm, paddingBottom: spacing.xl + spacing.xs },
@@ -398,10 +448,19 @@ const styles = StyleSheet.create({
   eyebrow: { fontFamily: type.mono, fontSize: 10, letterSpacing: 2.4, ...caps, color: colors.inkFaint },
   heading: { ...type.title, lineHeight: 29, marginTop: spacing.sm + 2 },
   sub: { ...type.caption, lineHeight: 19, marginTop: spacing.xs },
-  bar: { height: undefined, minHeight: 52, paddingVertical: spacing.md, marginTop: spacing.lg + spacing.xs },
-  ways: { flexDirection: "row", gap: spacing.xl + spacing.xs, marginTop: spacing.xs },
+  bar: {
+    height: undefined,
+    minHeight: 52,
+    paddingVertical: spacing.md,
+    paddingHorizontal: BAR_INSET,
+    marginTop: spacing.lg + spacing.xs,
+  },
+  // SHORT VIDEO goes under CAMERA rather than off the page at the largest sizes.
+  ways: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.xl + spacing.xs, rowGap: spacing.xs, marginTop: spacing.xs },
   way: { minHeight: TOUCH, justifyContent: "center" },
   wayWord: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 2.2, ...caps, color: colors.inkSoft },
+  // Drawn up under the words it glosses, into the empty foot of their touch boxes, and never takes their taps.
+  waysNote: { fontSize: 12, lineHeight: 17, color: colors.inkFaint, marginTop: -spacing.sm },
 
   daySection: { marginTop: spacing.lg },
   day: {

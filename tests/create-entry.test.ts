@@ -72,6 +72,42 @@ describe("the ways in", () => {
   it("mounts no renderer: the filters are the editor's", () => {
     expect(tab).not.toMatch(/FilteredImage|GLView|expo-gl|@\/filters/);
   });
+
+  it("says the clip's limit on the page, where no trimmer may hold a clip to it", () => {
+    expect(tab).toMatch(/import \{ MAX_VIDEO_SECONDS \} from "@\/utils\/validation"/);
+    const note = tab.match(/<Text style=\{styles\.waysNote\}[^>]*>([^<]*)<\/Text>/)?.[1] ?? "";
+    expect(note.trim()).toBe("Clips up to {MAX_VIDEO_SECONDS} seconds, in the same feed and grid.");
+    // Under the ways on every platform, and still in the clip's hint.
+    const under = tab.slice(tab.indexOf('label="Short video"'), tab.indexOf("<OnThisDay"));
+    expect(under).toContain("styles.waysNote");
+    expect(under).not.toMatch(/Platform\.OS|native \?/);
+    // It is drawn up into the foot of their touch boxes, so it lets their taps through.
+    expect(tab).toMatch(/<Text style=\{styles\.waysNote\} pointerEvents="none"/);
+    expect(tab).toMatch(/hint=\{`Up to \$\{MAX_VIDEO_SECONDS\} seconds, same feed, same grid`\}/);
+  });
+});
+
+describe("at the largest text sizes on the narrowest phones", () => {
+  const tab = code("app/(tabs)/create.tsx");
+  const gate = code("src/components/gate/GateButton.tsx");
+  const style = (name: string) => tab.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
+
+  it("wraps the running head and the ways rather than running off the page", () => {
+    for (const name of ["head", "ways"]) {
+      expect(style(name)).toMatch(/flexDirection: "row",\s*flexWrap: "wrap"/);
+      expect(style(name)).toMatch(/rowGap: spacing\.\w+/);
+    }
+  });
+
+  it("keeps the bar's centred label clear of its arrow on either side", () => {
+    expect(style("bar")).toMatch(/paddingHorizontal: BAR_INSET/);
+    const inset = Number(tab.match(/const BAR_INSET = (\d+);/)?.[1]);
+    const right = Number(gate.match(/arrow: \{ position: "absolute", right: (\d+) \}/)?.[1]);
+    const size = Number(gate.match(/name="arrow-right" size=\{(\d+)\}/)?.[1]);
+    expect(right).toBeGreaterThan(0);
+    expect(size).toBeGreaterThan(0);
+    expect(inset).toBeGreaterThan(right + size);
+  });
 });
 
 describe("one tap, one editor", () => {
@@ -156,6 +192,29 @@ describe("On this day on the Post tab", () => {
   it("still opens On this day, which also holds the Eras", () => {
     expect(tab).toMatch(/onPress=\{\(\) => router\.push\("\/memories"\)\}/);
     expect(tab).toContain('"What you posted on this date in other years"');
+  });
+
+  it("reads the day's memory to VoiceOver as what the line says, not as a hint", () => {
+    expect(tab).toMatch(/accessibilityLabel=\{print \? `On this day\. \$\{print\.headline\}` : "On this day"\}/);
+    expect(tab).toContain('accessibilityHint="Opens what you posted on this date in other years."');
+    expect(tab).not.toMatch(/accessibilityHint=\{line\}/);
+  });
+
+  it("keeps the running head and the memory on one date, which turns over with the clock", () => {
+    expect(tab).toMatch(/const today = useToday\(\);/);
+    expect(tab).toMatch(/\{monthDay\(today\)\}/);
+    expect(tab).toMatch(/<OnThisDay [^>]*day=\{today\}/);
+    expect(tab).toMatch(/todaysPrint\(posts\.data, new Date\(day\)\), \[posts\.data, day\]/);
+    // Only the hook reads the clock, so the two cannot drift apart.
+    const hook = tab.slice(tab.indexOf("function useToday"), tab.indexOf("function startOfDay"));
+    expect(hook.match(/Date\.now\(\)/g)?.length).toBeGreaterThan(0);
+    expect(tab.match(/Date\.now\(\)/g)?.length).toBe(hook.match(/Date\.now\(\)/g)?.length);
+    // At midnight, and whenever the app comes back to the front; both let go with the tab.
+    expect(hook).toMatch(/timer = setTimeout\(turn, tomorrow\(now\) - now\);/);
+    expect(hook).toMatch(/AppState\.addEventListener\("change", \(state\) => \{\s*if \(state === "active"\) turn\(\);/);
+    const cleanup = hook.slice(hook.indexOf("return () =>"));
+    expect(cleanup).toMatch(/clearTimeout\(timer\);/);
+    expect(cleanup).toMatch(/sub\.remove\(\);/);
   });
 });
 
