@@ -235,6 +235,23 @@ await follow().click();
 await wait(2300);
 check("Follow changes state", (await follow().textContent()) !== before, `${before} → …`);
 
+// Eras, between Timeline and Map: the demo's three Stockholm photographs
+// of Tomas's were taken within ten days, so they always make an era.
+await go("/user/tomas.lindqvist", 2800);
+await tap("Eras", 2000);
+const eras = await text();
+check("Eras gathers a member's photographs by place and year", /Stockholm \d{4}/.test(eras));
+check("An era says how many photographs it holds", /\d+ photographs/i.test(eras));
+await shot("13b-eras");
+await seen(page.getByLabel(/^(Photograph|Film), /)).first().click();
+await wait(2600);
+check(
+  "An era's print opens the gallery, held to that era",
+  /\/gallery\?.*era=Stockholm/.test(page.url()) && /Last ferry|a mirror today|opened for the season/.test(await text()),
+  page.url(),
+);
+await shot("13c-era-gallery");
+
 await go("/user/otis.whitfield", 2800);
 check("Private account is gated", /This account is private/.test(await text()));
 await shot("14-private");

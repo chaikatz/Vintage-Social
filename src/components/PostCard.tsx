@@ -7,6 +7,7 @@ import { colors, spacing, type } from "@/theme";
 import { shortDate } from "@/utils/time";
 import { Avatar } from "./Avatar";
 import { PostMedia } from "./PostMedia";
+import type { ClipSurface } from "@/utils/videoTiming";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 
 /** How many comments read under the photograph before "View all". */
@@ -28,6 +29,10 @@ interface Props {
   comments?: CommentWithAuthor[];
   /** Whether this card is the one on screen; gates video playback. */
   active?: boolean;
+  /** Whether its clip may have a player yet; see PostMedia. Defaults to true. */
+  warm?: boolean;
+  /** Where the card is, for the development build's start-up timings only. */
+  surface?: ClipSurface;
 }
 
 export function PostCard({
@@ -41,6 +46,8 @@ export function PostCard({
   onOpenLikes,
   comments,
   active = true,
+  warm = true,
+  surface = "feed",
 }: Props) {
   const like = (next: boolean) => {
     if (next && !likedByMe) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -68,7 +75,14 @@ export function PostCard({
         </Pressable>
       </View>
 
-      <PostMedia post={post} onDoubleTap={() => like(true)} active={active} recyclingKey={post.id} />
+      <PostMedia
+        post={post}
+        onDoubleTap={() => like(true)}
+        active={active}
+        recyclingKey={post.id}
+        warm={warm}
+        surface={surface}
+      />
 
       <View style={styles.actions}>
         <Pressable

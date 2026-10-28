@@ -20,6 +20,15 @@ function isDev(): boolean {
   return typeof __DEV__ !== "undefined" && __DEV__ === true;
 }
 
+/**
+ * Whether these timings print at all: in a development build, never in a
+ * release. For the callers that would otherwise do work only to time it,
+ * so a release does none of it.
+ */
+export function perfEnabled(): boolean {
+  return isDev();
+}
+
 function now(): number {
   return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
 }

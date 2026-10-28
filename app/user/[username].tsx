@@ -9,6 +9,7 @@ import { ProfileHeader } from "@/components/ProfileHeader";
 import { PhotoGrid, type GridPost } from "@/components/PhotoGrid";
 import { PostMap } from "@/components/PostMap";
 import { PlaceGroups } from "@/components/PlaceGroups";
+import { EraList } from "@/components/EraList";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
@@ -22,9 +23,13 @@ import { fetchTaggedPosts } from "@/api/tags";
 import { openConversation } from "@/api/messages";
 import { blockMember, fetchBlockedIds, unblockMember } from "@/api/blocks";
 import { sortByTaken } from "@/utils/memories";
+import { seedAuthor, seedPost } from "@/utils/profileSeed";
+import { opensGallery } from "@/utils/profileViews";
+import { clipTiming } from "@/utils/videoTiming";
 import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
+import type { PostRow } from "@/types/db";
 
 export default function UserProfile() {
   const router = useRouter();
@@ -253,10 +258,25 @@ export default function UserProfile() {
   );
 
   // A tagged photograph belongs to its author's gallery, not this one.
-  const openPost = (p: GridPost) =>
-    view === "timeline" || view === "map" || view === "places" || p.tagged_in
-      ? router.push(`/post/${p.id}`)
-      : router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
+  // Either way the next screen is handed what this one already holds, so
+  // it draws, and its clip starts loading, without a round trip first.
+  const openPost = (p: GridPost) => {
+    if (!opensGallery(view, p)) {
+      seedPost(queryClient, p, profile, postsQ.dataUpdatedAt);
+      clipTiming?.asked(p, "post");
+      router.push(`/post/${p.id}`);
+      return;
+    }
+    seedAuthor(queryClient, profile, postsQ.dataUpdatedAt);
+    clipTiming?.asked(p, "gallery");
+    router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
+  };
+  // A print in an era opens their gallery held to that era, in taken order.
+  const openEra = (p: PostRow, era: string) => {
+    seedAuthor(queryClient, profile, postsQ.dataUpdatedAt);
+    clipTiming?.asked(p, "gallery");
+    router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken", era } });
+  };
   const shown = locked ? [] : rows;
 
   return (
@@ -268,6 +288,19 @@ export default function UserProfile() {
         <PlaceGroups posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
       ) : view === "timeline" && !locked ? (
         <Timeline posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
+      ) : view === "eras" && !locked ? (
+        // Their own photographs only, never the ones they were tagged in.
+        // After a block the old rows stay in the cache, so `!locked` is
+        // what keeps them off the page, as it is for every view here.
+        <EraList
+          posts={postsQ.data ?? []}
+          onOpenPost={openEra}
+          header={header}
+          member={profile.username}
+          loading={!postsQ.isFetched}
+          refreshing={postsQ.isRefetching}
+          onRefresh={() => postsQ.refetch()}
+        />
       ) : (
         <PhotoGrid
           posts={shown}
