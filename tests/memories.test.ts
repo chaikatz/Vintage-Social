@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  eraPosts,
+  eraSummary,
   groupEras,
   memoryHeadline,
   memoryLabel,
@@ -79,6 +81,73 @@ describe("eras", () => {
       post("d", "2024-06-02T12:00:00", "Kyoto"),
     ]);
     expect(eras.map((e) => e.title)).toEqual(["Kyoto 2024", "Kyoto 2022"]);
+  });
+});
+
+describe("what the eras leave out", () => {
+  const posts = [
+    post("1", "2023-04-02T12:00:00", "St. Barths"),
+    post("2", "2023-04-05T12:00:00", "St. Barths"),
+    post("3", "2021-07-10T12:00:00", null),
+    post("4", "2021-08-20T12:00:00", null),
+    post("5", "2020-12-25T12:00:00", "Home"), // alone in its place and year
+    post("6", null, "Undated"),
+    post("7", "not a date", "Unreadable"),
+    post("8", "2021-07-30T12:00:00", "Lisbon"), // a place written once does not fall back to its season
+  ];
+
+  it("are exactly groupEras's eras", () => {
+    expect(eraSummary(posts).eras).toEqual(groupEras(posts));
+  });
+
+  it("count every photograph once: in one era, undated, or apart", () => {
+    const summary = eraSummary(posts);
+    expect(summary.undated).toBe(2);
+    expect(summary.apart).toBe(2);
+    const gathered = summary.eras.flatMap((e) => e.posts.map((p) => p.id));
+    expect(new Set(gathered).size).toBe(gathered.length);
+    expect(gathered.length + summary.undated + summary.apart).toBe(posts.length);
+    // The dated ones not gathered are the ones counted apart.
+    const dated = posts.filter((p) => p.taken_at && !Number.isNaN(new Date(p.taken_at).getTime()));
+    expect(dated.filter((p) => !gathered.includes(p.id)).map((p) => p.id)).toEqual(["5", "8"]);
+  });
+
+  it("hold for any grid", () => {
+    const places = ["Kyoto", "Lisbon", null, null, "Milan"];
+    const many = Array.from({ length: 60 }, (_, i) =>
+      post(
+        `p${i}`,
+        i % 7 === 0 ? null : `20${20 + (i % 4)}-${String((i % 12) + 1).padStart(2, "0")}-1${i % 9}T12:00:00`,
+        places[i % places.length],
+      ),
+    );
+    const summary = eraSummary(many);
+    const gathered = summary.eras.reduce((n, e) => n + e.posts.length, 0);
+    expect(gathered + summary.undated + summary.apart).toBe(many.length);
+    expect(summary.apart).toBeGreaterThanOrEqual(0);
+  });
+
+  it("are nothing for an empty grid", () => {
+    expect(eraSummary([])).toEqual({ eras: [], undated: 0, apart: 0 });
+  });
+});
+
+describe("one era, by its title", () => {
+  const posts = [
+    post("a", "2023-04-02T12:00:00", "St. Barths"),
+    post("b", "2023-04-05T12:00:00", "St. Barths"),
+    post("c", "2023-04-03T12:00:00", "St. Barths"),
+    post("d", "2021-07-10T12:00:00", null),
+  ];
+
+  it("is the era groupEras made, newest capture first", () => {
+    expect(eraPosts(posts, "St. Barths 2023")?.map((p) => p.id)).toEqual(["b", "c", "a"]);
+    expect(eraPosts(posts, "St. Barths 2023")).toEqual(groupEras(posts)[0].posts);
+  });
+
+  it("is null once the rows no longer make it", () => {
+    expect(eraPosts(posts, "Summer 2021")).toBeNull(); // one photograph is not an era
+    expect(eraPosts(posts, "Kyoto 2024")).toBeNull();
   });
 });
 

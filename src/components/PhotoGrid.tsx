@@ -44,8 +44,25 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
   );
 }
 
-/** One square of the grid: the photograph, or a film's poster, with its small marks. */
-export function PhotoTile({ post, size, onPress }: { post: GridPost; size: number; onPress: () => void }) {
+/**
+ * One square of the grid: the photograph, or a film's poster, with its
+ * small marks. Given a `height` it is a print of other proportions, as the
+ * lead of an era is, drawn from the same small copy. A label makes it an
+ * image button VoiceOver can name.
+ */
+export function PhotoTile({
+  post,
+  size,
+  height,
+  onPress,
+  accessibilityLabel,
+}: {
+  post: GridPost;
+  size: number;
+  height?: number;
+  onPress: () => void;
+  accessibilityLabel?: string;
+}) {
   // A video's square is its poster frame. The media path itself is a
   // movie, which an <Image> cannot draw — so a video with no poster
   // gets a marked placeholder rather than an empty hole in the grid.
@@ -57,7 +74,12 @@ export function PhotoTile({ post, size, onPress }: { post: GridPost; size: numbe
   // here, so a square matches the photograph it opens.
   const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
   return (
-    <Pressable onPress={onPress} style={{ width: size, height: size }}>
+    <Pressable
+      onPress={onPress}
+      style={{ width: size, height: height ?? size }}
+      accessibilityRole={accessibilityLabel ? "imagebutton" : undefined}
+      accessibilityLabel={accessibilityLabel}
+    >
       {url ? (
         <Image
           source={url}

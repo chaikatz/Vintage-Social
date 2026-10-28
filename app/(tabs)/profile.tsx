@@ -9,6 +9,7 @@ import { PhotoGrid, type GridPost } from "@/components/PhotoGrid";
 import { Timeline } from "@/components/Timeline";
 import { PostMap } from "@/components/PostMap";
 import { PlaceGroups } from "@/components/PlaceGroups";
+import { EraList } from "@/components/EraList";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
@@ -18,15 +19,18 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
 import { sortByTaken } from "@/utils/memories";
 import { seedAuthor, seedPost } from "@/utils/profileSeed";
+import { opensGallery } from "@/utils/profileViews";
 import { clipTiming } from "@/utils/videoTiming";
 import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
+import type { PostRow } from "@/types/db";
 
 /**
  * Your own page: the grid, the same photographs by the day they were
- * taken, hung on a timeline, pinned on the world, or filed by the places
- * they were taken — and among them the
- * photographs other members tagged you in and you chose to show.
+ * taken, hung on a timeline, gathered into eras, pinned on the world, or
+ * filed by the places they were taken — and among them the
+ * photographs other members tagged you in and you chose to show (all but
+ * the eras, which are yours alone).
  */
 export default function OwnProfile() {
   const router = useRouter();
@@ -114,7 +118,7 @@ export default function OwnProfile() {
   // Either way the next screen is handed what this one already holds, so
   // it draws, and its clip starts loading, without a round trip first.
   const openPost = (p: GridPost) => {
-    if (view === "timeline" || view === "map" || view === "places" || p.tagged_in) {
+    if (!opensGallery(view, p)) {
       seedPost(queryClient, p, profile, posts.dataUpdatedAt);
       clipTiming?.asked(p, "post");
       router.push(`/post/${p.id}`);
@@ -123,6 +127,12 @@ export default function OwnProfile() {
     seedAuthor(queryClient, profile, posts.dataUpdatedAt);
     clipTiming?.asked(p, "gallery");
     router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort } });
+  };
+  // A print in an era opens your gallery held to that era, in taken order.
+  const openEra = (p: PostRow, era: string) => {
+    seedAuthor(queryClient, profile, posts.dataUpdatedAt);
+    clipTiming?.asked(p, "gallery");
+    router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken", era } });
   };
 
   return (
@@ -133,6 +143,16 @@ export default function OwnProfile() {
         <PlaceGroups posts={rows} onOpenPost={openPost} header={header} refreshing={posts.isRefetching} onRefresh={() => posts.refetch()} />
       ) : view === "timeline" ? (
         <Timeline posts={rows} onOpenPost={openPost} header={header} refreshing={posts.isRefetching} onRefresh={() => posts.refetch()} />
+      ) : view === "eras" ? (
+        // Your own photographs only, as On this day gathers them: not the ones you were tagged in.
+        <EraList
+          posts={posts.data ?? []}
+          onOpenPost={openEra}
+          header={header}
+          loading={!posts.isFetched}
+          refreshing={posts.isRefetching}
+          onRefresh={() => posts.refetch()}
+        />
       ) : (
         <PhotoGrid
           posts={rows}

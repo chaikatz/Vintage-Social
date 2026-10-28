@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
-import { sortByTaken } from "@/utils/memories";
+import { galleryRows } from "@/utils/profileViews";
 import { isWarm, warmWindow } from "@/utils/videoWindow";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
@@ -20,8 +20,9 @@ import type { PostWithAuthor } from "@/types/db";
  *
  * Tapping a square in a profile grid opens this at that photograph, and you
  * can keep scrolling through the rest of their work from there — up to the
- * ones before it and down to the ones after, in the grid's own order. The
- * grid is an index, not a dead end. Comments live one screen deeper, on
+ * ones before it and down to the ones after, in the grid's own order.
+ * Opened from an era, it holds that era alone, in the order it was taken.
+ * The grid is an index, not a dead end. Comments live one screen deeper, on
  * the single post, so this stays a viewing surface.
  *
  * Landing on the right photograph is done by measuring, not guessing.
@@ -38,10 +39,12 @@ export default function Gallery() {
   const { session } = useSession();
   const focused = useIsFocused();
   const userId = session?.user?.id ?? "";
-  const { authorId, postId, sort } = useLocalSearchParams<{
+  const { authorId, postId, sort, era } = useLocalSearchParams<{
     authorId: string;
     postId?: string;
     sort?: "posted" | "taken";
+    /** Opened from an era on a profile: its title, and the gallery holds that era alone. */
+    era?: string;
   }>();
 
   const postsQ = useQuery({
@@ -55,6 +58,9 @@ export default function Gallery() {
     enabled: Boolean(authorId),
   });
 
+  // In the grid's order, or the era's alone (see galleryRows).
+  const shown = useMemo(() => galleryRows(postsQ.data ?? [], sort, era), [postsQ.data, sort, era]);
+
   // Every post here shares one author, so the join is a local attach rather
   // than a second round trip per row.
   const posts: PostWithAuthor[] = useMemo(() => {
@@ -66,9 +72,8 @@ export default function Gallery() {
       full_name: author.full_name,
       avatar_url: author.avatar_url,
     };
-    const rows = postsQ.data ?? [];
-    return (sort === "taken" ? sortByTaken(rows) : rows).map((p) => ({ ...p, author: attached }));
-  }, [postsQ.data, authorQ.data, sort]);
+    return shown.rows.map((p) => ({ ...p, author: attached }));
+  }, [shown, authorQ.data]);
 
   const startIndex = useMemo(() => {
     const index = postId ? posts.findIndex((p) => p.id === postId) : -1;
@@ -90,7 +95,7 @@ export default function Gallery() {
     settled.current = false;
     setReady(false);
     setSeenId(null);
-  }, [postId, sort]);
+  }, [postId, sort, era]);
 
   const settle = useCallback(() => {
     if (settled.current || posts.length === 0) return;
@@ -167,7 +172,8 @@ export default function Gallery() {
 
   return (
     <Screen padded={false}>
-      <Stack.Screen options={{ title: authorQ.data?.username ?? "" }} />
+      {/* An era's gallery is titled with the era; every card still names its author. */}
+      <Stack.Screen options={{ title: shown.era ?? authorQ.data?.username ?? "" }} />
       <FlatList
         ref={list}
         data={posts}

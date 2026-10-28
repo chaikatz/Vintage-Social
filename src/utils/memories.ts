@@ -126,6 +126,44 @@ export function groupEras<T extends Pick<PostRow, "taken_at" | "created_at" | "l
     .sort((a, b) => b.latest.getTime() - a.latest.getTime());
 }
 
+export interface EraSummary<T = PostRow> {
+  /** Exactly `groupEras`'s eras. */
+  eras: Era<T>[];
+  /** Photographs with no capture date, or one that cannot be read: no era can be told for them. */
+  undated: number;
+  /** Dated photographs that share their place, or their season, and year with no other. */
+  apart: number;
+}
+
+/**
+ * The eras, and an honest count of what they leave out, so a page that
+ * reads a grid as eras can say so. Every photograph is in exactly one era
+ * or counted once, as undated or as apart.
+ */
+export function eraSummary<T extends Pick<PostRow, "taken_at" | "created_at" | "location">>(
+  posts: T[],
+  minSize = 2,
+): EraSummary<T> {
+  const eras = groupEras(posts, minSize);
+  const undated = posts.filter((p) => !p.taken_at || Number.isNaN(takenDate(p).getTime())).length;
+  const gathered = eras.reduce((n, e) => n + e.posts.length, 0);
+  return { eras, undated, apart: posts.length - undated - gathered };
+}
+
+/**
+ * One era's photographs, newest capture first, found by its title among
+ * the eras `groupEras` makes of `posts`. A screen handed only the title
+ * (the gallery, opened from an era on a profile) works it out again from
+ * the same rows by the same rule, so it holds the era the profile showed.
+ * Null when the rows no longer make that era.
+ */
+export function eraPosts<T extends Pick<PostRow, "taken_at" | "created_at" | "location">>(
+  posts: T[],
+  title: string,
+): T[] | null {
+  return groupEras(posts).find((e) => e.title === title)?.posts ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Same night
 // ---------------------------------------------------------------------------
