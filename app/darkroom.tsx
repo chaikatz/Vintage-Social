@@ -61,7 +61,7 @@ import {
 } from "@/components/darkroom/words";
 
 /**
- * THE DARKROOM.
+ * THE MEMORY ROOM, which the code still calls the Darkroom.
  *
  * The member's own camera roll, one print at a time, set as a photobook:
  * a running head, a plate with its caption hung beneath, a Contents

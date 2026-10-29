@@ -376,7 +376,7 @@ const ALLOW_ALL: PageWord = { label: "Allow full access in Settings", act: "open
 
 export function firstVisitPage(access: "undetermined" | "granted"): PageWords {
   return {
-    eyebrow: "The Darkroom",
+    eyebrow: "The Memory Room",
     title: "One photograph at a time.",
     body: "This day in other years, a year at a time, or one from the back of the drawer.",
     foot: "VINTAGE looks through your library on this iPhone. Nothing leaves it unless you post it.",
@@ -395,7 +395,7 @@ export function settingsPath(iosMajor: number): string {
 
 export function deniedPage(iosMajor: number): PageWords {
   return {
-    eyebrow: "The Darkroom",
+    eyebrow: "The Memory Room",
     title: "The door is shut.",
     body: "VINTAGE isn’t allowed to see your photo library, so there is nothing here to look through. You can let it in from Settings — it only ever reads on this iPhone.",
     path: settingsPath(iosMajor),
@@ -430,30 +430,30 @@ export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean })
   switch (why) {
     case "library":
       return {
-        eyebrow: "The Darkroom",
+        eyebrow: "The Memory Room",
         title: "Nothing to look through yet.",
         body: "There are no photographs in your library on this iPhone. If they live in iCloud, they may still be arriving.",
         words: [LIBRARY],
       };
     case "selection":
       return {
-        eyebrow: "The Darkroom",
+        eyebrow: "The Memory Room",
         title: "VINTAGE can’t see any photographs yet.",
         body: "You chose to share a selection with VINTAGE, and it’s empty.",
         words: [{ label: "Choose photographs", act: "choosePhotographs" }, ALLOW_ALL, LIBRARY],
       };
     case "few":
       return {
-        eyebrow: "The Darkroom",
+        eyebrow: "The Memory Room",
         title: "Only a few photographs to look through.",
-        body: "You’ve shared part of your library with VINTAGE. The Darkroom is at its best when it can look through all of it — it still reads only on this iPhone.",
+        body: "You’ve shared part of your library with VINTAGE. The Memory Room is at its best when it can look through all of it — it still reads only on this iPhone.",
         words: [SHARE_MORE, ALLOW_ALL, LIBRARY],
       };
     case "tooNew":
       return {
-        eyebrow: "The Darkroom",
+        eyebrow: "The Memory Room",
         title: "Nothing old enough yet.",
-        body: "Everything in your library is from the last few months. The Darkroom keeps to photographs from before then. Give it a season.",
+        body: "Everything in your library is from the last few months. The Memory Room keeps to photographs from before then. Give it a season.",
         words: [
           { label: `Look through ${thisYear}`, act: "lookThroughYear", year: thisYear },
           LIBRARY,
@@ -476,7 +476,7 @@ export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean })
       };
     case "failed":
       return {
-        eyebrow: "The Darkroom",
+        eyebrow: "The Memory Room",
         title: "The library didn’t answer.",
         body: "Something on this iPhone kept VINTAGE from reading your photographs just now.",
         words: [{ label: "Try again", act: "retry" }, LIBRARY],
@@ -489,7 +489,7 @@ export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean })
 function exhaustedPage(limited: boolean): PageWords {
   return {
     eyebrow: "Surprise me",
-    title: "You’ve seen everything the Darkroom can find for now.",
+    title: "You’ve seen everything the Memory Room can find for now.",
     body: "It will have others for you another day.",
     words: [CHOOSE_YEAR, LIBRARY, ...(limited ? [SHARE_MORE] : [])],
   };
@@ -534,7 +534,7 @@ export function endPage(ending: Ending, ctx: { now: number; limited: boolean; ye
       return {
         eyebrow: String(ending.year),
         title: `The end of ${ending.year}.`,
-        body: ending.smaller ? "The Darkroom showed you some of this year, not all of it." : undefined,
+        body: ending.smaller ? "The Memory Room showed you some of this year, not all of it." : undefined,
         words: [
           // A year that showed nothing has nothing more to show from it.
           ...(ending.shown > 0 ? [{ label: `More from ${ending.year}`, act: "moreFrom" as const, year: ending.year }] : []),
@@ -556,7 +556,7 @@ export function endPage(ending: Ending, ctx: { now: number; limited: boolean; ye
       return { eyebrow: "Set aside", title: "That is all you set aside.", words: [SURPRISE, LIBRARY] };
     case "readFailed":
       return {
-        eyebrow: "The Darkroom",
+        eyebrow: "The Memory Room",
         title: "The library didn’t answer.",
         body: "Something on this iPhone kept VINTAGE from reading your photographs just now.",
         words: [{ label: "Try again", act: "readOn" }, LIBRARY],

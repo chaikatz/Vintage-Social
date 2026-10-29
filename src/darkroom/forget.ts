@@ -72,7 +72,7 @@ export function forgetDarkroom(): void {
 }
 
 /**
- * Settings' "Forget what the Darkroom has shown me": what was looked at,
+ * Settings' "Forget what the Memory Room has shown me": what was looked at,
  * what was posted, the finished day, and where the member was. The shelf
  * stays — those are photographs the member chose to keep, and putting
  * them back is theirs to do one by one. The member stays signed in, so

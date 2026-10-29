@@ -262,7 +262,7 @@ export default function Settings() {
 
       <View style={styles.settingText}>
         <Text style={styles.settingLabel}>Appearance</Text>
-        <Text style={styles.settingHint}>The same page, printed light or on darkroom brown.</Text>
+        <Text style={styles.settingHint}>The same page, printed light or on dark brown.</Text>
       </View>
       <View style={styles.choices} accessibilityRole="radiogroup">
         {(
@@ -302,7 +302,7 @@ export default function Settings() {
           style={styles.linkRow}
           onPress={() =>
             showAlert(
-              "Forget what the Darkroom has shown you?",
+              "Forget what the Memory Room has shown you?",
               "It keeps a short list, on this phone, of the photographs it has shown you and the ones you posted, so it doesn’t repeat itself. Nothing on it ever leaves your phone. Photographs you set aside stay set aside.",
               [
                 { text: "Forget", style: "destructive", onPress: () => forgetDarkroomHistory() },
@@ -311,9 +311,9 @@ export default function Settings() {
             )
           }
           accessibilityRole="button"
-          accessibilityHint="Clears the Darkroom's list of photographs it has shown you, on this phone."
+          accessibilityHint="Clears the Memory Room’s list of photographs it has shown you, on this phone."
         >
-          <Text style={styles.linkLabel}>Forget what the Darkroom has shown me</Text>
+          <Text style={styles.linkLabel}>Forget what the Memory Room has shown me</Text>
           <Feather name="chevron-right" size={16} color={colors.inkFaint} />
         </Pressable>
       ) : null}

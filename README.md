@@ -409,7 +409,12 @@ Tuning a filter later = editing numbers in `presets.ts`. Published photos
 keep the look they were baked with; posts store the `filter_id` for
 attribution and future re-processing.
 
-## The Darkroom
+## The Memory Room
+
+A member knows it as the Memory Room. The code still calls it the
+Darkroom — the route, the modules, the files it keeps on the phone, the
+dark paper's stored value — and only what a member reads or hears was
+renamed; `tests/darkroom-name.test.ts` holds that line.
 
 The member's own camera roll, one photograph at a time, from further back
 than anyone scrolls. It is `app/darkroom.tsx`, a screen pushed on the root
@@ -451,7 +456,7 @@ what was looked at and posted (`darkroom-history.json` in the cache
 folder, two months and a year), the shelf (`darkroom-set-aside.json`: id,
 date, size), the place (`darkroom-place.json`, twelve hours) and that the
 first-visit page was passed. Sign-out deletes all of it; Settings' "Forget
-what the Darkroom has shown me" deletes all but the shelf. The privacy
+what the Memory Room has shown me" deletes all but the shelf. The privacy
 policy (`src/legal/documents.ts`, `npm run build:legal`) says exactly this.
 
 DEVELOP hands one photograph to the ordinary editor (`app/compose.tsx`)
