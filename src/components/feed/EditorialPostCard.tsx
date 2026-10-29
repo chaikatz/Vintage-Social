@@ -111,13 +111,13 @@ export function EditorialPostCard({
         <View style={styles.counts}>
           {post.like_count > 0 ? (
             <Pressable style={styles.count} onPress={() => onOpenLikes?.(post)} disabled={!onOpenLikes}>
-              <Text style={styles.countText}>{likes}</Text>
+              <Text maxFontSizeMultiplier={COUNT_CAP} style={styles.countText}>{likes}</Text>
             </Pressable>
           ) : null}
-          {post.like_count > 0 && post.comment_count > 0 ? <Text style={[styles.countText, styles.dot]}>·</Text> : null}
+          {post.like_count > 0 && post.comment_count > 0 ? <Text maxFontSizeMultiplier={COUNT_CAP} style={[styles.countText, styles.dot]}>·</Text> : null}
           {post.comment_count > 0 ? (
             <Pressable style={styles.count} onPress={() => onOpenComments(post)} accessibilityRole="button">
-              <Text style={styles.countText}>{replies}</Text>
+              <Text maxFontSizeMultiplier={COUNT_CAP} style={styles.countText}>{replies}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -136,6 +136,13 @@ export function EditorialPostCard({
 
 /** The side of a button: Apple's smallest comfortable target. */
 const TARGET = 44;
+
+/**
+ * How far the counts grow with Larger Text. They share the row with the
+ * buttons and cannot wrap inside it, so past twice their size the second
+ * count ran off a 375 pt screen at the accessibility sizes.
+ */
+const COUNT_CAP = 2;
 
 const styles = StyleSheet.create({
   // Posts are separated by air, not rules, as on the original card.

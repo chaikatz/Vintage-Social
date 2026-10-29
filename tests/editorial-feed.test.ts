@@ -141,6 +141,11 @@ describe("the feed layout preference", () => {
     // A preference of the phone's, like the appearance: signing out leaves it.
     expect(code("src/providers/SessionProvider.tsx")).not.toMatch(/feedLayout|feed-layout/i);
   });
+
+  it("is what Home reads, through the same getter on the phone and in the first draw", () => {
+    // The hook is the card choice; a snapshot of its own would draw Editorial for everyone.
+    expect(code("src/utils/feedLayout.ts")).toMatch(/return useSyncExternalStore\(subscribe, getFeedLayout, getFeedLayout\);/);
+  });
 });
 
 describe("Home", () => {
@@ -224,6 +229,13 @@ describe("the editorial card", () => {
   it("takes exactly PostCard's props", () => {
     expect(card).toMatch(/type Props = React\.ComponentProps<typeof PostCard>;/);
     expect(card).toMatch(/export function EditorialPostCard\(\{[\s\S]*?\}: Props\)/);
+  });
+
+  it("keeps its counts on screen at the largest text sizes", () => {
+    const counts = card.match(/<Text[^>]*styles\.countText[^>]*>/g) ?? [];
+    expect(counts).toHaveLength(3);
+    for (const t of counts) expect(t).toMatch(/maxFontSizeMultiplier=\{COUNT_CAP\}/);
+    expect(card).toMatch(/const COUNT_CAP = 2;/);
   });
 
   it("draws the picture exactly as PostCard does: the same frame, the same double tap, the same playback", () => {
