@@ -225,6 +225,44 @@ await tap("Post", 2100);
 check("Comment posts into the thread", /doing all the work/.test(await text()));
 await shot("12-comments");
 
+// Editorial (Preview): the same feed set out by another card, chosen in
+// Settings. Only Home draws that card, so once Original is chosen again
+// none is left anywhere in the page, and the original's own line (the
+// caption after the member's name) is back.
+const feedLayout = async (label) => {
+  await tab("profile");
+  await byLabel("Settings").first().click();
+  await wait(2200);
+  await seen(page.getByRole("radio", { name: label, exact: true })).first().click();
+  await wait(900);
+  await tab("home");
+};
+await feedLayout("Editorial (Preview)");
+const editorial = seen(page.locator('[data-testid="editorial-post-card"]'));
+check("Editorial (Preview) sets Home out with the editorial card", (await editorial.count()) > 0);
+await shot("12b-editorial");
+const likesIn = async (card) => Number(/(\d+) likes?/.exec((await card.textContent()) ?? "")?.[1] ?? 0);
+let editorialLike = "no card to like";
+// The member has liked most of the first few already; the first one not yet liked will do.
+for (let i = 0; i < (await editorial.count()); i++) {
+  const card = editorial.nth(i);
+  if (!(await card.getByLabel("Like", { exact: true }).count())) continue;
+  const before = await likesIn(card);
+  await card.getByLabel("Like", { exact: true }).click();
+  await wait(1500);
+  const after = await likesIn(card);
+  const hearts = await card.getByLabel("Unlike", { exact: true }).count();
+  editorialLike = hearts > 0 && after === before + 1 ? "" : `${before} → ${after} likes`;
+  break;
+}
+check("Like still works on the editorial card", editorialLike === "", editorialLike);
+await feedLayout("Original");
+check(
+  "Original comes back as it was",
+  (await page.locator('[data-testid="editorial-post-card"]').count()) === 0 &&
+    (await byText("elena.marchetti The 19 tram, before anyone was awake.").count()) > 0,
+);
+
 await go("/user/tomas.lindqvist", 2800);
 const tomas = await text();
 check("Profile shows MEMBER and number", /MEMBER · NO\. \d{5}/.test(tomas));
