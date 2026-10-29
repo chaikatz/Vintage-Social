@@ -24,13 +24,6 @@ const INTERNAL: [RegExp, string][] = [
   [/^vintage\.darkroom-[a-z-]+$/, "the same file's key in the browser demo"],
 ];
 
-/**
- * The Post tab's door is being set again alongside this change, in the
- * new name. Until it lands its old words are let through there, and only
- * those; once the tab says the Memory Room this line lets nothing through.
- */
-const POST_TAB = { file: "app/(tabs)/create.tsx", words: ["The Darkroom"] };
-
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = path.join(dir, e.name);
@@ -75,7 +68,6 @@ function saidIn(file: string, source: string): Said[] {
 }
 
 const internal = (s: Said) => !s.jsx && INTERNAL.some(([rule]) => rule.test(s.text));
-const pending = (s: Said) => s.file === POST_TAB.file && POST_TAB.words.includes(s.text);
 
 describe("the room's name", () => {
   const files = [...walk(path.join(root, "app")), ...walk(path.join(root, "src"))];
@@ -87,7 +79,7 @@ describe("the room's name", () => {
   });
 
   it("is never the Darkroom in anything a member reads or hears", () => {
-    const heard = said.filter((s) => !internal(s) && !pending(s)).map((s) => `${s.file}:${s.line} ${s.text}`);
+    const heard = said.filter((s) => !internal(s)).map((s) => `${s.file}:${s.line} ${s.text}`);
     expect(heard).toEqual([]);
   });
 
