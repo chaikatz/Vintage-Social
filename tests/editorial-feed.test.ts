@@ -231,6 +231,27 @@ describe("the editorial card", () => {
     expect(card).toMatch(/export function EditorialPostCard\(\{[\s\S]*?\}: Props\)/);
   });
 
+  it("puts nothing above the photograph: the member, the place and date, and the \"…\" come under it", () => {
+    const body = card.slice(card.indexOf('testID="editorial-post-card"'));
+    const at = (needle: string) => body.indexOf(needle);
+    expect(at("<PostMedia")).toBeGreaterThan(-1);
+    for (const after of ["<Avatar", "{post.author.username}", "<Byline post={post} />", 'accessibilityLabel="Post options"', "{post.caption}"]) {
+      expect(at(after)).toBeGreaterThan(at("<PostMedia"));
+    }
+    // The member over the dateline, then the words, then the buttons.
+    expect(at("<Byline post={post} />")).toBeGreaterThan(at("{post.author.username}"));
+    expect(at("{post.caption}")).toBeGreaterThan(at('accessibilityLabel="Post options"'));
+    expect(at('accessibilityLabel={likedByMe ? "Unlike" : "Like"}')).toBeGreaterThan(at("{post.caption}"));
+  });
+
+  it("sets the caption in the comments' own type", () => {
+    const style = (name: string) => card.match(new RegExp(`\\n  ${name}: \\{([\\s\\S]*?)\\n  \\}`))?.[1] ?? "";
+    const face = (rules: string) => rules.split("\n").filter((l) => /type\.body|fontSize|fontFamily|lineHeight|color/.test(l)).map((l) => l.trim());
+    expect(face(style("caption"))).toEqual(face(style("comment")));
+    expect(face(style("caption"))).toContain("fontSize: 14,");
+    expect(style("caption")).not.toMatch(/type\.serif/);
+  });
+
   it("keeps its counts on screen at the largest text sizes", () => {
     const counts = card.match(/<Text[^>]*styles\.countText[^>]*>/g) ?? [];
     expect(counts).toHaveLength(3);

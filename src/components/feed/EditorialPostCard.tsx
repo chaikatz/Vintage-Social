@@ -17,13 +17,14 @@ type Props = React.ComponentProps<typeof PostCard>;
  * in Settings (see src/utils/feedLayout.ts); nothing else does.
  *
  * The same photograph in the same frame, and the same handlers, in a
- * different order. The member and the "…" share one line above the
- * picture. Under it, the way a plate is captioned in a book: where and
- * when in the typewriter face, then the member's own words in the serif,
- * without their name again, since it is just above. Then the three
- * buttons, with the counts set on the right of the same line, and the
- * newest comments, which are other people's, last. The comment count
- * opens the conversation, so there is no "View all" line under it.
+ * different order. The picture comes first, with nothing above it. Under
+ * it, the way a plate is captioned in a book: the member, with where and
+ * when beneath their name in the typewriter face and the "…" on the same
+ * line, then their own words, set like the comments and without their
+ * name again, since it is just above. Then the three buttons, with the
+ * counts set on the right of the same line, and the newest comments,
+ * which are other people's, last. The comment count opens the
+ * conversation, so there is no "View all" line under it.
  *
  * Nothing here decides anything. A like goes through the very same steps
  * as PostCard's, the double tap is PostMedia's, and the "…", the counts
@@ -54,22 +55,6 @@ export function EditorialPostCard({
 
   return (
     <View style={styles.card} testID="editorial-post-card">
-      <View style={styles.header}>
-        <Pressable
-          style={styles.member}
-          onPress={() => onOpenProfile(post.author.username)}
-          accessibilityRole="button"
-        >
-          <Avatar path={post.author.avatar_url} username={post.author.username} size={30} />
-          <Text style={styles.username} numberOfLines={1}>
-            {post.author.username}
-          </Text>
-        </Pressable>
-        <Pressable style={styles.button} onPress={() => onMore(post)} accessibilityLabel="Post options">
-          <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
-        </Pressable>
-      </View>
-
       <PostMedia
         post={post}
         onDoubleTap={() => like(true)}
@@ -79,11 +64,26 @@ export function EditorialPostCard({
         surface={surface}
       />
 
-      {/* The plate's caption: `MILAN · OCT 28, 2026`, then the words. */}
-      <View style={styles.plate}>
-        <Byline post={post} />
-        {post.caption ? <Text style={styles.caption}>{post.caption}</Text> : null}
+      {/* The plate's caption: the member over `MILAN · OCT 28, 2026`, then the words. */}
+      <View style={styles.member}>
+        <Pressable
+          style={styles.who}
+          onPress={() => onOpenProfile(post.author.username)}
+          accessibilityRole="button"
+        >
+          <Avatar path={post.author.avatar_url} username={post.author.username} size={30} />
+          <View style={styles.names}>
+            <Text style={styles.username} numberOfLines={1}>
+              {post.author.username}
+            </Text>
+            <Byline post={post} />
+          </View>
+        </Pressable>
+        <Pressable style={styles.button} onPress={() => onMore(post)} accessibilityLabel="Post options">
+          <Feather name="more-horizontal" size={20} color={colors.inkSoft} />
+        </Pressable>
       </View>
+      {post.caption ? <Text style={styles.caption}>{post.caption}</Text> : null}
 
       <View style={styles.actions}>
         <Pressable
@@ -151,38 +151,36 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     backgroundColor: colors.paper,
   },
-  header: {
+  member: {
     flexDirection: "row",
     alignItems: "center",
     paddingLeft: spacing.lg,
     // The "…" sits in a full target; its dots line up with the margin.
     paddingRight: spacing.xs,
-    paddingVertical: spacing.xs,
+    paddingTop: spacing.sm,
   },
-  member: {
+  who: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md - 2,
     minHeight: TARGET,
   },
-  username: { flexShrink: 1, fontSize: 14, fontWeight: "600", color: colors.ink },
+  names: { flexShrink: 1 },
+  username: { fontSize: 14, fontWeight: "600", color: colors.ink },
   button: {
     minWidth: TARGET,
     minHeight: TARGET,
     alignItems: "center",
     justifyContent: "center",
   },
-  plate: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-  },
+  // The member's words in the comments' own type, so the text under a picture reads as one.
   caption: {
-    fontFamily: type.serif,
-    fontSize: 16,
-    lineHeight: 23,
+    ...type.body,
+    fontSize: 14,
     color: colors.ink,
-    marginTop: spacing.xs + 2,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs + 2,
   },
   actions: {
     flexDirection: "row",
