@@ -255,6 +255,9 @@ function Zoom({
     >
       <Pressable
         onPress={(e: GestureResponderEvent) => onTap(e.nativeEvent.pageX, zoomed.current)}
+        // A finger rested on the print is not a tap: held past half a
+        // second, it lifts and turns nothing. A tap turns as it lifts.
+        onLongPress={() => undefined}
         style={{ width: box.width, height: box.height }}
         accessible={false}
       >
