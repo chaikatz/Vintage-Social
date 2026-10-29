@@ -20,6 +20,7 @@ import { darkroomAvailable } from "@/darkroom/source";
 import { forgetDarkroomHistory } from "@/darkroom/forget";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
 import { loadAppearance, setAppearance, type AppearanceChoice } from "@/utils/appearance";
+import { FEED_LAYOUTS, setFeedLayout, useFeedLayout } from "@/utils/feedLayout";
 import {
   DEFAULT_PREFS,
   fetchNotificationPrefs,
@@ -48,6 +49,8 @@ export default function Settings() {
     setAppearanceChoice(choice);
     setAppearance(choice);
   };
+  // Editorial (Preview): how Home sets out each post. Takes effect at once, on this phone only.
+  const feedLayout = useFeedLayout();
 
   // What the phone is allowed to say. Read once; each switch writes at once.
   const userId = session?.user?.id ?? "";
@@ -287,6 +290,27 @@ export default function Settings() {
         })}
       </View>
 
+      <View style={[styles.settingText, styles.subSetting]}>
+        <Text style={styles.prefLabel}>Feed layout</Text>
+        <Text style={styles.prefHint}>The same posts, set out two ways. Kept on this phone.</Text>
+      </View>
+      <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel="Feed layout">
+        {FEED_LAYOUTS.map(({ value, label }) => {
+          const on = feedLayout === value;
+          return (
+            <Pressable
+              key={value}
+              style={[styles.choice, on && styles.choiceOn]}
+              onPress={() => setFeedLayout(value)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+            >
+              <Text style={[styles.choiceText, on && styles.choiceTextOn]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       <View style={styles.divider} />
 
       <Button title="Save" onPress={save} loading={busy} />
@@ -394,6 +418,7 @@ const styles = StyleSheet.create({
   prefRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.md },
   prefLabel: { fontSize: 14, color: colors.ink },
   prefHint: { ...type.caption, fontSize: 12, marginTop: 1 },
+  subSetting: { marginTop: spacing.xl },
   choices: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   choice: {
     flex: 1,

@@ -48,7 +48,10 @@ describe("Home", () => {
   });
 
   it("never holds a clip back from its player", () => {
-    for (const card of tags(home, "PostCard")) expect(card).not.toMatch(/\bwarm=/);
+    // One card tag, whichever card the feed layout picks (see src/utils/feedLayout.ts).
+    const cards = tags(home, "(?:PostCard|FeedCard)");
+    expect(cards).toHaveLength(1);
+    for (const card of cards) expect(card).not.toMatch(/\bwarm=/);
     expect(home).not.toMatch(/\bwarm\b/);
   });
 });
