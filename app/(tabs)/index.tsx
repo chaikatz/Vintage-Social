@@ -5,6 +5,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
+import { EditorialPostCard } from "@/components/feed/EditorialPostCard";
 import { PendingPostCard } from "@/components/PendingPostCard";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
@@ -13,6 +14,7 @@ import { FEED_PAGE_SIZE, fetchFeedPage } from "@/api/posts";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { onHomeAgain } from "@/utils/homeRefresh";
+import { useFeedLayout } from "@/utils/feedLayout";
 import { notePostsInFeed, setOutboxProfileRefresher, usePendingPosts, type PendingState } from "@/uploads";
 import { pendingNeedsTop } from "@/uploads/store";
 import type { PostWithAuthor } from "@/types/db";
@@ -132,9 +134,13 @@ export default function Home() {
     minimumViewTime: 120,
   }).current;
 
+  // Editorial (Preview), chosen in Settings: the same props, set out by
+  // another card. Everything else about the list stays as it is.
+  const FeedCard = useFeedLayout() === "editorial" ? EditorialPostCard : PostCard;
+
   const renderItem = useCallback(
     ({ item }: { item: (typeof posts)[number] }) => (
-      <PostCard
+      <FeedCard
         post={{ ...item, like_count: likeCountFor(item) }}
         likedByMe={isLiked(item)}
         onToggleLike={toggleLike}
@@ -147,7 +153,7 @@ export default function Home() {
         active={focused && item.id === visibleId}
       />
     ),
-    [likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onMore, router, visibleId, focused],
+    [FeedCard, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onMore, router, visibleId, focused],
   );
 
   // Only one clip plays at a time. A pending one may when it is the
