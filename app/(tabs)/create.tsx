@@ -78,7 +78,7 @@ export default function Create() {
   return (
     <Screen padded={false} scroll>
       <View style={styles.body}>
-        <Text style={styles.title} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
+        <Text style={styles.title} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TITLE_CAP}>
           Share a photograph.
         </Text>
 
@@ -140,6 +140,8 @@ type Way = "photo" | "camera" | "video";
 
 /** The page's type stops growing here, as the Memory Room's own word pages do. */
 const TYPE_CAP = 2.4;
+/** The serif line stops growing sooner: here "photograph." still fits on one line of a 320 pt phone, so it is never broken in two. */
+const TITLE_CAP = 1.8;
 /** The bars' capitals stop growing here. At the largest sizes a label takes two lines, and its bar grows to hold them. */
 const BAR_TYPE_CAP = 1.8;
 /** GateButton's arrow is 18 wide, 16 in from the edge: the label keeps clear of it on both sides, so it stays centred. */

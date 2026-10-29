@@ -179,6 +179,24 @@ describe("at the largest text sizes on the narrowest phones", () => {
   it("holds nothing to one line, so no word is cut short", () => {
     expect(tab).not.toMatch(/numberOfLines/);
   });
+
+  it("never breaks a word of its serif line in two, even on a 320 pt phone", () => {
+    // A word wider than the line is broken between two letters ("photograp / h."), so its longest word has to fit.
+    const words = tab.match(/<Text style=\{styles\.title\}[^>]*>\s*([^<]*?)\s*<\/Text>/)?.[1].split(/\s+/) ?? [];
+    expect(words.reduce((a, b) => (b.length > a.length ? b : a), "")).toBe("photograph.");
+    const PHOTOGRAPH_EM = 5.45; // Georgia, measured in Gelasio, which shares its metrics: 5.422 em
+    expect(tab).toMatch(/<Text style=\{styles\.title\}[^>]*maxFontSizeMultiplier=\{TITLE_CAP\}/);
+    const cap = Number(tab.match(/const TITLE_CAP = ([\d.]+);/)?.[1]);
+    const num = (prop: string) => Number(style(tab, "title").match(new RegExp(`${prop}: ([\\d.]+)`))?.[1]);
+    // iOS grows the letters but not the tracking between them.
+    const word = num("fontSize") * cap * PHOTOGRAPH_EM + "photograph.".length * num("letterSpacing");
+    expect(style(tab, "body")).toMatch(/paddingHorizontal: spacing\.lg/);
+    const column = 320 - 2 * 16; // spacing.lg either side of the body
+    expect(word).toBeGreaterThan(0);
+    expect(word).toBeLessThanOrEqual(column);
+    // The cap is the title's own: the rest of the page still grows as far as before.
+    expect(cap).toBeLessThan(Number(tab.match(/const TYPE_CAP = ([\d.]+);/)?.[1]));
+  });
 });
 
 describe("one tap, one editor", () => {

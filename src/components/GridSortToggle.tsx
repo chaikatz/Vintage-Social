@@ -9,6 +9,8 @@ export type { GridSort, ProfileView } from "@/utils/profileViews";
 const EDGE = spacing.lg;
 /** Either side of the hairline between the label and the views. */
 const LABEL_GAP = 6;
+/** The label stops growing here, so at the largest sizes the views keep a window that holds the longest of them whole. */
+const LABEL_CAP = 1.6;
 
 /**
  * The one control over a profile: how it reads.
@@ -55,7 +57,7 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
 
   return (
     <View style={styles.row} accessibilityRole="radiogroup" aria-labelledby={labelId}>
-      <Text nativeID={labelId} style={styles.label} numberOfLines={1}>
+      <Text nativeID={labelId} style={styles.label} numberOfLines={1} maxFontSizeMultiplier={LABEL_CAP}>
         Profile view
       </Text>
       {/* Outside the scroll, so it stays put while the views move past it; the views are cut at the hairline. */}
@@ -125,14 +127,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     backgroundColor: colors.paper,
   },
-  // A size below the views, in their faint ink, and set apart by the
-  // hairline, so it reads as their name rather than as a seventh.
+  // A size below the views, in their ink, and set apart by the hairline,
+  // so it reads as their name rather than as a seventh.
   label: {
     fontFamily: type.mono,
     fontSize: 8,
     letterSpacing: 1.4,
     textTransform: "uppercase",
-    color: colors.inkFaint,
+    color: colors.inkSoft,
     flexShrink: 0,
     marginRight: LABEL_GAP,
   },
@@ -142,12 +144,14 @@ const styles = StyleSheet.create({
   // and tighter than the rest of the mono so all of them fit abreast. They
   // follow the label, as its line, rather than stand off at the far edge.
   options: { alignItems: "center", gap: 4, paddingLeft: LABEL_GAP, paddingRight: spacing.lg },
+  // The soft ink, not the faint: type this small has to hold 4.5:1 on
+  // either print. The current one is in ink, a step darker again.
   option: {
     fontFamily: type.mono,
     fontSize: 9,
     letterSpacing: 1.2,
     textTransform: "uppercase",
-    color: colors.inkFaint,
+    color: colors.inkSoft,
   },
   optionOn: { color: colors.ink },
   divider: { color: colors.border, fontSize: 10 },
