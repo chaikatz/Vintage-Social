@@ -44,7 +44,7 @@ export function useBoldText(): boolean {
   return useAccessibilitySetting(boldText);
 }
 
-/** While a screen reader is running the room's chrome never hides. */
+/** While a screen reader is running a tap on the room's photograph turns no page: VoiceOver turns it. */
 export function useScreenReader(): boolean {
   return useAccessibilitySetting(screenReader);
 }

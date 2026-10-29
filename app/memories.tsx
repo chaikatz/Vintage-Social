@@ -140,14 +140,14 @@ export default function Memories() {
                 style={({ pressed }) => [styles.ask, pressed && styles.pressed]}
                 onPress={() => openDay()}
                 accessibilityRole="button"
-                accessibilityHint="Opens On this day in the Darkroom."
+                accessibilityHint="Opens On this day in the Memory Room."
               >
                 <Feather name="image" size={16} color={colors.ink} />
                 <View style={styles.askText}>
                   <Text style={styles.askTitle}>Look in your photo library</Text>
                   <Text style={styles.askBody}>
-                    The Darkroom can find photographs from this day in earlier years. It looks through your
-                    library on your phone, and nothing leaves it unless you post it.
+                    The Memory Room can find photographs from this day in earlier years. It looks through
+                    your library on your phone, and nothing leaves it unless you post it.
                   </Text>
                 </View>
               </Pressable>
@@ -162,7 +162,7 @@ export default function Memories() {
                   style={({ pressed }) => [styles.dayRow, pressed && styles.pressed]}
                   onPress={() => openDay(today.getFullYear() - day.yearsAgo)}
                   accessibilityRole="button"
-                  accessibilityHint={darkroomAvailable() ? "Opens them in the Darkroom." : undefined}
+                  accessibilityHint={darkroomAvailable() ? "Opens them in the Memory Room." : undefined}
                 >
                   <View style={styles.dayThumbs}>
                     {day.photos.slice(0, 3).map((p) => (

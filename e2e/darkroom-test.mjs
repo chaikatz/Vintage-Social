@@ -1,6 +1,7 @@
 // The Darkroom, walked through the real interface in the demo web build:
 // the door on the Post tab → the first-visit page → On this day → a page
-// turn → set aside → Contents and its years → a year's months → a year
+// turn → taps on the photograph, either half → set aside → Contents and
+// its years → a year's months → a year
 // chapter → Surprise me → the Set aside chapter → the end of On this day
 // → DEVELOP into the editor, and back to the same print.
 //
@@ -137,6 +138,61 @@ await turn(1);
 const secondDate = await dateLabel();
 check("A page turn moves to the next year’s photograph", secondDate !== "" && secondDate !== firstDate, `${firstDate} → ${secondDate}`);
 await shot("on-this-day");
+
+// --- a tap on the photograph ---------------------------------------------------------------
+// The right half turns on and the left half back, by the pager's own
+// scroll; quick taps turn one page; and the room's words stay on the
+// page, since a tap no longer hides them. Left on the second print, as
+// the turn above left it.
+const plateBox = () =>
+  page.evaluate(() => {
+    const plates = [...document.querySelectorAll('[data-testid="darkroom-plate"]')].map((e) => e.getBoundingClientRect());
+    const r = plates.find((b) => b.width > 0 && b.left >= 0 && b.left < window.innerWidth);
+    return r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null;
+  });
+/** Which page the pager has come to, counting the chapter's first as 0. */
+const pagerPage = () =>
+  page.evaluate(() => {
+    const lists = [...document.querySelectorAll('[data-testid="darkroom-pager"]')].filter((e) => e.offsetParent !== null);
+    const list = lists[lists.length - 1];
+    return list ? Math.round((list.scrollLeft / list.clientWidth) * 100) / 100 : -1;
+  });
+/** A finger on the photograph in front, `at` across it: 0 its left edge, 1 its right. */
+const tapPlate = async (at) => {
+  const b = await plateBox();
+  if (b) await page.touchscreen.tap(b.x + b.width * at, b.y + b.height / 2);
+  await wait(900);
+};
+const wordsShowing = () =>
+  page.evaluate(() =>
+    ["darkroom-back", "darkroom-chapter", "darkroom-contents", "darkroom-caption-date", "darkroom-develop"].every((id) => {
+      const el = [...document.querySelectorAll(`[data-testid="${id}"]`)].find((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && r.left >= 0 && r.left < window.innerWidth;
+      });
+      let opacity = 1;
+      for (let e = el; e; e = e.parentElement) opacity *= Number(getComputedStyle(e).opacity || 1);
+      return el != null && opacity > 0.99;
+    }),
+  );
+await tapPlate(0.2);
+check("A tap on the photograph’s left half turns back a page", (await dateLabel()) === firstDate, await dateLabel());
+await tapPlate(0.2);
+check("…and on the first print turns nothing", (await dateLabel()) === firstDate, await dateLabel());
+await tapPlate(0.8);
+check("A tap on its right half turns on a page", (await dateLabel()) === secondDate, await dateLabel());
+check("The room’s words stay on the page after a tap", await wordsShowing());
+await shot("tapped");
+const spot = await plateBox();
+for (let i = 0; i < 3; i++) {
+  if (spot) await page.touchscreen.tap(spot.x + spot.width * 0.85, spot.y + spot.height / 2);
+  await wait(40);
+}
+await wait(900);
+const thirdDate = await dateLabel();
+check("Quick taps turn one page at a time", thirdDate !== secondDate && thirdDate !== "" && (await pagerPage()) === 2, thirdDate);
+await tapPlate(0.15);
+check("…and the left half brings it back", (await dateLabel()) === secondDate, await dateLabel());
 
 // --- set aside ----------------------------------------------------------------------------
 // Set aside, the word turns from faint to the room's cream ink, beside its gold dot.

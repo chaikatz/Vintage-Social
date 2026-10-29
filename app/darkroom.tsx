@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { setStatusBarHidden, setStatusBarStyle } from "expo-status-bar";
+import { setStatusBarStyle } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { pickFromLibrary } from "@/utils/pickForCompose";
 import { useReducedMotion } from "@/utils/useReducedMotion";
@@ -33,7 +33,6 @@ import { room } from "@/components/darkroom/room";
 import { RunningHead } from "@/components/darkroom/RunningHead";
 import { Stage, type StageHandle } from "@/components/darkroom/Stage";
 import { TitleCard } from "@/components/darkroom/TitleCard";
-import { useChrome } from "@/components/darkroom/useChrome";
 import { useContentsSheet } from "@/components/darkroom/useContentsSheet";
 import { useDevelop } from "@/components/darkroom/useDevelop";
 import { useOnline } from "@/components/darkroom/useOnline";
@@ -61,13 +60,14 @@ import {
 } from "@/components/darkroom/words";
 
 /**
- * THE DARKROOM.
+ * THE MEMORY ROOM, which the code still calls the Darkroom.
  *
  * The member's own camera roll, one print at a time, set as a photobook:
  * a running head, a plate with its caption hung beneath, a Contents
  * sheet, title cards and end pages. This day in other years, a roll of
  * twenty-four from the back of the drawer, or a year read as a chapter.
- * Swipe for the next. DEVELOP takes the print into the ordinary editor
+ * Swipe for the next, or tap the photograph: its right half turns on, its
+ * left half back. DEVELOP takes the print into the ordinary editor
  * to post; SET ASIDE keeps it on this phone to come back to. Printed on
  * the dark page whatever the appearance, so the photographs are the only
  * light in the room.
@@ -136,7 +136,6 @@ export default function Darkroom() {
   const stage = useRef<StageHandle>(null);
   const tailTitle = useRef<Text>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
-  const lit = useRef(new Animated.Value(1)).current;
   const threshold = useRef(new Animated.Value(1)).current;
   const [stageHeight, setStageHeight] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -155,7 +154,6 @@ export default function Darkroom() {
     online,
     onCompose: (composeParams) => router.push({ pathname: "/compose", params: composeParams }),
   });
-  const chrome = useChrome({ screenReader, locked: develop.id != null, reduceMotion, top: insets.top });
   const fades = useStageFades(state.loading, now, reduceMotion);
 
   /** A print's state: its develop state, or "gone" when Photos said it is not there. */
@@ -178,10 +176,8 @@ export default function Darkroom() {
     setStatusBarStyle("light", true);
     darkroom.focus();
     develop.returned();
-    chrome.reset();
   };
   onBlur.current = () => {
-    setStatusBarHidden(false, "fade");
     setStatusBarStyle("auto", true);
     develop.left();
     darkroom.blur();
@@ -382,12 +378,15 @@ export default function Darkroom() {
 
   // A new chapter is as good as a page turn: a state left on a print of
   // the last one (in iCloud, offline, a failure) is cleared, so it does
-  // not hold the caption thread and the chrome in this one. A develop
-  // working or downloading is kept by its own guard.
+  // not hold the caption thread and the plate's taps in this one. A
+  // develop working or downloading is kept by its own guard.
   const generation = chapter?.generation;
   useEffect(() => {
     clear();
   }, [generation, clear]);
+
+  /** A tap on a photograph, handed to the pager, which knows which page is settled. */
+  const onPlateTap = useCallback((x: number, zoomed: boolean) => stage.current?.tap(x, zoomed), []);
 
   const renderPrint = (print: Print, index: number) => {
     const isCurrent = chapter != null && index === chapter.index;
@@ -428,8 +427,7 @@ export default function Darkroom() {
         wordHint={said.word?.hint}
         holdLayout={said.hold}
         bladesClosed={develop.bladesFor === print.id}
-        captionOpacity={develop.id === print.id ? lit : chrome.opacity}
-        onTap={chrome.toggle}
+        onTap={onPlateTap}
         onDate={onDate}
         onWord={onRight}
         onLoad={imageLoaded}
@@ -489,12 +487,8 @@ export default function Darkroom() {
   const headName = inside && headWhere?.mode ? chapterName(headWhere.mode, headWhere.year) : null;
   const n = chapter?.prints.length ?? 0;
   const developOpacity = useMemo(
-    () =>
-      Animated.multiply(
-        scrollX.interpolate({ inputRange: [(n - 1) * width, n * width], outputRange: [1, 0], extrapolate: "clamp" }),
-        chrome.opacity,
-      ),
-    [scrollX, n, width, chrome.opacity],
+    () => scrollX.interpolate({ inputRange: [(n - 1) * width, n * width], outputRange: [1, 0], extrapolate: "clamp" }),
+    [scrollX, n, width],
   );
   const showsDevelop = state.view.kind === "prints" && current != null;
 
@@ -515,12 +509,10 @@ export default function Darkroom() {
       >
         <Stack.Screen options={{ headerShown: false }} />
         <RunningHead
-          top={chrome.top}
+          top={insets.top}
           name={headName}
           contents={inside}
           held={develop.busy}
-          opacity={chrome.opacity}
-          hidden={chrome.hidden}
           onBack={back}
           onContents={() => showContents()}
         />
@@ -552,6 +544,8 @@ export default function Darkroom() {
                 renderTail={renderTail}
                 onSettle={onSettle}
                 onDragging={setDragging}
+                // A state showing holds the plate's taps; so do a chapter on its way and its title card.
+                taps={{ locked: develop.id != null || state.loading != null || fades.card != null, screenReader, reduceMotion }}
                 accessibility={accessibility}
                 tailTitle={tailTitle}
               />
@@ -574,7 +568,7 @@ export default function Darkroom() {
           <Develop
             words={words.bottom}
             opacity={showsDevelop && !fades.card ? developOpacity : ZERO}
-            interactive={showsDevelop && !atTail && !chrome.hidden && !state.loading && !fades.card}
+            interactive={showsDevelop && !atTail && !state.loading && !fades.card}
             dragging={dragging}
             drawing={develop.drawing && develop.id === current?.id}
             onPress={onBottom}

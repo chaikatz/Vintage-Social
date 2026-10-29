@@ -1,5 +1,15 @@
 import React, { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Animated, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  type Animated,
+  type GestureResponderEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
 import { Image, type ImageErrorEventData } from "expo-image";
 import { printSource } from "@/darkroom/printSource";
 import type { Print } from "@/darkroom/types";
@@ -23,6 +33,8 @@ import { placeholderWords, type PlateTrouble } from "./words";
 
 /** The soft proof is this wide, scaled up to the plate. */
 const PROOF_WIDTH = 48;
+/** Past this the plate counts as zoomed in, and a tap on it turns no page. */
+const ZOOMED = 1.02;
 const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" } as const;
 
 /**
@@ -61,8 +73,10 @@ const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" }
  * ZoomablePhoto, with no double-tap, so a single tap has no delay), and
  * goes back to actual size when the page stops being current, and again
  * as it is taken off screen. At actual size it does not move at all under
- * a drag. A tap hides the room's words. Under the editor, neighbours
- * draw their well only, so one full decode is live behind it.
+ * a drag. A tap on its right half turns to the next print and on its left
+ * half to the one before (`tapTurn`), except while it is zoomed in; the
+ * room's words stay where they are throughout. Under the editor,
+ * neighbours draw their well only, so one full decode is live behind it.
  *
  * When the photograph cannot be drawn the plate says why, in the well:
  * gone from the library, waiting for the phone to be online (it tries
@@ -103,9 +117,8 @@ export interface PrintPageProps {
   /** A develop state is showing: the plate keeps its size whatever the caption says. */
   holdLayout: boolean;
   bladesClosed: boolean;
-  /** The caption's opacity: the room's chrome, or full while a state is shown. */
-  captionOpacity: Animated.Value | Animated.AnimatedInterpolation<number>;
-  onTap: () => void;
+  /** A tap on the photograph: how far across the page the finger lifted, and whether the plate was zoomed in. */
+  onTap: (x: number, zoomed: boolean) => void;
   onDate: (print: Print) => void;
   onWord: (print: Print) => void;
   onLoad: (id: string) => void;
@@ -122,7 +135,6 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
     current,
     holdLayout,
     long,
-    captionOpacity,
   } = props;
   const look = useLook();
   const ratio = ratioOf(print);
@@ -154,9 +166,7 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
           style={[StyleSheet.absoluteFill, styles.hairline, { borderColor: look.contrast ? room.lineStrong : room.line }]}
         />
       </View>
-      <Animated.View
-        style={[styles.caption, { top: top + box.height, left: (width - captionW) / 2, opacity: captionOpacity }]}
-      >
+      <View style={[styles.caption, { top: top + box.height, left: (width - captionW) / 2 }]}>
         <Caption
           width={captionW}
           label={props.label}
@@ -171,12 +181,18 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
           }}
           testID={current ? "darkroom-caption" : undefined}
         />
-      </Animated.View>
+      </View>
     </View>
   );
 });
 
-/** The plate's own scroll view: a pinch zooms the print inside its box, and nowhere else. */
+/**
+ * The plate's own scroll view: a pinch zooms the print inside its box, and
+ * nowhere else. A tap is handed on with where the finger lifted across the
+ * page — `pageX`, not `locationX`, which is measured from whichever view
+ * was touched, and over a plate that says why it has no photograph that
+ * is the line of type — and whether the print is zoomed in.
+ */
 function Zoom({
   box,
   current,
@@ -185,7 +201,7 @@ function Zoom({
 }: {
   box: { width: number; height: number };
   current: boolean;
-  onTap: () => void;
+  onTap: (x: number, zoomed: boolean) => void;
   children: React.ReactNode;
 }) {
   const scroll = useRef<ScrollView>(null);
@@ -209,6 +225,9 @@ function Zoom({
     const view = scroll.current;
     return () => actualSize(view, latestBox.current);
   }, []);
+  const readZoom = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    zoomed.current = (e.nativeEvent.zoomScale ?? 1) > ZOOMED;
+  };
 
   return (
     <ScrollView
@@ -227,12 +246,18 @@ function Zoom({
       scrollsToTop={false}
       showsHorizontalScrollIndicator={false}
       showsVerticalScrollIndicator={false}
-      onScroll={(e) => {
-        zoomed.current = (e.nativeEvent.zoomScale ?? 1) > 1.02;
-      }}
+      onScroll={readZoom}
+      // A pinch ends here, at the scale it settled on, which the throttled
+      // scroll events may not have caught: let go back at actual size, the
+      // next tap turns the page.
+      onScrollEndDrag={readZoom}
       scrollEventThrottle={100}
     >
-      <Pressable onPress={onTap} style={{ width: box.width, height: box.height }} accessible={false}>
+      <Pressable
+        onPress={(e: GestureResponderEvent) => onTap(e.nativeEvent.pageX, zoomed.current)}
+        style={{ width: box.width, height: box.height }}
+        accessible={false}
+      >
         {children}
       </Pressable>
     </ScrollView>

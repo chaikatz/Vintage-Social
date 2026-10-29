@@ -1,5 +1,5 @@
 import React from "react";
-import { Animated, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { room } from "./room";
 import { RoomText } from "./Type";
@@ -8,18 +8,16 @@ import { CHAPTER_HINT, CONTENTS_HINT } from "./words";
 /**
  * The running head, as a book has one: back at the left, the chapter's
  * name centred, CONTENTS at the right. It sits outside the pager, so it
- * never slides with the prints; it fades with the rest of the room's
- * words when a tap hides them, and cannot be pressed while hidden. The
- * chapter's name is itself a way into Contents. There is no hairline
- * under it. The back chevron is the room's only icon.
+ * never slides with the prints, and it is always there: a tap on the
+ * photograph turns the page and leaves the words alone. The chapter's
+ * name is itself a way into Contents. There is no hairline under it. The
+ * back chevron is the room's only icon.
  */
 export function RunningHead({
   top,
   name,
   contents,
   held = false,
-  opacity,
-  hidden,
   onBack,
   onContents,
 }: {
@@ -31,13 +29,11 @@ export function RunningHead({
   contents: boolean;
   /** A develop is under way: CONTENTS and the chapter name wait, and say so. */
   held?: boolean;
-  opacity: Animated.Value;
-  hidden: boolean;
   onBack: () => void;
   onContents: () => void;
 }) {
   return (
-    <Animated.View style={[styles.head, { paddingTop: top, opacity }]} pointerEvents={hidden ? "none" : "box-none"}>
+    <View style={[styles.head, { paddingTop: top }]} pointerEvents="box-none">
       <View style={styles.side}>
         <Pressable
           onPress={onBack}
@@ -84,7 +80,7 @@ export function RunningHead({
           </Pressable>
         ) : null}
       </View>
-    </Animated.View>
+    </View>
   );
 }
 

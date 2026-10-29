@@ -7,7 +7,6 @@ vi.mock("react-native", () => ({
   Platform: { OS: "ios", select: (o: Record<string, unknown>) => o.ios ?? o.default },
   DynamicColorIOS: (o: { dark: string }) => o.dark,
 }));
-vi.mock("expo-status-bar", () => ({ setStatusBarHidden: () => undefined }));
 
 // What a visit reads besides the library: the phone's own stores, faked in memory.
 vi.mock("@/darkroom/develop", () => ({ stillInLibrary: async () => null }));
@@ -79,7 +78,6 @@ import {
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, type Reader } from "@/components/darkroom/dealer";
 import { roles, room, toneColor } from "@/components/darkroom/room";
-import { steadyTop } from "@/components/darkroom/useChrome";
 import { Visit } from "@/components/darkroom/visit";
 import { dark } from "@/theme";
 import type { LibrarySource, Print } from "@/darkroom/types";
@@ -371,19 +369,6 @@ describe("a print's caption", () => {
   });
 });
 
-describe("the chrome", () => {
-  it("keeps the head where it is while the status bar is hidden on a Home-button iPhone", () => {
-    // Shown: the inset as it is.
-    expect(steadyTop(20, 20, false)).toBe(20);
-    // Hidden, and the status bar gone with the words: the inset falls to 0, the head does not.
-    expect(steadyTop(20, 0, true)).toBe(20);
-    // Shown again, before the status bar is back: still 20, not a second jump.
-    expect(steadyTop(20, 0, false)).toBe(20);
-    // A Face ID phone keeps its inset throughout.
-    expect(steadyTop(59, 59, true)).toBe(59);
-  });
-});
-
 describe("the word pages", () => {
   it("offers exactly one word on the first visit", () => {
     const asking = firstVisitPage("undetermined");
@@ -429,7 +414,7 @@ describe("the word pages", () => {
     const years = [2014, 2016, 2019].map((year) => ({ year, count: 10 }));
     const mid = endPage({ kind: "year", year: 2016, smaller: true, fromMonth: 7, shown: 12 }, { now: NOW, limited: false, years });
     expect(mid.title).toBe("The end of 2016.");
-    expect(mid.body).toBe("The Darkroom showed you some of this year, not all of it.");
+    expect(mid.body).toBe("The Memory Room showed you some of this year, not all of it.");
     expect(mid.words.map((w) => w.label)).toEqual(["More from 2016", "On to 2019", "From January", "Choose from your library"]);
     const newest = endPage({ kind: "year", year: 2019, smaller: false, fromMonth: 0, shown: 5 }, { now: NOW, limited: false, years });
     expect(newest.body).toBeUndefined();
@@ -445,7 +430,7 @@ describe("the word pages", () => {
       "Choose from your library",
       "Share more photographs",
     ]);
-    expect(endPage({ kind: "exhausted" }, ctx).title).toBe("You’ve seen everything the Darkroom can find for now.");
+    expect(endPage({ kind: "exhausted" }, ctx).title).toBe("You’ve seen everything the Memory Room can find for now.");
     expect(endPage({ kind: "shelf" }, { ...ctx, limited: false }).words.map((w) => w.label)).toEqual(["Surprise me", "Choose from your library"]);
   });
 

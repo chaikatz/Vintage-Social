@@ -209,8 +209,8 @@ export default function Export() {
           value={paper}
           onChange={setPaper}
           options={[
-            ["paper", "Paper"],
-            ["darkroom", "Darkroom"],
+            ["paper", "Light"],
+            ["darkroom", "Dark"],
           ]}
         />
 

@@ -470,7 +470,7 @@ describe("the purpose string", () => {
 describe("the privacy policy", () => {
   it("says what the Darkroom keeps, and no more than it does", async () => {
     const { PRIVACY_POLICY } = await import("@/legal/documents");
-    const darkroom = PRIVACY_POLICY.split(/\n\n+/).find((p) => p.startsWith("Your photo library, in the Darkroom."));
+    const darkroom = PRIVACY_POLICY.split(/\n\n+/).find((p) => p.startsWith("Your photo library, in the Memory Room."));
     expect(darkroom).toBeDefined();
     const text = darkroom ?? "";
     // The place is never read, the Hidden album never looked through.
@@ -479,7 +479,7 @@ describe("the privacy policy", () => {
     // Set aside keeps more than an identifier, and says so.
     expect(text).toMatch(/photographs you set aside[^.]*it keeps the date each was taken and its size/);
     // Forgetting in Settings keeps the shelf.
-    expect(text).toContain("“Forget what the Darkroom has shown me” in Settings clears what it has shown you and where you left off, but keeps the photographs you set aside.");
+    expect(text).toContain("“Forget what the Memory Room has shown me” in Settings clears what it has shown you and where you left off, but keeps the photographs you set aside.");
     expect(text).toContain("The list is deleted when you sign out.");
     // Ordinary app data on the phone: no promise that a backup leaves it out.
     expect(text).toContain("can be included in your phone’s own backup");
