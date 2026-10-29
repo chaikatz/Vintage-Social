@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PROFILE_VIEWS, galleryRows, opensGallery, revealOffset, type ProfileView } from "@/utils/profileViews";
+import { dark, light } from "@/theme";
+
+// The theme reads the platform for its faces and its dynamic colours; the toggle's inks are read from its plain strings.
+vi.mock("react-native", () => ({
+  Platform: { OS: "ios", select: (o: Record<string, unknown>) => o.ios ?? o.default },
+  DynamicColorIOS: (o: { dark: string }) => o.dark,
+}));
 
 /**
  * The six ways a profile reads: their order on the toggle, where a tap in
@@ -137,6 +144,8 @@ describe("the toggle, read from the source", () => {
   const style = (name: string) => toggle.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
   const num = (block: string, prop: string) => Number(block.match(new RegExp(`${prop}: ([\\d.]+)`))?.[1]);
   const scrollView = toggle.slice(toggle.search(/<ScrollView\s/), toggle.indexOf("</ScrollView>"));
+  // Courier New sets every letter 0.6 em wide; iOS grows the letters with the text size, not the tracking between them.
+  const tracked = (text: string, size: number, tracking: number, scale = 1) => text.length * (size * 0.6 * scale + tracking);
 
   it("draws its options from the one list, each a radio", () => {
     expect(toggle).toMatch(/PROFILE_VIEWS\.map\(/);
@@ -145,7 +154,9 @@ describe("the toggle, read from the source", () => {
   });
 
   it("names the group with the label on screen, held still outside the scroll", () => {
-    const label = toggle.match(/<Text nativeID=\{labelId\} style=\{styles\.label\} numberOfLines=\{1\}>\s*Profile view\s*<\/Text>/);
+    const label = toggle.match(
+      /<Text nativeID=\{labelId\} style=\{styles\.label\} numberOfLines=\{1\} maxFontSizeMultiplier=\{LABEL_CAP\}>\s*Profile view\s*<\/Text>/,
+    );
     expect(label).not.toBeNull();
     expect(toggle.indexOf(label![0])).toBeLessThan(toggle.search(/<ScrollView\s/));
     expect(scrollView).not.toContain("Profile view");
@@ -170,17 +181,53 @@ describe("the toggle, read from the source", () => {
     expect(num(style("option"), "letterSpacing")).toBe(1.2);
     expect(num(style("label"), "fontSize")).toBeLessThan(num(style("option"), "fontSize"));
     expect(style("label")).toMatch(/fontFamily: type\.mono/);
-    expect(style("label")).toMatch(/color: colors\.inkFaint/);
+    expect(style("label")).toMatch(/color: colors\.inkSoft/);
     expect(style("label")).toMatch(/flexShrink: 0/);
+    expect(style("option")).toMatch(/color: colors\.inkSoft/);
     expect(style("optionOn")).toMatch(/color: colors\.ink\b/);
     expect(toggle).toMatch(/style=\{\[styles\.option, active && styles\.optionOn\]\}/);
   });
 
+  it("sets the label and every view at 4.5:1 or better on the paper, on either print", () => {
+    // WCAG's contrast ratio, from each colour's relative luminance.
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    expect(style("row")).toMatch(/backgroundColor: colors\.paper\b/);
+    for (const name of ["label", "option", "optionOn"]) {
+      const ink = style(name).match(/color: colors\.(\w+)/)?.[1] as keyof typeof light;
+      for (const print of [light, dark]) {
+        expect(print[ink], name).toMatch(/^#[0-9A-F]{6}$/i);
+        expect(ratio(print[ink], print.paper), `${name} in ${ink}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it("keeps the label small enough at the largest text size that the longest view still shows whole on a 320 pt phone", () => {
+    const AX5 = 3.571; // iOS's largest accessibility size, as React Native reads it
+    const cap = Number(toggle.match(/const LABEL_CAP = ([\d.]+);/)?.[1]);
+    expect(cap).toBeGreaterThan(1);
+    const label = tracked("Profile view", num(style("label"), "fontSize"), num(style("label"), "letterSpacing"), Math.min(cap, AX5));
+    const gap = Number(toggle.match(/const LABEL_GAP = (\d+);/)?.[1]);
+    const window = 320 - 16 - label - gap - num(style("labelRule"), "width");
+    // The views are held to no cap, so at AX5 each is as wide as it gets.
+    const longest = Math.max(...PROFILE_VIEWS.map((v) => tracked(v.label, num(style("option"), "fontSize"), num(style("option"), "letterSpacing"), AX5)));
+    const edge = 16; // EDGE, the room revealOffset leaves after the current option
+    expect(longest + edge).toBeLessThanOrEqual(window);
+  });
+
   it("fits the six beside the label on a 390 pt phone, and lets them run out to the edge where they do not", () => {
-    // Courier New sets every letter 0.6 em wide; a divider is narrower than 0.3 em of its size.
+    // A divider is narrower than 0.3 em of its size.
     const words = PROFILE_VIEWS.map((v) => v.label);
     const optionSize = num(style("option"), "fontSize");
-    const tracked = (text: string, size: number, tracking: number) => text.length * (size * 0.6 + tracking);
     const views =
       words.reduce((sum, w) => sum + tracked(w, optionSize, num(style("option"), "letterSpacing")), 0) +
       (words.length - 1) * num(style("divider"), "fontSize") * 0.3 +
