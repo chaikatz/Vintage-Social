@@ -10,6 +10,11 @@ import { ruleWidth } from "./rule";
  * with an arrow, a ruled bar with an arrow, or a line of capitals with
  * nothing around it. No rounded corners — ink on paper, not a button in
  * a browser.
+ *
+ * The fourth, `card`, is the bar in the invitation card's printed brown,
+ * ruled and lettered in its gold: the way into the Memory Room. On the
+ * dark page the brown is a shade below the paper, so the rule is what
+ * draws its edge.
  */
 export function GateButton({
   title,
@@ -23,7 +28,7 @@ export function GateButton({
 }: {
   title: string;
   onPress: () => void;
-  variant?: "solid" | "outline" | "quiet";
+  variant?: "solid" | "outline" | "quiet" | "card";
   loading?: boolean;
   /** Inert without looking it: something else on the screen is opening. */
   disabled?: boolean;
@@ -33,13 +38,19 @@ export function GateButton({
   style?: ViewStyle;
 }) {
   const solid = variant === "solid";
+  const card = variant === "card";
   const quiet = variant === "quiet";
-  const ink = solid ? (GATE_ON_BUTTON as unknown as string) : (colors.ink as unknown as string);
+  const ink = solid
+    ? (GATE_ON_BUTTON as unknown as string)
+    : card
+      ? colors.gold
+      : (colors.ink as unknown as string);
   return (
     <Pressable
       style={({ pressed }) => [
         styles.base,
         solid && styles.solid,
+        card && styles.card,
         variant === "outline" && styles.outline,
         quiet && styles.quiet,
         pressed && styles.pressed,
@@ -55,7 +66,7 @@ export function GateButton({
         <ActivityIndicator size="small" color={ink} />
       ) : (
         <>
-          <Text style={[styles.label, solid && styles.labelSolid]} maxFontSizeMultiplier={maxFontSizeMultiplier}>
+          <Text style={[styles.label, solid && styles.labelSolid, card && styles.labelCard]} maxFontSizeMultiplier={maxFontSizeMultiplier}>
             {title}
           </Text>
           {quiet ? <View style={[styles.quietRule, { width: ruleWidth(title) }]} /> : <Feather name="arrow-right" size={18} color={ink} style={styles.arrow} />}
@@ -68,6 +79,7 @@ export function GateButton({
 const styles = StyleSheet.create({
   base: { height: 44, alignItems: "center", justifyContent: "center" },
   solid: { backgroundColor: GATE_BUTTON },
+  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldSoft },
   outline: { borderWidth: 1, borderColor: colors.ink },
   quiet: { height: undefined, paddingVertical: spacing.md },
   pressed: { opacity: 0.75 },
@@ -81,6 +93,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   labelSolid: { color: GATE_ON_BUTTON },
+  labelCard: { color: colors.gold },
   arrow: { position: "absolute", right: 16 },
   quietRule: { width: 26, height: 1, backgroundColor: colors.ink, marginTop: 7, opacity: 0.8 },
 });

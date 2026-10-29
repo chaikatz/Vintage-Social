@@ -5,11 +5,12 @@ import type { PostRow } from "@/types/db";
 
 /**
  * The Post tab, where a post begins: read from the source, the few lines
- * that decide where each tap goes and that a tap can only open one thing;
- * and, without a phone, the one print its On this day line may carry.
+ * that decide where each tap goes and that a tap can only open one thing,
+ * how the page is set so its two ways in are plain at a glance; and,
+ * without a phone, the one print its On this day line may carry.
  *
  * The tab's privacy contract (it never reads or asks for the library) and
- * the Darkroom door's words are held in darkroom-surfaces.test.ts.
+ * the Memory Room's words on it are held in darkroom-surfaces.test.ts.
  */
 
 // The public address of a stored file, as the app builds it, without a Supabase client.
@@ -32,9 +33,15 @@ function code(file: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
-describe("the ways in", () => {
-  const tab = code("app/(tabs)/create.tsx");
+const tab = code("app/(tabs)/create.tsx");
+const gate = code("src/components/gate/GateButton.tsx");
+/** One entry of a StyleSheet, as written. */
+const style = (src: string, name: string) => src.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
+/** The Memory Room's part of the page, and the library's. */
+const room = tab.slice(tab.indexOf("function MemoryRoomDoor"), tab.indexOf("function QuietWay"));
+const library = tab.slice(tab.indexOf("<View style={styles.section}>"), tab.indexOf("<OnThisDay"));
 
+describe("the ways in", () => {
   it("go through the ordinary picker, the camera and the clip picker, then the editor", () => {
     expect(tab).toMatch(/import \{ pickFromLibrary, takeForCompose, type PickedParams \} from "@\/utils\/pickForCompose"/);
     expect(tab).toMatch(/onPress=\{\(\) => openWith\("photo", \(\) => pickFromLibrary\("photo"\)\)\}/);
@@ -59,9 +66,8 @@ describe("the ways in", () => {
 
   it("opens each one in a single tap, with nothing to confirm on the way", () => {
     expect(tab).not.toMatch(/showAlert|Alert\.alert|ActionSheet|Modal\b/);
-    // One solid bar on the page, and it is the library.
-    expect(tab.match(/<GateButton\b/g)).toHaveLength(1);
-    expect(tab).toMatch(/title="Choose a photograph"\s+variant="solid"/);
+    // The room is one tap from the page, as the picker is: no sheet, no second page in front of it.
+    expect(room).toMatch(/onPress=\{\(\) => router\.push\("\/darkroom"\)\}/);
   });
 
   it("never scrolls sideways inside the pager", () => {
@@ -76,7 +82,7 @@ describe("the ways in", () => {
   it("says the clip's limit on the page, where no trimmer may hold a clip to it", () => {
     expect(tab).toMatch(/import \{ MAX_VIDEO_SECONDS \} from "@\/utils\/validation"/);
     const note = tab.match(/<Text style=\{styles\.waysNoteText\}[^>]*>([^<]*)<\/Text>/)?.[1] ?? "";
-    expect(note.trim()).toBe("Clips up to {MAX_VIDEO_SECONDS} seconds, in the same feed and grid.");
+    expect(note.trim()).toBe("Clips up to {MAX_VIDEO_SECONDS} seconds.");
     // Under the ways on every platform, and still in the clip's hint.
     const under = tab.slice(tab.indexOf('label="Short video"'), tab.indexOf("<OnThisDay"));
     expect(under).toContain("styles.waysNote");
@@ -89,20 +95,79 @@ describe("the ways in", () => {
   });
 });
 
-describe("at the largest text sizes on the narrowest phones", () => {
-  const tab = code("app/(tabs)/create.tsx");
-  const gate = code("src/components/gate/GateButton.tsx");
-  const style = (name: string) => tab.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
+describe("the page, at a glance", () => {
+  it("says what it is for in its one serif line, whether or not there is a Memory Room", () => {
+    expect(tab).toMatch(/<Text style=\{styles\.title\}[^>]*>\s*Share a photograph\.\s*<\/Text>/);
+    expect(tab.indexOf("Share a photograph.")).toBeLessThan(tab.indexOf("{door ?"));
+    expect(tab.match(/fontFamily: type\.serif/g)).toHaveLength(1);
+    expect(style(tab, "title")).toMatch(/fontFamily: type\.serif/);
+    expect(tab).not.toMatch(/type\.title|fontStyle: "italic"/);
+  });
 
-  it("wraps the running head and the ways rather than running off the page", () => {
-    for (const name of ["head", "ways"]) {
-      expect(style(name)).toMatch(/flexDirection: "row",\s*flexWrap: "wrap"/);
-      expect(style(name)).toMatch(/rowGap: spacing\.\w+/);
+  it("sets its two ways in alike: an eyebrow that names it, one line, and one bar", () => {
+    expect(room).toMatch(
+      /<Text style=\{\[styles\.eyebrow, styles\.roomEyebrow\]\} accessibilityRole="header"[^>]*>\s*The Memory Room\s*<\/Text>\s*<Text style=\{styles\.line\}[^>]*>\s*\{returnLine \?\? "Rediscover something worth sharing\."\}\s*<\/Text>\s*<GateButton\s+title="Enter the Memory Room"/,
+    );
+    expect(library).toMatch(
+      /<Text style=\{styles\.eyebrow\} accessibilityRole="header"[^>]*>\s*From your library\s*<\/Text>\s*<Text style=\{styles\.line\}[^>]*>\s*The one you have in mind\.\s*<\/Text>\s*<GateButton\s+title="Choose a photograph"/,
+    );
+    // The room comes first.
+    expect(tab.indexOf("<MemoryRoomDoor")).toBeLessThan(tab.indexOf('title="Choose a photograph"'));
+  });
+
+  it("gives the two bars the same size, and does not let them look alike", () => {
+    expect(tab.match(/<GateButton\b/g)).toHaveLength(2);
+    for (const part of [room, library]) {
+      const bar = part.match(/<GateButton\b[\s\S]*?\/>/)?.[0] ?? "";
+      expect(bar).toMatch(/style=\{styles\.bar\}/);
+      expect(bar).toMatch(/maxFontSizeMultiplier=\{BAR_TYPE_CAP\}/);
+      expect(bar).toMatch(/disabled=\{held\}/);
+    }
+    expect(room).toMatch(/title="Enter the Memory Room"\s+variant="card"/);
+    expect(library).toMatch(/title="Choose a photograph"\s+variant=\{door \? "outline" : "solid"\}/);
+    // The room's bar is the invitation card's brown, ruled and lettered in gold; the library's is ruled in ink.
+    expect(style(gate, "card")).toMatch(/backgroundColor: colors\.card, borderWidth: 1, borderColor: colors\.goldSoft/);
+    expect(style(gate, "outline")).toMatch(/borderWidth: 1, borderColor: colors\.ink/);
+    expect(gate).toMatch(/labelCard: \{ color: colors\.gold \}/);
+    expect(gate).toMatch(/: card\s*\? colors\.gold/);
+    // Neither variant changes the bar's height: that is the page's.
+    expect(style(gate, "card")).not.toMatch(/height|padding|margin/);
+  });
+
+  it("keeps the room's bar to its route, and its words to the Memory Room", () => {
+    expect(room).toMatch(/router\.push\("\/darkroom"\)/);
+    expect(tab).not.toMatch(/Darkroom/);
+  });
+
+  it("leaves out the words it used to carry", () => {
+    for (const gone of [
+      "New post",
+      "monthDay",
+      "Your best photos",
+      "From further back than you’d think to look.",
+      "Or the one you came with.",
+      "One picture at a time.",
+      "Nothing here is ranked.",
+      "What you posted on this date in other years\"",
+    ]) {
+      expect(tab).not.toContain(gone);
     }
   });
 
-  it("keeps the bar's centred label clear of its arrow on either side", () => {
-    expect(style("bar")).toMatch(/paddingHorizontal: BAR_INSET/);
+  it("names its two parts as headers, so VoiceOver can go from one to the other", () => {
+    expect(tab.match(/accessibilityRole="header"/g)).toHaveLength(2);
+  });
+});
+
+describe("at the largest text sizes on the narrowest phones", () => {
+  it("wraps the ways rather than running off the page", () => {
+    expect(style(tab, "ways")).toMatch(/flexDirection: "row",\s*flexWrap: "wrap"/);
+    expect(style(tab, "ways")).toMatch(/rowGap: spacing\.\w+/);
+  });
+
+  it("keeps each bar's centred label clear of its arrow on either side, and lets the bar grow", () => {
+    expect(style(tab, "bar")).toMatch(/paddingHorizontal: BAR_INSET/);
+    expect(style(tab, "bar")).toMatch(/height: undefined,\s*minHeight: 52/);
     const inset = Number(tab.match(/const BAR_INSET = (\d+);/)?.[1]);
     const right = Number(gate.match(/arrow: \{ position: "absolute", right: (\d+) \}/)?.[1]);
     const size = Number(gate.match(/name="arrow-right" size=\{(\d+)\}/)?.[1]);
@@ -110,10 +175,13 @@ describe("at the largest text sizes on the narrowest phones", () => {
     expect(size).toBeGreaterThan(0);
     expect(inset).toBeGreaterThan(right + size);
   });
+
+  it("holds nothing to one line, so no word is cut short", () => {
+    expect(tab).not.toMatch(/numberOfLines/);
+  });
 });
 
 describe("one tap, one editor", () => {
-  const tab = code("app/(tabs)/create.tsx");
   const open = tab.slice(tab.indexOf("const openWith"), tab.indexOf("const native"));
 
   it("is guarded by a ref, checked and set in the tap before anything awaits", () => {
@@ -140,44 +208,51 @@ describe("one tap, one editor", () => {
     expect(tab).toMatch(/busy=\{busy === "camera"\}/);
     expect(tab).toMatch(/busy=\{busy === "video"\}/);
     expect(tab).toMatch(/const held = busy !== null;/);
-    expect(tab.match(/disabled=\{held\}/g)?.length).toBeGreaterThanOrEqual(5);
+    // The two bars, each quiet way's own Pressable, and On this day.
+    expect(tab.match(/disabled=\{held\}/g)).toHaveLength(4);
+    // Handed to the camera, the clip, the shelf, the room's part of the page and On this day.
+    expect(tab.match(/\bheld=\{held\}/g)).toHaveLength(5);
+    expect(tab).toMatch(/<MemoryRoomDoor held=\{held\} \/>/);
+    expect(tab).toMatch(/<OnThisDay held=\{held\}/);
     // The old busy ring, shown on the library whatever was tapped, is gone.
     expect(tab).not.toMatch(/busy=\{opening\}|Feather/);
   });
 });
 
-describe("the door", () => {
-  const tab = code("app/(tabs)/create.tsx");
-
-  it("is shown only where there is a Darkroom, and keeps the label the walk-through taps", () => {
+describe("the Memory Room's way in", () => {
+  it("is shown only where there is a Memory Room", () => {
     expect(tab).toMatch(/const door = darkroomAvailable\(\);/);
-    expect(tab).toMatch(/\{door \? \(\s*<>\s*<DarkroomDoor/);
-    expect(tab).toMatch(/accessibilityLabel="The Darkroom"/);
-    // e2e/darkroom-test.mjs reads these words on the Post tab.
-    for (const words of ["The Darkroom", "Your best photos aren’t new.", "From your library"]) {
-      expect(tab).toContain(words);
-    }
+    expect(tab).toMatch(/\{door \? <MemoryRoomDoor held=\{held\} \/> : null\}/);
+  });
+
+  it("says where the member left off, in place of its line, when they were in the room lately", () => {
+    expect(room).toMatch(/setReturnLine\(placeLine\(\)\);/);
+    expect(room).toMatch(/\{returnLine \?\? "Rediscover something worth sharing\."\}/);
+  });
+
+  it("puts SET ASIDE under its bar, counted, and only when something is set aside", () => {
+    const shelf = room.slice(room.indexOf("{n > 0 ? ("));
+    expect(shelf).toMatch(/^\{n > 0 \? \(\s*<View style=\{\[styles\.ways, styles\.shelf\]\}>\s*<QuietWay\s+label=\{`Set aside · \$\{countLabel\(n\)\}`\}/);
+    expect(shelf).toMatch(/spoken=\{`Set aside, \$\{n\} \$\{n === 1 \? "photograph" : "photographs"\}`\}/);
+    expect(shelf).toMatch(/onPress=\{\(\) => router\.push\(\{ pathname: "\/darkroom", params: \{ mode: "set-aside" \} \}\)\}/);
+    expect(tab).toMatch(/import \{ countLabel \} from "@\/darkroom\/labels"/);
   });
 
   it("never cuts SET ASIDE short", () => {
-    const word = tab.match(/<Text[^>]*>\s*Set aside\s*<\/Text>/)?.[0] ?? "";
+    const word = tab.match(/<Text style=\{\[styles\.wayWord, busy && styles\.hidden\]\}[^>]*>\s*\{label\}\s*<\/Text>/)?.[0] ?? "";
     expect(word).not.toBe("");
     expect(word).not.toMatch(/numberOfLines/);
     // The tracked-capitals margin that made its box narrower than its letters ("SET ASID…").
-    const style = tab.match(/setAsideWord: \{[^}]*\}/)?.[0] ?? "";
-    expect(style).not.toBe("");
-    expect(style).not.toMatch(/marginRight/);
+    expect(style(tab, "wayWord")).not.toBe("");
+    expect(style(tab, "wayWord")).not.toMatch(/marginRight/);
   });
 
-  it("keeps the room's one ruled word", () => {
-    expect(tab.match(/ruleWidth\(/g)).toHaveLength(1);
-    expect(tab).toMatch(/ruleWidth\("Enter"\)/);
+  it("lets VoiceOver count the shelf, and hear each quiet way by its name", () => {
+    expect(tab).toMatch(/accessibilityLabel=\{spoken \?\? label\}/);
   });
 });
 
 describe("On this day on the Post tab", () => {
-  const tab = code("app/(tabs)/create.tsx");
-
   it("reads the member's own posts from the cache the profile shares, once the tab is in front", () => {
     expect(tab).toMatch(/queryKey: \["user-posts", userId\]/);
     expect(tab).toMatch(/queryFn: \(\) => fetchUserPosts\(userId\)/);
@@ -191,9 +266,11 @@ describe("On this day on the Post tab", () => {
     expect(tab).not.toMatch(/ph:\/\/|assetId|\.uri\b/);
   });
 
-  it("still opens On this day, which also holds the Eras", () => {
+  it("still opens On this day, which also holds the Eras, from one quiet line", () => {
     expect(tab).toMatch(/onPress=\{\(\) => router\.push\("\/memories"\)\}/);
-    expect(tab).toContain('"What you posted on this date in other years"');
+    expect(tab).toMatch(/<Text style=\{styles\.dayTitle\}[^>]*>\s*On this day →\s*<\/Text>/);
+    // The memory's sentence goes under it only on a day that has one.
+    expect(tab).toMatch(/\{print \? \(\s*<Text style=\{styles\.dayLine\}[^>]*>\s*\{print\.headline\}/);
   });
 
   it("reads the day's memory to VoiceOver as what the line says, not as a hint", () => {
@@ -202,12 +279,11 @@ describe("On this day on the Post tab", () => {
     expect(tab).not.toMatch(/accessibilityHint=\{line\}/);
   });
 
-  it("keeps the running head and the memory on one date, which turns over with the clock", () => {
+  it("keeps the memory on today's date, which turns over with the clock", () => {
     expect(tab).toMatch(/const today = useToday\(\);/);
-    expect(tab).toMatch(/\{monthDay\(today\)\}/);
     expect(tab).toMatch(/<OnThisDay [^>]*day=\{today\}/);
     expect(tab).toMatch(/todaysPrint\(posts\.data, new Date\(day\)\), \[posts\.data, day\]/);
-    // Only the hook reads the clock, so the two cannot drift apart.
+    // Only the hook reads the clock.
     const hook = tab.slice(tab.indexOf("function useToday"), tab.indexOf("function startOfDay"));
     expect(hook.match(/Date\.now\(\)/g)?.length).toBeGreaterThan(0);
     expect(tab.match(/Date\.now\(\)/g)?.length).toBe(hook.match(/Date\.now\(\)/g)?.length);

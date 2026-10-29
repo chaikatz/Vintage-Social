@@ -396,19 +396,26 @@ describe("the Post tab", () => {
     expect(tab).toMatch(/darkroomAvailable\(\)/);
   });
 
-  it("says what the spec says, in typographer’s apostrophes", () => {
+  it("says what the spec says, by the room's new name", () => {
     for (const words of [
-      "Your best photos aren’t new.",
-      "From further back than you’d think to look.",
-      "What you posted on this date in other years",
-      'accessibilityLabel="The Darkroom"',
-      'accessibilityHint="Your photographs, one at a time, from further back."',
-      'accessibilityHint="Opens the photographs you set aside."',
+      "Share a photograph.",
+      "The Memory Room",
+      '"Rediscover something worth sharing."',
+      'title="Enter the Memory Room"',
+      'accessibilityHint="Opens your photographs, one at a time, from further back."',
+      "From your library",
+      'title="Choose a photograph"',
+      'hint="Opens the photographs you set aside."',
+      'accessibilityHint="Opens what you posted on this date in other years."',
     ]) {
       expect(tab).toContain(words);
     }
+    // The visible name and every spoken one: the route alone keeps the old word.
+    expect(tab).not.toMatch(/Darkroom/);
     expect(tab).not.toMatch(/Find me something|randomOldPhoto|Something worth remembering/);
     expect(tab).not.toMatch(/!["'`]/);
+    // Typographer's apostrophes, never the typewriter's, in anything the page says.
+    expect(tab).not.toMatch(/"[^"\n]*\w'\w[^"\n]*"|>[^<{]*\w'\w[^<{]*</);
   });
 });
 
