@@ -134,26 +134,74 @@ describe("the toggle's scroll", () => {
 describe("the toggle, read from the source", () => {
   const toggle = code("src/components/GridSortToggle.tsx");
 
+  const style = (name: string) => toggle.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
+  const num = (block: string, prop: string) => Number(block.match(new RegExp(`${prop}: ([\\d.]+)`))?.[1]);
+  const scrollView = toggle.slice(toggle.search(/<ScrollView\s/), toggle.indexOf("</ScrollView>"));
+
   it("draws its options from the one list, each a radio", () => {
     expect(toggle).toMatch(/PROFILE_VIEWS\.map\(/);
     expect(toggle).toMatch(/accessibilityRole="radio"/);
-    expect(toggle).toMatch(/accessibilityRole="radiogroup" accessibilityLabel="Profile view"/);
     expect(toggle).not.toMatch(/label="(Posted|Taken|Timeline|Eras|Map|Places)"/);
   });
 
-  it("drops the visible label, and speaks the group's name with the first option", () => {
-    expect(toggle).not.toMatch(/Profile view:/);
-    // VoiceOver reads no name off a row that is not itself an element, and
-    // making the row one would swallow the radios.
-    expect(toggle).toMatch(/spoken=\{i === 0 \? `Profile view, \$\{label\}` : label\}/);
-    expect(toggle).toMatch(/accessibilityRole="radio"\s+accessibilityLabel=\{spoken\}/);
+  it("names the group with the label on screen, held still outside the scroll", () => {
+    const label = toggle.match(/<Text nativeID=\{labelId\} style=\{styles\.label\} numberOfLines=\{1\}>\s*Profile view\s*<\/Text>/);
+    expect(label).not.toBeNull();
+    expect(toggle.indexOf(label![0])).toBeLessThan(toggle.search(/<ScrollView\s/));
+    expect(scrollView).not.toContain("Profile view");
+    // The readers that announce a group take its name from those words, so there is no second copy to drift.
+    expect(toggle).toMatch(/const labelId = useId\(\);/);
+    expect(toggle).toMatch(/<View style=\{styles\.row\} accessibilityRole="radiogroup" aria-labelledby=\{labelId\}>/);
+    expect(toggle).not.toMatch(/accessibilityLabel="Profile view"/);
+  });
+
+  it("lets VoiceOver hear the group's name once: the label, then six radios that say only their own", () => {
+    // The old stand-in for the missing label, "Profile view, Posted", would now say it twice.
+    expect(toggle).not.toMatch(/Profile view,|spoken/);
+    const option = toggle.slice(toggle.indexOf("function Option"), toggle.indexOf("const styles"));
+    expect(option).toMatch(/accessibilityRole="radio" accessibilityState=\{\{ selected: active \}\}/);
+    expect(option).not.toMatch(/accessibilityLabel/);
+    // Making the row an element would swallow the radios.
     expect(toggle).not.toMatch(/\baccessible\b/);
   });
 
-  it("opens with the current option in view, without a visible scroll", () => {
+  it("keeps the views' names their own size, the label below them, and the current one in ink", () => {
+    expect(num(style("option"), "fontSize")).toBe(9);
+    expect(num(style("option"), "letterSpacing")).toBe(1.2);
+    expect(num(style("label"), "fontSize")).toBeLessThan(num(style("option"), "fontSize"));
+    expect(style("label")).toMatch(/fontFamily: type\.mono/);
+    expect(style("label")).toMatch(/color: colors\.inkFaint/);
+    expect(style("label")).toMatch(/flexShrink: 0/);
+    expect(style("optionOn")).toMatch(/color: colors\.ink\b/);
+    expect(toggle).toMatch(/style=\{\[styles\.option, active && styles\.optionOn\]\}/);
+  });
+
+  it("fits the six beside the label on a 390 pt phone, and lets them run out to the edge where they do not", () => {
+    // Courier New sets every letter 0.6 em wide; a divider is narrower than 0.3 em of its size.
+    const words = PROFILE_VIEWS.map((v) => v.label);
+    const optionSize = num(style("option"), "fontSize");
+    const tracked = (text: string, size: number, tracking: number) => text.length * (size * 0.6 + tracking);
+    const views =
+      words.reduce((sum, w) => sum + tracked(w, optionSize, num(style("option"), "letterSpacing")), 0) +
+      (words.length - 1) * num(style("divider"), "fontSize") * 0.3 +
+      (words.length * 2 - 2) * num(style("options"), "gap");
+    const gap = Number(toggle.match(/const LABEL_GAP = (\d+);/)?.[1]);
+    const label = tracked("Profile view", num(style("label"), "fontSize"), num(style("label"), "letterSpacing"));
+    const margin = 16; // spacing.lg, on the left of the row and inside the scroll on the right
+    expect(margin + label + gap + 1 + gap + views + margin).toBeLessThanOrEqual(390);
+    // The row has no right margin of its own: a row that scrolls is cut by the edge of the phone.
+    expect(style("row")).toMatch(/paddingLeft: spacing\.lg/);
+    expect(style("row")).not.toMatch(/paddingHorizontal|paddingRight/);
+    expect(style("options")).toMatch(/paddingRight: spacing\.lg/);
+  });
+
+  it("opens with the current option in view, measured against the scroll's own window", () => {
     expect(toggle).toMatch(/scrollTo\(\{ x, animated: false \}\)/);
     expect(toggle).toMatch(/onContentSizeChange=/);
     expect(toggle).toMatch(/placed\.current = true/);
+    // The label takes its width from the row, so only the ScrollView knows how much is left for the views.
+    expect(scrollView).toMatch(/onLayout=\{\(e\) => \{\s*room\.current\.viewport = e\.nativeEvent\.layout\.width;/);
+    expect(toggle.match(/room\.current\.viewport =/g)).toHaveLength(1);
   });
 });
 

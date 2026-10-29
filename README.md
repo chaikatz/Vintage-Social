@@ -421,9 +421,10 @@ than anyone scrolls. It is `app/darkroom.tsx`, a screen pushed on the root
 stack — not a tab, because the tab pager owns every sideways pan, and not a
 modal, because the editor has to open above it and come back to it. It is
 always printed on the dark page. Back is the left edge or the chevron;
-anywhere else a swipe turns the page. The way in is the door on the Post
-tab, under the three ordinary rows: ENTER, SET ASIDE when anything is set
-aside, and "You left off in August 2018." when the member was in the room
+anywhere else a swipe turns the page. The way in is the first of the Post
+tab's two bars, ENTER THE MEMORY ROOM, in the invitation card's brown and
+gold: SET ASIDE · 3 stands under it when anything is set aside, and "You
+left off in August 2018." replaces its line when the member was in the room
 within twelve hours. The "In your library" rows of On this day
 (`app/memories.tsx`) open it too. It exists on iOS and in the web demo only.
 

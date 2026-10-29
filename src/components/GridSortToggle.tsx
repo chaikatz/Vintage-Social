@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useId, useRef } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import { colors, spacing, type } from "@/theme";
 import { PROFILE_VIEWS, revealOffset, type ProfileView } from "@/utils/profileViews";
@@ -7,6 +7,8 @@ export type { GridSort, ProfileView } from "@/utils/profileViews";
 
 /** Room left after the current option when the row is scrolled to it, so it does not sit against the edge. */
 const EDGE = spacing.lg;
+/** Either side of the hairline between the label and the views. */
+const LABEL_GAP = 6;
 
 /**
  * The one control over a profile: how it reads.
@@ -20,22 +22,25 @@ const EDGE = spacing.lg;
  * names. Six words in tracked mono, the current one in ink — a mark on
  * the contact sheet, not a segmented control.
  *
- * There is no label in front of them: the six words say what they are,
- * and the group's name is spoken with the first, as "Profile view,
- * Posted". VoiceOver reads no name for a group that is not itself an
- * element, and the row must not be one, or it would swallow the six
- * radios; it keeps its name for the readers that announce a group.
- * They fit abreast on most phones.
- * Where they do not (the narrowest, or with larger text) the row scrolls,
- * and it opens with the current view in sight. The row is drawn afresh
- * with each view, so it is put there each time it is drawn, before it is
- * seen moving.
+ * "Profile view" stands in front of them, a size smaller, with a hairline
+ * between, and stays where it is. The six fit beside it from 390 pt up;
+ * where they do not (the narrower phones, or larger text) they scroll
+ * behind the hairline and out past the edge of the screen, and the row
+ * opens with the current view in sight. The row is drawn afresh with each
+ * view, so it is put there each time it is drawn, before it is seen
+ * moving.
+ *
+ * The label is the group's name. VoiceOver reads it as it reads any
+ * words on the page, just before the first view, so the six radios say
+ * only their own names; the readers that announce a group take its name
+ * from the same words.
  */
 export function GridSortToggle({ value, onChange }: { value: ProfileView; onChange: (next: ProfileView) => void }) {
   const scroll = useRef<ScrollView>(null);
   const spots = useRef(new Map<ProfileView, { x: number; width: number }>());
   const room = useRef({ viewport: 0, content: 0 });
   const placed = useRef(false);
+  const labelId = useId();
 
   // Once the row, what it holds and the current option are all measured.
   const place = () => {
@@ -49,7 +54,12 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
   };
 
   return (
-    <View style={styles.row} accessibilityRole="radiogroup" accessibilityLabel="Profile view">
+    <View style={styles.row} accessibilityRole="radiogroup" aria-labelledby={labelId}>
+      <Text nativeID={labelId} style={styles.label} numberOfLines={1}>
+        Profile view
+      </Text>
+      {/* Outside the scroll, so it stays put while the views move past it; the views are cut at the hairline. */}
+      <View style={styles.labelRule} />
       <ScrollView
         ref={scroll}
         horizontal
@@ -57,6 +67,7 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
         contentContainerStyle={styles.options}
         style={styles.optionsScroll}
         onLayout={(e) => {
+          // The views' own window, with the label's width already taken from it.
           room.current.viewport = e.nativeEvent.layout.width;
           place();
         }}
@@ -70,7 +81,6 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
             {i > 0 ? <Text style={styles.divider}>·</Text> : null}
             <Option
               label={label}
-              spoken={i === 0 ? `Profile view, ${label}` : label}
               active={value === view}
               onPress={() => onChange(view)}
               onLayout={(e) => {
@@ -88,44 +98,50 @@ export function GridSortToggle({ value, onChange }: { value: ProfileView; onChan
 
 function Option({
   label,
-  spoken,
   active,
   onPress,
   onLayout,
 }: {
   label: string;
-  spoken: string;
   active: boolean;
   onPress: () => void;
   onLayout: (e: LayoutChangeEvent) => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      onLayout={onLayout}
-      hitSlop={8}
-      accessibilityRole="radio"
-      accessibilityLabel={spoken}
-      accessibilityState={{ selected: active }}
-    >
+    <Pressable onPress={onPress} onLayout={onLayout} hitSlop={8} accessibilityRole="radio" accessibilityState={{ selected: active }}>
       <Text style={[styles.option, active && styles.optionOn]}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  // No margin on the right: the views run out to the screen's edge, so a
+  // row that scrolls is cut by the edge of the phone rather than short of
+  // it. Their content keeps the margin instead.
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
-    paddingHorizontal: spacing.lg,
+    paddingLeft: spacing.lg,
     paddingVertical: spacing.sm,
     backgroundColor: colors.paper,
   },
+  // A size below the views, in their faint ink, and set apart by the
+  // hairline, so it reads as their name rather than as a seventh.
+  label: {
+    fontFamily: type.mono,
+    fontSize: 8,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    color: colors.inkFaint,
+    flexShrink: 0,
+    marginRight: LABEL_GAP,
+  },
+  labelRule: { width: 1, height: 10, backgroundColor: colors.border },
   optionsScroll: { flex: 1 },
-  // Six words on one line of a phone: a little smaller and tighter than
-  // the rest of the mono so all of them fit abreast.
-  options: { flexGrow: 1, justifyContent: "flex-end", alignItems: "center", gap: 6, paddingLeft: 6 },
+  // Six words after the label on one line of a phone: a little smaller
+  // and tighter than the rest of the mono so all of them fit abreast. They
+  // follow the label, as its line, rather than stand off at the far edge.
+  options: { alignItems: "center", gap: 4, paddingLeft: LABEL_GAP, paddingRight: spacing.lg },
   option: {
     fontFamily: type.mono,
     fontSize: 9,

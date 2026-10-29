@@ -109,12 +109,17 @@ await wait(3000);
 await page.goto(B + "/create", { waitUntil: "networkidle" });
 await wait(2200);
 const post = await text();
-check("The Post tab offers the Darkroom", /The Darkroom/.test(post) && /Your best photos aren’t new\./.test(post));
-check("The ordinary picker is still one tap away", /From your library/.test(post));
+check(
+  "The Post tab offers the Memory Room",
+  /The Memory Room/.test(post) && /Rediscover something worth sharing\.|You left off in /.test(post),
+);
+check("The ordinary picker is still one tap away", /From your library/.test(post) && /Choose a photograph/.test(post));
 await shot("entry");
 
 // --- the first visit ----------------------------------------------------------------
-const door = seen(page.getByLabel("The Darkroom", { exact: true })).first();
+// The bar's name is its words (and the arrow drawn after them).
+const door = seen(page.getByRole("button", { name: /^Enter the Memory Room/i })).first();
+check("The Memory Room has its own bar on the Post tab", (await door.count()) > 0);
 if (await door.count()) await door.click();
 else await page.goto(B + "/darkroom", { waitUntil: "networkidle" });
 const firstVisit = await appears("darkroom-page-firstVisit");
