@@ -7,7 +7,6 @@ vi.mock("react-native", () => ({
   Platform: { OS: "ios", select: (o: Record<string, unknown>) => o.ios ?? o.default },
   DynamicColorIOS: (o: { dark: string }) => o.dark,
 }));
-vi.mock("expo-status-bar", () => ({ setStatusBarHidden: () => undefined }));
 
 // What a visit reads besides the library: the phone's own stores, faked in memory.
 vi.mock("@/darkroom/develop", () => ({ stillInLibrary: async () => null }));
@@ -79,7 +78,6 @@ import {
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, type Reader } from "@/components/darkroom/dealer";
 import { roles, room, toneColor } from "@/components/darkroom/room";
-import { steadyTop } from "@/components/darkroom/useChrome";
 import { Visit } from "@/components/darkroom/visit";
 import { dark } from "@/theme";
 import type { LibrarySource, Print } from "@/darkroom/types";
@@ -368,19 +366,6 @@ describe("a print's caption", () => {
     expect(shelfSaid("full")).toBe("The shelf is full. Put one back first.");
     expect(shelfSaid("on")).toBe("Set aside");
     expect(shelfSaid("off")).toBe("Put back");
-  });
-});
-
-describe("the chrome", () => {
-  it("keeps the head where it is while the status bar is hidden on a Home-button iPhone", () => {
-    // Shown: the inset as it is.
-    expect(steadyTop(20, 20, false)).toBe(20);
-    // Hidden, and the status bar gone with the words: the inset falls to 0, the head does not.
-    expect(steadyTop(20, 0, true)).toBe(20);
-    // Shown again, before the status bar is back: still 20, not a second jump.
-    expect(steadyTop(20, 0, false)).toBe(20);
-    // A Face ID phone keeps its inset throughout.
-    expect(steadyTop(59, 59, true)).toBe(59);
   });
 });
 

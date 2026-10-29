@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { keepScrollToOneFinger } from "@/utils/pagerTouches";
 import type { Print } from "@/darkroom/types";
+import { tapTurn } from "./turn";
 import { actionNamed, spokenActions, STAGE_HINT, STAGE_LABEL, type StageAction } from "./words";
 
 /** One page of the pager: a print, or the page after the last of them. */
@@ -20,6 +21,11 @@ type Item = { kind: "print"; print: Print } | { kind: "tail" };
 
 /** The browser has no momentum events: a scroll that has been still this long has settled. */
 const WEB_SETTLE_MS = 140;
+/**
+ * A turn a tap began has settled well within this. Should the list never
+ * say so, taps are heard again after it, and DEVELOP can be pressed.
+ */
+const TURN_HELD_MS = 1000;
 
 /** VoiceOver's focus onto a view. The browser has no native tags to find, and no VoiceOver to tell. */
 function focusOn(view: unknown): void {
@@ -35,6 +41,12 @@ function focusOn(view: unknown): void {
 export interface StageHandle {
   /** To a page at once, never scrolling visibly across the ones between. */
   goTo(index: number): void;
+  /**
+   * A tap on the photograph, `x` across the page: on a page or back one
+   * (`tapTurn`), with the slide a swipe ends in, or a cut under Reduce
+   * Motion. A tap that arrives before the turn has settled turns nothing.
+   */
+  tap(x: number, zoomed: boolean): void;
   /** VoiceOver's focus onto the stage, after a chapter change. */
   focus(): void;
 }
@@ -53,12 +65,23 @@ export interface StageHandle {
  * rest. A pinch never turns the page: the list's own pan is kept to one
  * finger (`keepScrollToOneFinger`), the same fix the tab pager has.
  *
+ * A tap on the photograph turns the page as well (`tap`, decided by
+ * `tapTurn`): the list scrolls itself on a page or back one, with the
+ * slide a swipe ends in, and settles where a swipe does. A swipe is never
+ * also a tap: once the list's pan moves, the plate's press is cancelled.
+ * From the tap until the list settles further taps are not heard and
+ * DEVELOP cannot be pressed, as during a swipe, and the next turn is
+ * counted from the page the list settled on, never from one it is
+ * leaving.
+ *
  * VoiceOver sees one element over the whole stage (§11.1): adjustable,
  * labelled "Photograph", its value the date and the line. Swiping up or
- * down turns the page; the pages themselves are hidden from it. On the
- * end page the element steps aside and the end page's title takes the
- * focus, so its words can be reached. Over a trailing page still waiting
- * on the next batch it stays, and the focus with it.
+ * down turns the page; the pages themselves are hidden from it, and its
+ * double-tap, which iOS lands as a touch in the middle of the stage,
+ * turns nothing. On the end page the element steps aside and the end
+ * page's title takes the focus, so its words can be reached. Over a
+ * trailing page still waiting on the next batch it stays, and the focus
+ * with it.
  */
 export const Stage = React.forwardRef<StageHandle, {
   prints: readonly Print[];
@@ -74,6 +97,8 @@ export const Stage = React.forwardRef<StageHandle, {
   renderTail: () => React.ReactElement;
   onSettle: (index: number) => void;
   onDragging: (dragging: boolean) => void;
+  /** What holds a tap on the photograph back, and whether its turn slides. */
+  taps: { locked: boolean; screenReader: boolean; reduceMotion: boolean };
   accessibility: {
     /** False on the end page, where its own words are read. */
     single: boolean;
@@ -93,19 +118,67 @@ export const Stage = React.forwardRef<StageHandle, {
   const toldFor = useRef<number | null>(null);
   const settledAt = useRef(index);
   settledAt.current = index;
+  // Read when tapped, so the handle need not change with them.
+  const taps = useRef({ ...props.taps, scrollEnabled: props.scrollEnabled });
+  taps.current = { ...props.taps, scrollEnabled: props.scrollEnabled };
+  /** A swipe, or the turn a tap began, is under way: from its start until the list settles. */
+  const turning = useRef(false);
+  const turnHeld = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const page = useCallback((x: number) => Math.max(0, Math.min(items.length - 1, Math.round(x / Math.max(1, width)))), [items.length, width]);
 
-  React.useImperativeHandle(ref, () => ({
-    goTo(to: number) {
+  /** The list has come to rest on page `i`: however it got there, the turn is over. */
+  const settled = useCallback(
+    (i: number) => {
+      turning.current = false;
+      if (turnHeld.current) clearTimeout(turnHeld.current);
+      turnHeld.current = null;
+      settledAt.current = i;
+      onSettle(i);
+      onDragging(false);
+    },
+    [onSettle, onDragging],
+  );
+
+  const goTo = useCallback(
+    (to: number) => {
       const i = Math.max(0, Math.min(items.length - 1, to));
       list.current?.scrollToIndex({ index: i, animated: false });
-      onSettle(i);
+      settled(i);
+    },
+    [items.length, settled],
+  );
+
+  React.useImperativeHandle(ref, () => ({
+    goTo,
+    tap(x: number, zoomed: boolean) {
+      const held = taps.current;
+      const step = tapTurn(x, width, {
+        index: settledAt.current,
+        count: items.length,
+        zoomed,
+        locked: held.locked || !held.scrollEnabled,
+        turning: turning.current,
+        screenReader: held.screenReader,
+      });
+      if (step === 0) return;
+      const to = settledAt.current + step;
+      // Under Reduce Motion the slide is a cut, and a cut has settled as it lands.
+      if (held.reduceMotion) return goTo(to);
+      turning.current = true;
+      onDragging(true);
+      if (turnHeld.current) clearTimeout(turnHeld.current);
+      turnHeld.current = setTimeout(() => {
+        turnHeld.current = null;
+        turning.current = false;
+        onDragging(false);
+      }, TURN_HELD_MS);
+      list.current?.scrollToIndex({ index: to, animated: true });
     },
     focus() {
       focusOn(wrapper.current);
     },
-  }), [items.length, width, onSettle]);
+  }), [goTo, items.length, width, onDragging]);
 
   // Prints behind the member were taken out: back onto the same page, at once.
   useLayoutEffect(() => {
@@ -116,8 +189,9 @@ export const Stage = React.forwardRef<StageHandle, {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rebase]);
 
-  // A new chapter starts where it starts.
+  // A new chapter starts where it starts, with no turn under way.
   useLayoutEffect(() => {
+    turning.current = false;
     scrollX.setValue(index * width);
     // Only when the list is new.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,6 +224,7 @@ export const Stage = React.forwardRef<StageHandle, {
   const webTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (webTimer.current) clearTimeout(webTimer.current);
+    if (turnHeld.current) clearTimeout(turnHeld.current);
   }, []);
   const onScroll = useMemo(
     () =>
@@ -162,20 +237,17 @@ export const Stage = React.forwardRef<StageHandle, {
             ? (e: NativeSyntheticEvent<NativeScrollEvent>) => {
                 const x = e.nativeEvent.contentOffset.x;
                 if (webTimer.current) clearTimeout(webTimer.current);
-                webTimer.current = setTimeout(() => onSettle(page(x)), WEB_SETTLE_MS);
+                webTimer.current = setTimeout(() => settled(page(x)), WEB_SETTLE_MS);
               }
             : undefined,
       }),
-    [scrollX, onSettle, page],
+    [scrollX, settled, page],
   );
 
   const onEndDrag = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     // Let go exactly on a page, there is no momentum to wait for.
     const x = e.nativeEvent.contentOffset.x;
-    if (Math.abs(x - page(x) * width) < 0.5) {
-      onSettle(page(x));
-      onDragging(false);
-    }
+    if (Math.abs(x - page(x) * width) < 0.5) settled(page(x));
   };
 
   const a11y = props.accessibility;
@@ -223,12 +295,16 @@ export const Stage = React.forwardRef<StageHandle, {
         removeClippedSubviews
         onScroll={onScroll}
         scrollEventThrottle={16}
-        onScrollBeginDrag={() => onDragging(true)}
-        onScrollEndDrag={onEndDrag}
-        onMomentumScrollEnd={(e) => {
-          onSettle(page(e.nativeEvent.contentOffset.x));
-          onDragging(false);
+        onScrollBeginDrag={() => {
+          // A finger that catches a tap's turn takes it over: the swipe settles it.
+          if (turnHeld.current) clearTimeout(turnHeld.current);
+          turnHeld.current = null;
+          turning.current = true;
+          onDragging(true);
         }}
+        onScrollEndDrag={onEndDrag}
+        // Where a swipe's momentum ends, and a tap's turn: iOS says so for a scroll the list made itself.
+        onMomentumScrollEnd={(e) => settled(page(e.nativeEvent.contentOffset.x))}
         onScrollToIndexFailed={() => undefined}
         onLayout={() => {
           // Each new list is a new native scroll view, told once.

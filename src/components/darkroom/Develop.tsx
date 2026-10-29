@@ -16,11 +16,11 @@ const UNDRAW_MS = 180;
  * type, so the layout never moves; only the word changes.
  *
  * Its opacity is the pager's scroll position on the native driver — full
- * up to the last print, nothing on the end page — times the room's
- * chrome. It cannot be pressed while a page is being dragged. While a
- * print develops its rule draws out from 26 pt to the width of the
- * letters (not under Reduce Motion), and draws back when the room is in
- * front again. Dimmed, it says why to VoiceOver.
+ * up to the last print, nothing on the end page. It cannot be pressed
+ * while a page is being turned, by a swipe or a tap. While a print
+ * develops its rule draws out from 26 pt to the width of the letters
+ * (not under Reduce Motion), and draws back when the room is in front
+ * again. Dimmed, it says why to VoiceOver.
  */
 export function Develop({
   words,

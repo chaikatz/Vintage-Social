@@ -470,6 +470,14 @@ photo library's own file and the image manipulator
 the room's page turns to one finger, so a pinch zooms the print instead of
 turning it.
 
+A tap on the photograph turns the page as a swipe does: its right half
+on, its left half back, by the pager's own scroll
+(`src/components/darkroom/turn.ts` decides). Not while the print is
+zoomed in, while a develop state is showing, or under VoiceOver, which
+turns the page with its own swipes up and down; quick taps turn one page
+at a time. The running head, the captions and DEVELOP are always on the
+page: nothing hides them.
+
 To review it in a browser, the web demo reads a small bundled library
 (`src/darkroom/demoSource.ts`) with six photographs on today's date in
 earlier years, so On this day always opens.

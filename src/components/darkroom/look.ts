@@ -11,8 +11,8 @@ import { createContext, useContext } from "react";
  *                  Courier New and Georgia have bold faces on iOS.
  *   reduceMotion   Reduce Motion: every fade, dissolve, scale and slide
  *                  becomes a cut.
- *   screenReader   VoiceOver: the chrome never hides, and the stage is
- *                  one adjustable element.
+ *   screenReader   VoiceOver: the stage is one adjustable element, and
+ *                  a tap on the photograph turns no page.
  *
  * Read through `src/utils/useReducedMotion.ts` and
  * `src/utils/useRoomAccessibility.ts` in `app/darkroom.tsx`.
