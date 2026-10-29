@@ -1,8 +1,9 @@
 /**
  * A tap on the photograph turns the page: the right half on to the next
  * print, the left half back, as a book is turned from the side it is held
- * by. This decides which way, or that it does not; the pager turns it
- * (`Stage`), by its own scroll, with the same slide a swipe ends in.
+ * by. This decides which way, or that it does not (`tapStep`); the pager
+ * turns it (`Stage`), by its own scroll, with the same slide a swipe ends
+ * in.
  *
  * Only the photograph turns. The words around it — the running head, the
  * caption's date and SET ASIDE, DEVELOP — are presses of their own, and a
@@ -52,4 +53,44 @@ export function tapTurn(x: number, width: number, at: TapContext): -1 | 0 | 1 {
   const step = x < width / 2 ? -1 : 1;
   const to = at.index + step;
   return to >= 0 && to < at.count ? step : 0;
+}
+
+/** What the room holds a tap back by, as the stage reads it when tapped. */
+export interface TapHeld {
+  /** A develop state is showing, a chapter is on its way, or its title card is up. */
+  locked: boolean;
+  /** The pager can be swiped: never while a develop is under way, or a chapter loads. */
+  scrollEnabled: boolean;
+  /** VoiceOver is running. */
+  screenReader: boolean;
+  /** Reduce Motion is on: the turn is a cut, not the slide. */
+  reduceMotion: boolean;
+}
+
+/** The pager as a tap finds it. */
+export interface TapPager {
+  /** The settled page. */
+  index: number;
+  /** Pages in the pager: the prints, and the page after them. */
+  count: number;
+  /** A turn is still under way, and has not settled. */
+  turning: boolean;
+}
+
+/**
+ * The whole of what the stage does with a tap: the page it turns to, and
+ * whether it gets there by a cut (Reduce Motion) or with the slide a swipe
+ * ends in; null for no turn. A pager that cannot be swiped takes no tap
+ * either, so nothing turns that a swipe could not.
+ */
+export function tapStep(held: TapHeld, at: TapPager, x: number, width: number, zoomed: boolean): { to: number; cut: boolean } | null {
+  const step = tapTurn(x, width, {
+    index: at.index,
+    count: at.count,
+    zoomed,
+    locked: held.locked || !held.scrollEnabled,
+    turning: at.turning,
+    screenReader: held.screenReader,
+  });
+  return step === 0 ? null : { to: at.index + step, cut: held.reduceMotion };
 }
