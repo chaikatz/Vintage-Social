@@ -11,13 +11,29 @@
 -- (src/utils/eraEdits.ts).
 --
 -- One row per member:
---   titles  an automatic era's name, its key ("Lisbon 2023") → the
---           member's name for it
---   moves   a photograph's id → the automatic era it was moved into
--- Both are keyed by what the automatic reading makes, so a change whose
--- photograph or era has since gone is simply not applied: a stale edit
--- never breaks Eras. The app leaves out the moves of photographs that no
--- longer exist the next time it saves.
+--   titles     an automatic era's name, its key ("Lisbon 2023") → the
+--              member's name for it
+--   moves      a photograph's id → the automatic era it was moved into
+--   time_zone  the time zone those keys were read in ("Europe/Lisbon")
+-- Both maps are keyed by what the automatic reading makes, so a change
+-- whose photograph or era has since gone is simply not applied: a stale
+-- edit never breaks Eras. Each time the member saves, the app lets go of
+-- the names of eras none of their photographs falls in now, and the moves
+-- of photographs since deleted, or into such an era, so the row does not
+-- keep what the member deleted. It does so only once it has read all of
+-- their photographs (fewer than PostgREST's max_rows), as what is missing
+-- from a list cut short is not known to be gone.
+--
+-- A year, and a season, depend on the time zone they are read in: a
+-- photograph taken late on New Year's Eve in Lisbon is already in the new
+-- year in Tokyo, and still in the old one in New York. So the row keeps
+-- the zone its keys were read in. The app writes the member's own when
+-- they first save, and the one already kept every time after, so a
+-- member who travels never has their keys read anew. Everyone who lays
+-- the row over the member's photographs, the member included, reads them
+-- in that zone. Null (no zone) reads them on each phone's own calendar,
+-- as Eras were read before there was anything to arrange. An IANA name
+-- only: letters, digits and _ + - /, at most 64 of them.
 --
 -- Other members read a member's Eras too, so the row is on the server,
 -- where it outlives a reinstall and every reader sees the same names. Who
@@ -57,15 +73,21 @@ create table if not exists public.era_edits (
   author_id  uuid primary key references public.profiles (id) on delete cascade,
   titles     jsonb not null default '{}'::jsonb,
   moves      jsonb not null default '{}'::jsonb,
+  time_zone  text,
   updated_at timestamptz not null default now(),
   -- Two maps of words: an object each, whose every value is a string.
+  -- Strict, as lax jsonpath would look inside a list and pass ["x"] or [].
   constraint era_edits_titles_object check (
     jsonb_typeof(titles) = 'object'
-    and not jsonb_path_exists(titles, '$.* ? (@.type() != "string")')
+    and not jsonb_path_exists(titles, 'strict $.* ? (@.type() != "string")')
   ),
   constraint era_edits_moves_object check (
     jsonb_typeof(moves) = 'object'
-    and not jsonb_path_exists(moves, '$.* ? (@.type() != "string")')
+    and not jsonb_path_exists(moves, 'strict $.* ? (@.type() != "string")')
+  ),
+  constraint era_edits_time_zone check (
+    time_zone is null
+    or (char_length(time_zone) between 1 and 64 and time_zone ~ '^[A-Za-z0-9_+/-]+$')
   ),
   -- A name is a line under a chapter, not a caption: 1 to 60 characters,
   -- as the app trims it (ERA_TITLE_MAX).
