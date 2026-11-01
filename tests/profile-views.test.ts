@@ -135,6 +135,8 @@ describe("the toggle's scroll", () => {
 
   it("never scrolls a row that fits", () => {
     expect(revealOffset({ x: 260, width: 40 }, 300, 300, 16)).toBe(0);
+    // Nor one spread to its window, the last option ending on the margin.
+    expect(revealOffset({ x: 246, width: 38 }, 300, 300, 16)).toBe(0);
   });
 });
 
@@ -144,8 +146,46 @@ describe("the toggle, read from the source", () => {
   const style = (name: string) => toggle.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
   const num = (block: string, prop: string) => Number(block.match(new RegExp(`${prop}: ([\\d.]+)`))?.[1]);
   const scrollView = toggle.slice(toggle.search(/<ScrollView\s/), toggle.indexOf("</ScrollView>"));
+  const constant = (name: string) => Number(toggle.match(new RegExp(`const ${name} = ([\\d.]+);`))?.[1]);
   // Courier New sets every letter 0.6 em wide; iOS grows the letters with the text size, not the tracking between them.
   const tracked = (text: string, size: number, tracking: number, scale = 1) => text.length * (size * 0.6 * scale + tracking);
+  // A view's name as the row sets it, the tracking after its last letter given back.
+  const word = (text: string, scale = 1) =>
+    tracked(text, num(style("option"), "fontSize"), constant("TRACKING"), scale) - constant("TRACKING");
+
+  const MARGIN = 16; // spacing.lg, on the left of the row and inside the scroll on the right
+  const EDGE = 16; // the room revealOffset leaves after the current option
+
+  /**
+   * The row on a phone `screen` points wide, at text size `scale`, as
+   * Yoga lays it out: the window the views have once the label has its
+   * width, and the line in it, which is as long as the words, the dots and
+   * the least room either side of each dot, or as the window, whichever
+   * is longer, any room to spare shared out evenly between them. A
+   * divider is narrower than 0.3 em of its size. `spots` are the views'
+   * places on the line, as their onLayout reports them.
+   */
+  const lay = (screen: number, scale = 1) => {
+    const labelGap = constant("LABEL_GAP");
+    const labelSize = Math.min(scale, constant("LABEL_CAP"));
+    const label = tracked("Profile view", num(style("label"), "fontSize"), num(style("label"), "letterSpacing"), labelSize);
+    const window = screen - MARGIN - label - labelGap - num(style("labelRule"), "width");
+    const items = PROFILE_VIEWS.flatMap(({ view, label: name }, i) => [
+      ...(i > 0 ? [{ view: null, width: num(style("divider"), "fontSize") * 0.3 * scale }] : []),
+      { view, width: word(name, scale) },
+    ]);
+    const least = items.reduce((sum, it) => sum + it.width, 0) + (items.length - 1) * constant("DOT_GAP");
+    const natural = labelGap + least + MARGIN;
+    const content = Math.max(window, natural);
+    const between = constant("DOT_GAP") + (content - natural) / (items.length - 1);
+    const spots = new Map<ProfileView, { x: number; width: number }>();
+    let x = labelGap;
+    for (const it of items) {
+      if (it.view) spots.set(it.view, { x, width: it.width });
+      x += it.width + between;
+    }
+    return { window, content, between, spots, scrolls: natural > window };
+  };
 
   it("draws its options from the one list, each a radio", () => {
     expect(toggle).toMatch(/PROFILE_VIEWS\.map\(/);
@@ -178,7 +218,8 @@ describe("the toggle, read from the source", () => {
 
   it("keeps the views' names their own size, the label below them, and the current one in ink", () => {
     expect(num(style("option"), "fontSize")).toBe(9);
-    expect(num(style("option"), "letterSpacing")).toBe(1.2);
+    expect(constant("TRACKING")).toBe(1.2);
+    expect(style("option")).toMatch(/letterSpacing: TRACKING,/);
     expect(num(style("label"), "fontSize")).toBeLessThan(num(style("option"), "fontSize"));
     expect(style("label")).toMatch(/fontFamily: type\.mono/);
     expect(style("label")).toMatch(/color: colors\.inkSoft/);
@@ -213,33 +254,75 @@ describe("the toggle, read from the source", () => {
 
   it("keeps the label small enough at the largest text size that the longest view still shows whole on a 320 pt phone", () => {
     const AX5 = 3.571; // iOS's largest accessibility size, as React Native reads it
-    const cap = Number(toggle.match(/const LABEL_CAP = ([\d.]+);/)?.[1]);
-    expect(cap).toBeGreaterThan(1);
-    const label = tracked("Profile view", num(style("label"), "fontSize"), num(style("label"), "letterSpacing"), Math.min(cap, AX5));
-    const gap = Number(toggle.match(/const LABEL_GAP = (\d+);/)?.[1]);
-    const window = 320 - 16 - label - gap - num(style("labelRule"), "width");
+    expect(constant("LABEL_CAP")).toBeGreaterThan(1);
     // The views are held to no cap, so at AX5 each is as wide as it gets.
-    const longest = Math.max(...PROFILE_VIEWS.map((v) => tracked(v.label, num(style("option"), "fontSize"), num(style("option"), "letterSpacing"), AX5)));
-    const edge = 16; // EDGE, the room revealOffset leaves after the current option
-    expect(longest + edge).toBeLessThanOrEqual(window);
+    const longest = Math.max(...PROFILE_VIEWS.map((v) => word(v.label, AX5)));
+    expect(longest + EDGE).toBeLessThanOrEqual(lay(320, AX5).window);
   });
 
-  it("fits the six beside the label on a 390 pt phone, and lets them run out to the edge where they do not", () => {
-    // A divider is narrower than 0.3 em of its size.
-    const words = PROFILE_VIEWS.map((v) => v.label);
-    const optionSize = num(style("option"), "fontSize");
-    const views =
-      words.reduce((sum, w) => sum + tracked(w, optionSize, num(style("option"), "letterSpacing")), 0) +
-      (words.length - 1) * num(style("divider"), "fontSize") * 0.3 +
-      (words.length * 2 - 2) * num(style("options"), "gap");
-    const gap = Number(toggle.match(/const LABEL_GAP = (\d+);/)?.[1]);
-    const label = tracked("Profile view", num(style("label"), "fontSize"), num(style("label"), "letterSpacing"));
-    const margin = 16; // spacing.lg, on the left of the row and inside the scroll on the right
-    expect(margin + label + gap + 1 + gap + views + margin).toBeLessThanOrEqual(390);
+  it("grows the line to the window and shares out the room to spare, the same either side of each dot", () => {
+    expect(scrollView).toMatch(/contentContainerStyle=\{styles\.options\}/);
+    expect(style("options")).toMatch(/flexGrow: 1,/);
+    expect(style("options")).toMatch(/justifyContent: "space-between",/);
+    expect(style("options")).toMatch(/gap: DOT_GAP,/);
+    expect(style("options")).toMatch(/paddingLeft: LABEL_GAP,/);
+    expect(style("options")).toMatch(/paddingRight: spacing\.lg\b/);
+    // The dots are the line's own children, between the words, so the room goes about them as about the words.
+    expect(scrollView).toMatch(/\{i > 0 \? <Text style=\{styles\.divider\}>·<\/Text> : null\}\s*<Option\b/);
+    // And a word ends where its ink does, though iOS tracks after its last letter too.
+    expect(style("option")).toMatch(/marginRight: -TRACKING,/);
     // The row has no right margin of its own: a row that scrolls is cut by the edge of the phone.
     expect(style("row")).toMatch(/paddingLeft: spacing\.lg/);
     expect(style("row")).not.toMatch(/paddingHorizontal|paddingRight/);
-    expect(style("options")).toMatch(/paddingRight: spacing\.lg/);
+  });
+
+  it("sets the six across the line from 390 pt up, Places ending on the right margin", () => {
+    expect([320, 375, 390, 393, 402, 430, 440].filter((screen) => lay(screen).scrolls)).toEqual([320, 375]);
+    for (const screen of [390, 393, 402, 430, 440]) {
+      const row = lay(screen);
+      expect(row.content).toBe(row.window);
+      // From the screen's left edge: where the window starts, then along the line.
+      const places = row.spots.get("places")!;
+      expect(screen - row.window + places.x + places.width, `${screen} pt`).toBeCloseTo(screen - MARGIN, 9);
+      // A line that fits is never moved, whichever view is current.
+      for (const spot of row.spots.values()) expect(revealOffset(spot, row.window, row.content, EDGE)).toBe(0);
+    }
+  });
+
+  it("gives the words more room than they had where they fit, and plainly more on the larger phones", () => {
+    // Before: 4 pt either side of a dot, and the 1.2 pt of tracking left after each word.
+    const before = 4 + 1.2 + 4;
+    const room = (screen: number) => 2 * lay(screen).between;
+    for (const screen of [390, 393, 402, 430, 440]) expect(room(screen), `${screen} pt`).toBeGreaterThan(before);
+    for (const screen of [430, 440]) expect(room(screen), `${screen} pt`).toBeGreaterThanOrEqual(1.75 * before);
+    // Where the row scrolls, about what it was, now even about the dot.
+    expect(room(375)).toBeCloseTo(before, 0);
+  });
+
+  it("scrolls where they do not fit, on the narrower phones or at larger text, opening on the current view", () => {
+    const XLARGE = 1.118; // a step up from iOS's default text size, as React Native reads it
+    const AX5 = 3.571;
+    for (const [screen, scale] of [
+      [320, 1],
+      [375, 1],
+      [393, XLARGE],
+      [440, AX5],
+    ]) {
+      const row = lay(screen, scale);
+      const at = `${screen} pt at ${scale}`;
+      expect(row.scrolls, at).toBe(true);
+      expect(row.between, at).toBe(constant("DOT_GAP"));
+      for (const [view, spot] of row.spots) {
+        // Scrolled to, a view is whole in the window, clear of the hairline, with the edge's room after it.
+        const x = revealOffset(spot, row.window, row.content, EDGE);
+        expect(spot.x - x, `${view}, ${at}`).toBeGreaterThanOrEqual(0);
+        expect(spot.x + spot.width - x, `${view}, ${at}`).toBeLessThanOrEqual(row.window - EDGE + 1e-9);
+      }
+      // The last takes the row to its end and no further, where it ends on the margin.
+      const places = row.spots.get("places")!;
+      expect(revealOffset(places, row.window, row.content, EDGE), at).toBeCloseTo(row.content - row.window, 9);
+      expect(revealOffset(row.spots.get("posted")!, row.window, row.content, EDGE), at).toBe(0);
+    }
   });
 
   it("opens with the current option in view, measured against the scroll's own window", () => {
