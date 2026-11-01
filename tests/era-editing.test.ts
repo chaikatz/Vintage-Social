@@ -128,8 +128,30 @@ describe("the sheet a move is chosen in", () => {
 
   it("lists every era it can go to, an emptied one too, and moves it with one tap", () => {
     expect(list).toMatch(/moveChoices\(posts, arranged, moving\.id\)/);
-    expect(sheet).toMatch(/onPress=\{\(\) => onChoose\(choice\.key\)\}/);
+    expect(sheet).toMatch(/onPress=\{\(\) => choose\(choice\.key\)\}/);
     expect(sheet).toMatch(/choice\.era \? eraMeta\(choice\.era\) : "No photographs now"/);
+  });
+
+  it("keeps the photograph and its eras on it while it slides away, and shows a new one at once", () => {
+    // Open, what it is given; closing, the last it was given while open.
+    expect(sheet).toMatch(/if \(post && \(kept\?\.post !== post \|\| kept\.choices !== choices\)\) setKept\(\{ post, choices \}\);/);
+    expect(sheet).toMatch(/const shown: Shown \| null = post \? \{ post, choices \} : kept;/);
+    // Everything on it is drawn from that; whether it is up, from `post` alone.
+    expect(sheet).toMatch(/\{shown \? \(/);
+    expect(sheet).toMatch(/\{\(shown\?\.choices \?\? \[\]\)\.map\(\(choice\) => \{/);
+    expect(sheet).toMatch(/const from = shown\?\.choices\.find\(\(c\) => c\.here\);/);
+    const drawn = sheet.slice(sheet.indexOf("<Modal "), sheet.indexOf("</Modal>"));
+    expect(drawn.match(/(?<![.\w])post\b(?!=)[^}]*/g)).toEqual(["post != null"]);
+    expect(drawn.match(/(?<![.\w])choices\b/g)).toBeNull();
+    expect(drawn).toMatch(/<PhotoTile post=\{shown\.post\} size=\{SUBJECT\}/);
+  });
+
+  it("takes one choice each time it opens, so a second tap on the way down moves nothing", () => {
+    expect(sheet).toMatch(/const choose = \(key: string\) => \{\s*if \(!post \|\| chosen\.current\) return;\s*chosen\.current = true;\s*onChoose\(key\);\s*\};/);
+    expect(sheet).toMatch(/useEffect\(\(\) => \{\s*if \(post\) chosen\.current = false;\s*\}, \[post\]\);/);
+    expect(sheet.match(/onChoose\(/g)).toHaveLength(1);
+    // And the page moves nothing once the sheet has let the photograph go.
+    expect(list).toMatch(/const post = moving;\s*const to = choices\.find\(\(c\) => c\.key === key\);\s*setMoving\(null\);\s*if \(!post \|\| !to \|\| !editor\) return;/);
   });
 
   it("draws its photographs with the grid's own tile, never pressable on their own", () => {
