@@ -175,6 +175,25 @@ try {
     }
   }
 
+  // A member's own names and arrangement for their eras: who writes the
+  // row, who reads it, and what it may hold. Rolls back, like the last.
+  if (res.status === 0 && process.exitCode !== 1) {
+    process.stdout.write("· supabase/tests/07_era_edits.sql … ");
+    const eras = psql(["-U", "vintage_owner", "-f", join(here, "07_era_edits.sql")], {
+      allowFail: true,
+    });
+    if (eras.status !== 0) {
+      console.log("FAILED");
+      process.stdout.write(eras.stdout ?? "");
+      process.stderr.write(eras.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log("ok");
+      const note = (eras.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+      if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+    }
+  }
+
   const seedSql = join(here, "..", "production", "08_house_accounts.sql");
   if (existsSync(seedSql) && res.status === 0) {
     console.log("");

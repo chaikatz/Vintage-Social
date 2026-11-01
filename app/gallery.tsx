@@ -12,6 +12,7 @@ import { fetchProfileById } from "@/api/profiles";
 import { galleryRows } from "@/utils/profileViews";
 import { isWarm, warmWindow } from "@/utils/videoWindow";
 import { usePostActions } from "@/hooks/usePostActions";
+import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
 import type { PostWithAuthor } from "@/types/db";
 
@@ -43,7 +44,7 @@ export default function Gallery() {
     authorId: string;
     postId?: string;
     sort?: "posted" | "taken";
-    /** Opened from an era on a profile: its title, and the gallery holds the era of `postId` alone. */
+    /** Opened from an era on a profile: its key, and the gallery holds the era of `postId` alone. */
     era?: string;
   }>();
 
@@ -58,14 +59,23 @@ export default function Gallery() {
     enabled: Boolean(authorId),
   });
 
+  // Opened from an era, it is the era as its author arranged it; the
+  // profile it was opened from has already read that arrangement.
+  const eraEdits = useEraEdits(authorId, Boolean(era));
+  const waiting = Boolean(era) && !eraEdits.isFetched;
+
   // In the grid's order, or the era's alone (see galleryRows).
-  const shown = useMemo(() => galleryRows(postsQ.data ?? [], sort, era, postId), [postsQ.data, sort, era, postId]);
+  const shown = useMemo(
+    () => galleryRows(postsQ.data ?? [], sort, era, postId, eraEdits.data?.edits),
+    [postsQ.data, sort, era, postId, eraEdits.data],
+  );
 
   // Every post here shares one author, so the join is a local attach rather
   // than a second round trip per row.
   const posts: PostWithAuthor[] = useMemo(() => {
     const author = authorQ.data;
-    if (!author) return [];
+    // Not drawn until the era is known, so the landing is measured once, on the right rows.
+    if (!author || waiting) return [];
     const attached = {
       id: author.id,
       username: author.username,
@@ -73,7 +83,7 @@ export default function Gallery() {
       avatar_url: author.avatar_url,
     };
     return shown.rows.map((p) => ({ ...p, author: attached }));
-  }, [shown, authorQ.data]);
+  }, [shown, authorQ.data, waiting]);
 
   const startIndex = useMemo(() => {
     const index = postId ? posts.findIndex((p) => p.id === postId) : -1;
@@ -168,7 +178,7 @@ export default function Gallery() {
   const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
   const warm = warmWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
 
-  const loading = !postsQ.isFetched || !authorQ.isFetched;
+  const loading = !postsQ.isFetched || !authorQ.isFetched || waiting;
 
   return (
     <Screen padded={false}>

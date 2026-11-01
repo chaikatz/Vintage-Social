@@ -188,8 +188,15 @@ function post(
 export const DEMO_POSTS: PostRow[] = [
   post("demo-post-01", DEMO_IDS.elena, "milan-tram", 1200, 1500, "chrome-64", "The 19 tram, before anyone was awake.", 2),
   post("demo-post-02", DEMO_IDS.elena, "milan-cortile", 1200, 1200, "seventy", "Nonna’s courtyard. Nothing has moved since 1974.", 48),
-  post("demo-post-03", DEMO_IDS.elena, "milan-nebbia", 1200, 1500, "archive-bw", "Fog on the Naviglio.", 144),
-  post("demo-post-04", DEMO_IDS.elena, "milan-mercato", 1200, 960, "ninety-eight", "Saturday market, closing time.", 288, { show_date_stamp: true }),
+  // Two from an older roll, shot in January 2025 and scanned lately, so
+  // Elena's own Eras has two chapters to arrange: Milan now, and Milan then.
+  post("demo-post-03", DEMO_IDS.elena, "milan-nebbia", 1200, 1500, "archive-bw", "Fog on the Naviglio.", 144, {
+    taken_at: "2025-01-18T08:10:00.000Z",
+  }),
+  post("demo-post-04", DEMO_IDS.elena, "milan-mercato", 1200, 960, "ninety-eight", "Saturday market, closing time.", 288, {
+    show_date_stamp: true,
+    taken_at: "2025-01-25T12:40:00.000Z",
+  }),
   post("demo-post-05", DEMO_IDS.tomas, "sthlm-ferry", 1200, 1500, "alpine", "Last ferry of the evening.", 5),
   post("demo-post-06", DEMO_IDS.tomas, "sthlm-ice", 1200, 1200, "alpine", "The bay decided to be a mirror today.", 72),
   post("demo-post-07", DEMO_IDS.tomas, "sthlm-cabin", 1200, 1500, "neutral-aged", "Grandfather’s cabin, opened for the season.", 216),

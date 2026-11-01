@@ -1,4 +1,5 @@
-import { eraOf, groupEras, sortByTaken } from "./memories";
+import { sortByTaken } from "./memories";
+import { NO_EDITS, editEras, editedEraOf, type EraEdits } from "./eraEdits";
 import type { PostRow } from "@/types/db";
 
 /**
@@ -42,24 +43,32 @@ export function opensGallery(view: ProfileView, post: { tagged_in?: boolean }): 
  * What the gallery holds, in its order: the author's photographs as the
  * grid it was opened from orders them or, opened from an era, that era
  * alone, newest capture first. The era is found again among the eras of
- * the same rows as the one that holds the photograph tapped, so it is the
- * one the profile showed, and `era` is its own title. The title in the
- * address is second best: an address can change a title on its way (a
- * place written with a `%` in it), so it is looked for only once the
- * photograph tapped has left the rows (deleted while the gallery was
- * open), and the rest of its era stays. If neither finds an era (it has
- * come apart), the whole taken order stands in, and `era` is null.
+ * the same rows, as the author arranged them (`edits`), as the one that
+ * holds the photograph tapped, so it is the one the profile showed, and
+ * `era` is the name it shows: the author's own, if they gave it one. The
+ * era's key in the address (its automatic title, which a rename does not
+ * change) is second best: an address can change it on its way (a place
+ * written with a `%` in it), so it is looked for only once the photograph
+ * tapped has left the rows (deleted while the gallery was open), and the
+ * rest of its era stays. If neither finds an era (it has come apart), the
+ * whole taken order stands in, and `era` is null.
  */
 export function galleryRows<T extends Pick<PostRow, "id" | "taken_at" | "created_at" | "location">>(
   rows: T[],
   sort: GridSort | undefined,
   era: string | undefined,
   postId: string | undefined,
+  edits: EraEdits = NO_EDITS,
 ): { rows: T[]; era: string | null } {
   const tapped = postId !== undefined && rows.some((p) => p.id === postId);
-  const held = !era ? null : tapped ? eraOf(rows, postId) : (groupEras(rows).find((e) => e.title === era) ?? null);
+  const held = !era ? null : tapped ? editedEraOf(rows, postId, edits) : named(editEras(rows, edits), era);
   if (held) return { rows: held.posts, era: held.title };
   return { rows: sort === "taken" || era ? sortByTaken(rows) : rows, era: null };
+}
+
+/** An era by its key or, from an address older than keys, by the name it showed. */
+function named<E extends { key: string; title: string }>(eras: E[], era: string): E | null {
+  return eras.find((e) => e.key === era) ?? eras.find((e) => e.title === era) ?? null;
 }
 
 /**
