@@ -240,6 +240,13 @@ const feedLayout = async (label) => {
 await feedLayout("Editorial (Preview)");
 const editorial = seen(page.locator('[data-testid="editorial-post-card"]'));
 check("Editorial (Preview) sets Home out with the editorial card", (await editorial.count()) > 0);
+// Each post a print: the date in full and the member's @name on its label, and no membership number.
+const print = (await editorial.first().textContent()) ?? "";
+check(
+  "The editorial card is labelled like a print",
+  /[A-Z]+ \d{1,2}, \d{4}/.test(print) && /@[a-z0-9._]+/.test(print) && !/MEMBER|NO\. \d{5}/.test(print),
+  print.slice(0, 120),
+);
 await shot("12b-editorial");
 const likesIn = async (card) => Number(/(\d+) likes?/.exec((await card.textContent()) ?? "")?.[1] ?? 0);
 let editorialLike = "no card to like";

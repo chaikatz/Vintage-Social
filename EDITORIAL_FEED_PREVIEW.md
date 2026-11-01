@@ -9,6 +9,16 @@ web). Nothing is stored on the server, nothing changes for other members, and
 only Home uses it: profiles, Timeline, the gallery and a post's own page always
 draw the original card.
 
+Editorial sets each post out as a print, the way a photograph is shared from
+VINTAGE (`src/components/ExportCard.tsx`): the picture inset on the paper with
+the print's margins, the hairline rule under it, and under the rule the print's
+label. On the right, as on the print, the place, the date in full and
+`@username` (which opens the profile) in the typewriter face, with the "…"
+after the name. On the left, where the wordmark is printed, the like, comment
+and send buttons, with the counts beneath them. Then the caption and the newest
+comments. There is no wordmark, no "Members only" and no membership number, and
+a strip of the darker paper lies between one print and the next.
+
 ## Where it lives
 
 The experiment is only on the branch `claude/editorial-feed-preview`, which is
@@ -23,7 +33,7 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `app/(tabs)/index.tsx` | the one seam: which card Home draws |
 | `app/settings.tsx` | the Feed layout choice |
 | `tests/video-playback.test.ts` | the Home playback guard accepts either card |
-| `e2e/launch-test.mjs` | the walk switches it on and off |
+| `e2e/launch-test.mjs` | the walk switches it on and off, and reads a print's label |
 
 `src/components/PostCard.tsx`, `PostMedia`, `PendingPostCard`, `usePostActions`,
 uploads, filters, the Memory Room, native modules and Supabase are not touched.
