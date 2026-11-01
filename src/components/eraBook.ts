@@ -26,23 +26,29 @@ function photographs(n: number): string {
 
 type Dated = { taken_at: string | null; created_at: string };
 
-/** The first and last months of an era, and its year; an era never crosses a year, its title says which. */
-function months(era: Era<Dated>): { first: number; last: number; year: number } {
+/**
+ * The first and last months of an era, and their years. An era read
+ * automatically never crosses a year, its title says which; one a member
+ * has moved photographs into can.
+ */
+function months(era: Era<Dated>): { first: number; firstYear: number; last: number; year: number } {
   const times = era.posts.map((p) => new Date(p.taken_at ?? p.created_at).getTime());
   const first = new Date(Math.min(...times));
   const last = new Date(Math.max(...times));
-  return { first: first.getMonth(), last: last.getMonth(), year: last.getFullYear() };
+  return { first: first.getMonth(), firstYear: first.getFullYear(), last: last.getMonth(), year: last.getFullYear() };
 }
 
-/** `May – Jun 2023`, or `May 2023` when every photograph is from one month. */
+/** `May – Jun 2023`, or `May 2023` when every photograph is from one month, or `Dec 2022 – Jan 2023` across a year. */
 export function eraSpan(era: Era<Dated>): string {
-  const { first, last, year } = months(era);
+  const { first, firstYear, last, year } = months(era);
+  if (firstYear !== year) return `${MONTHS[first]} ${firstYear} – ${MONTHS[last]} ${year}`;
   return first === last ? `${MONTHS[first]} ${year}` : `${MONTHS[first]} – ${MONTHS[last]} ${year}`;
 }
 
 /** The span as VoiceOver says it: `May to June 2023`. */
 export function eraSpanSpoken(era: Era<Dated>): string {
-  const { first, last, year } = months(era);
+  const { first, firstYear, last, year } = months(era);
+  if (firstYear !== year) return `${MONTHS_LONG[first]} ${firstYear} to ${MONTHS_LONG[last]} ${year}`;
   return first === last ? `${MONTHS_LONG[first]} ${year}` : `${MONTHS_LONG[first]} to ${MONTHS_LONG[last]} ${year}`;
 }
 

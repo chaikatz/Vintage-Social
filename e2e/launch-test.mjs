@@ -33,8 +33,10 @@ page.on("console", (m) => {
 });
 // showAlert falls back to window.confirm on web; Playwright dismisses
 // dialogs unless told otherwise, which would silently cancel every
-// confirmation the test gives.
-page.on("dialog", (d) => d.accept());
+// confirmation the test gives. A prompt (an era's new name) is answered
+// with `promptAnswer` while one is set.
+let promptAnswer = null;
+page.on("dialog", (d) => (d.type() === "prompt" && promptAnswer != null ? d.accept(promptAnswer) : d.accept()));
 
 const results = [];
 const check = (name, ok, detail = "") => {
@@ -296,6 +298,48 @@ check(
   page.url(),
 );
 await shot("13c-era-gallery");
+
+// Eras the member arranges, on their own page only: EDIT, rename an era,
+// move a photograph into it, DONE. Two of the demo's Milan photographs of
+// Elena's were taken in January 2025, so she has two Milan eras. All of
+// it in one visit, by tapping: the demo keeps the arrangement in the page.
+await go("/profile", 2800);
+await tap("Eras", 2000);
+await byLabel("Edit eras").first().click();
+await wait(900);
+check("Your own Eras opens for arranging", /Arranging/.test(await text()) && (await byLabel("Rename Milan 2025").count()) > 0);
+promptAnswer = "The foggy winter";
+await byLabel("Rename Milan 2025").first().click();
+await wait(1200);
+promptAnswer = null;
+const heading = (name) => seen(page.getByRole("heading", { name })).count();
+check("An era takes the name its member gives it", (await heading(/^The foggy winter, 2 photographs$/)) > 0);
+await seen(page.getByLabel(/^Photograph, .*The 19 tram/)).first().click();
+await wait(1200);
+const sheet = seen(page.getByTestId("era-move-sheet"));
+check("A print, tapped while arranging, asks which era it belongs in", (await sheet.count()) > 0 && /Move to/i.test(await sheet.first().textContent()));
+await shot("13d-era-move");
+await seen(page.getByRole("button", { name: /^The foggy winter, 2 photographs/ })).first().click();
+await wait(900);
+check(
+  "The photograph moves into the era chosen, and the page says so",
+  (await heading(/^The foggy winter, 3 photographs$/)) > 0 && /Moved to The foggy winter/i.test(await text()),
+);
+await byLabel("Done arranging eras").first().click();
+await wait(900);
+check(
+  "DONE leaves the eras as arranged, and EDIT to open them again",
+  (await byLabel("Edit eras").count()) > 0 && (await heading(/^The foggy winter, 3 photographs$/)) > 0,
+);
+await shot("13e-eras-arranged");
+
+// A member's own name for their era, on their page, where it cannot be changed.
+await go("/user/niko.papadakis", 2800);
+await tap("Eras", 2000);
+check(
+  "A member's Eras show the names they gave them, with nothing to edit",
+  (await heading(/^Islands, off-season, \d+ photographs$/)) > 0 && (await byLabel("Edit eras").count()) === 0,
+);
 
 await go("/user/otis.whitfield", 2800);
 check("Private account is gated", /This account is private/.test(await text()));

@@ -28,6 +28,7 @@ import { opensGallery } from "@/utils/profileViews";
 import { clipTiming } from "@/utils/videoTiming";
 import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
+import { useEraEdits } from "@/hooks/useEraEdits";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
 import type { PostRow } from "@/types/db";
 
@@ -86,6 +87,8 @@ export default function UserProfile() {
   }, [postsQ.data, taggedQ.data, sort]);
   // The towns are looked up as the photographs arrive, so "Places" opens placed.
   usePlaceWarmup(postsQ.data ?? []);
+  // Their eras as they arranged them: read here, changed only on their own page.
+  const eraEdits = useEraEdits(profile?.id, !locked);
   // A magnified timeline is dragged with one finger; while it is, the
   // stack's back swipe waits, as the tab pager does on your own profile.
   const swipeFree = useTabSwipeEnabled();
@@ -291,17 +294,22 @@ export default function UserProfile() {
       ) : view === "timeline" && !locked ? (
         <Timeline posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
       ) : view === "eras" && !locked ? (
-        // Their own photographs only, never the ones they were tagged in.
+        // Their own photographs only, never the ones they were tagged in,
+        // named and arranged as they left them, and never editable here.
         // After a block the old rows stay in the cache, so `!locked` is
         // what keeps them off the page, as it is for every view here.
         <EraList
           posts={postsQ.data ?? []}
+          edits={eraEdits.data?.edits}
           onOpenPost={openEra}
           header={header}
           member={profile.username}
-          loading={!postsQ.isFetched}
+          loading={!postsQ.isFetched || !eraEdits.isFetched}
           refreshing={postsQ.isRefetching}
-          onRefresh={() => postsQ.refetch()}
+          onRefresh={() => {
+            postsQ.refetch();
+            eraEdits.refetch();
+          }}
         />
       ) : (
         <PhotoGrid

@@ -11,6 +11,16 @@ const EDGE = spacing.lg;
 const LABEL_GAP = 6;
 /** The label stops growing here, so at the largest sizes the views keep a window that holds the longest of them whole. */
 const LABEL_CAP = 1.6;
+/** The views' tracking. iOS sets it after a word's last letter too, so each word gives that much back at its end. */
+const TRACKING = 1.2;
+/**
+ * The least room either side of a dot, which is what a row that scrolls
+ * has; where the six fit, the room to spare is shared out on top of it.
+ * It is about the room the words always had, now even about the dot, so
+ * the six still fit from 390 pt up, and on a 375 pt phone, a few points
+ * short, "Places" still stands clear of the edge before the row moves.
+ */
+const DOT_GAP = 4.5;
 
 /**
  * The one control over a profile: how it reads.
@@ -25,12 +35,15 @@ const LABEL_CAP = 1.6;
  * the contact sheet, not a segmented control.
  *
  * "Profile view" stands in front of them, a size smaller, with a hairline
- * between, and stays where it is. The six fit beside it from 390 pt up;
- * where they do not (the narrower phones, or larger text) they scroll
- * behind the hairline and out past the edge of the screen, and the row
- * opens with the current view in sight. The row is drawn afresh with each
- * view, so it is put there each time it is drawn, before it is seen
- * moving.
+ * between, and stays where it is. The six fit beside it from 390 pt up,
+ * and there they are set across the whole of the line, the last of them
+ * ending on the right margin: the room to spare goes between the words,
+ * the same either side of each dot, not into a blank after "Places".
+ * Where they do not fit (the narrower phones, or larger text) they keep
+ * the least room, scroll behind the hairline and out past the edge of
+ * the screen, and the row opens with the current view in sight. The row
+ * is drawn afresh with each view, so it is put there each time it is
+ * drawn, before it is seen moving.
  *
  * The label is the group's name. VoiceOver reads it as it reads any
  * words on the page, just before the first view, so the six radios say
@@ -141,15 +154,28 @@ const styles = StyleSheet.create({
   labelRule: { width: 1, height: 10, backgroundColor: colors.border },
   optionsScroll: { flex: 1 },
   // Six words after the label on one line of a phone: a little smaller
-  // and tighter than the rest of the mono so all of them fit abreast. They
-  // follow the label, as its line, rather than stand off at the far edge.
-  options: { alignItems: "center", gap: 4, paddingLeft: LABEL_GAP, paddingRight: spacing.lg },
+  // and tighter than the rest of the mono so all of them fit abreast. The
+  // line grows to the window, so where they fit it runs from the hairline
+  // to the margin with the words and dots spread evenly along it; where
+  // they do not it is only as long as they are, and scrolls.
+  options: {
+    flexGrow: 1,
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: DOT_GAP,
+    paddingLeft: LABEL_GAP,
+    paddingRight: spacing.lg,
+  },
   // The soft ink, not the faint: type this small has to hold 4.5:1 on
-  // either print. The current one is in ink, a step darker again.
+  // either print. The current one is in ink, a step darker again. The
+  // tracking after the last letter is taken back, so a word ends where
+  // its ink does: each dot sits halfway between two words, and "Places"
+  // ends on the margin.
   option: {
     fontFamily: type.mono,
     fontSize: 9,
-    letterSpacing: 1.2,
+    letterSpacing: TRACKING,
+    marginRight: -TRACKING,
     textTransform: "uppercase",
     color: colors.inkSoft,
   },

@@ -36,6 +36,8 @@ import {
   DEMO_PROFILES,
   DEMO_REPORTS,
 } from "./fixtures";
+import { groupEras } from "@/utils/memories";
+import type { EraEdits } from "@/utils/eraEdits";
 
 /**
  * The in-memory backend for demo mode (browser review without Supabase).
@@ -59,6 +61,8 @@ interface DemoState {
   conversations: ConversationRow[];
   messages: MessageRow[];
   tags: PostTagRow[];
+  /** Each member's own names for their eras and the photographs they moved, by member. */
+  eraEdits: Record<string, EraEdits>;
   currentUserId: string | null;
 }
 
@@ -79,6 +83,7 @@ function initialState(): DemoState {
     invites: clone(DEMO_INVITES),
     reports: clone(DEMO_REPORTS),
     tags: [],
+    eraEdits: {},
     moderationActions: [],
     conversations: clone(DEMO_CONVERSATIONS),
     messages: clone(DEMO_MESSAGES),
@@ -131,6 +136,10 @@ function initialState(): DemoState {
       read_at: null,
     });
   }
+  // Niko has given his one era a name of his own, so a member's page shows
+  // one. Its key is whatever the reading makes of his photographs today.
+  const athens = groupEras(state.posts.filter((p) => p.author_id === DEMO_IDS.niko))[0];
+  if (athens) state.eraEdits[DEMO_IDS.niko] = { titles: { [athens.title]: "Islands, off-season" }, moves: {} };
   recomputeCounts(state);
   return state;
 }
@@ -507,6 +516,26 @@ export function demoCanViewPosts(viewerId: string, authorId: string): boolean {
   const author = state.profiles.find((p) => p.id === authorId);
   if (!author?.is_private) return true;
   return demoIsFollowing(viewerId, authorId);
+}
+
+// ---------------------------------------------------------------------------
+// eras, as their members arranged them
+// ---------------------------------------------------------------------------
+/**
+ * As the database does it (0022): a member's arrangement is read by
+ * whoever may see their photographs, and nobody else; no row is no change.
+ */
+export function demoFetchEraEdits(authorId: string): EraEdits {
+  const viewer = state.currentUserId;
+  const edits = state.eraEdits[authorId];
+  if (!viewer || !edits || !demoCanViewPosts(viewer, authorId)) return { titles: {}, moves: {} };
+  return clone(edits);
+}
+
+/** Only the member writes their own, whole, over what was there. */
+export function demoSaveEraEdits(authorId: string, edits: EraEdits): void {
+  if (authorId !== state.currentUserId) throw new Error("Only you can arrange your own eras.");
+  state.eraEdits[authorId] = clone(edits);
 }
 
 export function demoUnfollow(followerId: string, followeeId: string): void {

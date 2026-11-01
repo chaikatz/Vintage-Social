@@ -659,6 +659,12 @@ this repo:
   refusing the post; such a photograph is `filter_baked = false` and wears its film on screen
   (`needsDisplayFilter`). Until 0020 runs on production, the build that carries this would apply the
   film a second time to every existing photograph. Run it (SQL editor, whole file) before shipping.
+- **Migration `0022_era_edits.sql` — NOT YET APPLIED, to staging or production.** Additive and
+  idempotent: one table, `era_edits`, a row per member holding their own names for their eras and the
+  photographs they moved between them, read by exactly those who may see the member's photographs
+  (the posts policies, mirrored) and written by the member alone. Until it runs, Eras are drawn
+  automatically as before and the EDIT control on your own Eras is not offered; nothing breaks. Proven
+  locally by `supabase/tests/07_era_edits.sql`.
 - **Posting never fails because of the darkroom or the network.** Uploads and the post insert retry a
   dropped connection three times (`src/utils/retry.ts`); a retry told the file or row already exists
   counts as success, since the id was chosen on the phone. Once the row is in, nothing that follows —

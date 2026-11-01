@@ -192,6 +192,16 @@ export type BlockRow = {
   created_at: string;
 }
 
+/** A member's own names for their eras, and the photographs they moved between them (0022). One row per member. */
+export type EraEditRow = {
+  author_id: string;
+  /** An era's automatic title to the member's name for it. */
+  titles: Record<string, string>;
+  /** A photograph's id to the automatic title of the era it was moved into. */
+  moves: Record<string, string>;
+  updated_at: string;
+}
+
 /** A photograph the author chose to show beyond the club, keyed by an unguessable token. */
 export type PostShareRow = {
   token: string;
@@ -314,6 +324,7 @@ export type Database = {
       notification_prefs: Table<NotificationPrefsRow>;
       blocks: Table<BlockRow>;
       post_shares: Table<PostShareRow>;
+      era_edits: Table<EraEditRow>;
       share_events: Table<ShareEventRow>;
       likes: Table<LikeRow>;
       comments: Table<CommentRow>;
