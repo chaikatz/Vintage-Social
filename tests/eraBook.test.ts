@@ -4,6 +4,7 @@ import {
   ERA_STRIP,
   LANDSCAPE_LEAD,
   PRINT_GAP,
+  chapterAt,
   chapterNear,
   chaptersNear,
   eraHeading,
@@ -158,6 +159,50 @@ describe("the chapters near the screen", () => {
   it("are the same set when a scroll brings none nearer, so nothing is drawn again", () => {
     const opened = chaptersNear(new Set(), page, 0, screen);
     expect(chaptersNear(opened, page, 100, screen)).toBe(opened);
+  });
+});
+
+describe("the chapter at the top of the reader's view", () => {
+  const keys = ["Lisbon 2023", "Kyoto 2022", "Summer 2021", "Paris 2019"];
+  const page = new Map([
+    ["Lisbon 2023", { top: 300, height: 700 }],
+    ["Kyoto 2022", { top: 1000, height: 700 }],
+    ["Summer 2021", { top: 1700, height: 700 }],
+    ["Paris 2019", { top: 2400, height: 700 }],
+  ]);
+
+  it("is the one the view begins in, from its first point to its last", () => {
+    expect(chapterAt(keys, page, 300)).toBe("Lisbon 2023");
+    expect(chapterAt(keys, page, 999)).toBe("Lisbon 2023");
+    expect(chapterAt(keys, page, 1000)).toBe("Kyoto 2022");
+    expect(chapterAt(keys, page, 2000)).toBe("Summer 2021");
+    expect(chapterAt(keys, page, 3099)).toBe("Paris 2019");
+  });
+
+  it("is none above the chapters (the header, the bar) or below them (the foot)", () => {
+    expect(chapterAt(keys, page, 0)).toBeNull();
+    expect(chapterAt(keys, page, 299)).toBeNull();
+    expect(chapterAt(keys, page, 3100)).toBeNull();
+    expect(chapterAt([], page, 500)).toBeNull();
+  });
+
+  it("is found from the heights above it, as the web leaves a top unchanged when only its place has", () => {
+    // Lisbon has grown by 600 since the others last said where they were.
+    const stale = new Map(page);
+    stale.set("Lisbon 2023", { top: 300, height: 1300 });
+    expect(chapterAt(keys, stale, 1500)).toBe("Lisbon 2023");
+    expect(chapterAt(keys, stale, 1700)).toBe("Kyoto 2022");
+    expect(chapterAt(keys, stale, 2900)).toBe("Summer 2021");
+  });
+
+  it("is one of the eras the page shows now, never one since gone, and none while one is unmeasured", () => {
+    const gone = new Map(page);
+    gone.set("Oslo 2018", { top: 3100, height: 700 });
+    expect(chapterAt(keys, gone, 3200)).toBeNull();
+    const unmeasured = new Map(page);
+    unmeasured.delete("Kyoto 2022");
+    expect(chapterAt(keys, unmeasured, 500)).toBe("Lisbon 2023");
+    expect(chapterAt(keys, unmeasured, 2000)).toBeNull();
   });
 });
 

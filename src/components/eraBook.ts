@@ -129,6 +129,27 @@ export function chaptersNear(
   return next ?? already;
 }
 
+/**
+ * The chapter, by key, the page shows at `y`: where the reader's view
+ * begins. The chapters lie one under the next in the order of `keys`, so
+ * each is placed from the top of the first and the heights of those above
+ * it. Every platform reports a chapter's height when it changes; the web
+ * reports its top only then too, so a top of its own can be out of date
+ * once a chapter above has grown. Null above the first chapter, below the
+ * last, or while one in between has not been measured.
+ */
+export function chapterAt(keys: readonly string[], chapters: ReadonlyMap<string, ChapterSpan>, y: number): string | null {
+  let top = keys.length > 0 ? chapters.get(keys[0])?.top : undefined;
+  if (top == null || y < top) return null;
+  for (const key of keys) {
+    const chapter = chapters.get(key);
+    if (!chapter) return null;
+    if (y < top + chapter.height) return key;
+    top += chapter.height;
+  }
+  return null;
+}
+
 /** `12 without a date · 5 on their own`: what the eras leave out, or null when they leave nothing. */
 export function erasFootnote(summary: Pick<EraSummary<unknown>, "undated" | "apart">): string | null {
   const parts: string[] = [];

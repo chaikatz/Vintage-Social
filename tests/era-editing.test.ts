@@ -71,7 +71,7 @@ describe("who may arrange Eras", () => {
 
 describe("the Eras view outside arranging", () => {
   it("offers EDIT only to an editor, and only over eras that are there", () => {
-    expect(list).toMatch(/\{editor && !loading && summary\.eras\.length > 0 \? \(\s*<View style=\{\[styles\.bar, arranging && styles\.barOn\]\}>/);
+    expect(list).toMatch(/\{editor && !loading && summary\.eras\.length > 0 \? \(\s*<View style=\{\[styles\.bar, arranging && styles\.barOn\]\} onLayout=/);
     expect(list).toMatch(/const arranging = editing && editor != null && summary\.eras\.length > 0;/);
     expect(list).toMatch(/\{editor \? <EraMoveSheet /);
   });
@@ -84,10 +84,38 @@ describe("the Eras view outside arranging", () => {
   it("lays out the prints, the strip and Show all as before", () => {
     expect(list).toMatch(/const strip = eraStrip\(era, expanded \|\| arranging\);/);
     expect(list).toMatch(/const more = arranging \? null : eraMore\(era, expanded\);/);
-    // A print is the tile itself, with nothing around it.
-    expect(list).toMatch(/if \(!arranging\) return children;/);
+    // A print is the tile in a plain view, with nothing else in it.
+    expect(list).toMatch(/return \(\s*<View>\s*\{children\}\s*\{arranging \? \(\s*<View style=\{styles\.mark\}[^>]*>[\s\S]*?\) : null\}\s*<\/View>\s*\);/);
     expect(list).toMatch(/const hint = arranging \? "Moves it to another era\." : undefined;/);
-    expect(list).toMatch(/stickyHeaderIndices=\{arranging \? \[barIndex\] : undefined\}/);
+  });
+
+  it("draws nothing afresh on EDIT or DONE: the same view holds each print, and the page's children keep their places", () => {
+    // Print has one shape: the tile is never handed back bare.
+    const print = list.match(/function Print\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(print).not.toMatch(/return children;/);
+    expect(print.match(/return /g)).toHaveLength(1);
+    // A list either way: on the web an absent one gives the header and chapters new keys.
+    expect(list).toMatch(/stickyHeaderIndices=\{arranging \? \[barIndex\] : \[\]\}/);
+    expect(list).not.toMatch(/stickyHeaderIndices=\{[^}]*undefined/);
+  });
+
+  it("leaves the reader on the chapter they were at when EDIT or DONE lays the page out again", () => {
+    // Where the view begins, under the bar while it holds to the top, and the chapter there, by key.
+    expect(list).toMatch(/onPress=\{\(\) => arrange\(!arranging\)\}/);
+    expect(list).not.toMatch(/setEditing\(!arranging\)/);
+    expect(list).toMatch(
+      /const arrange = \(on: boolean\) => \{\s*const seen = offset\.current \+ \(arranging \? barTall\.current : 0\);\s*anchor\.current = chapterAt\(summary\.eras\.map\(\(era\) => era\.key\), spans\.current, seen\);\s*setEditing\(on\);\s*\};/,
+    );
+    expect(list).toMatch(/onLayout=\{\(e\) => \(barTall\.current = e\.nativeEvent\.layout\.height\)\}/);
+    // Once laid out again, that chapter is measured where it now lies and put back at the top, at once.
+    expect(list).toMatch(/useLayoutEffect\(\(\) => \{\s*const key = anchor\.current;\s*anchor\.current = null;/);
+    expect(list).toMatch(/const under = arranging \? barTall\.current : 0;/);
+    expect(list).toMatch(
+      /page\.measureLayout\(book, \(_x, top\) => scroller\.current\?\.scrollTo\(\{ y: Math\.max\(0, top - under\), animated: false \}\)\);\s*\}, \[arranging\]\);/,
+    );
+    expect(list).toMatch(/<ScrollView\s+ref=\{scroller\}/);
+    expect(list).toMatch(/<View ref=\{pageRef\} style=\{\[styles\.chapter, first && styles\.chapterFirst\]\} onLayout=\{onLayout\}>/);
+    expect(list).toMatch(/if \(node\) pages\.current\.set\(era\.key, node\);\s*else pages\.current\.delete\(era\.key\);/);
   });
 
   it("shows RENAME only while arranging, and only where a name can be asked for", () => {
@@ -110,7 +138,18 @@ describe("arranging, as VoiceOver hears it", () => {
   it("gives every print the hint that a tap moves it, and announces where it went", () => {
     expect(list.match(/accessibilityHint=\{hint\}/g)).toHaveLength(2);
     expect(list).toMatch(/AccessibilityInfo\.announceForAccessibility\(words\)/);
-    expect(list).toMatch(/say\(`Moved to \$\{to\.title\}`\)/);
+  });
+
+  it("says a photograph moved, by note, touch and voice, only when the editor moved it", () => {
+    expect(list).toMatch(/if \(editor\.move\(post, key\)\) say\(`Moved to \$\{to\.title\}`\);/);
+    expect(list.match(/\bsay\(/g)).toHaveLength(1);
+    expect(list.match(/editor\.move\(/g)).toHaveLength(1);
+  });
+
+  it("does not stop on MOVE, which the print's hint already says", () => {
+    expect(list).toMatch(
+      /<View style=\{styles\.mark\} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">\s*<Text style=\{styles\.markText\}>Move<\/Text>/,
+    );
   });
 
   it("names each era in the sheet with its count, and the one it is in as where it is now", () => {
