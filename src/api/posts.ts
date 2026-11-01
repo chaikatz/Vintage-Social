@@ -58,6 +58,12 @@ export async function fetchFeedPage(userId: string, page: number): Promise<PostW
   return (data ?? []) as unknown as PostWithAuthor[];
 }
 
+/**
+ * A member's own photographs, all of them up to PostgREST's max_rows
+ * (1000), where it stops without saying so. A list that long may not be
+ * all of them: Eras lets nothing go on its account (ROWS_PER_READ,
+ * src/utils/eraEdits.ts).
+ */
 export async function fetchUserPosts(authorId: string): Promise<PostRow[]> {
   if (isDemoMode()) return demo.demoFetchUserPosts(authorId);
 

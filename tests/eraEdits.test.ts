@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ERA_TITLE_MAX,
   NO_EDITS,
+  ROWS_PER_READ,
   cleanEraTitle,
   editEras,
   editedEraOf,
@@ -20,10 +21,11 @@ import { eraHeading, eraMeta, eraSpan, eraSpanSpoken, erasEmpty } from "@/compon
 /**
  * A member's own arrangement of their eras, laid over the automatic
  * reading: names given and taken back, photographs moved and moved home,
- * moves that have gone stale, eras emptied or left with one, the order of
- * it all, the counts the foot of the page gives, and the gallery an
- * edited era opens. Dates are local-time strings, so none of this depends
- * on the zone.
+ * moves that have gone stale, eras emptied or left with one, an era the
+ * member built outliving one of its own photographs, what a save lets go
+ * of, the order of it all, the counts the foot of the page gives, and the
+ * gallery an edited era opens. Dates are local-time strings, so none of
+ * this depends on the zone; the zone is era-zones.test.ts.
  */
 
 const post = (id: string, taken: string | null, location: string | null = null, created = "2026-09-01T12:00:00") => ({
@@ -85,6 +87,21 @@ describe("a name the member gives", () => {
     const flags = cleanEraTitle("🗼".repeat(70));
     expect(Array.from(flags)).toHaveLength(ERA_TITLE_MAX);
     expect(flags).toBe("🗼".repeat(ERA_TITLE_MAX));
+  });
+
+  it("keeps no control characters: a line break is a space, and a NUL, which the database refuses, is gone", () => {
+    expect(cleanEraTitle("Lisbon\u0000")).toBe("Lisbon");
+    expect(cleanEraTitle("The long\u0007\u001b weekend\u0085")).toBe("The long weekend");
+    expect(cleanEraTitle("Lisbon\r\nPorto\tFaro")).toBe("Lisbon Porto Faro");
+    expect(readEdits({ titles: { "Lisbon 2023": "Lisbon\u0000 slowly", "Porto 2023": "\u0000" } }).titles).toEqual({
+      "Lisbon 2023": "Lisbon slowly",
+    });
+    // Every one of Unicode's control characters, and nothing that joins an emoji together.
+    for (let c = 0; c <= 0xffff; c++) {
+      const ch = String.fromCharCode(c);
+      if (/\p{Cc}/u.test(ch)) expect(cleanEraTitle(`a${ch}b`), `U+${c.toString(16)}`).toBe("a b");
+    }
+    expect(cleanEraTitle("👩‍👩‍👧 in Lisbon")).toBe("👩‍👩‍👧 in Lisbon");
   });
 
   it("goes back to the automatic name when cleared, given as the automatic name, or reset", () => {
@@ -194,6 +211,114 @@ describe("moving, as the member does it", () => {
       ["Lisbon 2023", "Lisbon 2023", true, 3],
       ["Summer 2021", "That summer", false, 0],
     ]);
+  });
+});
+
+describe("an era the member built", () => {
+  // Lisbon 2023 has A and B of its own; the member names it Portugal and
+  // moves Porto's three photographs into it.
+  const trip = [
+    post("A", "2023-05-02T12:00:00", "Lisbon"),
+    post("B", "2023-05-03T12:00:00", "Lisbon"),
+    post("C", "2023-05-06T12:00:00", "Porto"),
+    post("D", "2023-05-07T12:00:00", "Porto"),
+    post("E", "2023-05-08T12:00:00", "Porto"),
+  ];
+  let built = renameEra(NO_EDITS, "Lisbon 2023", "Portugal", trip);
+  for (const id of ["C", "D", "E"]) built = moveToEra(built, trip, id, "Lisbon 2023");
+  const left = trip.filter((p) => p.id !== "A");
+
+  it("is one era of five", () => {
+    expect(built).toEqual(edits({ "Lisbon 2023": "Portugal" }, { C: "Lisbon 2023", D: "Lisbon 2023", E: "Lisbon 2023" }));
+    expect(shape(editEras(trip, built))).toEqual(["Portugal [Lisbon 2023]: E D C B A"]);
+  });
+
+  it("holds together when one of its own photographs is deleted", () => {
+    const after = editedEraSummary(left, built);
+    expect(shape(after.eras)).toEqual(["Portugal [Lisbon 2023]: E D C B"]);
+    expect(after).toMatchObject({ undated: 0, apart: 0 });
+  });
+
+  it("stays a place to move a photograph to, and to take one back from", () => {
+    expect(moveChoices(left, built, "C").map((c) => [c.key, c.title, c.here, c.era?.posts.length ?? 0])).toEqual([
+      ["Lisbon 2023", "Portugal", true, 4],
+      ["Porto 2023", "Porto 2023", false, 0],
+    ]);
+    const home = moveToEra(built, left, "C", "Porto 2023");
+    expect(shape(editEras(left, home))).toEqual(["Portugal [Lisbon 2023]: E D B", "Porto 2023 [Porto 2023]: C"]);
+    expect(moveToEra(home, left, "C", "Lisbon 2023")).toEqual(built);
+  });
+
+  it("comes apart once nothing is moved into it and one of its own is left, and keeps its name for later", () => {
+    let undone = built;
+    for (const id of ["C", "D", "E"]) undone = moveToEra(undone, left, id, "Porto 2023");
+    expect(undone).toEqual(edits({ "Lisbon 2023": "Portugal" }));
+    const after = editedEraSummary(left, undone);
+    expect(shape(after.eras)).toEqual(["Porto 2023 [Porto 2023]: E D C"]);
+    expect(after.apart).toBe(1);
+  });
+
+  it("is never one a photograph alone makes of itself, nor one there are no photographs for", () => {
+    expect(moveChoices(rows, NO_EDITS, "k1").map((c) => c.key)).toEqual(["Kyoto 2024", "Lisbon 2023", "Summer 2021"]);
+    expect(moveToEra(NO_EDITS, rows, "k1", "Bar Pitti 2022")).toBe(NO_EDITS);
+    expect(moveToEra(NO_EDITS, rows, "k1", "Paris 1999")).toBe(NO_EDITS);
+  });
+
+  it("is moved into exactly where the move sheet offers, and nowhere else", () => {
+    const keys = ["Kyoto 2024", "Lisbon 2023", "Summer 2021", "Bar Pitti 2022", "Porto 2023", "Paris 1999", ""];
+    const cases: [typeof rows, EraEdits][] = [
+      [rows, NO_EDITS],
+      [rows, edits({}, { s1: "Kyoto 2024", s2: "Kyoto 2024" })],
+      [rows, edits({}, { alone: "Summer 2021", k2: "Lisbon 2023" })],
+      [trip, built],
+      [left, built],
+      // C taken back to Porto: Lisbon, with one of its own left, is still there for C to go back to.
+      [left, moveToEra(built, left, "C", "Porto 2023")],
+    ];
+    for (const [posts, arranged] of cases) {
+      for (const p of posts) {
+        const offered = moveChoices(posts, arranged, p.id);
+        for (const key of keys) {
+          const choice = offered.find((c) => c.key === key);
+          const moved = moveToEra(arranged, posts, p.id, key) !== arranged;
+          expect(moved, `${p.id} → ${key}`).toBe(p.taken_at != null && choice != null && !choice.here);
+        }
+      }
+    }
+  });
+});
+
+describe("what a save lets go of", () => {
+  const old = edits(
+    { "Kyiv 2022": "Home", "Kyoto 2024": "Spring" },
+    { deleted: "Kyoto 2024", l1: "Kyiv 2022", s1: "Lisbon 2023" },
+  );
+
+  it("the names of eras none of the photographs falls in now, and the moves of the deleted, or into such an era", () => {
+    expect(renameEra(old, "Lisbon 2023", "Lisbon, slowly", rows)).toEqual(
+      edits({ "Kyoto 2024": "Spring", "Lisbon 2023": "Lisbon, slowly" }, { s1: "Lisbon 2023" }),
+    );
+    expect(moveToEra(old, rows, "k1", "Lisbon 2023")).toEqual(edits({ "Kyoto 2024": "Spring" }, { s1: "Lisbon 2023", k1: "Lisbon 2023" }));
+  });
+
+  it("keeps the name of an era left with one photograph, for when it has more", () => {
+    expect(renameEra(edits({ "Bar Pitti 2022": "Dinner" }), "Kyoto 2024", "Spring", rows).titles).toEqual({
+      "Bar Pitti 2022": "Dinner",
+      "Kyoto 2024": "Spring",
+    });
+  });
+
+  it("is nothing when the photographs may not all have been read, or were not given", () => {
+    const many = Array.from({ length: ROWS_PER_READ }, (_, i) => post(`m${i}`, "2020-07-10T12:00:00", "Milan"));
+    const kept = edits({ "Kyiv 2022": "Home", "Milan 2020": "Milan" }, { deleted: "Milan 2020" });
+    expect(renameEra(old, "Milan 2020", "Milan", many)).toEqual(edits({ ...old.titles, "Milan 2020": "Milan" }, old.moves));
+    expect(renameEra(kept, "Milan 2020", "Milano", many.slice(1))).toEqual(edits({ "Milan 2020": "Milano" }));
+    expect(renameEra(old, "Lisbon 2023", "Lisbon, slowly")).toEqual(edits({ ...old.titles, "Lisbon 2023": "Lisbon, slowly" }, old.moves));
+  });
+
+  it("is never a change of its own: giving the same name, or moving a photograph where it is, saves nothing", () => {
+    expect(renameEra(old, "Kyoto 2024", "Spring", rows)).toBe(old);
+    expect(moveToEra(old, rows, "k1", "Kyoto 2024")).toBe(old);
   });
 });
 

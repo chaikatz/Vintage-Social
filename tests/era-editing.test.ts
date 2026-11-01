@@ -168,16 +168,26 @@ describe("the automatic reading underneath", () => {
   const memories = code("src/utils/memories.ts");
   const eraEdits = code("src/utils/eraEdits.ts");
 
-  it("is groupEras, untouched, and knows nothing of anyone's changes", () => {
+  it("is groupEras, as it was where no zone is given, and knows nothing of anyone's changes", () => {
     expect(memories).toMatch(
-      /export function groupEras<T extends Pick<PostRow, "taken_at" \| "created_at" \| "location">>\(\s*posts: T\[\],\s*minSize = 2,\s*\): Era<T>\[\] \{/,
+      /export function groupEras<T extends Pick<PostRow, "taken_at" \| "created_at" \| "location">>\(\s*posts: T\[\],\s*minSize = 2,\s*zone\?: string,\s*\): Era<T>\[\] \{/,
     );
     expect(memories).toMatch(/\.filter\(\(e\) => e\.posts\.length >= minSize\)/);
+    // No zone, no calendar: the phone's own getters, as before.
+    expect(memories).toMatch(/const calendar = zone \? calendarIn\(zone\) : null;/);
+    expect(memories).toMatch(/return \{ year: taken\.getFullYear\(\), season: seasonOf\(taken\) \};/);
     expect(memories).not.toMatch(/eraEdits|EraEdits|edits/);
   });
 
-  it("is where every arrangement starts, never a second reading of its own", () => {
-    expect(eraEdits).toMatch(/const automatic = groupEras\(posts\);/);
+  it("is where every arrangement starts, read in the arrangement's zone, never a second reading of its own", () => {
+    expect(eraEdits).toMatch(/const buckets = groupEras\(posts, 1, edits\.zone\);/);
+    expect(eraEdits).toMatch(/for \(const era of groupEras\(posts, 2, edits\.zone\)\) \{/);
+    expect(eraEdits.match(/groupEras\(posts(?:, \d, edits\.zone)?\)/g)).toEqual([
+      "groupEras(posts, 1, edits.zone)",
+      "groupEras(posts, 2, edits.zone)",
+      "groupEras(posts, 1, edits.zone)",
+      "groupEras(posts, 1, edits.zone)",
+    ]);
     expect(eraEdits).not.toMatch(/seasonOf|SEASONS|getFullYear/);
   });
 
