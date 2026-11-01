@@ -16,6 +16,7 @@ import {
   eraStrip,
   erasEmpty,
   erasFootnote,
+  eraWhole,
   leadPrint,
   printLabel,
 } from "@/components/eraBook";
@@ -171,68 +172,117 @@ describe("the chapter at the top of the reader's view", () => {
     ["Summer 2021", { top: 1700, height: 700 }],
     ["Paris 2019", { top: 2400, height: 700 }],
   ]);
+  // Where the first chapter begins, as measured when the reader taps.
+  const top = 300;
 
   it("is the one the view begins in, from its first point to its last", () => {
-    expect(chapterAt(keys, page, 300)?.key).toBe("Lisbon 2023");
-    expect(chapterAt(keys, page, 999)?.key).toBe("Lisbon 2023");
-    expect(chapterAt(keys, page, 1000)?.key).toBe("Kyoto 2022");
-    expect(chapterAt(keys, page, 2000)?.key).toBe("Summer 2021");
-    expect(chapterAt(keys, page, 3099)?.key).toBe("Paris 2019");
+    expect(chapterAt(keys, page, top, 300)?.key).toBe("Lisbon 2023");
+    expect(chapterAt(keys, page, top, 999)?.key).toBe("Lisbon 2023");
+    expect(chapterAt(keys, page, top, 1000)?.key).toBe("Kyoto 2022");
+    expect(chapterAt(keys, page, top, 2000)?.key).toBe("Summer 2021");
+    expect(chapterAt(keys, page, top, 3099)?.key).toBe("Paris 2019");
   });
 
   it("is none above the chapters (the header, the bar) or below them (the foot)", () => {
-    expect(chapterAt(keys, page, 0)).toBeNull();
-    expect(chapterAt(keys, page, 299)).toBeNull();
-    expect(chapterAt(keys, page, 3100)).toBeNull();
-    expect(chapterAt([], page, 500)).toBeNull();
+    expect(chapterAt(keys, page, top, 0)).toBeNull();
+    expect(chapterAt(keys, page, top, 299)).toBeNull();
+    expect(chapterAt(keys, page, top, 3100)).toBeNull();
+    expect(chapterAt([], page, top, 500)).toBeNull();
   });
 
   it("is found from the heights above it, as the web leaves a top unchanged when only its place has", () => {
     // Lisbon has grown by 600 since the others last said where they were.
     const stale = new Map(page);
     stale.set("Lisbon 2023", { top: 300, height: 1300 });
-    expect(chapterAt(keys, stale, 1500)?.key).toBe("Lisbon 2023");
-    expect(chapterAt(keys, stale, 1700)?.key).toBe("Kyoto 2022");
-    expect(chapterAt(keys, stale, 2900)?.key).toBe("Summer 2021");
+    expect(chapterAt(keys, stale, top, 1500)?.key).toBe("Lisbon 2023");
+    expect(chapterAt(keys, stale, top, 1700)?.key).toBe("Kyoto 2022");
+    expect(chapterAt(keys, stale, top, 2900)?.key).toBe("Summer 2021");
   });
 
-  it("says how far into its chapter the view begins, and how tall the chapter is", () => {
-    expect(chapterAt(keys, page, 300)).toEqual({ key: "Lisbon 2023", depth: 0, height: 700 });
-    expect(chapterAt(keys, page, 2250)).toEqual({ key: "Summer 2021", depth: 550, height: 700 });
+  it("says how far into its chapter the view begins", () => {
+    expect(chapterAt(keys, page, top, 300)).toEqual({ key: "Lisbon 2023", depth: 0 });
+    expect(chapterAt(keys, page, top, 2250)).toEqual({ key: "Summer 2021", depth: 550 });
     // Measured from the heights above it, not a top the web has left out of date.
     const stale = new Map(page);
     stale.set("Lisbon 2023", { top: 300, height: 1300 });
-    expect(chapterAt(keys, stale, 1800)).toEqual({ key: "Kyoto 2022", depth: 200, height: 700 });
+    expect(chapterAt(keys, stale, top, 1800)).toEqual({ key: "Kyoto 2022", depth: 200 });
+  });
+
+  it("is placed from where the first chapter begins as the reader taps, not where it last said it did", () => {
+    // EDIT has grown the bar by 37 over the first chapter, which, its size
+    // unchanged, the web has not told of: it still says 300, and is at 337.
+    const moved = new Map(page);
+    moved.set("Lisbon 2023", { top: 300, height: 700 });
+    expect(chapterAt(keys, moved, 337, 2250)).toEqual({ key: "Summer 2021", depth: 513 });
+    // Near a boundary the place stays in the chapter it is in.
+    expect(chapterAt(keys, moved, 337, 1720)).toEqual({ key: "Kyoto 2022", depth: 683 });
+    // And the bar's own lines are not taken for the first chapter's.
+    expect(chapterAt(keys, moved, 337, 320)).toBeNull();
+    // DONE the other way: the bar has shrunk, the first chapter begins higher than it said.
+    const after = new Map(page);
+    after.set("Lisbon 2023", { top: 337, height: 700 });
+    expect(chapterAt(keys, after, 300, 2250)).toEqual({ key: "Summer 2021", depth: 550 });
   });
 
   it("is one of the eras the page shows now, never one since gone, and none while one is unmeasured", () => {
     const gone = new Map(page);
     gone.set("Oslo 2018", { top: 3100, height: 700 });
-    expect(chapterAt(keys, gone, 3200)).toBeNull();
+    expect(chapterAt(keys, gone, top, 3200)).toBeNull();
     const unmeasured = new Map(page);
     unmeasured.delete("Kyoto 2022");
-    expect(chapterAt(keys, unmeasured, 500)?.key).toBe("Lisbon 2023");
-    expect(chapterAt(keys, unmeasured, 2000)).toBeNull();
+    expect(chapterAt(keys, unmeasured, top, 500)?.key).toBe("Lisbon 2023");
+    expect(chapterAt(keys, unmeasured, top, 2000)).toBeNull();
+  });
+});
+
+describe("whether an era has every photograph out on the page", () => {
+  it("is so once it has been opened in place", () => {
+    expect(eraWhole(lisbon, true)).toBe(true);
+    expect(eraWhole(lisbon, false)).toBe(false);
+  });
+
+  it("is so where the strip already holds them all, opened or not", () => {
+    const five = era(Array.from({ length: 1 + ERA_STRIP }, (_, i) => post(`k${i}`, `2022-06-0${i + 1}T12:00:00`, "Kyoto")));
+    expect(eraWhole(five, false)).toBe(true);
+    const six = era(Array.from({ length: 2 + ERA_STRIP }, (_, i) => post(`k${i}`, `2022-06-0${i + 1}T12:00:00`, "Kyoto")));
+    expect(eraWhole(six, false)).toBe(false);
+  });
+
+  it("is so exactly where there is nothing more to show", () => {
+    for (const expanded of [false, true]) {
+      for (const n of [2, 3, 4, 5, 6, 7, 12]) {
+        const e = era(Array.from({ length: n }, (_, i) => post(`k${i}`, `2022-06-${String(i + 1).padStart(2, "0")}T12:00:00`, "Kyoto")));
+        expect(eraWhole(e, expanded), `${n} ${expanded}`).toBe(eraStrip(e, expanded).length === n - 1);
+      }
+    }
   });
 });
 
 describe("where the reader is put back in their chapter once EDIT or DONE has laid the page out", () => {
   // Deep in an era of sixty: the first rows of its prints are far above.
-  const deep = { key: "Lisbon 2023", depth: 1400, height: 2200 };
+  const deep = { key: "Lisbon 2023", depth: 1400 };
 
-  it("is as far in as they were, in an era left open, which DONE leaves as tall or taller", () => {
-    expect(depthAfter(deep, 2200)).toBe(1400);
+  it("is as far in as they were, in an era that lays every photograph out", () => {
+    expect(depthAfter(deep, 2200, true)).toBe(1400);
     // Show fewer comes back at its foot.
-    expect(depthAfter(deep, 2227)).toBe(1400);
+    expect(depthAfter(deep, 2227, true)).toBe(1400);
   });
 
-  it("is as far in as they were where the chapter is only a rounding shorter", () => {
-    expect(depthAfter(deep, 2199.5)).toBe(1400);
+  it("is as far in as they were in an era left open whose name takes a line fewer once RENAME has gone", () => {
+    // The name drops a 30 pt line and Show fewer comes back, 23 pt: the chapter is 7 shorter, its prints all still out.
+    expect(depthAfter(deep, 2193, true)).toBe(1400);
+    expect(depthAfter(deep, 2199.5, true)).toBe(1400);
+  });
+
+  it("is never past the chapter's foot", () => {
+    expect(depthAfter({ key: "Lisbon 2023", depth: 2195 }, 2193, true)).toBe(2193);
   });
 
   it("is the chapter's top once it has closed up, the rows they were at put away", () => {
-    expect(depthAfter(deep, 640)).toBe(0);
-    expect(depthAfter({ key: "Lisbon 2023", depth: 120, height: 2200 }, 640)).toBe(0);
+    expect(depthAfter(deep, 640, false)).toBe(0);
+    expect(depthAfter({ key: "Lisbon 2023", depth: 120 }, 640, false)).toBe(0);
+    // However tall it reports itself.
+    expect(depthAfter(deep, 2200, false)).toBe(0);
   });
 });
 

@@ -38,6 +38,7 @@ import {
   eraStrip,
   erasEmpty,
   erasFootnote,
+  eraWhole,
   leadPrint,
   printLabel,
   type ChapterPlace,
@@ -142,24 +143,56 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   // at the top: as far into its chapter as they were, or the chapter's
   // own top where it has closed up (depthAfter). They are left where they
   // were, not some chapters on.
+  //
+  // The first chapter's top as the reader taps, and how far the bar
+  // reaches down the screen each time, are measured as they lie then,
+  // never taken from what they last reported: the web reports a view's
+  // place only when its size changes, so the first chapter's can be from
+  // before the bar grew or shrank above it, and the bar tells how tall
+  // arranging has made it only after the reader has been put back (on the
+  // web, which sets it in a new holder as it begins to hold to the top,
+  // not at all). The
+  // web answers measures a moment later, in the order they were asked;
+  // React Native answers at once. Either way the bar's is in hand by the
+  // next.
   const scroller = useRef<ScrollView>(null);
   const pages = useRef(new Map<string, View>());
-  const barTall = useRef(0);
+  const bar = useRef<View>(null);
   const anchor = useRef<ChapterPlace | null>(null);
   const arrange = (on: boolean) => {
-    const seen = offset.current + (arranging ? barTall.current : 0);
-    anchor.current = chapterAt(summary.eras.map((era) => era.key), spans.current, seen);
-    setEditing(on);
+    const keys = summary.eras.map((era) => era.key);
+    const first = pages.current.get(keys[0]);
+    const book = innerView(scroller.current);
+    let under = 0;
+    let held = false;
+    // Once: with the place, when the first chapter has been measured, or
+    // without it, when it cannot be or goes unanswered (the timer runs
+    // after the web's answer, and long after React Native's), so the tap
+    // is never lost.
+    const hold = (top?: number) => {
+      if (held) return;
+      held = true;
+      anchor.current = top == null ? null : chapterAt(keys, spans.current, top, offset.current + under);
+      setEditing(on);
+    };
+    if (!first || !book) return hold();
+    if (arranging) bar.current?.measureLayout(book, (_x, _y, _width, tall) => (under = tall));
+    first.measureLayout(book, (_x, top) => hold(top), () => hold());
+    setTimeout(() => hold(), 0);
   };
   useLayoutEffect(() => {
     const place = anchor.current;
     anchor.current = null;
+    const era = place ? summary.eras.find((e) => e.key === place.key) : undefined;
     const page = place ? pages.current.get(place.key) : undefined;
     const book = innerView(scroller.current);
-    if (!place || !page || !book) return;
-    const under = arranging ? barTall.current : 0;
+    if (!place || !era || !page || !book) return;
+    let under = 0;
+    if (arranging) bar.current?.measureLayout(book, (_x, _y, _width, tall) => (under = tall));
+    // Arranging lays every photograph out; after DONE, only an era opened, or one the strip holds whole.
+    const whole = arranging || eraWhole(era, open.has(era.key));
     page.measureLayout(book, (_x, top, _width, tall) =>
-      scroller.current?.scrollTo({ y: Math.max(0, top + depthAfter(place, tall) - under), animated: false }),
+      scroller.current?.scrollTo({ y: Math.max(0, top + depthAfter(place, tall, whole) - under), animated: false }),
     );
   }, [arranging]);
 
@@ -221,7 +254,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
       >
         {header}
         {editor && !loading && summary.eras.length > 0 ? (
-          <View style={[styles.bar, arranging && styles.barOn]} onLayout={(e) => (barTall.current = e.nativeEvent.layout.height)}>
+          <View ref={bar} style={[styles.bar, arranging && styles.barOn]}>
             <View style={styles.barLine}>
               <Text style={styles.barLabel}>{arranging ? "Arranging" : summary.eras.length === 1 ? "1 era" : `${summary.eras.length} eras`}</Text>
               <View style={styles.barRule} />
@@ -287,6 +320,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
         <Animated.View
           pointerEvents="none"
           style={[styles.note, { bottom: Math.max(insets.bottom, spacing.lg), opacity: shown }]}
+          aria-hidden
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         >
@@ -409,7 +443,7 @@ function Print({ arranging, children }: { arranging: boolean; children: React.Re
     <View>
       {children}
       {arranging ? (
-        <View style={styles.mark} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <View style={styles.mark} pointerEvents="none" aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           <Text style={styles.markText}>Move</Text>
         </View>
       ) : null}
