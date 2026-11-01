@@ -199,9 +199,13 @@ describe("the automatic reading underneath", () => {
     expect(eraEdits).not.toMatch(/seasonOf|SEASONS|getFullYear/);
   });
 
-  it("feeds On this day, which shows the member's names and arrangement too", () => {
+  it("feeds On this day, which shows the member's names and arrangement too, once they have been read", () => {
     const day = code("app/memories.tsx");
-    expect(day).toMatch(/const eras = useMemo\(\(\) => editEras\(posts\.data \?\? \[\], eraEdits\.data\?\.edits\), \[posts\.data, eraEdits\.data\]\);/);
+    expect(day).toMatch(
+      /const eras = useMemo\(\s*\(\) => \(eraEdits\.isFetched \? editEras\(posts\.data \?\? \[\], eraEdits\.data\?\.edits\) : \[\]\),\s*\[posts\.data, eraEdits\.data, eraEdits\.isFetched\],\s*\);/,
+    );
+    // Nor is "nothing" said before then.
+    expect(day).toMatch(/const nothing =\s*posts\.isFetched &&\s*eraEdits\.isFetched &&/);
     expect(day).toMatch(/<View key=\{era\.key\} style=\{styles\.era\}>/);
     expect(day).not.toMatch(/groupEras\(/);
   });
