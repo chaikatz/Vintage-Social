@@ -167,9 +167,19 @@ export function EditorialPostCard({
  */
 const PRINT = exportLayout(1, "print", PRINT_WIDTH);
 
-/** A length on the print as a share of its width, for a card of any width. */
+/** A length on the print as a share of its width, for the card's own paddings. */
 function share(length: number): `${number}%` {
   return `${Math.round((length / PRINT_WIDTH) * 10000) / 100}%`;
+}
+
+/**
+ * A length inside the card, as a share of the room between its margins.
+ * React Native and the web take a percentage there from that room, not
+ * from the whole card. The picture fills it, as the print's picture fills
+ * the print less its two margins.
+ */
+function inner(length: number): `${number}%` {
+  return `${Math.round((length / (PRINT_WIDTH - 2 * PRINT.margin)) * 10000) / 100}%`;
 }
 
 /** One line of the label, as the print sets it. */
@@ -228,9 +238,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: spacing.sm,
     borderBottomColor: colors.paperSunken,
   },
+  // As far under the picture as on the print, and as the paper above it.
   rule: {
     height: PRINT.rule.height,
-    marginTop: share(GAP),
+    marginTop: inner(GAP),
     backgroundColor: colors.borderStrong,
   },
   // On a narrow screen, or with large text, the right-hand lines go under

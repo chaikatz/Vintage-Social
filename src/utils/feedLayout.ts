@@ -16,9 +16,8 @@ import { readDiskCache, writeDiskCache } from "@/utils/diskCache";
  * light or dark print; it says how this phone shows a feed, not anything
  * about the member.
  *
- * The experiment is meant to come out cleanly: delete this file and
- * src/components/feed/, and take back out the seam in Home (the
- * `FeedCard` line) and the Feed layout row in Settings that read it.
+ * The experiment is meant to come out cleanly. EDITORIAL_FEED_PREVIEW.md
+ * says how, under "Taking it out of a branch that has it".
  */
 
 export type FeedLayout = "original" | "editorial";

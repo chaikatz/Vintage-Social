@@ -10,12 +10,34 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * that keep the experiment a matter of presentation: Home hands either
  * card the very same props from one seam, only Home draws the editorial
  * card, and that card's picture, like and "…" are wired exactly as
- * PostCard's are.
+ * PostCard's are. And from the card's own sheet, the lengths it comes to
+ * on a phone, laid out the way React Native lays them out.
  */
 
 const phone = { files: new Map<string, string>() };
+/** Every sheet made as the modules load; the editorial card's is the one with a rule. */
+const sheets: Record<string, Record<string, unknown>>[] = [];
 
-vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("react-native", () => ({
+  Platform: { OS: "ios", select: (choices: { ios?: unknown; default?: unknown }) => choices.ios ?? choices.default },
+  DynamicColorIOS: ({ light }: { light: string }) => light,
+  StyleSheet: {
+    create: <T extends Record<string, Record<string, unknown>>>(sheet: T) => {
+      sheets.push(sheet);
+      return sheet;
+    },
+  },
+  Pressable: "Pressable",
+  Text: "Text",
+  View: "View",
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
+}));
+// What the card draws with, stood in for: only its sheet is read here.
+vi.mock("expo-haptics", () => ({}));
+vi.mock("@expo/vector-icons/Feather", () => ({ default: "Feather" }));
+vi.mock("@expo/vector-icons/MaterialCommunityIcons", () => ({ default: "MaterialCommunityIcons" }));
+vi.mock("@/components/PostCard", () => ({ INLINE_COMMENTS: 2, PostCard: () => null }));
+vi.mock("@/components/PostMedia", () => ({ PostMedia: () => null }));
 vi.mock("expo-file-system", () => {
   class Directory {
     constructor(readonly uri: string) {}
@@ -55,6 +77,7 @@ const {
   __resetFeedLayoutForTest,
   __subscribeForTest,
 } = await import("@/utils/feedLayout");
+await import("@/components/feed/EditorialPostCard");
 
 const FILE = "document/feed-layout.json";
 const root = path.resolve(import.meta.dirname, "..");
@@ -290,6 +313,38 @@ describe("the editorial card", () => {
     expect(style("rule")).toMatch(/height: PRINT\.rule\.height,/);
     expect(style("rule")).toMatch(/backgroundColor: colors\.borderStrong,/);
     expect(print).toMatch(/rule: p\.borderStrong/);
+  });
+
+  it("leaves the print's paper between the picture and the rule, on any phone", () => {
+    const sheet = sheets.find((s) => "card" in s && "rule" in s);
+    expect(sheet).toBeDefined();
+    const { card: paper, rule } = sheet!;
+    /** A percentage as React Native and the web resolve it: a share of the room it is measured in. */
+    const of = (length: unknown, room: number) => {
+      expect(length).toMatch(/^\d+(\.\d+)?%$/);
+      return (parseFloat(String(length)) / 100) * room;
+    };
+    expect(card).toMatch(/const GAP = PRINT\.rule\.y - \(PRINT\.photo\.y \+ PRINT\.photo\.height\);/);
+    const GAP = L.rule.y - (L.photo.y + L.photo.height);
+    for (const width of [320, 390, 430]) {
+      // The card is the print at the phone's width: at 390 pt the print's 29 pt gap comes to about 20.9 pt.
+      const gap = (GAP * width) / PRINT_WIDTH;
+      // The card's own paddings are taken of its whole width.
+      const margin = of(paper.paddingHorizontal, width);
+      expect(of(paper.paddingTop, width)).toBeCloseTo(gap, 1);
+      // A length inside them is taken of the room between them, which the picture fills.
+      const room = width - 2 * margin;
+      expect(room).toBeCloseTo((L.photo.width * width) / PRINT_WIDTH, 1);
+      expect(of(rule.marginTop, room)).toBeCloseTo(gap, 1);
+    }
+  });
+
+  it("gives a length inside the card as a share of the picture's width, not the card's", () => {
+    const written = card.slice(card.indexOf("const styles = StyleSheet.create("));
+    // Only the card's own paddings are a share of the whole width.
+    expect(written.match(/\bshare\(/g)).toHaveLength(3);
+    expect(style("card").match(/\bshare\(/g)).toHaveLength(3);
+    expect(style("rule")).toMatch(/marginTop: inner\(GAP\),/);
   });
 
   it("sets the place, the date and @name right-aligned, in the print's typewriter lines and inks", () => {
