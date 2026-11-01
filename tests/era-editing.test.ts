@@ -56,8 +56,16 @@ describe("who may arrange Eras", () => {
 
   it("tells the member, in our words, when a change does not save", () => {
     expect(hook).toMatch(/showAlert\(ERA_SAVE_FAILED\.title, errorMessage\(err, ERA_SAVE_FAILED\.body\)\)/);
-    expect(hook).toMatch(/rename: \(key, title\) => void arrange\(\(e\) => renameEra\(e, key, title\)\)/);
-    expect(hook).toMatch(/move: \(post, key\) => void arrange\(\(e\) => moveToEra\(e, posts, post\.id, key\)\)/);
+    // Each over the member's photographs, so what no longer applies is let go as it saves.
+    expect(hook).toMatch(/rename: \(key, title\) => void arrange\(\(e\) => renameEra\(e, key, title, posts\)\)/);
+    expect(hook).toMatch(/const change = \(e: EraEdits\) => moveToEra\(e, posts, post\.id, key\);/);
+    expect(hook).toMatch(/void arrange\(change\);\s*return true;/);
+  });
+
+  it("says whether a move was made, so the page announces only a real one", () => {
+    expect(hook).toMatch(/move: \(post: PostRow, key: string\) => boolean;/);
+    expect(hook).toMatch(/if \(!shown\?\.ready \|\| sameEdits\(change\(shown\.edits\), shown\.edits\)\) return false;/);
+    expect(hook).toMatch(/return useMemo\(\(\) => \{\s*if \(!ready \|\| !userId \|\| !posts\) return undefined;\s*return eraEditor\(queryClient, userId, posts\);/);
   });
 });
 
