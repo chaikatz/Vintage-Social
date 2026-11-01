@@ -58,6 +58,7 @@ export function PhotoTile({
   full,
   onPress,
   accessibilityLabel,
+  accessibilityHint,
 }: {
   post: GridPost;
   size: number;
@@ -66,6 +67,8 @@ export function PhotoTile({
   full?: boolean;
   onPress: () => void;
   accessibilityLabel?: string;
+  /** What a tap does, when it is not the usual (an era being arranged moves the photograph). */
+  accessibilityHint?: string;
 }) {
   // A video's square is its poster frame. The media path itself is a
   // movie, which an <Image> cannot draw — so a video with no poster
@@ -87,6 +90,7 @@ export function PhotoTile({
       style={{ width: size, height: height ?? size }}
       accessibilityRole={accessibilityLabel ? "imagebutton" : undefined}
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
     >
       {url ? (
         <Image

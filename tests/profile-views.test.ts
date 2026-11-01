@@ -303,11 +303,11 @@ describe("the Eras view, read from the source", () => {
     expect(list.match(/<PhotoTile\b[\s\S]*?\/>/g)?.filter((t) => /\bfull=/.test(t))).toEqual([
       expect.stringMatching(/post=\{lead\}[\s\S]*full=\{near\}/),
     ]);
-    expect(list).toMatch(/near=\{near\.has\(era\.title\)\}/);
+    expect(list).toMatch(/near=\{near\.has\(era\.key\)\}/);
     expect(list).toMatch(/setNear\(\(prev\) => chaptersNear\(prev, spans\.current, offset\.current, height\)\)/);
     expect(list).toMatch(/onScroll=\{\(e\) => \{\s*offset\.current = e\.nativeEvent\.contentOffset\.y;\s*look\(\);/);
     expect(list).toMatch(/scrollEventThrottle=\{100\}/);
-    expect(list).toMatch(/spans\.current\.set\(era\.title, \{ top: y, height: tall \}\);\s*look\(\);/);
+    expect(list).toMatch(/spans\.current\.set\(era\.key, \{ top: y, height: tall \}\);\s*look\(\);/);
   });
 
   it("gives a full lead the photograph over its small copy, and a film only its poster", () => {
@@ -320,9 +320,10 @@ describe("the Eras view, read from the source", () => {
     expect(tile.match(/<Image\b/g)).toHaveLength(1);
   });
 
-  it("gathers with the eras On this day uses", () => {
-    expect(list).toMatch(/eraSummary\(posts\)/);
-    expect(list).not.toMatch(/groupByPlace|groupEras\(/);
+  it("gathers with the eras On this day uses, as their member arranged them", () => {
+    expect(list).toMatch(/editedEraSummary\(posts, arranged\)/);
+    expect(list).toMatch(/const arranged = edits \?\? NO_EDITS;/);
+    expect(list).not.toMatch(/groupByPlace|groupEras\(|eraSummary\(posts\)/);
   });
 
   it("names the eras as headers and the prints as image buttons", () => {
@@ -342,7 +343,11 @@ describe("the gallery, read from the source", () => {
 
   it("reads the era from its address and holds it through galleryRows", () => {
     expect(gallery).toMatch(/const \{ authorId, postId, sort, era \} = useLocalSearchParams/);
-    expect(gallery).toMatch(/galleryRows\(postsQ\.data \?\? \[\], sort, era, postId\)/);
+    expect(gallery).toMatch(/galleryRows\(postsQ\.data \?\? \[\], sort, era, postId, eraEdits\.data\?\.edits\)/);
+    // The author's arrangement, read only when an era opened it, and the rows held until it is in.
+    expect(gallery).toMatch(/const eraEdits = useEraEdits\(authorId, Boolean\(era\)\);/);
+    expect(gallery).toMatch(/const waiting = Boolean\(era\) && !eraEdits\.isFetched;/);
+    expect(gallery).toMatch(/if \(!author \|\| waiting\) return \[\];/);
     expect(gallery).toMatch(/title: shown\.era \?\? authorQ\.data\?\.username \?\? ""/);
   });
 });

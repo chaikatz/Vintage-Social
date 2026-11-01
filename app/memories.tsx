@@ -11,11 +11,13 @@ import { Bone } from "@/components/Skeleton";
 import { colors, spacing, type } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
 import { mediaUrl } from "@/api/media";
-import { groupEras, memoryHeadline, onThisDay } from "@/utils/memories";
+import { memoryHeadline, onThisDay } from "@/utils/memories";
+import { editEras } from "@/utils/eraEdits";
 import { signatureDate } from "@/utils/time";
 import { libraryGranted, photosOnThisDay } from "@/utils/library";
 import { darkroomAvailable } from "@/darkroom/source";
 import { useSession } from "@/providers/SessionProvider";
+import { useEraEdits } from "@/hooks/useEraEdits";
 import type { PostRow } from "@/types/db";
 
 /**
@@ -24,8 +26,10 @@ import type { PostRow } from "@/types/db";
  * The member's own past, read by the day the shutter fired: what they
  * posted from this date in other years, what the phone still has from it,
  * and further down the eras their grid falls into — a place and a year,
- * or a season when no place was written. All of it is computed on the
- * phone from dates already on the photographs; VINTAGE keeps no diary.
+ * or a season when no place was written, under the names the member gave
+ * them and as they arranged them on their profile. All of it is computed
+ * on the phone from dates already on the photographs; VINTAGE keeps no
+ * diary, only the member's own names and moves for their eras.
  *
  * The headline is the sentence a notification will carry once there are
  * notifications, so the two read the same.
@@ -49,7 +53,10 @@ export default function Memories() {
     enabled: Boolean(userId),
   });
   const memories = useMemo(() => onThisDay(posts.data ?? []), [posts.data]);
-  const eras = useMemo(() => groupEras(posts.data ?? []), [posts.data]);
+  // The eras as the profile shows them: gathered automatically, named and
+  // arranged as the member left them.
+  const eraEdits = useEraEdits(userId);
+  const eras = useMemo(() => editEras(posts.data ?? [], eraEdits.data?.edits), [posts.data, eraEdits.data]);
 
   const dayKey = new Date().toDateString();
   const granted = useQuery({
@@ -196,7 +203,7 @@ export default function Memories() {
           <View style={styles.section}>
             <SectionLabel>Eras</SectionLabel>
             {eras.map((era) => (
-              <View key={era.title} style={styles.era}>
+              <View key={era.key} style={styles.era}>
                 <View style={styles.eraHead}>
                   <Text style={styles.eraTitle}>{era.title}</Text>
                   <Text style={styles.eraCount}>{era.posts.length}</Text>

@@ -23,6 +23,7 @@ import { opensGallery } from "@/utils/profileViews";
 import { clipTiming } from "@/utils/videoTiming";
 import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
+import { useEraEditor, useEraEdits } from "@/hooks/useEraEdits";
 import type { PostRow } from "@/types/db";
 
 /**
@@ -59,6 +60,9 @@ export default function OwnProfile() {
   }, [posts.data, tagged.data, sort]);
   // The towns are looked up as the photographs arrive, so "Places" opens placed.
   usePlaceWarmup(posts.data ?? []);
+  // Your eras as you arranged them, and, once that has been read, the means to arrange them.
+  const eraEdits = useEraEdits(userId);
+  const eraEditor = useEraEditor(userId, posts.data);
 
   if (!profile) {
     return (
@@ -145,13 +149,19 @@ export default function OwnProfile() {
         <Timeline posts={rows} onOpenPost={openPost} header={header} refreshing={posts.isRefetching} onRefresh={() => posts.refetch()} />
       ) : view === "eras" ? (
         // Your own photographs only, as On this day gathers them: not the ones you were tagged in.
+        // Arranged as you left them, and yours to arrange: this page alone passes an editor.
         <EraList
           posts={posts.data ?? []}
+          edits={eraEdits.data?.edits}
+          editor={eraEditor}
           onOpenPost={openEra}
           header={header}
-          loading={!posts.isFetched}
+          loading={!posts.isFetched || !eraEdits.isFetched}
           refreshing={posts.isRefetching}
-          onRefresh={() => posts.refetch()}
+          onRefresh={() => {
+            posts.refetch();
+            eraEdits.refetch();
+          }}
         />
       ) : (
         <PhotoGrid

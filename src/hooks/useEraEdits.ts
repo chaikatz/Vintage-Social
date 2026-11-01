@@ -36,12 +36,12 @@ export interface EraEditor {
  * saved. A change shows at once (changeEraEdits); one that does not save
  * is taken back and the member is told, in words of ours.
  */
-export function useEraEditor(userId: string, posts: PostRow[]): EraEditor | undefined {
+export function useEraEditor(userId: string, posts: PostRow[] | undefined): EraEditor | undefined {
   const queryClient = useQueryClient();
   const edits = useEraEdits(userId);
   const ready = edits.data?.ready === true;
   return useMemo(() => {
-    if (!ready || !userId) return undefined;
+    if (!ready || !userId || !posts) return undefined;
     const arrange = (change: Parameters<typeof changeEraEdits>[2]) =>
       changeEraEdits(queryClient, userId, change).catch((err) =>
         showAlert(ERA_SAVE_FAILED.title, errorMessage(err, ERA_SAVE_FAILED.body)),
