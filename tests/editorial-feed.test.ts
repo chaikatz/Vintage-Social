@@ -46,6 +46,7 @@ vi.mock("expo-file-system", () => {
   return { File, Paths: { document: new Directory("document"), cache: new Directory("cache") } };
 });
 
+const { PRINT_WIDTH, exportLayout } = await import("@/utils/exportLayout");
 const {
   FEED_LAYOUTS,
   getFeedLayout,
@@ -225,49 +226,142 @@ describe("the editorial card is Home's alone", () => {
 describe("the editorial card", () => {
   const card = code("src/components/feed/EditorialPostCard.tsx");
   const original = code("src/components/PostCard.tsx");
+  const print = code("src/components/ExportCard.tsx");
+  /** A style's rules, by its name in the sheet: a block of its own, or one line. */
+  const style = (name: string) =>
+    card.match(new RegExp(`\\n  ${name}: \\{([\\s\\S]*?)\\n  \\},`))?.[1] ??
+    card.match(new RegExp(`\\n  ${name}: \\{ ([^\\n]*?) \\},`))?.[1] ??
+    "";
+  /** Where a piece of the card is drawn, counted from its outermost View. */
+  const body = card.slice(card.indexOf('testID="editorial-post-card"'));
+  const at = (needle: string) => body.indexOf(needle);
+  const L = exportLayout(1, "print", PRINT_WIDTH);
 
   it("takes exactly PostCard's props", () => {
     expect(card).toMatch(/type Props = React\.ComponentProps<typeof PostCard>;/);
     expect(card).toMatch(/export function EditorialPostCard\(\{[\s\S]*?\}: Props\)/);
   });
 
-  it("puts nothing above the photograph: the member, the place and date, and the \"…\" come under it", () => {
-    const body = card.slice(card.indexOf('testID="editorial-post-card"'));
-    const at = (needle: string) => body.indexOf(needle);
-    expect(at("<PostMedia")).toBeGreaterThan(-1);
-    for (const after of ["<Avatar", "{post.author.username}", "<Byline post={post} />", 'accessibilityLabel="Post options"', "{post.caption}"]) {
-      expect(at(after)).toBeGreaterThan(at("<PostMedia"));
+  it("is the print without the brand: no wordmark, no tagline, no member number", () => {
+    expect(card).not.toMatch(/VINTAGE|TAGLINE|Members only|EXPORT_ICON|ExportCard|wordmark|tagline/);
+    expect(card).not.toMatch(/member_?[nN]o|MEMBER|formatMemberNumber/);
+    // The print's own words, asked for with no number, so the name stands alone: `@elena`.
+    expect(card).toMatch(/const label = exportLabelText\(post, null\);/);
+    expect(card).toMatch(/import \{ PRINT_WIDTH, exportLabelText, exportLayout, type TextBox \} from "@\/utils\/exportLayout";/);
+  });
+
+  it("sets out the print in order: the picture, the rule, the label, then the words and the comments", () => {
+    const order = [
+      "<PostMedia",
+      "<View style={styles.rule} />",
+      '"Unlike" : "Like"',
+      'accessibilityLabel="Comments"',
+      'accessibilityLabel="Send to"',
+      "{likes}",
+      "{replies}",
+      "{label.place}",
+      "{label.date}",
+      "{label.credit}",
+      'accessibilityLabel="Post options"',
+      "{post.caption}",
+      "{preview.map(",
+    ];
+    const seen = order.map(at);
+    order.forEach((needle, i) => expect(seen[i], needle).toBeGreaterThan(-1));
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+    // Nothing above the picture: it is the first thing in the card.
+    expect(body.indexOf("<", 1)).toBe(at("<PostMedia"));
+  });
+
+  it("keeps the print's margins: the picture inset by the print's share of the width, a little paper above it", () => {
+    expect(card).toMatch(/const PRINT = exportLayout\(1, "print", PRINT_WIDTH\);/);
+    expect(style("card")).toMatch(/paddingHorizontal: share\(PRINT\.margin\),/);
+    expect(style("card")).toMatch(/paddingTop: share\(GAP\),/);
+    expect(style("card")).toMatch(/backgroundColor: colors\.paper,/);
+    // About 7% of the width, as on the member's print.
+    expect(L.margin / PRINT_WIDTH).toBeGreaterThan(0.065);
+    expect(L.margin / PRINT_WIDTH).toBeLessThan(0.075);
+    // Prints are told apart by the darker paper between them, not by a frame or a shadow.
+    expect(style("card")).toMatch(/borderBottomColor: colors\.paperSunken,/);
+    expect(card).not.toMatch(/shadow|elevation|borderRadius/);
+  });
+
+  it("draws the rule under the picture as the print does", () => {
+    expect(style("rule")).toMatch(/height: PRINT\.rule\.height,/);
+    expect(style("rule")).toMatch(/backgroundColor: colors\.borderStrong,/);
+    expect(print).toMatch(/rule: p\.borderStrong/);
+  });
+
+  it("sets the place, the date and @name right-aligned, in the print's typewriter lines and inks", () => {
+    expect(card).toMatch(/function line\(box: TextBox\) \{\s*return \{\s*fontFamily: type\.mono,\s*fontSize: box\.size,\s*letterSpacing: box\.spacing,/);
+    const lines: [string, string, string][] = [
+      ["place", "PRINT.place", "inkSoft"],
+      ["date", "PRINT.byline", "inkSoft"],
+      ["creditText", "PRINT.credit", "inkFaint"],
+    ];
+    for (const [name, box, ink] of lines) {
+      expect(style(name), name).toContain(`...line(${box}),`);
+      expect(style(name), name).toContain('textAlign: "right",');
+      expect(style(name), name).toMatch(new RegExp(`color: colors\\.${ink}\\b`));
     }
-    // The member over the dateline, then the words, then the buttons.
-    expect(at("<Byline post={post} />")).toBeGreaterThan(at("{post.author.username}"));
-    expect(at("{post.caption}")).toBeGreaterThan(at('accessibilityLabel="Post options"'));
-    expect(at('accessibilityLabel={likedByMe ? "Unlike" : "Like"}')).toBeGreaterThan(at("{post.caption}"));
+    // The same inks the print gives its place, its date and its credit.
+    expect(print).toMatch(/rect\(L\.place\),[\s\S]*?color: c\.inkSoft,/);
+    expect(print).toMatch(/rect\(L\.byline\),[\s\S]*?color: c\.inkSoft,/);
+    expect(print).toMatch(/rect\(L\.credit\),[\s\S]*?color: c\.inkFaint,/);
+    expect(style("dateline")).toMatch(/alignItems: "flex-end",/);
+    // A long place takes a second line rather than pushing the date off.
+    expect(card).toMatch(/style=\{styles\.place\} numberOfLines=\{2\}/);
+  });
+
+  it("opens the profile from @name, with the \"…\" after it on the same line", () => {
+    const credit = body.slice(at("<View style={styles.credit}>"), at("{post.caption}"));
+    expect(credit).toMatch(/onPress=\{\(\) => onOpenProfile\(post\.author\.username\)\}\s*accessibilityRole="button"/);
+    expect(credit.indexOf("{label.credit}")).toBeGreaterThan(-1);
+    expect(credit.indexOf('accessibilityLabel="Post options"')).toBeGreaterThan(credit.indexOf("{label.credit}"));
+    expect(style("credit")).toMatch(/flexDirection: "row",/);
   });
 
   it("sets the caption in the comments' own type", () => {
-    const style = (name: string) => card.match(new RegExp(`\\n  ${name}: \\{([\\s\\S]*?)\\n  \\}`))?.[1] ?? "";
-    const face = (rules: string) => rules.split("\n").filter((l) => /type\.body|fontSize|fontFamily|lineHeight|color/.test(l)).map((l) => l.trim());
+    const face = (rules: string) =>
+      rules
+        .split("\n")
+        .filter((l) => /type\.body|fontSize|fontFamily|lineHeight|color/.test(l))
+        .map((l) => l.trim());
     expect(face(style("caption"))).toEqual(face(style("comment")));
     expect(face(style("caption"))).toContain("fontSize: 14,");
-    expect(style("caption")).not.toMatch(/type\.serif/);
+    expect(style("caption")).not.toMatch(/type\.(serif|mono)/);
   });
 
-  it("keeps its counts on screen at the largest text sizes", () => {
-    const counts = card.match(/<Text[^>]*styles\.countText[^>]*>/g) ?? [];
-    expect(counts).toHaveLength(3);
-    for (const t of counts) expect(t).toMatch(/maxFontSizeMultiplier=\{COUNT_CAP\}/);
-    expect(card).toMatch(/const COUNT_CAP = 2;/);
+  it("keeps its label on screen at the largest text sizes", () => {
+    const mono = card.match(/<Text[^>]*styles\.(countText|place|date|creditText)\b[^>]*>/g) ?? [];
+    expect(mono).toHaveLength(6);
+    for (const t of mono) expect(t).toMatch(/maxFontSizeMultiplier=\{LABEL_CAP\}/);
+    expect(card).toMatch(/const LABEL_CAP = 2;/);
+    // The right-hand lines go under the buttons rather than off the edge, and ask for more room as they grow.
+    expect(style("label")).toMatch(/flexWrap: "wrap",/);
+    expect(style("dateline")).toMatch(/flexShrink: 1,/);
+    expect(card).toMatch(/const scale = Math\.min\(Math\.max\(useWindowDimensions\(\)\.fontScale, 1\), LABEL_CAP\);/);
+    expect(card).toMatch(/style=\{\[styles\.dateline, dateline\]\}/);
+    expect(card).toMatch(/const dateline = \{ flexBasis: DATELINE \* scale \};/);
+    // At the cap the longest date still fits across a 320 pt screen, inside the margins.
+    // React Native grows the letters with Larger Text and leaves their tracking as set.
+    const longest = "SEPTEMBER 30, 2026".length * (L.byline.size * 0.6 * 2 + L.byline.spacing);
+    expect(longest).toBeLessThan(320 * (1 - (2 * L.margin) / PRINT_WIDTH));
   });
 
-  it("draws the picture exactly as PostCard does: the same frame, the same double tap, the same playback", () => {
+  it("draws the picture exactly as PostCard does, without the hairlines a print has no need of", () => {
     const mine = tags(card, "PostMedia");
     expect(mine).toHaveLength(1);
-    expect(flat(mine[0])).toBe(flat(tags(original, "PostMedia")[0] ?? ""));
+    expect(flat(mine[0])).toBe(flat(tags(original, "PostMedia")[0] ?? "").replace(/ \/>$/, " bare />"));
     expect(mine[0]).toMatch(/onDoubleTap=\{\(\) => like\(true\)\}/);
     expect(mine[0]).toMatch(/active=\{active\}/);
     expect(mine[0]).toMatch(/warm=\{warm\}/);
+    expect(mine[0]).toMatch(/recyclingKey=\{post\.id\}/);
+    expect(mine[0]).toMatch(/surface=\{surface\}/);
     expect(card).toMatch(/^\s*active = true,$/m);
     expect(card).toMatch(/^\s*warm = true,$/m);
+    // `bare` takes off the frame's two rules and nothing else.
+    expect(code("src/components/PostMedia.tsx")).toMatch(/bare: \{ borderTopWidth: 0, borderBottomWidth: 0 \},/);
   });
 
   it("likes through the very same steps as PostCard", () => {
@@ -281,7 +375,7 @@ describe("the editorial card", () => {
     expect(card).toMatch(/onPress=\{\(\) => onOpenComments\(post\)\} accessibilityLabel="Comments"/);
     expect(card).toMatch(/onPress=\{\(\) => onShare\(post\)\} accessibilityLabel="Send to"/);
     expect(card).toMatch(/onPress=\{\(\) => onOpenLikes\?\.\(post\)\} disabled=\{!onOpenLikes\}/);
-    expect(card).toMatch(/onPress=\{\(\) => onOpenProfile\(post\.author\.username\)\}/);
+    expect(card).toMatch(/onPress=\{\(\) => onOpenComments\(post\)\} accessibilityRole="button"/);
     // The same labels as the original card, for VoiceOver and the launch test alike.
     for (const label of ['"Post options"', '"Comments"', '"Send to"', '"Unlike" : "Like"']) {
       expect(original).toContain(label);
@@ -290,21 +384,27 @@ describe("the editorial card", () => {
 
   it("decides nothing for itself", () => {
     expect(card).not.toMatch(/@\/api|supabase|usePostActions|useQuery|useState|useEffect/);
-    expect(card).toMatch(/import \{ Byline, INLINE_COMMENTS, PostCard \} from "\.\.\/PostCard";/);
+    expect(card).toMatch(/import \{ INLINE_COMMENTS, PostCard \} from "\.\.\/PostCard";/);
     expect(card).toMatch(/const preview = \(comments \?\? \[\]\)\.slice\(-INLINE_COMMENTS\);/);
   });
 
   it("gives every button a full target", () => {
     expect(card).toMatch(/const TARGET = 44;/);
-    const button = /button: \{[\s\S]*?\}/.exec(card)?.[0] ?? "";
-    expect(button).toMatch(/minWidth: TARGET,/);
-    expect(button).toMatch(/minHeight: TARGET,/);
-    const count = /count: \{[\s\S]*?\}/.exec(card)?.[0] ?? "";
-    expect(count).toMatch(/minWidth: TARGET,/);
-    expect(count).toMatch(/minHeight: TARGET,/);
-    for (const label of ["Post options", "Comments", "Send to"]) {
+    for (const name of ["button", "count"]) {
+      expect(style(name), name).toMatch(/minWidth: TARGET,/);
+      expect(style(name), name).toMatch(/minHeight: TARGET,/);
+    }
+    expect(style("name")).toMatch(/minHeight: TARGET,/);
+    expect(card).toMatch(/<Pressable\s*style=\{styles\.button\}\s*onPress=\{\(\) => like\(!likedByMe\)\}/);
+    for (const label of ["Comments", "Send to"]) {
       expect(card).toMatch(new RegExp(`<Pressable style=\\{styles\\.button\\}[^\\n]*accessibilityLabel="${label}"`));
     }
+    expect(card).toMatch(/<Pressable style=\{\[styles\.button, styles\.more, reach\]\} onPress=\{\(\) => onMore\(post\)\}/);
+    // Where the counts' targets meet the buttons', the buttons are on top.
+    expect(style("actions")).toMatch(/zIndex: 1,/);
+    // The name and the "…" reach above and below their line, by no more than the line leaves of a target.
+    expect(card).toMatch(/const reach = \{ marginVertical: -Math\.max\(0, TARGET - CREDIT_LINE \* scale\) \/ 2 \};/);
+    expect(card).toMatch(/style=\{\[styles\.name, reach\]\}/);
     expect(card).toMatch(/testID="editorial-post-card"/);
   });
 });

@@ -5,9 +5,10 @@ import { readDiskCache, writeDiskCache } from "@/utils/diskCache";
  * Editorial (Preview): how Home sets out each post, a trial.
  *
  * Original is the feed as it has always been. Editorial is the same posts
- * and the same buttons, arranged as entries in a photographic journal (see
- * src/components/feed/EditorialPostCard.tsx). Only Home reads it; every
- * other screen that shows a post keeps the original card.
+ * and the same buttons, each set out as a print, the way a photograph is
+ * shared from VINTAGE (see src/components/feed/EditorialPostCard.tsx). Only
+ * Home reads it; every other screen that shows a post keeps the original
+ * card.
  *
  * A preference of the phone's, like the appearance: one small file in
  * Documents, read once when Home first draws, written the moment it is
