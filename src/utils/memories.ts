@@ -94,16 +94,80 @@ function seasonOf(date: Date): string {
   return SEASONS[date.getMonth()];
 }
 
+/** Calendars by time zone, each made once, as making one is slow. Null where the zone cannot be read. */
+const calendars = new Map<string, Intl.DateTimeFormat | null>();
+
+function calendarIn(zone: string): Intl.DateTimeFormat | null {
+  let calendar = calendars.get(zone);
+  if (calendar === undefined) {
+    try {
+      calendar = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "numeric" });
+    } catch {
+      calendar = null;
+    }
+    calendars.set(zone, calendar);
+  }
+  return calendar;
+}
+
+type Reading = { year: number; season: string };
+
+/**
+ * What each moment was read as in a zone, kept: a grid is read again with
+ * every change to an arrangement, and a calendar is slower than the
+ * phone's own getters. Let go of when it grows past a few grids' worth.
+ */
+const readings = new Map<string, Map<number, Reading>>();
+const READINGS_KEPT = 10_000;
+
+/**
+ * The year a photograph was taken in, and its season: on the calendar of
+ * `zone` when one is given and can be read there, and otherwise on the
+ * phone's own, as always.
+ */
+function yearAndSeason(taken: Date, zone: string | undefined): Reading {
+  const calendar = zone ? calendarIn(zone) : null;
+  if (calendar && zone) {
+    const read = readings.get(zone) ?? new Map<number, Reading>();
+    const known = read.get(taken.getTime());
+    if (known) return known;
+    try {
+      let year = NaN;
+      let month = NaN;
+      for (const part of calendar.formatToParts(taken)) {
+        if (part.type === "year") year = Number(part.value);
+        else if (part.type === "month") month = Number(part.value);
+      }
+      if (Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12) {
+        const reading = { year, season: SEASONS[month - 1] };
+        if (read.size >= READINGS_KEPT) read.clear();
+        read.set(taken.getTime(), reading);
+        readings.set(zone, read);
+        return reading;
+      }
+    } catch {
+      // Read on the phone's own calendar instead.
+    }
+  }
+  return { year: taken.getFullYear(), season: seasonOf(taken) };
+}
+
 /**
  * Group a member's own photographs into eras: a place and a year when the
  * author named the place, otherwise a season and a year. Purely a way of
  * reading the grid — nothing is stored, so the grouping can change freely.
  *
  * Singletons are dropped. One photograph is a photograph, not an era.
+ *
+ * The year and the season are the phone's own, unless `zone` names a time
+ * zone to read them in ("Europe/Lisbon"). Then a photograph taken late on
+ * New Year's Eve falls in the same year wherever the grid is read. A zone
+ * that cannot be read is read as the phone's own.
  */
 export function groupEras<T extends Pick<PostRow, "taken_at" | "created_at" | "location">>(
   posts: T[],
   minSize = 2,
+  zone?: string,
 ): Era<T>[] {
   const buckets = new Map<string, Era<T>>();
   for (const post of posts) {
@@ -111,7 +175,8 @@ export function groupEras<T extends Pick<PostRow, "taken_at" | "created_at" | "l
     const taken = takenDate(post);
     if (Number.isNaN(taken.getTime())) continue;
     const place = post.location?.trim();
-    const title = place ? `${place} ${taken.getFullYear()}` : `${seasonOf(taken)} ${taken.getFullYear()}`;
+    const { year, season } = yearAndSeason(taken, zone);
+    const title = place ? `${place} ${year}` : `${season} ${year}`;
     const era = buckets.get(title);
     if (era) {
       era.posts.push(post);

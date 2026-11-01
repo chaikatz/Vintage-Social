@@ -532,10 +532,26 @@ export function demoFetchEraEdits(authorId: string): EraEdits {
   return clone(edits);
 }
 
-/** Only the member writes their own, whole, over what was there. */
+/**
+ * Only the member writes their own, whole, over what was there: the names,
+ * the moves and the time zone they were read in, none when none is given.
+ * The row holds to the database's checks (0022): every name 1 to 60
+ * characters, every move an era's name, and the zone an IANA name. Names
+ * and moves that no longer apply are let go by the app before it saves
+ * (renameEra, moveToEra), here as there.
+ */
 export function demoSaveEraEdits(authorId: string, edits: EraEdits): void {
   if (authorId !== state.currentUserId) throw new Error("Only you can arrange your own eras.");
-  state.eraEdits[authorId] = clone(edits);
+  const names = Object.values(edits.titles).every((t) => typeof t === "string" && /^.{1,60}$/su.test(t));
+  const moves = Object.values(edits.moves).every((m) => typeof m === "string");
+  const zone = edits.zone === undefined || /^[A-Za-z0-9_+/-]{1,64}$/.test(edits.zone);
+  if (!names || !moves || !zone) {
+    // As PostgREST answers a check that fails: the database's words, which the app never shows.
+    throw { code: "23514", message: 'new row for relation "era_edits" violates check constraint', details: null, hint: null };
+  }
+  const kept: EraEdits = { titles: clone(edits.titles), moves: clone(edits.moves) };
+  if (edits.zone !== undefined) kept.zone = edits.zone;
+  state.eraEdits[authorId] = kept;
 }
 
 export function demoUnfollow(followerId: string, followeeId: string): void {

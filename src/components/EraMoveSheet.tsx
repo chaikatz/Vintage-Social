@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@expo/vector-icons/Feather";
@@ -16,11 +16,15 @@ const LEAD = 44;
 interface Props {
   /** The photograph being moved; the sheet is open while there is one. */
   post: PostRow | null;
-  /** Where it can go, as moveChoices lists them: the eras in the page's order, the one it is in marked. */
+  /** Where it can go, as moveChoices lists them for `post`: the eras in the page's order, the one it is in marked. */
   choices: MoveChoice<PostRow>[];
+  /** An era was chosen: once at most, each time the sheet opens. */
   onChoose: (key: string) => void;
   onClose: () => void;
 }
+
+/** What the sheet shows: a photograph, and the eras it could go to. */
+type Shown = { post: PostRow; choices: MoveChoice<PostRow>[] };
 
 /**
  * Where a photograph goes, chosen from the eras like a chapter from a
@@ -34,13 +38,34 @@ interface Props {
  * can always go back. One choice moves it; the sheet closes, and the page
  * behind already shows it in its new era.
  *
+ * iOS goes on drawing a sheet while it slides away, so the photograph and
+ * its eras stay on it, as they were when it closed, until it has gone. A
+ * second tap on the way down moves nothing.
+ *
  * A sheet rather than iOS's action sheet: an action sheet lists words
  * alone, cut to a line, and grows past the screen when a member has many
  * eras. This scrolls, and shows the photographs that tell the eras apart.
  */
 export function EraMoveSheet({ post, choices, onChoose, onClose }: Props) {
   const insets = useSafeAreaInsets();
-  const from = choices.find((c) => c.here);
+  // Open, it shows the photograph it is given, from the first frame;
+  // closing, the last one it was given, which it keeps.
+  const [kept, setKept] = useState<Shown | null>(null);
+  if (post && (kept?.post !== post || kept.choices !== choices)) setKept({ post, choices });
+  const shown: Shown | null = post ? { post, choices } : kept;
+  const from = shown?.choices.find((c) => c.here);
+
+  // One choice each time it opens.
+  const chosen = useRef(false);
+  useEffect(() => {
+    if (post) chosen.current = false;
+  }, [post]);
+  const choose = (key: string) => {
+    if (!post || chosen.current) return;
+    chosen.current = true;
+    onChoose(key);
+  };
+
   return (
     <Modal visible={post != null} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={styles.root} onAccessibilityEscape={onClose} testID="era-move-sheet">
@@ -62,16 +87,20 @@ export function EraMoveSheet({ post, choices, onChoose, onClose }: Props) {
         <View style={styles.rule} />
 
         <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}>
-          {post ? (
-            <View style={styles.subject} accessible accessibilityLabel={from ? `${printLabel(post)}. Now in ${from.title}.` : printLabel(post)}>
+          {shown ? (
+            <View
+              style={styles.subject}
+              accessible
+              accessibilityLabel={from ? `${printLabel(shown.post)}. Now in ${from.title}.` : printLabel(shown.post)}
+            >
               <View pointerEvents="none">
-                <PhotoTile post={post} size={SUBJECT} onPress={onClose} />
+                <PhotoTile post={shown.post} size={SUBJECT} onPress={onClose} />
               </View>
               <View style={styles.subjectText}>
-                <Text style={styles.subjectWhen}>{shortDate(post.taken_at ?? post.created_at)}</Text>
-                {post.caption?.trim() ? (
+                <Text style={styles.subjectWhen}>{shortDate(shown.post.taken_at ?? shown.post.created_at)}</Text>
+                {shown.post.caption?.trim() ? (
                   <Text style={styles.subjectCaption} numberOfLines={2}>
-                    {post.caption.trim()}
+                    {shown.post.caption.trim()}
                   </Text>
                 ) : null}
                 {from ? (
@@ -84,14 +113,14 @@ export function EraMoveSheet({ post, choices, onChoose, onClose }: Props) {
           ) : null}
           <View style={styles.listRule} />
 
-          {choices.map((choice) => {
+          {(shown?.choices ?? []).map((choice) => {
             const lead = choice.era?.posts[0];
             const count = choice.era?.posts.length ?? 0;
             const meta = choice.era ? eraMeta(choice.era) : "No photographs now";
             return (
               <Pressable
                 key={choice.key}
-                onPress={() => onChoose(choice.key)}
+                onPress={() => choose(choice.key)}
                 disabled={choice.here}
                 style={({ pressed }) => [styles.row, pressed && styles.pressed]}
                 accessibilityRole="button"

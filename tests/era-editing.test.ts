@@ -56,14 +56,22 @@ describe("who may arrange Eras", () => {
 
   it("tells the member, in our words, when a change does not save", () => {
     expect(hook).toMatch(/showAlert\(ERA_SAVE_FAILED\.title, errorMessage\(err, ERA_SAVE_FAILED\.body\)\)/);
-    expect(hook).toMatch(/rename: \(key, title\) => void arrange\(\(e\) => renameEra\(e, key, title\)\)/);
-    expect(hook).toMatch(/move: \(post, key\) => void arrange\(\(e\) => moveToEra\(e, posts, post\.id, key\)\)/);
+    // Each over the member's photographs, so what no longer applies is let go as it saves.
+    expect(hook).toMatch(/rename: \(key, title\) => void arrange\(\(e\) => renameEra\(e, key, title, posts\)\)/);
+    expect(hook).toMatch(/const change = \(e: EraEdits\) => moveToEra\(e, posts, post\.id, key\);/);
+    expect(hook).toMatch(/void arrange\(change\);\s*return true;/);
+  });
+
+  it("says whether a move was made, so the page announces only a real one", () => {
+    expect(hook).toMatch(/move: \(post: PostRow, key: string\) => boolean;/);
+    expect(hook).toMatch(/if \(!shown\?\.ready \|\| sameEdits\(change\(shown\.edits\), shown\.edits\)\) return false;/);
+    expect(hook).toMatch(/return useMemo\(\(\) => \{\s*if \(!ready \|\| !userId \|\| !posts\) return undefined;\s*return eraEditor\(queryClient, userId, posts\);/);
   });
 });
 
 describe("the Eras view outside arranging", () => {
   it("offers EDIT only to an editor, and only over eras that are there", () => {
-    expect(list).toMatch(/\{editor && !loading && summary\.eras\.length > 0 \? \(\s*<View style=\{\[styles\.bar, arranging && styles\.barOn\]\}>/);
+    expect(list).toMatch(/\{editor && !loading && summary\.eras\.length > 0 \? \(\s*<View style=\{\[styles\.bar, arranging && styles\.barOn\]\} onLayout=/);
     expect(list).toMatch(/const arranging = editing && editor != null && summary\.eras\.length > 0;/);
     expect(list).toMatch(/\{editor \? <EraMoveSheet /);
   });
@@ -76,10 +84,40 @@ describe("the Eras view outside arranging", () => {
   it("lays out the prints, the strip and Show all as before", () => {
     expect(list).toMatch(/const strip = eraStrip\(era, expanded \|\| arranging\);/);
     expect(list).toMatch(/const more = arranging \? null : eraMore\(era, expanded\);/);
-    // A print is the tile itself, with nothing around it.
-    expect(list).toMatch(/if \(!arranging\) return children;/);
+    // A print is the tile in a plain view, with nothing else in it.
+    expect(list).toMatch(/return \(\s*<View>\s*\{children\}\s*\{arranging \? \(\s*<View style=\{styles\.mark\}[^>]*>[\s\S]*?\) : null\}\s*<\/View>\s*\);/);
     expect(list).toMatch(/const hint = arranging \? "Moves it to another era\." : undefined;/);
-    expect(list).toMatch(/stickyHeaderIndices=\{arranging \? \[barIndex\] : undefined\}/);
+  });
+
+  it("draws nothing afresh on EDIT or DONE: the same view holds each print, and the page's children keep their places", () => {
+    // Print has one shape: the tile is never handed back bare.
+    const print = list.match(/function Print\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(print).not.toMatch(/return children;/);
+    expect(print.match(/return /g)).toHaveLength(1);
+    // A list either way: on the web an absent one gives the header and chapters new keys.
+    expect(list).toMatch(/stickyHeaderIndices=\{arranging \? \[barIndex\] : \[\]\}/);
+    expect(list).not.toMatch(/stickyHeaderIndices=\{[^}]*undefined/);
+  });
+
+  it("leaves the reader on the chapter they were at when EDIT or DONE lays the page out again", () => {
+    // Where the view begins, under the bar while it holds to the top, and the chapter there, by key.
+    expect(list).toMatch(/onPress=\{\(\) => arrange\(!arranging\)\}/);
+    expect(list).not.toMatch(/setEditing\(!arranging\)/);
+    expect(list).toMatch(
+      /const arrange = \(on: boolean\) => \{\s*const seen = offset\.current \+ \(arranging \? barTall\.current : 0\);\s*anchor\.current = chapterAt\(summary\.eras\.map\(\(era\) => era\.key\), spans\.current, seen\);\s*setEditing\(on\);\s*\};/,
+    );
+    expect(list).toMatch(/onLayout=\{\(e\) => \(barTall\.current = e\.nativeEvent\.layout\.height\)\}/);
+    // Once laid out again, that chapter is measured where it now lies and put back at the top, at once.
+    expect(list).toMatch(/useLayoutEffect\(\(\) => \{\s*const place = anchor\.current;\s*anchor\.current = null;/);
+    expect(list).toMatch(/const under = arranging \? barTall\.current : 0;/);
+    // As far into it as they were, unless it has closed up (depthAfter): not snapped to its title in an era left open.
+    expect(list).toMatch(
+      /page\.measureLayout\(book, \(_x, top, _width, tall\) =>\s*scroller\.current\?\.scrollTo\(\{ y: Math\.max\(0, top \+ depthAfter\(place, tall\) - under\), animated: false \}\),\s*\);\s*\}, \[arranging\]\);/,
+    );
+    expect(list).toMatch(/const anchor = useRef<ChapterPlace \| null>\(null\);/);
+    expect(list).toMatch(/<ScrollView\s+ref=\{scroller\}/);
+    expect(list).toMatch(/<View ref=\{pageRef\} style=\{\[styles\.chapter, first && styles\.chapterFirst\]\} onLayout=\{onLayout\}>/);
+    expect(list).toMatch(/if \(node\) pages\.current\.set\(era\.key, node\);\s*else pages\.current\.delete\(era\.key\);/);
   });
 
   it("shows RENAME only while arranging, and only where a name can be asked for", () => {
@@ -102,7 +140,18 @@ describe("arranging, as VoiceOver hears it", () => {
   it("gives every print the hint that a tap moves it, and announces where it went", () => {
     expect(list.match(/accessibilityHint=\{hint\}/g)).toHaveLength(2);
     expect(list).toMatch(/AccessibilityInfo\.announceForAccessibility\(words\)/);
-    expect(list).toMatch(/say\(`Moved to \$\{to\.title\}`\)/);
+  });
+
+  it("says a photograph moved, by note, touch and voice, only when the editor moved it", () => {
+    expect(list).toMatch(/if \(editor\.move\(post, key\)\) say\(`Moved to \$\{to\.title\}`\);/);
+    expect(list.match(/\bsay\(/g)).toHaveLength(1);
+    expect(list.match(/editor\.move\(/g)).toHaveLength(1);
+  });
+
+  it("does not stop on MOVE, which the print's hint already says", () => {
+    expect(list).toMatch(
+      /<View style=\{styles\.mark\} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">\s*<Text style=\{styles\.markText\}>Move<\/Text>/,
+    );
   });
 
   it("names each era in the sheet with its count, and the one it is in as where it is now", () => {
@@ -120,8 +169,30 @@ describe("the sheet a move is chosen in", () => {
 
   it("lists every era it can go to, an emptied one too, and moves it with one tap", () => {
     expect(list).toMatch(/moveChoices\(posts, arranged, moving\.id\)/);
-    expect(sheet).toMatch(/onPress=\{\(\) => onChoose\(choice\.key\)\}/);
+    expect(sheet).toMatch(/onPress=\{\(\) => choose\(choice\.key\)\}/);
     expect(sheet).toMatch(/choice\.era \? eraMeta\(choice\.era\) : "No photographs now"/);
+  });
+
+  it("keeps the photograph and its eras on it while it slides away, and shows a new one at once", () => {
+    // Open, what it is given; closing, the last it was given while open.
+    expect(sheet).toMatch(/if \(post && \(kept\?\.post !== post \|\| kept\.choices !== choices\)\) setKept\(\{ post, choices \}\);/);
+    expect(sheet).toMatch(/const shown: Shown \| null = post \? \{ post, choices \} : kept;/);
+    // Everything on it is drawn from that; whether it is up, from `post` alone.
+    expect(sheet).toMatch(/\{shown \? \(/);
+    expect(sheet).toMatch(/\{\(shown\?\.choices \?\? \[\]\)\.map\(\(choice\) => \{/);
+    expect(sheet).toMatch(/const from = shown\?\.choices\.find\(\(c\) => c\.here\);/);
+    const drawn = sheet.slice(sheet.indexOf("<Modal "), sheet.indexOf("</Modal>"));
+    expect(drawn.match(/(?<![.\w])post\b(?!=)[^}]*/g)).toEqual(["post != null"]);
+    expect(drawn.match(/(?<![.\w])choices\b/g)).toBeNull();
+    expect(drawn).toMatch(/<PhotoTile post=\{shown\.post\} size=\{SUBJECT\}/);
+  });
+
+  it("takes one choice each time it opens, so a second tap on the way down moves nothing", () => {
+    expect(sheet).toMatch(/const choose = \(key: string\) => \{\s*if \(!post \|\| chosen\.current\) return;\s*chosen\.current = true;\s*onChoose\(key\);\s*\};/);
+    expect(sheet).toMatch(/useEffect\(\(\) => \{\s*if \(post\) chosen\.current = false;\s*\}, \[post\]\);/);
+    expect(sheet.match(/onChoose\(/g)).toHaveLength(1);
+    // And the page moves nothing once the sheet has let the photograph go.
+    expect(list).toMatch(/const post = moving;\s*const to = choices\.find\(\(c\) => c\.key === key\);\s*setMoving\(null\);\s*if \(!post \|\| !to \|\| !editor\) return;/);
   });
 
   it("draws its photographs with the grid's own tile, never pressable on their own", () => {
@@ -168,22 +239,36 @@ describe("the automatic reading underneath", () => {
   const memories = code("src/utils/memories.ts");
   const eraEdits = code("src/utils/eraEdits.ts");
 
-  it("is groupEras, untouched, and knows nothing of anyone's changes", () => {
+  it("is groupEras, as it was where no zone is given, and knows nothing of anyone's changes", () => {
     expect(memories).toMatch(
-      /export function groupEras<T extends Pick<PostRow, "taken_at" \| "created_at" \| "location">>\(\s*posts: T\[\],\s*minSize = 2,\s*\): Era<T>\[\] \{/,
+      /export function groupEras<T extends Pick<PostRow, "taken_at" \| "created_at" \| "location">>\(\s*posts: T\[\],\s*minSize = 2,\s*zone\?: string,\s*\): Era<T>\[\] \{/,
     );
     expect(memories).toMatch(/\.filter\(\(e\) => e\.posts\.length >= minSize\)/);
+    // No zone, no calendar: the phone's own getters, as before.
+    expect(memories).toMatch(/const calendar = zone \? calendarIn\(zone\) : null;/);
+    expect(memories).toMatch(/return \{ year: taken\.getFullYear\(\), season: seasonOf\(taken\) \};/);
     expect(memories).not.toMatch(/eraEdits|EraEdits|edits/);
   });
 
-  it("is where every arrangement starts, never a second reading of its own", () => {
-    expect(eraEdits).toMatch(/const automatic = groupEras\(posts\);/);
+  it("is where every arrangement starts, read in the arrangement's zone, never a second reading of its own", () => {
+    expect(eraEdits).toMatch(/const buckets = groupEras\(posts, 1, edits\.zone\);/);
+    expect(eraEdits).toMatch(/for \(const era of groupEras\(posts, 2, edits\.zone\)\) \{/);
+    expect(eraEdits.match(/groupEras\(posts(?:, \d, edits\.zone)?\)/g)).toEqual([
+      "groupEras(posts, 1, edits.zone)",
+      "groupEras(posts, 2, edits.zone)",
+      "groupEras(posts, 1, edits.zone)",
+      "groupEras(posts, 1, edits.zone)",
+    ]);
     expect(eraEdits).not.toMatch(/seasonOf|SEASONS|getFullYear/);
   });
 
-  it("feeds On this day, which shows the member's names and arrangement too", () => {
+  it("feeds On this day, which shows the member's names and arrangement too, once they have been read", () => {
     const day = code("app/memories.tsx");
-    expect(day).toMatch(/const eras = useMemo\(\(\) => editEras\(posts\.data \?\? \[\], eraEdits\.data\?\.edits\), \[posts\.data, eraEdits\.data\]\);/);
+    expect(day).toMatch(
+      /const eras = useMemo\(\s*\(\) => \(eraEdits\.isFetched \? editEras\(posts\.data \?\? \[\], eraEdits\.data\?\.edits\) : \[\]\),\s*\[posts\.data, eraEdits\.data, eraEdits\.isFetched\],\s*\);/,
+    );
+    // Nor is "nothing" said before then.
+    expect(day).toMatch(/const nothing =\s*posts\.isFetched &&\s*eraEdits\.isFetched &&/);
     expect(day).toMatch(/<View key=\{era\.key\} style=\{styles\.era\}>/);
     expect(day).not.toMatch(/groupEras\(/);
   });

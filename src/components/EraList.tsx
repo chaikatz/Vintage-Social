@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Animated,
@@ -28,7 +28,9 @@ import {
   ERA_RULE,
   ERA_STRIP,
   PRINT_GAP,
+  chapterAt,
   chaptersNear,
+  depthAfter,
   eraHeading,
   eraMeta,
   eraMore,
@@ -38,6 +40,7 @@ import {
   erasFootnote,
   leadPrint,
   printLabel,
+  type ChapterPlace,
   type ChapterSpan,
 } from "./eraBook";
 import type { PostRow } from "@/types/db";
@@ -89,7 +92,8 @@ interface Props {
  * RENAME beside it, every print is laid out and marked MOVE, and a tap on
  * one asks which era it belongs in (EraMoveSheet) instead of opening the
  * gallery. The change is on the page at once, and a line at the foot of
- * the screen says where the photograph went. DONE closes it again. Moving
+ * the screen says where the photograph went. DONE closes it again, on the
+ * chapter the reader was at however far down they had gone. Moving
  * is chosen from a list rather than dragged: a drag across a long page
  * of chapters, under a scroll and a pull to refresh, is easy to drop in
  * the wrong one, and a list says exactly where a photograph will land.
@@ -131,6 +135,34 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   const [near, setNear] = useState<ReadonlySet<string>>(() => new Set());
   const look = () => setNear((prev) => chaptersNear(prev, spans.current, offset.current, height));
 
+  // EDIT lays every print out and DONE puts them away again, so each
+  // chapter above the reader grows or shrinks by rows. The place at the
+  // top of their view as they tap (under the bar, while it holds to the
+  // top) is measured again once the page has been laid out, and put back
+  // at the top: as far into its chapter as they were, or the chapter's
+  // own top where it has closed up (depthAfter). They are left where they
+  // were, not some chapters on.
+  const scroller = useRef<ScrollView>(null);
+  const pages = useRef(new Map<string, View>());
+  const barTall = useRef(0);
+  const anchor = useRef<ChapterPlace | null>(null);
+  const arrange = (on: boolean) => {
+    const seen = offset.current + (arranging ? barTall.current : 0);
+    anchor.current = chapterAt(summary.eras.map((era) => era.key), spans.current, seen);
+    setEditing(on);
+  };
+  useLayoutEffect(() => {
+    const place = anchor.current;
+    anchor.current = null;
+    const page = place ? pages.current.get(place.key) : undefined;
+    const book = innerView(scroller.current);
+    if (!place || !page || !book) return;
+    const under = arranging ? barTall.current : 0;
+    page.measureLayout(book, (_x, top, _width, tall) =>
+      scroller.current?.scrollTo({ y: Math.max(0, top + depthAfter(place, tall) - under), animated: false }),
+    );
+  }, [arranging]);
+
   // The line that says where a photograph went, faded in and out (cut in
   // and out under Reduce Motion). Each move puts it up afresh, even to the
   // same era twice.
@@ -158,8 +190,8 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
     const to = choices.find((c) => c.key === key);
     setMoving(null);
     if (!post || !to || !editor) return;
-    editor.move(post, key);
-    say(`Moved to ${to.title}`);
+    // Said only of a real move: not of a photograph gone from the page since the sheet opened.
+    if (editor.move(post, key)) say(`Moved to ${to.title}`);
   };
   const rename = (era: EditedEra<PostRow>) =>
     askEraName(era, (title) => {
@@ -168,11 +200,15 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
     });
 
   // While arranging, the bar over the chapters holds to the top of the page.
+  // Outside it the list of what holds is empty, never absent: the web lays
+  // the page's children out afresh, header and chapters, when one comes
+  // and goes.
   const barIndex = header ? 1 : 0;
 
   return (
     <View style={styles.root}>
       <ScrollView
+        ref={scroller}
         style={styles.root}
         contentContainerStyle={{ paddingBottom: Math.max(spacing.xxl * 2, insets.bottom + spacing.xxl) }}
         refreshControl={onRefresh ? <RefreshControl refreshing={refreshing ?? false} onRefresh={onRefresh} tintColor={colors.inkFaint} /> : undefined}
@@ -181,16 +217,16 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
           look();
         }}
         scrollEventThrottle={100}
-        stickyHeaderIndices={arranging ? [barIndex] : undefined}
+        stickyHeaderIndices={arranging ? [barIndex] : []}
       >
         {header}
         {editor && !loading && summary.eras.length > 0 ? (
-          <View style={[styles.bar, arranging && styles.barOn]}>
+          <View style={[styles.bar, arranging && styles.barOn]} onLayout={(e) => (barTall.current = e.nativeEvent.layout.height)}>
             <View style={styles.barLine}>
               <Text style={styles.barLabel}>{arranging ? "Arranging" : summary.eras.length === 1 ? "1 era" : `${summary.eras.length} eras`}</Text>
               <View style={styles.barRule} />
               <Pressable
-                onPress={() => setEditing(!arranging)}
+                onPress={() => arrange(!arranging)}
                 hitSlop={12}
                 style={({ pressed }) => pressed && styles.pressed}
                 accessibilityRole="button"
@@ -226,6 +262,10 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
                 onToggle={() => toggle(era.key)}
                 onOpen={(post) => (arranging ? setMoving(post) : onOpenPost(post, era.key))}
                 onRename={() => rename(era)}
+                pageRef={(node) => {
+                  if (node) pages.current.set(era.key, node);
+                  else pages.current.delete(era.key);
+                }}
                 onLayout={(e) => {
                   const { y, height: tall } = e.nativeEvent.layout;
                   spans.current.set(era.key, { top: y, height: tall });
@@ -270,6 +310,7 @@ function Chapter({
   onToggle,
   onOpen,
   onRename,
+  pageRef,
   onLayout,
 }: {
   era: EditedEra<PostRow>;
@@ -283,6 +324,8 @@ function Chapter({
   onToggle: () => void;
   onOpen: (post: PostRow) => void;
   onRename: () => void;
+  /** The chapter's own view, so where it lies can be measured. */
+  pageRef: (node: View | null) => void;
   onLayout: (e: LayoutChangeEvent) => void;
 }) {
   const [lead] = era.posts;
@@ -295,7 +338,7 @@ function Chapter({
   const hint = arranging ? "Moves it to another era." : undefined;
 
   return (
-    <View style={[styles.chapter, first && styles.chapterFirst]} onLayout={onLayout}>
+    <View ref={pageRef} style={[styles.chapter, first && styles.chapterFirst]} onLayout={onLayout}>
       {first ? null : <View style={styles.rule} />}
       <View style={styles.titleRow}>
         <Text style={styles.title} accessibilityRole="header" accessibilityLabel={eraHeading(era)}>
@@ -355,17 +398,32 @@ function Chapter({
   );
 }
 
-/** A print as it lies on the page; being arranged, it carries a small MOVE in its top corner. */
+/**
+ * A print as it lies on the page; being arranged, it carries a small MOVE
+ * in its top corner. The same view holds it either way, so EDIT and DONE
+ * never draw a photograph afresh. MOVE is for the eye: VoiceOver hears it
+ * in the print's own hint.
+ */
 function Print({ arranging, children }: { arranging: boolean; children: React.ReactElement }) {
-  if (!arranging) return children;
   return (
     <View>
       {children}
-      <View style={styles.mark} pointerEvents="none">
-        <Text style={styles.markText}>Move</Text>
-      </View>
+      {arranging ? (
+        <View style={styles.mark} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Text style={styles.markText}>Move</Text>
+        </View>
+      ) : null}
     </View>
   );
+}
+
+/**
+ * The view a ScrollView lays its children in, which a chapter's place on
+ * the page is measured from. React Native and the web both give it, though
+ * React Native's types leave it out.
+ */
+function innerView(scroll: ScrollView | null): View | null {
+  return (scroll as unknown as { getInnerViewRef?: () => View | null } | null)?.getInnerViewRef?.() ?? null;
 }
 
 const styles = StyleSheet.create({

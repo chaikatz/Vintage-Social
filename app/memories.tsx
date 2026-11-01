@@ -54,9 +54,14 @@ export default function Memories() {
   });
   const memories = useMemo(() => onThisDay(posts.data ?? []), [posts.data]);
   // The eras as the profile shows them: gathered automatically, named and
-  // arranged as the member left them.
+  // arranged as the member left them. Not drawn until the arrangement has
+  // been read, so a name never changes under the reader, as on the
+  // profile. A read that fails, or finds no table, has been read too.
   const eraEdits = useEraEdits(userId);
-  const eras = useMemo(() => editEras(posts.data ?? [], eraEdits.data?.edits), [posts.data, eraEdits.data]);
+  const eras = useMemo(
+    () => (eraEdits.isFetched ? editEras(posts.data ?? [], eraEdits.data?.edits) : []),
+    [posts.data, eraEdits.data, eraEdits.isFetched],
+  );
 
   const dayKey = new Date().toDateString();
   const granted = useQuery({
@@ -101,7 +106,11 @@ export default function Memories() {
   const today = new Date();
   const libraryTotal = (library.data ?? []).reduce((n, d) => n + d.photos.length, 0);
   const nothing =
-    posts.isFetched && memories.length === 0 && eras.length === 0 && (granted.data === false || libraryTotal === 0);
+    posts.isFetched &&
+    eraEdits.isFetched &&
+    memories.length === 0 &&
+    eras.length === 0 &&
+    (granted.data === false || libraryTotal === 0);
 
   return (
     <Screen padded={false}>

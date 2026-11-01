@@ -129,6 +129,43 @@ export function chaptersNear(
   return next ?? already;
 }
 
+/** A place on the page: the chapter, by key, how far down into it, and how tall the chapter was then. */
+export type ChapterPlace = { key: string; depth: number; height: number };
+
+/**
+ * The place the page shows at `y`: where the reader's view begins. The
+ * chapters lie one under the next in the order of `keys`, so each is
+ * placed from the top of the first and the heights of those above it.
+ * Every platform reports a chapter's height when it changes; the web
+ * reports its top only then too, so a top of its own can be out of date
+ * once a chapter above has grown. Null above the first chapter, below the
+ * last, or while one in between has not been measured.
+ */
+export function chapterAt(keys: readonly string[], chapters: ReadonlyMap<string, ChapterSpan>, y: number): ChapterPlace | null {
+  let top = keys.length > 0 ? chapters.get(keys[0])?.top : undefined;
+  if (top == null || y < top) return null;
+  for (const key of keys) {
+    const chapter = chapters.get(key);
+    if (!chapter) return null;
+    if (y < top + chapter.height) return { key, depth: y - top, height: chapter.height };
+    top += chapter.height;
+  }
+  return null;
+}
+
+/**
+ * How far down into its chapter the reader is put back once the page has
+ * been laid out again, the chapter `tall` now. As far as they were, while
+ * it is as tall as it was or taller: an era left open, or one whose
+ * photographs were all out already, lays them out just as before, so the
+ * reader stays among the ones they were at. Its top, once it has closed
+ * up: the rows they were at may have been put away. A point either way
+ * is only rounding.
+ */
+export function depthAfter(place: ChapterPlace, tall: number): number {
+  return tall < place.height - 1 ? 0 : place.depth;
+}
+
 /** `12 without a date · 5 on their own`: what the eras leave out, or null when they leave nothing. */
 export function erasFootnote(summary: Pick<EraSummary<unknown>, "undated" | "apart">): string | null {
   const parts: string[] = [];

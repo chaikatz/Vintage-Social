@@ -76,14 +76,15 @@ insert into public.follows (follower_id, followee_id, status) values
 -- ---------------------------------------------------------------------------
 -- the member writes their own row
 -- ---------------------------------------------------------------------------
-select tests.run('a member saves their own arrangement', :'author', 'OK',
-  $q$ insert into public.era_edits (author_id, titles, moves)
-      values ('e0000000-0000-4000-8000-000000000001', '{"Lisbon 2023":"The long weekend"}', '{"p1":"Lisbon 2023"}') $q$);
+select tests.run('a member saves their own arrangement, and the zone it was read in', :'author', 'OK',
+  $q$ insert into public.era_edits (author_id, titles, moves, time_zone)
+      values ('e0000000-0000-4000-8000-000000000001', '{"Lisbon 2023":"The long weekend"}', '{"p1":"Lisbon 2023"}', 'Europe/Lisbon') $q$);
 select tests.run('and saves it again over itself, as the app''s upsert does', :'author', 'OK',
-  $q$ insert into public.era_edits (author_id, titles, moves)
-      values ('e0000000-0000-4000-8000-000000000001', '{"Lisbon 2023":"Lisbon, slowly"}', '{"p1":"Lisbon 2023"}')
+  $q$ insert into public.era_edits (author_id, titles, moves, time_zone)
+      values ('e0000000-0000-4000-8000-000000000001', '{"Lisbon 2023":"Lisbon, slowly"}', '{"p1":"Lisbon 2023"}', 'Europe/Lisbon')
       on conflict (author_id) do update
-        set author_id = excluded.author_id, titles = excluded.titles, moves = excluded.moves $q$);
+        set author_id = excluded.author_id, titles = excluded.titles, moves = excluded.moves,
+            time_zone = excluded.time_zone $q$);
 select tests.run('a private member saves theirs', :'private', 'OK',
   $q$ insert into public.era_edits (author_id, titles) values ('e0000000-0000-4000-8000-000000000002', '{"Winter 2024":"Snowed in"}') $q$);
 select tests.run('so does a member who will block another', :'blocker', 'OK',
@@ -123,11 +124,33 @@ select tests.run('a name is words, not a number', :'follower', 'ERROR:23514',
   $q$ insert into public.era_edits (author_id, titles) values ('e0000000-0000-4000-8000-000000000003', '{"Lisbon 2023":2023}') $q$);
 select tests.run('a move names an era in words', :'follower', 'ERROR:23514',
   $q$ insert into public.era_edits (author_id, moves) values ('e0000000-0000-4000-8000-000000000003', '{"p1":null}') $q$);
+select tests.run('a name is words, not a list of them', :'follower', 'ERROR:23514',
+  $q$ insert into public.era_edits (author_id, titles) values ('e0000000-0000-4000-8000-000000000003', '{"Lisbon 2023":["x"]}') $q$);
+select tests.run('a move is not an empty list', :'follower', 'ERROR:23514',
+  $q$ insert into public.era_edits (author_id, moves) values ('e0000000-0000-4000-8000-000000000003', '{"p1":[]}') $q$);
+select tests.run('a time zone is a name the phone gave', :'follower', 'ERROR:23514',
+  $q$ insert into public.era_edits (author_id, time_zone) values ('e0000000-0000-4000-8000-000000000003', 'Lisbon; drop table') $q$);
+select tests.run('never an empty one', :'follower', 'ERROR:23514',
+  $q$ insert into public.era_edits (author_id, time_zone) values ('e0000000-0000-4000-8000-000000000003', '') $q$);
+select tests.run('nor one past 64 characters', :'follower', 'ERROR:23514',
+  $q$ insert into public.era_edits (author_id, time_zone) values ('e0000000-0000-4000-8000-000000000003', repeat('A', 65)) $q$);
 select tests.run('a name is never empty', :'follower', 'ERROR:23514',
   $q$ insert into public.era_edits (author_id, titles) values ('e0000000-0000-4000-8000-000000000003', '{"Lisbon 2023":""}') $q$);
 select tests.run('a name of 60 characters is kept', :'follower', 'OK',
   $q$ insert into public.era_edits (author_id, titles)
       values ('e0000000-0000-4000-8000-000000000003', jsonb_build_object('Lisbon 2023', repeat('é', 60))) $q$);
+select tests.run('a zone of 64 characters is kept', :'follower', 'OK',
+  $q$ update public.era_edits set time_zone = repeat('A', 64)
+      where author_id = 'e0000000-0000-4000-8000-000000000003' $q$);
+select tests.run('and so is every shape of IANA name', :'follower', 'OK',
+  $q$ do $d$
+      declare v_zone text;
+      begin
+        foreach v_zone in array array['America/Argentina/Buenos_Aires', 'Etc/GMT+3', 'Etc/GMT-14', 'UTC'] loop
+          update public.era_edits set time_zone = v_zone where author_id = 'e0000000-0000-4000-8000-000000000003';
+        end loop;
+      end
+      $d$ $q$);
 select tests.run('one of 61 is refused', :'follower', 'ERROR:23514',
   $q$ update public.era_edits set titles = jsonb_build_object('Lisbon 2023', repeat('é', 61))
       where author_id = 'e0000000-0000-4000-8000-000000000003' $q$);
@@ -146,6 +169,8 @@ insert into tests.results (name, expected, actual) values
    tests.count_as(:'author', $q$ select 1 from public.era_edits where author_id = 'e0000000-0000-4000-8000-000000000001' $q$)),
   ('and it holds what they last saved, untouched by the others', 'Lisbon, slowly',
    (select titles ->> 'Lisbon 2023' from public.era_edits where author_id = 'e0000000-0000-4000-8000-000000000001')),
+  ('with the zone its keys were read in', 'Europe/Lisbon',
+   (select time_zone from public.era_edits where author_id = 'e0000000-0000-4000-8000-000000000001')),
   ('another member reads a public member''s', '1',
    tests.count_as(:'second', $q$ select 1 from public.era_edits where author_id = 'e0000000-0000-4000-8000-000000000001' $q$)),
   ('a private member reads their own', '1',

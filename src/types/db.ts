@@ -199,6 +199,8 @@ export type EraEditRow = {
   titles: Record<string, string>;
   /** A photograph's id to the automatic title of the era it was moved into. */
   moves: Record<string, string>;
+  /** The time zone those titles were read in, the member's when they first arranged their eras; null reads them on each phone's own. */
+  time_zone: string | null;
   updated_at: string;
 }
 
