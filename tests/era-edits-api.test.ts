@@ -1,4 +1,4 @@
-import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { QueryClient, QueryObserver, onlineManager } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -69,7 +69,7 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("react-native", () => ({ Platform: { OS: "ios" }, Alert: { alert: () => undefined } }));
 vi.mock("@/utils/alert", () => ({ showAlert: (title: string) => void h.alerts.push(title) }));
 
-const { ERA_SAVE_FAILED, changeEraEdits, eraEditsKey, eraEditsQuery, fetchEraEdits, readEraEdits, saveEraEdits } =
+const { ERA_SAVE_FAILED, READ_WAIT_MS, changeEraEdits, eraEditsKey, eraEditsQuery, fetchEraEdits, readEraEdits, saveEraEdits } =
   await import("@/api/eraEdits");
 const { NO_EDITS, deviceZone, editEras, moveToEra, renameEra } = await import("@/utils/eraEdits");
 const { eraEditor } = await import("@/hooks/useEraEdits");
@@ -406,8 +406,11 @@ describe("a read that crosses a save", () => {
     expect(h.reads).toHaveLength(1);
 
     const done = changeEraEdits(client, ME, rename("Porto 2023", "Mine"));
+    // On the page at once, as any change is.
+    expect(shown()?.edits.titles).toEqual({ "Porto 2023": "Mine" });
     await tick();
     expect(h.upserts).toEqual([]); // nothing saved over a row not yet seen
+    expect(shown()?.edits.titles).toEqual({ "Porto 2023": "Mine" });
 
     h.reads[0].answer(row({ "Lisbon 2023": "From iPad" }, {}, "Europe/Lisbon"));
     await done;
@@ -415,6 +418,102 @@ describe("a read that crosses a save", () => {
       { author_id: ME, titles: { "Lisbon 2023": "From iPad", "Porto 2023": "Mine" }, moves: {}, time_zone: "Europe/Lisbon" },
     ]);
     expect(shown()?.edits.titles).toEqual({ "Lisbon 2023": "From iPad", "Porto 2023": "Mine" });
+  });
+
+  it("on its way, takes the changes made as it is waited for: each on the page at once, all saved once, the last word last", async () => {
+    client.setQueryData(key, { edits: NO_EDITS, ready: true });
+    h.holdReads = true;
+    void page().refetch();
+    await tick();
+
+    const first = changeEraEdits(client, ME, rename("Porto 2023", "Mine"));
+    await changeEraEdits(client, ME, rename("Kyoto 2024", "Spring")); // it rides on the wait
+    await changeEraEdits(client, ME, rename("Porto 2023", "Ours"));
+    expect(shown()?.edits.titles).toEqual({ "Porto 2023": "Ours", "Kyoto 2024": "Spring" });
+    await tick();
+    expect(h.upserts).toEqual([]);
+
+    h.reads[0].answer(row({ "Lisbon 2023": "From iPad" }, {}, "Europe/Lisbon"));
+    await first;
+    const all = { "Lisbon 2023": "From iPad", "Porto 2023": "Ours", "Kyoto 2024": "Spring" };
+    expect(h.upserts).toEqual([{ author_id: ME, titles: all, moves: {}, time_zone: "Europe/Lisbon" }]);
+    expect(shown()?.edits.titles).toEqual(all);
+  });
+
+  it("on its way and called off for a fresh one by a pull to refresh, the fresh one is waited for, never the page as it was", async () => {
+    client.setQueryData(key, { edits: NO_EDITS, ready: true });
+    h.holdReads = true;
+    void page().refetch(); // a read on focus, say
+    await tick();
+    const done = changeEraEdits(client, ME, rename("Porto 2023", "Mine"));
+    await tick();
+
+    // Pulled to refresh: the read on its way is called off, quietly, for a fresh one.
+    void page().refetch();
+    await tick();
+    expect(h.reads).toHaveLength(2);
+    await tick();
+    expect(h.upserts).toEqual([]);
+
+    h.reads[0].answer(row({})); // called off: its answer goes nowhere
+    h.reads[1].answer(row({ "Lisbon 2023": "From iPad" }, {}, "Europe/Lisbon"));
+    await done;
+    const both = { "Lisbon 2023": "From iPad", "Porto 2023": "Mine" };
+    expect(h.upserts).toEqual([{ author_id: ME, titles: both, moves: {}, time_zone: "Europe/Lisbon" }]);
+    expect(shown()?.edits.titles).toEqual(both);
+  });
+
+  it("on its way and failing, is not waited for through its tries: the change is saved over the page as it was", async () => {
+    client = new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 5 } } });
+    client.setQueryData(key, { edits: NO_EDITS, ready: true });
+    h.holdReads = true;
+    void page().refetch();
+    await tick();
+    const done = changeEraEdits(client, ME, rename("Porto 2023", "Mine"));
+
+    h.reads[0].answer({ data: null, error: { code: "", message: "TypeError: Network request failed" } });
+    await tick();
+    // Saved now, not once the tries are over; were the phone offline, it would fail, and the member be told.
+    expect(h.upserts).toEqual([{ author_id: ME, titles: { "Porto 2023": "Mine" }, moves: {}, time_zone: HERE ?? null }]);
+    await done;
+    expect(shown()?.edits.titles).toEqual({ "Porto 2023": "Mine" });
+  });
+
+  it("waiting for the phone to be back online, is not waited for", async () => {
+    onlineManager.setOnline(false);
+    try {
+      client.setQueryData(key, { edits: NO_EDITS, ready: true });
+      void page().refetch();
+      await tick();
+      expect(client.getQueryState(key)?.fetchStatus).toBe("paused");
+
+      const done = changeEraEdits(client, ME, rename("Porto 2023", "Mine"));
+      await tick();
+      expect(h.upserts).toEqual([{ author_id: ME, titles: { "Porto 2023": "Mine" }, moves: {}, time_zone: HERE ?? null }]);
+      await done;
+    } finally {
+      onlineManager.setOnline(true);
+    }
+  });
+
+  it("on its way and slow to come, is waited for no longer than a few seconds", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      client.setQueryData(key, { edits: NO_EDITS, ready: true });
+      h.holdReads = true;
+      void page().refetch();
+      await vi.advanceTimersByTimeAsync(0);
+      const done = changeEraEdits(client, ME, rename("Porto 2023", "Mine"));
+
+      await vi.advanceTimersByTimeAsync(READ_WAIT_MS - 1);
+      expect(h.upserts).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(h.upserts).toEqual([{ author_id: ME, titles: { "Porto 2023": "Mine" }, moves: {}, time_zone: HERE ?? null }]);
+      await done;
+      expect(READ_WAIT_MS).toBeLessThanOrEqual(5000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is the arrangement as read whenever nothing is being saved", async () => {

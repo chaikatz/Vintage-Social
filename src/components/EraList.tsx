@@ -30,6 +30,7 @@ import {
   PRINT_GAP,
   chapterAt,
   chaptersNear,
+  depthAfter,
   eraHeading,
   eraMeta,
   eraMore,
@@ -39,6 +40,7 @@ import {
   erasFootnote,
   leadPrint,
   printLabel,
+  type ChapterPlace,
   type ChapterSpan,
 } from "./eraBook";
 import type { PostRow } from "@/types/db";
@@ -134,27 +136,31 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   const look = () => setNear((prev) => chaptersNear(prev, spans.current, offset.current, height));
 
   // EDIT lays every print out and DONE puts them away again, so each
-  // chapter above the reader grows or shrinks by rows. The chapter at the
+  // chapter above the reader grows or shrinks by rows. The place at the
   // top of their view as they tap (under the bar, while it holds to the
   // top) is measured again once the page has been laid out, and put back
-  // at the top: they are left where they were, not some chapters on.
+  // at the top: as far into its chapter as they were, or the chapter's
+  // own top where it has closed up (depthAfter). They are left where they
+  // were, not some chapters on.
   const scroller = useRef<ScrollView>(null);
   const pages = useRef(new Map<string, View>());
   const barTall = useRef(0);
-  const anchor = useRef<string | null>(null);
+  const anchor = useRef<ChapterPlace | null>(null);
   const arrange = (on: boolean) => {
     const seen = offset.current + (arranging ? barTall.current : 0);
     anchor.current = chapterAt(summary.eras.map((era) => era.key), spans.current, seen);
     setEditing(on);
   };
   useLayoutEffect(() => {
-    const key = anchor.current;
+    const place = anchor.current;
     anchor.current = null;
-    const page = key ? pages.current.get(key) : undefined;
+    const page = place ? pages.current.get(place.key) : undefined;
     const book = innerView(scroller.current);
-    if (!page || !book) return;
+    if (!place || !page || !book) return;
     const under = arranging ? barTall.current : 0;
-    page.measureLayout(book, (_x, top) => scroller.current?.scrollTo({ y: Math.max(0, top - under), animated: false }));
+    page.measureLayout(book, (_x, top, _width, tall) =>
+      scroller.current?.scrollTo({ y: Math.max(0, top + depthAfter(place, tall) - under), animated: false }),
+    );
   }, [arranging]);
 
   // The line that says where a photograph went, faded in and out (cut in

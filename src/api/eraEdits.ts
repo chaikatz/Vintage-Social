@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryClient, QueryKey, QueryState } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
@@ -79,6 +79,53 @@ export const ERA_SAVE_FAILED = {
 const saving = new Map<string, { confirmed: EraEdits; wanted: EraEdits }>();
 
 /**
+ * Per member, while a change of theirs waits for a read already on its
+ * way: the arrangement the page had as it began to wait, and the changes
+ * made since, in order, which are made again over what the read brings.
+ */
+const waiting = new Map<string, { held: EraEdits; changes: ((edits: EraEdits) => EraEdits)[] }>();
+
+/** The longest a change waits for a read already on its way before it is saved over the arrangement the page had. */
+export const READ_WAIT_MS = 4000;
+
+/**
+ * Whether a read of the arrangement is on its way and worth waiting for:
+ * on its first try, with the phone online. One that has failed once may
+ * go on being tried for some seconds yet, and one waiting for the phone
+ * to be back online may wait for hours.
+ */
+function readComing(state: QueryState | undefined): boolean {
+  return state?.fetchStatus === "fetching" && state.fetchFailureCount === 0;
+}
+
+/**
+ * Waits for the read on its way, and gives what it brought from the
+ * server once it lands; nothing once it fails, waits for the phone to be
+ * back online, or has taken READ_WAIT_MS. A read called off for a fresh
+ * one (a pull to refresh) has not failed: the fresh one is waited for in
+ * its place.
+ */
+function readLanding(queryClient: QueryClient, key: QueryKey): Promise<EraEditsState | undefined> {
+  const cache = queryClient.getQueryCache();
+  const query = cache.find<EraEditsState>({ queryKey: key, exact: true });
+  if (!query || !readComing(query.state)) return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    const end = (read?: EraEditsState) => {
+      clearTimeout(timer);
+      stop();
+      resolve(read);
+    };
+    const timer = setTimeout(() => end(), READ_WAIT_MS);
+    const stop = cache.subscribe((event) => {
+      if (event.query !== query) return;
+      if (event.type === "removed") end();
+      else if (event.type === "updated" && event.action.type === "success" && !event.action.manual) end(query.state.data);
+      else if (!readComing(query.state)) end();
+    });
+  });
+}
+
+/**
  * A member's arrangement as every screen reads it: as the server holds
  * it, except while a change of the member's is being saved, when it is
  * that change. A read that lands then may have been answered before the
@@ -116,8 +163,13 @@ export function eraEditsQuery(authorId: string) {
  *
  * Nothing is changed before the arrangement has been read (`ready`):
  * saving over a row not yet seen would lose what is in it. For the same
- * reason, a change made while a read is on its way waits for that read
- * (it may hold a change made on another phone) and is made over it.
+ * reason, a change made while a read is on its way is shown at once but
+ * saved only when that read lands (it may hold a change made on another
+ * phone), made again over what it brings, with any made as it waited. A
+ * read that fails, waits for the phone to be back online, or is slow to
+ * come is waited for no longer (readLanding): the change is saved over
+ * the arrangement the page had, so it never sits unsaved, and a failure
+ * is told.
  *
  * The first arrangement a member saves keeps the zone its keys were read
  * in, the phone's own. From then on it keeps the one it has, so moving
@@ -141,20 +193,30 @@ export async function changeEraEdits(
     return;
   }
 
-  let held = queryClient.getQueryData<EraEditsState>(key);
-  if (!held?.ready) return;
-  if (queryClient.getQueryState(key)?.fetchStatus === "fetching") {
-    try {
-      held = await queryClient.query({ ...eraEditsQuery(authorId), staleTime: 0 });
-    } catch {
-      held = queryClient.getQueryData<EraEditsState>(key);
-    }
-    // Another change may have begun saving while this one waited.
-    if (saving.has(authorId)) return changeEraEdits(queryClient, authorId, change);
-    if (!held?.ready) return;
+  // So does a wait for a read on its way, and the page shows this change with the rest.
+  const wait = waiting.get(authorId);
+  if (wait) {
+    wait.changes.push(change);
+    show(wait.changes.reduce((edits, made) => made(edits), wait.held));
+    return;
   }
 
-  const changed = change(held.edits);
+  let held = queryClient.getQueryData<EraEditsState>(key);
+  if (!held?.ready) return;
+  const changes = [change];
+  if (readComing(queryClient.getQueryState(key))) {
+    waiting.set(authorId, { held: held.edits, changes });
+    show(change(held.edits));
+    const read = await readLanding(queryClient, key);
+    waiting.delete(authorId);
+    // Over what the read brought; where it did not land, over the page as it was.
+    if (read) {
+      if (!read.ready) return;
+      held = read;
+    }
+  }
+
+  const changed = changes.reduce((edits, made) => made(edits), held.edits);
   if (sameEdits(changed, held.edits)) return;
   const zone = changed.zone ?? deviceZone();
   const run = { confirmed: held.edits, wanted: zone ? { ...changed, zone } : changed };

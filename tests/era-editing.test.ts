@@ -108,11 +108,13 @@ describe("the Eras view outside arranging", () => {
     );
     expect(list).toMatch(/onLayout=\{\(e\) => \(barTall\.current = e\.nativeEvent\.layout\.height\)\}/);
     // Once laid out again, that chapter is measured where it now lies and put back at the top, at once.
-    expect(list).toMatch(/useLayoutEffect\(\(\) => \{\s*const key = anchor\.current;\s*anchor\.current = null;/);
+    expect(list).toMatch(/useLayoutEffect\(\(\) => \{\s*const place = anchor\.current;\s*anchor\.current = null;/);
     expect(list).toMatch(/const under = arranging \? barTall\.current : 0;/);
+    // As far into it as they were, unless it has closed up (depthAfter): not snapped to its title in an era left open.
     expect(list).toMatch(
-      /page\.measureLayout\(book, \(_x, top\) => scroller\.current\?\.scrollTo\(\{ y: Math\.max\(0, top - under\), animated: false \}\)\);\s*\}, \[arranging\]\);/,
+      /page\.measureLayout\(book, \(_x, top, _width, tall\) =>\s*scroller\.current\?\.scrollTo\(\{ y: Math\.max\(0, top \+ depthAfter\(place, tall\) - under\), animated: false \}\),\s*\);\s*\}, \[arranging\]\);/,
     );
+    expect(list).toMatch(/const anchor = useRef<ChapterPlace \| null>\(null\);/);
     expect(list).toMatch(/<ScrollView\s+ref=\{scroller\}/);
     expect(list).toMatch(/<View ref=\{pageRef\} style=\{\[styles\.chapter, first && styles\.chapterFirst\]\} onLayout=\{onLayout\}>/);
     expect(list).toMatch(/if \(node\) pages\.current\.set\(era\.key, node\);\s*else pages\.current\.delete\(era\.key\);/);
