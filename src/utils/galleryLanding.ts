@@ -101,8 +101,9 @@ export interface Look {
   /** Where the list last said it is; null before it has said. */
   scrolled: number | null;
   /**
-   * Whether the list can go no further with every card below the tapped
-   * one drawn: then the card is one of the last, and as high as it can be.
+   * Whether the list can go no further (atListEnd) with every card below
+   * the tapped one drawn: then the card is one of the last, and as high
+   * as it can be.
    */
   end: boolean;
   /** Cards that have reported a height so far. */
@@ -156,6 +157,20 @@ function afterAway(landing: Landing, now: number): Landing {
     changedAt: landing.changedAt + away,
     drawnAt: landing.drawnAt == null ? null : landing.drawnAt + away,
   };
+}
+
+/**
+ * Whether the list can go no further down: where it last said it is,
+ * against how long it is now and how much of it is on screen. Read at
+ * each look, not kept from when it last moved, because cards drawn below
+ * it since then make room to go on, and a list says nothing when it only
+ * grows. One that has not said where it is has not moved from its top,
+ * and one that fits on the screen never will: it is at its end from the
+ * start. Nothing laid out yet is not an end.
+ */
+export function atListEnd(scrolled: number | null, viewport: number, content: number): boolean {
+  if (viewport <= 0 || content <= 0) return false;
+  return (scrolled ?? 0) + viewport >= content - TOLERANCE;
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   STALL_MS,
   STILL_LOOKS,
   approachOffset,
+  atListEnd,
   nextLanding,
   startLanding,
   type Landing,
@@ -243,6 +244,30 @@ describe("a landing the app was away from", () => {
   });
 });
 
+describe("whether the list can go no further", () => {
+  it("is where it last said it is, against how long it is now", () => {
+    expect(atListEnd(88_088, 760, 88_848)).toBe(true);
+    expect(atListEnd(88_088.4, 760, 88_849)).toBe(true); // the browser's rounding
+    expect(atListEnd(88_088, 760, 88_850)).toBe(false);
+  });
+
+  it("is not, once more is drawn below, though it was when the list last said where it is", () => {
+    // Stopped at the end of what was drawn; five more cards drawn since, and no word from the list.
+    expect(atListEnd(88_088, 760, 88_848 + 5 * 540)).toBe(false);
+  });
+
+  it("is from the start for a list that fits on the screen, which never says where it is", () => {
+    expect(atListEnd(null, 900, 766)).toBe(true);
+    expect(atListEnd(null, 760, 4_000)).toBe(false);
+  });
+
+  it("is not before the list and its content have been laid out", () => {
+    expect(atListEnd(null, 0, 0)).toBe(false);
+    expect(atListEnd(null, 760, 0)).toBe(false);
+    expect(atListEnd(0, 0, 766)).toBe(false);
+  });
+});
+
 describe("where the list is sent before the card is drawn", () => {
   it("is the heights known so far, and their typical height for the rest", () => {
     expect(approachOffset([500, 300, undefined, undefined], PADDING)).toBe(PADDING + 800 + 2 * 400);
@@ -262,32 +287,41 @@ describe("where the list is sent before the card is drawn", () => {
  * A list that behaves the way the gallery's does, on the phone and in the
  * browser: cards of their own heights, the first eighty drawn at once, and
  * no scrolling past what is drawn. A scroll that reaches the end of what
- * is drawn draws the next few, as the list does when it is scrolled.
+ * is drawn draws the next few after it, before the next look, as the
+ * list does when it is scrolled; growing says nothing, so where the list
+ * last said it is can be from before. A list that cannot move says
+ * nothing either. Its end is read the way the gallery reads it.
  */
 function galleryList(heights: number[], { drawnAtOnce = 80, perScroll = 10, viewport = 760 } = {}) {
   let drawn = Math.min(drawnAtOnce, heights.length);
+  let drawMore = false;
   let offset = 0;
   let said: number | null = null;
   const top = (i: number) => PADDING + heights.slice(0, i).reduce((a, b) => a + b, 0);
   const length = () => top(drawn) + (drawn === heights.length ? PADDING : 0);
-  const atEnd = () => offset + viewport >= length() - 1;
   return {
     top,
     viewport,
+    /** The furthest the whole list, all of it drawn, can be scrolled. */
+    furthest: () => Math.max(0, top(heights.length) + PADDING - viewport),
     get offset() {
       return offset;
     },
     scrollTo(y: number) {
       const next = Math.min(Math.max(0, y), Math.max(0, length() - viewport));
       if (next !== offset) said = offset = next;
-      if (atEnd()) drawn = Math.min(heights.length, drawn + perScroll);
+      if (offset + viewport >= length() - 1) drawMore = true;
     },
     look(index: number, now: number): Look {
+      if (drawMore) {
+        drawn = Math.min(heights.length, drawn + perScroll);
+        drawMore = false;
+      }
       return {
         index,
         top: index < drawn ? top(index) : null,
         scrolled: said,
-        end: said != null && atEnd() && drawn === heights.length,
+        end: atListEnd(said, viewport, length()) && drawn === heights.length,
         measured: drawn,
         now,
       };
@@ -332,6 +366,26 @@ describe("landing in a long history", () => {
     expect(list.top(148) - offset + HEIGHTS[148]).toBeLessThanOrEqual(list.viewport);
   });
 
+  it("opens one of the last photographs as high as it can be, however the list draws below it", () => {
+    // The list put at the card, stopped at the end of what was drawn, and
+    // the rest drawn below it after: where it last said it is was the end
+    // then and is not now.
+    for (const perScroll of [6, 8, 10, 12, 15]) {
+      for (let index = 130; index < HEIGHTS.length; index++) {
+        const list = galleryList(HEIGHTS, { perScroll });
+        const { offset } = land(list, index);
+        expect(offset, `card ${index}, ${perScroll} at a time`).toBe(Math.min(list.top(index), list.furthest()));
+      }
+    }
+  });
+
+  it("shows a gallery that fits on the screen at once, though the list never says where it is", () => {
+    const list = galleryList([300.5, 250, 200.25], { viewport: 900 });
+    const { offset, after } = land(list, 1);
+    expect(offset).toBe(0);
+    expect(after).toBeLessThanOrEqual(STILL_LOOKS * LANDING_STEP_MS);
+  });
+
   it("does not open on the same card for different photographs", () => {
     const landed = [90, 110, 130].map((index) => {
       const list = galleryList(HEIGHTS);
@@ -357,13 +411,25 @@ describe("the gallery, read from the source", () => {
 
   it("takes each step from the landing, with where the list says it is", () => {
     expect(gallery).toMatch(
-      /nextLanding\(landing, \{\s*index: startIndex,\s*top,\s*scrolled: at\?\.offset \?\? null,\s*end,\s*measured: heights\.current\.size,\s*now: Date\.now\(\),\s*\}\)/,
+      /nextLanding\(landing, \{\s*index: startIndex,\s*top,\s*scrolled: at,\s*end,\s*measured: heights\.current\.size,\s*now: Date\.now\(\),\s*\}\)/,
     );
-    expect(gallery).toMatch(/const end = Boolean\(at\?\.end\) && posts\.slice\(startIndex \+ 1\)\.every\(\(p\) => heights\.current\.has\(p\.id\)\);/);
-    expect(gallery).toMatch(/end: contentOffset\.y \+ layoutMeasurement\.height >= contentSize\.height - 1,/);
+    expect(gallery).toMatch(/const at = scrolled\.current;/);
+    expect(gallery).toMatch(/scrolled\.current = e\.nativeEvent\.contentOffset\.y;/);
     expect(gallery).toMatch(/onScroll=\{onScroll\}/);
     expect(gallery).toMatch(/scrollTo\(approachOffset\(posts\.slice\(0, startIndex\)\.map\(\(p\) => heights\.current\.get\(p\.id\)\), LIST_PADDING\)\);/);
     expect(gallery).toMatch(/\} else if \(step\.kind === "place"\) \{\s*scrollTo\(step\.offset\);/);
+  });
+
+  it("reads the end from the list as it is at each look, not from when it last moved", () => {
+    expect(gallery).toMatch(
+      /const end =\s*atListEnd\(at, viewport\.current, content\.current\) &&\s*posts\.slice\(startIndex \+ 1\)\.every\(\(p\) => heights\.current\.has\(p\.id\)\);/,
+    );
+    // Its height on screen and its content's, as each last reported them.
+    expect(gallery).toMatch(/viewport\.current = e\.nativeEvent\.layout\.height;/);
+    expect(gallery).toMatch(/const onContentSizeChange = useCallback\(\(_width: number, height: number\) => \{\s*content\.current = height;/);
+    expect(gallery).toMatch(/onLayout=\{onListLayout\}\s*onContentSizeChange=\{onContentSizeChange\}/);
+    // Not the end as a scroll event once said it.
+    expect(gallery).not.toMatch(/contentSize\.height|layoutMeasurement/);
   });
 
   it("shows nothing until it has landed, and then in the frame after", () => {

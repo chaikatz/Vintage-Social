@@ -19,7 +19,7 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { galleryRows } from "@/utils/profileViews";
 import { isWarm, warmWindow } from "@/utils/videoWindow";
-import { LANDING_STEP_MS, approachOffset, nextLanding, startLanding } from "@/utils/galleryLanding";
+import { LANDING_STEP_MS, approachOffset, atListEnd, nextLanding, startLanding } from "@/utils/galleryLanding";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
@@ -109,8 +109,11 @@ export default function Gallery() {
   // Heights of the cards as they report them: to send the list towards a
   // tapped card not drawn yet, and to tell that more have been drawn.
   const heights = useRef(new Map<string, number>());
-  // Where the list last said it is, and whether it could go no further.
-  const scrolled = useRef<{ offset: number; end: boolean } | null>(null);
+  // Where the list last said it is, and how tall it and its content last
+  // said they are: together, whether it can go any further.
+  const scrolled = useRef<number | null>(null);
+  const viewport = useRef(0);
+  const content = useRef(0);
   const settled = useRef(false);
   const [ready, setReady] = useState(false);
   // The last card reported on screen once the list was showing; the clips
@@ -141,12 +144,16 @@ export default function Gallery() {
         answered = true;
         clearTimeout(timer);
         const at = scrolled.current;
-        // As far down as it goes, with every card below the tapped one drawn.
-        const end = Boolean(at?.end) && posts.slice(startIndex + 1).every((p) => heights.current.has(p.id));
+        // As far down as it goes now, with every card below the tapped one
+        // drawn. Read from the list as it is at this look: cards drawn
+        // below since it last moved let it go further, and say nothing.
+        const end =
+          atListEnd(at, viewport.current, content.current) &&
+          posts.slice(startIndex + 1).every((p) => heights.current.has(p.id));
         const next = nextLanding(landing, {
           index: startIndex,
           top,
-          scrolled: at?.offset ?? null,
+          scrolled: at,
           end,
           measured: heights.current.size,
           now: Date.now(),
@@ -189,11 +196,13 @@ export default function Gallery() {
   }, []);
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    scrolled.current = {
-      offset: contentOffset.y,
-      end: contentOffset.y + layoutMeasurement.height >= contentSize.height - 1,
-    };
+    scrolled.current = e.nativeEvent.contentOffset.y;
+  }, []);
+  const onListLayout = useCallback((e: LayoutChangeEvent) => {
+    viewport.current = e.nativeEvent.layout.height;
+  }, []);
+  const onContentSizeChange = useCallback((_width: number, height: number) => {
+    content.current = height;
   }, []);
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
@@ -240,6 +249,8 @@ export default function Gallery() {
         initialNumToRender={Math.min(startIndex + 3, MEASURE_LIMIT)}
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         onScroll={onScroll}
+        onLayout={onListLayout}
+        onContentSizeChange={onContentSizeChange}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         ListEmptyComponent={
