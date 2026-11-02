@@ -12,7 +12,7 @@ import { PostMedia } from "@/components/PostMedia";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { PostSkeleton } from "@/components/Skeleton";
-import { Byline, INLINE_COMMENTS } from "@/components/PostCard";
+import { Byline, INLINE_COMMENTS, PostedTime } from "@/components/PostCard";
 import { colors, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
 import { fetchPostTags, removeTag } from "@/api/tags";
@@ -209,6 +209,9 @@ export default function PostDetail() {
           </Text>
         </Pressable>
       ))}
+
+      {/* When it went up, last of what is said about it, as on its card in the feed. */}
+      <PostedTime at={post.created_at} />
 
       {/* Your own photograph, and the phone has the rest of the roll. */}
       {sameNight > 0 ? (

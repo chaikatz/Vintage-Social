@@ -214,11 +214,12 @@ function ProgressRule({ fraction }: { fraction: number | null }) {
 }
 
 const styles = StyleSheet.create({
-  // The same air as a post: separated by space, not rules.
+  // The same air as a post: separated by space, not rules. No paper of its
+  // own: it lies on the screen's, so it is the same paper as the posts
+  // around it whichever the feed is on.
   card: {
     paddingBottom: spacing.lg,
     marginBottom: spacing.md,
-    backgroundColor: colors.paper,
   },
   header: {
     flexDirection: "row",

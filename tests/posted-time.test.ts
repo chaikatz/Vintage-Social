@@ -292,8 +292,8 @@ function code(file: string): string {
 
 describe("the feed card's posted time", () => {
   const card = code("src/components/PostCard.tsx");
-  const body = card.slice(card.indexOf("export function PostCard("), card.indexOf("function PostedTime("));
-  const line = card.slice(card.indexOf("function PostedTime("), card.indexOf("export function Byline("));
+  const body = card.slice(card.indexOf("export function PostCard("), card.indexOf("export function PostedTime("));
+  const line = card.slice(card.indexOf("export function PostedTime("), card.indexOf("export function Byline("));
 
   it("is the last thing on the card, after the caption and the comments", () => {
     expect(body.length).toBeGreaterThan(0);
@@ -311,10 +311,13 @@ describe("the feed card's posted time", () => {
     expect(line).not.toMatch(/taken_at/);
   });
 
-  it("is set in the byline's type, a shade fainter", () => {
+  it("is set in the byline's type, a shade fainter, and written as it is said: 29m ago, not 29M AGO", () => {
     expect(line).toMatch(/style=\{\[styles\.meta, styles\.posted\]\}/);
     const posted = card.match(/^ {2}posted: \{[\s\S]*?\n {2}\},/m)?.[0] ?? "";
     expect(posted).toMatch(/color: colors\.inkFaint/);
+    // The byline's face is in capitals; this line is not, so minutes do not read as months.
+    expect(card.match(/^ {2}meta: \{[\s\S]*?\n {2}\},/m)?.[0] ?? "").toMatch(/textTransform: "uppercase"/);
+    expect(posted).toMatch(/textTransform: "none"/);
   });
 
   it("follows the app's one clock, and starts no timer of its own", () => {
@@ -326,5 +329,41 @@ describe("the feed card's posted time", () => {
     const clock = code("src/utils/useMinute.ts");
     expect(clock.match(/setInterval\(/g)).toHaveLength(1);
     expect(clock).toMatch(/const MINUTE = 60_000;/);
+  });
+});
+
+describe("a post's own page", () => {
+  const page = code("app/post/[id].tsx");
+
+  it("ends what it says about the post with when it went up, as its card in the feed does", () => {
+    expect(page).toMatch(/import \{ Byline, INLINE_COMMENTS, PostedTime \} from "@\/components\/PostCard";/);
+    expect(page.match(/<PostedTime\b/g)).toHaveLength(1);
+    const posted = page.indexOf("<PostedTime at={post.created_at} />");
+    expect(posted).toBeGreaterThan(page.indexOf("{preview.map("));
+    expect(posted).toBeGreaterThan(page.indexOf("{hidden > 0 ? ("));
+    // Before the phone's own roll, which is not part of the post.
+    expect(posted).toBeLessThan(page.indexOf("{sameNight > 0 ? ("));
+  });
+});
+
+describe("a post still going up", () => {
+  const pending = code("src/components/PendingPostCard.tsx");
+
+  it("lies on the screen's paper, so a feed on White is white all the way up", () => {
+    const style = pending.match(/^ {2}card: \{[\s\S]*?\n {2}\},/m)?.[0] ?? "";
+    expect(style.length).toBeGreaterThan(0);
+    expect(style).not.toMatch(/backgroundColor/);
+  });
+});
+
+describe("the tabs' shared header", () => {
+  const layout = code("app/(tabs)/_layout.tsx");
+
+  it("keeps its own tab while a screen is pushed over the tabs", () => {
+    expect(layout).toMatch(/const segments = useSegments\(\) as string\[\];/);
+    expect(layout).toMatch(/const lastTab = useRef\("index"\);/);
+    expect(layout).toMatch(/if \(segments\[0\] === "\(tabs\)"\) lastTab\.current = segments\[1\] \?\? "index";/);
+    expect(layout).toMatch(/const tab = lastTab\.current;/);
+    expect(layout).not.toMatch(/const tab = segments\[1\]/);
   });
 });
