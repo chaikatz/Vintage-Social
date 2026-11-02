@@ -137,7 +137,7 @@ describe("the gallery", () => {
     expect(gallery).toMatch(/renderItem=\{\(\{ item, index \}\) =>/);
     expect(gallery).toMatch(/warmWindow\(\{ ready, startIndex, seenIndex: seenIndex < 0 \? null : seenIndex, count: posts\.length \}\)/);
     // What is reported on screen while the list is hidden and measuring does not move the window.
-    expect(gallery).toMatch(/if \(id && readyRef\.current\) setSeenId\(id\);/);
+    expect(gallery).toMatch(/if \(!readyRef\.current\) return;[^}]*if \(id\) setSeenId\(id\);/);
   });
 });
 

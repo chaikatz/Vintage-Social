@@ -174,6 +174,18 @@ export function atListEnd(scrolled: number | null, viewport: number, content: nu
 }
 
 /**
+ * The card whose clip plays once the gallery shows, from the cards the
+ * list reports on screen, in order: the tapped one while it is on screen
+ * and the reader has not moved off it, otherwise the first on screen, as
+ * everywhere else. Landed at the end, the tapped card is the last one,
+ * under a card that may show more of itself and so come first.
+ */
+export function playingCard(onScreen: readonly string[], tapped: string | undefined, onTapped: boolean): string | null {
+  if (onTapped && tapped != null && onScreen.includes(tapped)) return tapped;
+  return onScreen[0] ?? null;
+}
+
+/**
  * Roughly where the tapped card is before it is drawn: the heights of the
  * cards above it that have reported one, and the typical height of those
  * for the rest. Only good enough to send the list towards it; the list

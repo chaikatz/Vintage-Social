@@ -10,6 +10,7 @@ import {
   approachOffset,
   atListEnd,
   nextLanding,
+  playingCard,
   startLanding,
   type Landing,
   type Look,
@@ -244,6 +245,27 @@ describe("a landing the app was away from", () => {
   });
 });
 
+describe("the clip that plays once the gallery shows", () => {
+  it("is the tapped card's, while it is on screen", () => {
+    expect(playingCard(["a", "b"], "a", true)).toBe("a");
+    // Landed at the end: the tapped card is the last, under one that shows more of itself.
+    expect(playingCard(["p298", "p299"], "p299", true)).toBe("p299");
+  });
+
+  it("is the first card's on screen once the reader has moved off the tapped one", () => {
+    expect(playingCard(["p298", "p299"], "p299", false)).toBe("p298");
+  });
+
+  it("is the first card's on screen when the tapped one is not on screen, or not there at all", () => {
+    expect(playingCard(["a", "b"], "z", true)).toBe("a");
+    expect(playingCard(["a", "b"], undefined, true)).toBe("a");
+  });
+
+  it("is no one's between two cards", () => {
+    expect(playingCard([], "a", true)).toBeNull();
+  });
+});
+
 describe("whether the list can go no further", () => {
   it("is where it last said it is, against how long it is now", () => {
     expect(atListEnd(88_088, 760, 88_848)).toBe(true);
@@ -436,8 +458,24 @@ describe("the gallery, read from the source", () => {
     expect(gallery).toMatch(/style=\{ready \? undefined : styles\.hidden\}/);
     // Nor can it be tapped while hidden: the browser hit-tests a clear view.
     expect(gallery).toMatch(/hidden: \{ opacity: 0, pointerEvents: "none" \},/);
-    expect(gallery).toMatch(/if \(step\.offset != null\) scrollTo\(step\.offset\);\s*requestAnimationFrame\(\(\) => setReady\(true\)\);/);
+    expect(gallery).toMatch(/if \(step\.offset != null\) scrollTo\(step\.offset\);\s*requestAnimationFrame\(\(\) => \{[^}]*\{[^}]*\}\s*setReady\(true\);\s*\}\);/);
     expect(gallery).toMatch(/\{!ready && !loading && posts\.length > 0 \? \(\s*<View style=\{styles\.curtain\} pointerEvents="none">/);
+  });
+
+  it("only notes what the hidden list reports on screen, and chooses the clip that plays when it shows", () => {
+    // Noted while hidden, and nothing set: setting it drew every card again at each step of the landing.
+    expect(gallery).toMatch(
+      /onScreen\.current = viewableItems\.filter\(\(v\) => v\.isViewable\)\.map\(\(v\) => \(v\.item as \{ id: string \}\)\.id\);\s*if \(!readyRef\.current\) return;\s*const id = playingCard\(onScreen\.current, tappedId\.current, onTapped\.current\);/,
+    );
+    expect(gallery).toMatch(/if \(id !== tappedId\.current\) onTapped\.current = false;\s*setVisibleId\(id\);\s*if \(id\) setSeenId\(id\);/);
+    // Shown: from what the list last reported, the tapped card first.
+    expect(gallery).toMatch(
+      /requestAnimationFrame\(\(\) => \{\s*const id = playingCard\(onScreen\.current, postId, onTapped\.current\);\s*if \(id\) \{\s*setVisibleId\(id\);\s*setSeenId\(id\);\s*\}\s*setReady\(true\);/,
+    );
+    // A different photograph starts again, on the tapped card.
+    expect(gallery).toMatch(/setVisibleId\(postId \?\? null\);\s*onScreen\.current = \[\];\s*onTapped\.current = true;\s*\}, \[postId, sort, era\]\);/);
+    // Nowhere else.
+    expect(gallery.match(/setVisibleId\(/g)).toHaveLength(3);
   });
 
   it("goes on looking when a measure goes unanswered", () => {

@@ -19,7 +19,14 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { galleryRows } from "@/utils/profileViews";
 import { isWarm, warmWindow } from "@/utils/videoWindow";
-import { LANDING_STEP_MS, approachOffset, atListEnd, nextLanding, startLanding } from "@/utils/galleryLanding";
+import {
+  LANDING_STEP_MS,
+  approachOffset,
+  atListEnd,
+  nextLanding,
+  playingCard,
+  startLanding,
+} from "@/utils/galleryLanding";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
@@ -119,6 +126,16 @@ export default function Gallery() {
   // The last card reported on screen once the list was showing; the clips
   // that have a player are the ones around it.
   const [seenId, setSeenId] = useState<string | null>(null);
+  // Only the card on screen plays its video — see PostMedia for why. The
+  // tapped row is on screen first, so it starts as the active card.
+  const [visibleId, setVisibleId] = useState<string | null>(postId ?? null);
+  // The cards the list last reported on screen, in order. While it is
+  // hidden, being measured, that is not where the reader is, and it is
+  // only noted here: setting it would draw every card again at each step
+  // of the landing. It is read when the list shows (see playingCard).
+  const onScreen = useRef<string[]>([]);
+  // Whether the reader is still on the tapped card.
+  const onTapped = useRef(true);
 
   useEffect(() => {
     // A different photograph or order: land again.
@@ -126,6 +143,9 @@ export default function Gallery() {
     settled.current = false;
     setReady(false);
     setSeenId(null);
+    setVisibleId(postId ?? null);
+    onScreen.current = [];
+    onTapped.current = true;
   }, [postId, sort, era]);
 
   // Look where the tapped card is, put the list there, and look again
@@ -165,8 +185,16 @@ export default function Gallery() {
           settled.current = true;
           if (step.offset != null) scrollTo(step.offset);
           // Shown one frame after the scroll lands, so the first thing seen is
-          // the tapped photograph and not the list on its way there.
-          requestAnimationFrame(() => setReady(true));
+          // the tapped photograph and not the list on its way there. The
+          // clip that plays is chosen then, from what the list last reported.
+          requestAnimationFrame(() => {
+            const id = playingCard(onScreen.current, postId, onTapped.current);
+            if (id) {
+              setVisibleId(id);
+              setSeenId(id);
+            }
+            setReady(true);
+          });
           return;
         }
         if (step.kind === "approach") {
@@ -209,20 +237,23 @@ export default function Gallery() {
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
 
-  // Only the card on screen plays its video — see PostMedia for why. The
-  // tapped row is on screen first, so it starts as the active card.
-  const [visibleId, setVisibleId] = useState<string | null>(postId ?? null);
-  // And only it and its neighbours have a player at all (see
-  // src/utils/videoWindow.ts). The window follows the card reported on
-  // screen once the list is showing: what is reported while it is still
-  // hidden at the top, being measured, is not where the reader is.
+  // Only the card on screen plays (visibleId, above), and only it and its
+  // neighbours have a player at all (see src/utils/videoWindow.ts). The
+  // window follows the card reported on screen once the list is showing:
+  // what is reported while it is still hidden, being measured, is noted
+  // and nothing more.
   const readyRef = useRef(ready);
   readyRef.current = ready;
+  const tappedId = useRef(postId);
+  tappedId.current = postId;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const first = viewableItems.find((v) => v.isViewable);
-    const id = (first?.item as { id: string } | undefined)?.id ?? null;
+    onScreen.current = viewableItems.filter((v) => v.isViewable).map((v) => (v.item as { id: string }).id);
+    if (!readyRef.current) return;
+    const id = playingCard(onScreen.current, tappedId.current, onTapped.current);
+    // Moved off the tapped card: from here on the first on screen plays.
+    if (id !== tappedId.current) onTapped.current = false;
     setVisibleId(id);
-    if (id && readyRef.current) setSeenId(id);
+    if (id) setSeenId(id);
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 120 }).current;
   const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
