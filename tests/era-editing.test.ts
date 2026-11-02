@@ -64,9 +64,9 @@ describe("who may arrange Eras", () => {
 
   it("tells the member, in our words, when a change does not save", () => {
     expect(hook).toMatch(/showAlert\(ERA_SAVE_FAILED\.title, errorMessage\(err, ERA_SAVE_FAILED\.body\)\)/);
-    // Each over the member's photographs, so what no longer applies is let go as it saves.
-    expect(hook).toMatch(/rename: \(key, title\) => void arrange\(\(e\) => renameEra\(e, key, title, posts\)\)/);
-    expect(hook).toMatch(/move: \(post, key\) => changes\(\(e\) => moveToEra\(e, posts, post\.id, key\)\),/);
+    // Each over the member's photographs, so what no longer applies is let go as it saves, when they are all of them.
+    expect(hook).toMatch(/rename: \(key, title\) => \{\s*const all = whole\(\);\s*void arrange\(\(e\) => renameEra\(e, key, title, posts, all\)\);\s*\},/);
+    expect(hook).toMatch(/move: \(post, key\) => \{\s*const all = whole\(\);\s*return changes\(\(e\) => moveToEra\(e, posts, post\.id, key, all\)\);\s*\},/);
     expect(hook).toMatch(/void arrange\(change\);\s*return true;/);
   });
 
@@ -75,9 +75,9 @@ describe("who may arrange Eras", () => {
     expect(hook).toMatch(/create: \(name: string, photoIds: string\[\]\) => string \| null;/);
     expect(hook).toMatch(/takeOut: \(post: PostRow\) => boolean;/);
     expect(hook).toMatch(/deleteEra: \(key: string\) => boolean;/);
-    expect(hook).toMatch(/add: \(key, photoIds\) => changes\(\(e\) => addToEra\(e, posts, key, photoIds\)\),/);
-    expect(hook).toMatch(/takeOut: \(post\) => changes\(\(e\) => takeOut\(e, posts, post\.id\)\),/);
-    expect(hook).toMatch(/deleteEra: \(key\) => changes\(\(e\) => deleteEra\(e, posts, key\)\),/);
+    expect(hook).toMatch(/add: \(key, photoIds\) => \{\s*const all = whole\(\);\s*return changes\(\(e\) => addToEra\(e, posts, key, photoIds, all\)\);/);
+    expect(hook).toMatch(/takeOut: \(post\) => \{\s*const all = whole\(\);\s*return changes\(\(e\) => takeOut\(e, posts, post\.id, all\)\);/);
+    expect(hook).toMatch(/deleteEra: \(key\) => \{\s*const all = whole\(\);\s*return changes\(\(e\) => deleteEra\(e, posts, key, all\)\);/);
     // Every change but a rename goes through `changes`, which arranges only a real one.
     expect(hook.match(/void arrange\(/g)).toHaveLength(2);
     expect(hook.match(/\bchanges\(\(e\) =>/g)).toHaveLength(5);
@@ -86,11 +86,27 @@ describe("who may arrange Eras", () => {
   it("draws a new era's key once, from the phone's secure source, outside the change that may be made again", () => {
     expect(hook).toMatch(/import \{ newEraKey \} from "@\/utils\/newEraKey";/);
     expect(hook).toMatch(/makeKey: \(\) => string = newEraKey,/);
-    expect(hook).toMatch(/const key = makeKey\(\);\s*return changes\(\(e\) => createEra\(e, posts, name, photoIds, \(\) => key\)\.edits\) \? key : null;/);
+    expect(hook).toMatch(
+      /const key = makeKey\(\);\s*const all = whole\(\);\s*return changes\(\(e\) => createEra\(e, posts, name, photoIds, \(\) => key, all\)\.edits\) \? key : null;/,
+    );
     expect(hook.match(/makeKey\(\)/g)).toHaveLength(1);
     const keys = code("src/utils/newEraKey.ts");
     expect(keys).toMatch(/import \{ getRandomBytes \} from "expo-crypto";/);
     expect(keys).toMatch(/const key = eraKeyFrom\(getRandomBytes\(ERA_KEY_BYTES\)\);/);
+  });
+
+  it("lets go of what no longer applies only over all of the member's photographs, as their read says, asked once per change", () => {
+    expect(hook).toMatch(/import \{ userPostsCutShort \} from "@\/api\/posts";/);
+    expect(hook).toMatch(
+      /const whole = \(\) =>\s*!userPostsCutShort\(userId\) && queryClient\.getQueryState\(\["user-posts", userId\]\)\?\.isInvalidated !== true;/,
+    );
+    // Asked as the change is made, never inside it, which may be made again later.
+    expect(hook.match(/const all = whole\(\);/g)).toHaveLength(6);
+    expect(hook.match(/whole\(\)/g)).toHaveLength(6);
+    const posts = code("src/api/posts.ts");
+    expect(posts).toMatch(/if \(isDemoMode\(\)\) return noteRead\(authorId, demo\.demoFetchUserPosts\(authorId\)\);/);
+    expect(posts).toMatch(/return noteRead\(authorId, \(data \?\? \[\]\) as PostRow\[\]\);/);
+    expect(posts).toMatch(/if \(rows\.length >= ROWS_PER_READ\) cutShort\.add\(authorId\);\s*else cutShort\.delete\(authorId\);/);
   });
 
   it("says whether a move was made, so the page announces only a real one", () => {

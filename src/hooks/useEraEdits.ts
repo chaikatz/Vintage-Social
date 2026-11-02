@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { ERA_SAVE_FAILED, changeEraEdits, eraEditsKey, eraEditsQuery, type EraEditsState } from "@/api/eraEdits";
+import { userPostsCutShort } from "@/api/posts";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { addToEra, createEra, deleteEra, moveToEra, renameEra, sameEdits, takeOut, type EraEdits } from "@/utils/eraEdits";
@@ -64,7 +65,8 @@ export interface EraEditor {
  * photographs (`posts`, as read). A change shows at once
  * (changeEraEdits); one that does not save is taken back and the member
  * is told, in words of ours. Each change lets go of what no longer
- * applies to the photographs (renameEra, addToEra and the rest). A new
+ * applies to the photographs (renameEra, addToEra and the rest), once
+ * they are known to be all of them (whole). A new
  * era's key is drawn by `makeKey`, the phone's secure random source
  * unless the tests give another.
  */
@@ -85,18 +87,46 @@ export function eraEditor(
     void arrange(change);
     return true;
   };
+  /**
+   * Whether `posts` is all of the member's photographs, so a change may
+   * let go of what no longer applies (pruned): their last read was not
+   * cut short (userPostsCutShort), and the list is still that read's. One
+   * changed on this phone since, by a delete or a new post, waits to be
+   * read again, and until it is, it may be the list of a read before the
+   * last. Asked once as each change is made: the change may be made again
+   * over a newer arrangement (changeEraEdits), and lets go of the same
+   * each time. Not whole, nothing is let go, until a later change.
+   */
+  const whole = () =>
+    !userPostsCutShort(userId) && queryClient.getQueryState(["user-posts", userId])?.isInvalidated !== true;
   return {
-    rename: (key, title) => void arrange((e) => renameEra(e, key, title, posts)),
-    move: (post, key) => changes((e) => moveToEra(e, posts, post.id, key)),
-    add: (key, photoIds) => changes((e) => addToEra(e, posts, key, photoIds)),
+    rename: (key, title) => {
+      const all = whole();
+      void arrange((e) => renameEra(e, key, title, posts, all));
+    },
+    move: (post, key) => {
+      const all = whole();
+      return changes((e) => moveToEra(e, posts, post.id, key, all));
+    },
+    add: (key, photoIds) => {
+      const all = whole();
+      return changes((e) => addToEra(e, posts, key, photoIds, all));
+    },
     create: (name, photoIds) => {
       // Drawn once, here: the change may be made again over a newer
       // arrangement (changeEraEdits), and is the same era every time.
       const key = makeKey();
-      return changes((e) => createEra(e, posts, name, photoIds, () => key).edits) ? key : null;
+      const all = whole();
+      return changes((e) => createEra(e, posts, name, photoIds, () => key, all).edits) ? key : null;
     },
-    takeOut: (post) => changes((e) => takeOut(e, posts, post.id)),
-    deleteEra: (key) => changes((e) => deleteEra(e, posts, key)),
+    takeOut: (post) => {
+      const all = whole();
+      return changes((e) => takeOut(e, posts, post.id, all));
+    },
+    deleteEra: (key) => {
+      const all = whole();
+      return changes((e) => deleteEra(e, posts, key, all));
+    },
   };
 }
 
