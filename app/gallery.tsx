@@ -328,6 +328,8 @@ function ratioOf(post: PostWithAuthor | undefined): number {
 
 const styles = StyleSheet.create({
   list: { paddingVertical: LIST_PADDING },
-  hidden: { opacity: 0 },
+  // Out of reach as well as out of sight. The phone already ignores
+  // touches on a clear view; the browser does not, so it is said here.
+  hidden: { opacity: 0, pointerEvents: "none" },
   curtain: { position: "absolute", top: LIST_PADDING, left: 0, right: 0 },
 });

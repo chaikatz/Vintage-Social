@@ -434,6 +434,8 @@ describe("the gallery, read from the source", () => {
 
   it("shows nothing until it has landed, and then in the frame after", () => {
     expect(gallery).toMatch(/style=\{ready \? undefined : styles\.hidden\}/);
+    // Nor can it be tapped while hidden: the browser hit-tests a clear view.
+    expect(gallery).toMatch(/hidden: \{ opacity: 0, pointerEvents: "none" \},/);
     expect(gallery).toMatch(/if \(step\.offset != null\) scrollTo\(step\.offset\);\s*requestAnimationFrame\(\(\) => setReady\(true\)\);/);
     expect(gallery).toMatch(/\{!ready && !loading && posts\.length > 0 \? \(\s*<View style=\{styles\.curtain\} pointerEvents="none">/);
   });
