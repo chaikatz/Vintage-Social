@@ -4,7 +4,8 @@ import * as Haptics from "expo-haptics";
 import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { colors, spacing, type } from "@/theme";
-import { shortDate } from "@/utils/time";
+import { postedAgo, postedAgoSpoken, shortDate } from "@/utils/time";
+import { useMinute } from "@/utils/useMinute";
 import { Avatar } from "./Avatar";
 import { PostMedia } from "./PostMedia";
 import type { ClipSurface } from "@/utils/videoTiming";
@@ -140,7 +141,25 @@ export function PostCard({
           </Text>
         </Pressable>
       ))}
+
+      {/* When it went up, last, under everything said about it. */}
+      <PostedTime at={post.created_at} />
     </View>
+  );
+}
+
+/**
+ * `29M AGO` — when a post went up, at the foot of its card, in the byline's
+ * type a shade fainter. The posting time, not the capture date, which the
+ * byline already gives. It follows the app's one clock, so it moves on by
+ * itself, and only this line is drawn again when it does.
+ */
+function PostedTime({ at }: { at: string }) {
+  const now = new Date(useMinute());
+  return (
+    <Text style={[styles.meta, styles.posted]} numberOfLines={1} accessibilityLabel={postedAgoSpoken(at, now)}>
+      {postedAgo(at, now)}
+    </Text>
   );
 }
 
@@ -239,5 +258,10 @@ const styles = StyleSheet.create({
     ...type.caption,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xs + 2,
+  },
+  posted: {
+    color: colors.inkFaint,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
   },
 });

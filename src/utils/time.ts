@@ -1,22 +1,98 @@
 /**
+ * How long ago something was, in the one unit worth saying: under a
+ * minute, then minutes, hours and days, and after a week the day itself.
+ * A time ahead of the phone's clock, as on a phone whose clock runs slow,
+ * counts as under a minute. Every way of saying an age below reads it from
+ * here, so they never disagree about where a minute ends.
+ */
+type Age =
+  | { unit: "now" }
+  | { unit: "minutes" | "hours" | "days"; count: number }
+  | { unit: "date"; then: Date; sameYear: boolean };
+
+function ageOf(iso: string, now: Date): Age {
+  const then = new Date(iso);
+  const seconds = Math.max(0, Math.floor((now.getTime() - then.getTime()) / 1000));
+
+  if (seconds < 60) return { unit: "now" };
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return { unit: "minutes", count: minutes };
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return { unit: "hours", count: hours };
+  const days = Math.floor(hours / 24);
+  if (days < 7) return { unit: "days", count: days };
+
+  return { unit: "date", then, sameYear: then.getFullYear() === now.getFullYear() };
+}
+
+/** `Oct 3` this year and `Oct 3, 2025` before it; `October 3` with the long months. */
+function dayOf({ then, sameYear }: { then: Date; sameYear: boolean }, months: readonly string[]): string {
+  const day = `${months[then.getMonth()]} ${then.getDate()}`;
+  return sameYear ? day : `${day}, ${then.getFullYear()}`;
+}
+
+/**
  * Understated relative timestamps, in the spirit of early photo-sharing apps:
  * "3m", "2h", "5d", then absolute dates for anything older than a week.
  */
 export function postAge(iso: string, now: Date = new Date()): string {
-  const then = new Date(iso);
-  const seconds = Math.max(0, Math.floor((now.getTime() - then.getTime()) / 1000));
+  const age = ageOf(iso, now);
+  switch (age.unit) {
+    case "now":
+      return "now";
+    case "minutes":
+      return `${age.count}m`;
+    case "hours":
+      return `${age.count}h`;
+    case "days":
+      return `${age.count}d`;
+    case "date":
+      return dayOf(age, MONTHS);
+  }
+}
 
-  if (seconds < 60) return "now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
+/**
+ * When a post went up, as the last line of its card says it: "Just now",
+ * "29m ago", "5h ago", "3d ago", then the day it was posted, "Oct 3", with
+ * the year once it was another year. The same reckoning as `postAge`,
+ * which keeps its shorter words for the screens that use them.
+ */
+export function postedAgo(iso: string, now: Date = new Date()): string {
+  const age = ageOf(iso, now);
+  switch (age.unit) {
+    case "now":
+      return "Just now";
+    case "minutes":
+      return `${age.count}m ago`;
+    case "hours":
+      return `${age.count}h ago`;
+    case "days":
+      return `${age.count}d ago`;
+    case "date":
+      return dayOf(age, MONTHS);
+  }
+}
 
-  const sameYear = then.getFullYear() === now.getFullYear();
-  const month = MONTHS[then.getMonth()];
-  return sameYear ? `${month} ${then.getDate()}` : `${month} ${then.getDate()}, ${then.getFullYear()}`;
+/** `postedAgo` as a screen reader says it: "Posted 29 minutes ago", "Posted October 3". */
+export function postedAgoSpoken(iso: string, now: Date = new Date()): string {
+  const age = ageOf(iso, now);
+  switch (age.unit) {
+    case "now":
+      return "Posted just now";
+    case "minutes":
+      return `Posted ${counted(age.count, "minute")} ago`;
+    case "hours":
+      return `Posted ${counted(age.count, "hour")} ago`;
+    case "days":
+      return `Posted ${counted(age.count, "day")} ago`;
+    case "date":
+      return `Posted ${dayOf(age, MONTHS_LONG)}`;
+  }
+}
+
+/** `1 minute`, `29 minutes`. */
+function counted(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? "" : "s"}`;
 }
 
 const MONTHS = [

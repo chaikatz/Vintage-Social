@@ -211,6 +211,10 @@ const feed = await text();
 check("Chronological feed renders", /elena\.marchetti|tomas\.lindqvist/.test(feed));
 check("Feed shows film stock and place", /Chrome 64|Alpine|Archive/i.test(feed));
 check("Comment previews read under the caption", /forgives everything|emptiness makes it/.test(feed));
+// The last line of a card is when it went up, said in full to a screen reader.
+const posted = seen(page.getByLabel(/^Posted (just now|\d+ (minute|hour|day)s? ago|[A-Z][a-z]+ \d{1,2}(, \d{4})?)$/));
+const postedLine = (await posted.count()) ? ((await posted.first().textContent()) ?? "") : "";
+check("A feed card says when it was posted", /^(Just now|\d+[mhd] ago|[A-Z][a-z]{2} \d{1,2}(, \d{4})?)$/.test(postedLine), postedLine);
 await shot("11-feed");
 
 await byLabel("Like").first().click();
@@ -336,6 +340,8 @@ await tap("Share to VINTAGE", 4600);
 const afterPost = await text();
 check("Post publishes into the feed", /Leith/.test(afterPost));
 check("Stamp reads the capture date, not today", /6 14/.test(afterPost));
+// Taken in June, posted now: the card's last line is the posting time.
+check("A new post says it went up just now", (await byLabel("Posted just now").count()) > 0);
 await shot("18-posted");
 
 console.log("\nJS errors:", errors.length ? errors.slice(0, 10) : "none");
