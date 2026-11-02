@@ -149,12 +149,14 @@ export function PostCard({
 }
 
 /**
- * `29M AGO` — when a post went up, at the foot of its card, in the byline's
+ * `29m ago` — when a post went up, at the foot of its card, in the byline's
  * type a shade fainter. The posting time, not the capture date, which the
- * byline already gives. It follows the app's one clock, so it moves on by
- * itself, and only this line is drawn again when it does.
+ * byline already gives. Written as it is said, not in the byline's
+ * capitals: `29M AGO` reads as twenty-nine months. It follows the app's
+ * one clock, so it moves on by itself, and only this line is drawn again
+ * when it does. A post's own page ends with it too.
  */
-function PostedTime({ at }: { at: string }) {
+export function PostedTime({ at }: { at: string }) {
   const now = new Date(useMinute());
   return (
     <Text style={[styles.meta, styles.posted]} numberOfLines={1} accessibilityLabel={postedAgoSpoken(at, now)}>
@@ -260,6 +262,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs + 2,
   },
   posted: {
+    textTransform: "none",
     color: colors.inkFaint,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,

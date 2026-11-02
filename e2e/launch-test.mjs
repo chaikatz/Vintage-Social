@@ -226,6 +226,9 @@ check("Comment previews read under the caption", /forgives everything|emptiness 
 const posted = seen(page.getByLabel(/^Posted (just now|\d+ (minute|hour|day)s? ago|[A-Z][a-z]+ \d{1,2}(, \d{4})?)$/));
 const postedLine = (await posted.count()) ? ((await posted.first().textContent()) ?? "") : "";
 check("A feed card says when it was posted", /^(Just now|\d+[mhd] ago|[A-Z][a-z]{2} \d{1,2}(, \d{4})?)$/.test(postedLine), postedLine);
+// As it is drawn, not only as it is written: 29m ago, never 29M AGO, which reads as months.
+const postedShown = (await posted.count()) ? await posted.first().evaluate((el) => el.innerText) : "";
+check("The posted line is drawn as it is said, not in capitals", /^(Just now|\d+[mhd] ago|[A-Z][a-z]{2} \d{1,2}(, \d{4})?)$/.test(postedShown), postedShown);
 await shot("11-feed");
 
 await byLabel("Like").first().click();
@@ -309,6 +312,10 @@ await page.mouse.wheel(0, -350);
 await wait(900);
 const cardBefore = await cardAtTop();
 check("Scrolling up from it finds the photograph before", /Nonna.s courtyard/.test(cardBefore?.text ?? ""), cardBefore?.text.slice(0, 48));
+// A post's own page ends what it says about the post with when it went up, as its card does.
+await go("/post/demo-post-03", 2600);
+const pagePosted = seen(page.getByLabel(/^Posted (just now|\d+ (minute|hour|day)s? ago|[A-Z][a-z]+ \d{1,2}(, \d{4})?)$/));
+check("A post's own page says when it was posted", (await pagePosted.count()) === 1, String(await pagePosted.count()));
 
 // Eras the member arranges, on their own page only: EDIT, rename an era,
 // move a photograph into it, DONE. Two of the demo's Milan photographs of

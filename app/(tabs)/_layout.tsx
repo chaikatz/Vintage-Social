@@ -135,8 +135,13 @@ const TITLES: Record<string, string> = {
 function TabHeader({ username, userId }: { username?: string; userId: string }) {
   const router = useRouter();
   // Typed loosely on purpose: the tab is whatever segment follows "(tabs)".
+  // The segments follow whatever is in front, so while a screen is pushed
+  // over the tabs (a gallery, Settings, a profile) this header, still drawn
+  // underneath through the slide and the swipe back, keeps the tab it was.
   const segments = useSegments() as string[];
-  const tab = segments[1] ?? "index";
+  const lastTab = useRef("index");
+  if (segments[0] === "(tabs)") lastTab.current = segments[1] ?? "index";
+  const tab = lastTab.current;
   const insets = useSafeAreaInsets();
 
   const title = tab === "profile" ? username ?? "Profile" : TITLES[tab] ?? null;
