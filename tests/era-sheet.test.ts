@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NEW_ERA, NEW_ERA_TITLE, NOT_IN_AN_ERA, NO_EDITS, createEra, moveToEra, type EraEdits } from "@/utils/eraEdits";
 import {
   CREATE,
@@ -17,9 +17,12 @@ import {
   takenOutNote,
 } from "@/components/eraSheet";
 import type { PostRow } from "@/types/db";
+import type { AlertButton } from "@/utils/alert";
 
-// The alerts as the browser has them (src/utils/alert.ts); nothing else here reaches React Native.
-vi.mock("react-native", () => ({ Platform: { OS: "web" }, Alert: { alert: vi.fn(), prompt: vi.fn() } }));
+// The alerts as the browser has them (src/utils/alert.ts), and as Android has them where a
+// test says so; nothing else here reaches React Native.
+const rn = vi.hoisted(() => ({ Platform: { OS: "web" }, Alert: { alert: vi.fn(), prompt: vi.fn() } }));
+vi.mock("react-native", () => rn);
 
 /**
  * The sheet a member arranges their eras in, as it reads the arrangement:
@@ -27,7 +30,8 @@ vi.mock("react-native", () => ({ Platform: { OS: "web" }, Alert: { alert: vi.fn(
  * out of an era a move put it in), what ADD offers an era, what a new era
  * offers, when Create can be pressed, and the words said once a change is
  * made. And the browser's stand-in for a menu of several, which is how the
- * demo reaches "Add to an era…" among a post's options.
+ * demo reaches "Add to an era…" among a post's options, and the same menu
+ * as Android's dialog, which holds three buttons at most, can show it.
  */
 
 const post = (id: string, taken: string | null, location: string | null = null) =>
@@ -223,5 +227,59 @@ describe("a menu of several, in the browser", () => {
     vi.unstubAllGlobals();
     expect(asked).toBe("Delete this photograph?\n\nIt’s removed for good.\n\nOK → Delete");
     expect(pressed).toEqual(["Delete"]);
+  });
+});
+
+describe("a menu of several, on Android", () => {
+  type Shown = AlertButton;
+  afterEach(() => {
+    rn.Platform.OS = "web";
+    rn.Alert.alert.mockReset();
+  });
+  /** What Android's dialog was given each time, and what each button and a dismissal did. */
+  async function menu(os: string, buttons: Shown[]) {
+    const { showAlert } = await import("@/utils/alert");
+    rn.Platform.OS = os;
+    showAlert("Your post", undefined, buttons);
+    return rn.Alert.alert.mock.calls as [string, string | undefined, Shown[], { cancelable?: boolean; onDismiss?: () => void } | undefined][];
+  }
+  const pressed: string[] = [];
+  const button = (text: string, style?: Shown["style"]): Shown => ({ text, style, onPress: () => void pressed.push(text) });
+  const own = () => [button("Edit caption"), button("Add to an era…"), button("Delete post", "destructive"), button("Cancel", "cancel")];
+
+  it("shows the three actions, Delete apart on the left, and closes on Back or a tap beside it, as Cancel", async () => {
+    pressed.length = 0;
+    const calls = await menu("android", own());
+    expect(calls).toHaveLength(1);
+    const [title, message, shown, options] = calls[0];
+    expect([title, message]).toEqual(["Your post", undefined]);
+    // Android puts the first on the left, apart, and the last on the right, where a confirm sits.
+    expect(shown.map((b) => b.text)).toEqual(["Delete post", "Edit caption", "Add to an era…"]);
+    expect(options?.cancelable).toBe(true);
+    options?.onDismiss?.();
+    shown[2].onPress?.();
+    expect(pressed).toEqual(["Cancel", "Add to an era…"]);
+  });
+
+  it("never gives Android more than three, the last of them leading to the rest", async () => {
+    pressed.length = 0;
+    const five = ["One", "Two", "Three", "Four", "Five"].map((t) => button(t));
+    const calls = await menu("android", [...five, button("Cancel", "cancel")]);
+    expect(calls[0][2].map((b) => b.text)).toEqual(["One", "Two", "More…"]);
+    calls[0][2][2].onPress?.();
+    expect(calls).toHaveLength(2);
+    expect(calls[1][2].map((b) => b.text)).toEqual(["Three", "Four", "Five"]);
+    expect(calls[1][3]?.cancelable).toBe(true);
+    calls[1][3]?.onDismiss?.();
+    calls[1][2][1].onPress?.();
+    expect(pressed).toEqual(["Cancel", "Four"]);
+  });
+
+  it("leaves a dialog of three or fewer as it was, and iOS's of any number", async () => {
+    const confirm = [button("Delete", "destructive"), button("Cancel", "cancel")];
+    expect(await menu("android", confirm)).toEqual([["Your post", undefined, confirm]]);
+    rn.Alert.alert.mockReset();
+    const four = own();
+    expect(await menu("ios", four)).toEqual([["Your post", undefined, four]]);
   });
 });
