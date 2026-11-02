@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import {
   AccessibilityInfo,
   Animated,
+  PanResponder,
   Platform,
   Pressable,
   RefreshControl,
@@ -10,20 +11,42 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type GestureResponderEvent,
   type LayoutChangeEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, type } from "@/theme";
-import { NO_EDITS, cleanEraTitle, editedEraSummary, moveChoices, type EditedEra, type EraEdits } from "@/utils/eraEdits";
-import { useReducedMotion } from "@/utils/useReducedMotion";
+import { NO_EDITS, cleanEraTitle, editedEraSummary, type EditedEra, type EraEdits } from "@/utils/eraEdits";
+import { reducedMotion, useReducedMotion } from "@/utils/useReducedMotion";
+import { holdTabSwipe } from "@/utils/tabSwipe";
 import type { EraEditor } from "@/hooks/useEraEdits";
 import { EmptyState } from "./EmptyState";
 import { PhotoTile } from "./PhotoGrid";
 import { aspectRatio } from "./PostMedia";
 import { GridSkeleton } from "./Skeleton";
 import { EraMoveSheet } from "./EraMoveSheet";
-import { askEraName, canNameEras } from "./eraName";
+import { askEraName, canNameEras, confirmDeleteEra } from "./eraName";
+import {
+  addedNote,
+  deletedNote,
+  eraSheetView,
+  madeNote,
+  movedNote,
+  takenOutNote,
+  type EraSheetState,
+} from "./eraSheet";
+import {
+  LIFT_MS,
+  LIFT_SCALE,
+  dropLabel,
+  dropTarget,
+  edgeSpeed,
+  eraUnderFinger,
+  scrolledTo,
+  type ChapterBox,
+  type DragPage,
+} from "./eraDrag";
 import {
   ERA_RULE,
   ERA_STRIP,
@@ -48,6 +71,62 @@ import type { PostRow } from "@/types/db";
 
 /** How long the line that says where a photograph went stays up. */
 const NOTE_MS = 2400;
+
+/**
+ * A print being dragged, as the gesture knows it: on the screen, in window
+ * points, but for the chapters and the bar, which are in the page's own.
+ */
+interface Drag {
+  /** Which lift this is, so a print put back from an earlier one never takes this one's copy with it. */
+  id: number;
+  post: PostRow;
+  /** The era it is in, by key. */
+  from: string;
+  /** Where the finger was as the print lifted, and where it is now. */
+  start: { x: number; y: number };
+  finger: { x: number; y: number };
+  /** The view the page scrolls in, on the screen; null until it has been measured. */
+  view: { y: number; height: number } | null;
+  /** Each chapter where it lies in the page, as it answers. */
+  chapters: Map<string, ChapterBox>;
+  bar: { top: number; height: number } | null;
+  /** How far the page is scrolled now, and was as the print lifted. */
+  offset: number;
+  liftedAt: number;
+  /** The era it would go to, let go now. */
+  over: string | null;
+  /** The page has taken the gesture over from the print. */
+  claimed: boolean;
+  /** The frame the page runs on in, near an edge, and when the last one was. */
+  frame: number | null;
+  last: number;
+}
+
+/** A print held to be lifted: the photograph, its view, and the tile's own size, which its view may be wider than. */
+interface Held {
+  post: PostRow;
+  view: View | null;
+  width: number;
+  height: number;
+  /** Drawn from the photograph itself, as a lead near the screen is. */
+  full: boolean;
+}
+
+/** The copy that follows the finger: the print, and where it lay, from the top left of the page's view. */
+interface Lifted {
+  id: number;
+  post: PostRow;
+  full: boolean;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  /** Where the slip saying where it would go sits as it lifts: a little above the finger, clear of the thumb. */
+  slipTop: number;
+}
+
+/** How far above the finger that slip sits. */
+const SLIP_ABOVE = 56;
 
 interface Props {
   /** The member's own photographs. Never the ones they were tagged in: those are not theirs to gather. */
@@ -90,15 +169,26 @@ interface Props {
  *
  * On your own page (`editor`), a quiet EDIT over the chapters opens them
  * for arranging, and holds on as you scroll. Each era's name takes a
- * RENAME beside it, every print is laid out and marked MOVE, and a tap on
- * one asks which era it belongs in (EraMoveSheet) instead of opening the
- * gallery. The change is on the page at once, and a line at the foot of
- * the screen says where the photograph went. DONE closes it again, on the
- * chapter the reader was at however far down they had gone. Moving
- * is chosen from a list rather than dragged: a drag across a long page
- * of chapters, under a scroll and a pull to refresh, is easy to drop in
- * the wrong one, and a list says exactly where a photograph will land.
- * Outside it, nothing differs from a member's page but the EDIT.
+ * RENAME and an ADD beside it, every print is laid out and marked MOVE,
+ * and a tap on one asks which era it belongs in (EraMoveSheet) instead of
+ * opening the gallery: any era, back out of one a move put it in, or a
+ * new one. ADD gathers photographs into an era from anywhere else, several
+ * at once, and NEW ERA, in the bar, makes one of the member's own, named
+ * and with its photographs; it takes its place among the others by date.
+ * The change is on the page at once, and a line at the foot of the screen
+ * says what was done. DONE closes it again, on the chapter the reader was
+ * at however far down they had gone. Outside it, nothing differs from a
+ * member's page but the EDIT.
+ *
+ * Held a moment, a print being arranged lifts and can be dragged to
+ * another era instead (eraDrag): a copy follows the finger, the era under
+ * it is framed and named, and the page runs on while the finger is near
+ * its top or foot. Let go over another era, the photograph moves there as
+ * the sheet would move it; anywhere else, or cut short, it goes back as it
+ * was. The drag is a shortcut for the hand. A drag across a long page of
+ * chapters is easy to drop in the wrong one, and a list says exactly where
+ * a photograph will land, so the sheet and ADD stay the way every change
+ * is made, and the way VoiceOver is offered.
  */
 export function EraList({ posts, edits, editor, onOpenPost, header, member, loading, onRefresh, refreshing }: Props) {
   const { width, height } = useWindowDimensions();
@@ -116,8 +206,13 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   // Arranging, on your own page only, and only while there is an era to arrange.
   const [editing, setEditing] = useState(false);
   const arranging = editing && editor != null && summary.eras.length > 0;
-  const [moving, setMoving] = useState<PostRow | null>(null);
-  const choices = useMemo(() => (moving ? moveChoices(posts, arranged, moving.id) : []), [moving, posts, arranged]);
+  // The sheet a change is made in, and what it shows as the arrangement stands.
+  const [sheet, setSheet] = useState<EraSheetState | null>(null);
+  const view = useMemo(() => eraSheetView(posts, arranged, sheet), [sheet, posts, arranged]);
+  // An era ADD was for that has gone from the page takes its sheet with it, never to come back up on its own.
+  useEffect(() => {
+    if (sheet && !view) setSheet(null);
+  }, [sheet, view]);
 
   // Eras opened in place, by key (keys are unique; names a member gives need not be).
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
@@ -225,19 +320,277 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
     announce(words);
   };
 
+  // Each change is said only when the editor made it: not of a photograph
+  // gone from the page since the sheet opened, nor of one already there.
+  // A move is the same from the sheet or a print let go over another era.
+  const moveTo = (post: PostRow, key: string, title: string): boolean => {
+    if (!editor?.move(post, key)) return false;
+    say(movedNote(title));
+    return true;
+  };
   const move = (key: string) => {
-    const post = moving;
-    const to = choices.find((c) => c.key === key);
-    setMoving(null);
-    if (!post || !to || !editor) return;
-    // Said only of a real move: not of a photograph gone from the page since the sheet opened.
-    if (editor.move(post, key)) say(`Moved to ${to.title}`);
+    const shown = view;
+    setSheet(null);
+    if (shown?.kind !== "move" || !editor) return;
+    const to = shown.choices.find((c) => c.key === key && !c.newEra);
+    if (!to) return;
+    moveTo(shown.post, key, to.title);
+  };
+  const takeOut = () => {
+    const shown = view;
+    setSheet(null);
+    if (shown?.kind !== "move" || !shown.out || !editor) return;
+    if (editor.takeOut(shown.post)) say(takenOutNote(shown.out));
+  };
+  const add = (photoIds: string[]) => {
+    const shown = view;
+    setSheet(null);
+    if (shown?.kind !== "add" || !editor) return;
+    if (editor.add(shown.key, photoIds)) say(addedNote(photoIds.length, shown.title));
+  };
+  const create = (name: string, photoIds: string[]) => {
+    setSheet(null);
+    if (editor?.create(name, photoIds)) say(madeNote(name));
+  };
+  // "New era…" turns Move to over to a new era, with the photograph already chosen.
+  const newEra = () => setSheet((now) => (now?.kind === "move" ? { kind: "new", chosen: [now.post.id] } : now));
+  const remove = (era: EditedEra<PostRow>) => {
+    if (editor?.deleteEra(era.key)) say(deletedNote(era.title));
   };
   const rename = (era: EditedEra<PostRow>) =>
-    askEraName(era, (title) => {
-      editor?.rename(era.key, title);
-      announce(`Named ${cleanEraTitle(title ?? "") || era.key}`);
+    askEraName(
+      era,
+      (title) => {
+        editor?.rename(era.key, title);
+        // An era the member made keeps its name when given none: it has no automatic one.
+        announce(`Named ${cleanEraTitle(title ?? "") || (era.made ? era.title : era.key)}`);
+      },
+      () => remove(era),
+    );
+
+  // Dragging a print to another era, while arranging. Held for LIFT_MS, a
+  // print lifts: a copy follows the finger and the print waits, dimmed, in
+  // its place. The page takes the gesture over from the print on the first
+  // move, and never before, so a touch, a scroll and a pull to refresh go
+  // on as ever; from then it holds still under the finger, as do the tabs,
+  // but for running on near its top and foot. Let go over another era, the
+  // photograph moves there (moveTo, as from the sheet); anywhere else, over
+  // its own era, or cut short (another finger, the phone taking the touch),
+  // it goes back as it was.
+  //
+  // Where the chapters and the bar lie is measured as the print lifts, as
+  // EDIT measures them, never taken from what they last reported; nothing
+  // the drag changes moves them, so the page's scroll is all that changes
+  // under the finger.
+  const root = useRef<View>(null);
+  const contentTall = useRef(0);
+  const drag = useRef<Drag | null>(null);
+  const lifts = useRef(0);
+  const [dragging, setDragging] = useState(false);
+  const [lifted, setLifted] = useState<Lifted | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const pan = useRef(new Animated.ValueXY()).current;
+  const raise = useRef(new Animated.Value(1)).current;
+
+  const pageOf = (d: Drag): DragPage => ({
+    chapters: [...d.chapters.values()],
+    bar: d.bar,
+    offset: d.offset,
+    height: d.view?.height ?? 0,
+  });
+  // The era under the finger, framed and named while it is another era than the print's own.
+  const aim = () => {
+    const d = drag.current;
+    if (!d?.view) return;
+    const to = dropTarget(d.from, eraUnderFinger(pageOf(d), d.finger.y - d.view.y));
+    if (to === d.over) return;
+    d.over = to;
+    setOver(to);
+  };
+  // Near the top of the view, under the bar, or near its foot, the page runs on a frame at a time.
+  const run = (now: number) => {
+    const d = drag.current;
+    if (!d) return;
+    const ms = d.last ? now - d.last : 16;
+    d.last = now;
+    if (d.view) {
+      const speed = edgeSpeed(d.finger.y - d.view.y, { top: d.bar?.height ?? 0, bottom: d.view.height });
+      const next = scrolledTo(d.offset, speed, ms, contentTall.current - d.view.height);
+      if (next !== d.offset) {
+        d.offset = next;
+        scroller.current?.scrollTo({ y: next, animated: false });
+        aim();
+      }
+    }
+    d.frame = requestAnimationFrame(run);
+  };
+  const lift = (held: Held, from: string, e: GestureResponderEvent) => {
+    const book = innerView(scroller.current);
+    const page = root.current;
+    const print = held.view;
+    if (!arranging || drag.current || !print || !book || !page) return;
+    const id = (lifts.current += 1);
+    const at = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+    const d: Drag = {
+      id,
+      post: held.post,
+      from,
+      start: at,
+      finger: at,
+      view: null,
+      chapters: new Map(),
+      bar: null,
+      offset: offset.current,
+      liftedAt: offset.current,
+      over: null,
+      claimed: false,
+      frame: null,
+      last: 0,
+    };
+    drag.current = d;
+    // The bar is asked first, so its height is in hand by the first chapter's
+    // answer: it lies just above that chapter, wherever it is held now.
+    const keys = summary.eras.map((era) => era.key);
+    let under = 0;
+    bar.current?.measureLayout(book, (_x, _y, _width, tall) => (under = tall));
+    keys.forEach((key, i) =>
+      pages.current.get(key)?.measureLayout(book, (_x, top, _width, tall) => {
+        if (drag.current !== d) return;
+        d.chapters.set(key, { key, top, height: tall });
+        if (i === 0) d.bar = { top: top - under, height: under };
+      }),
+    );
+    // The copy is drawn at the tile's own size, from where its view begins.
+    page.measureInWindow((x, y, _width, tall) => {
+      if (drag.current !== d) return;
+      d.view = { y, height: tall };
+      print.measureInWindow((px, py) => {
+        if (drag.current !== d) return;
+        const { post, full, width: w, height: h } = held;
+        setLifted({ id, post, full, left: px - x, top: py - y, width: w, height: h, slipTop: at.y - y - SLIP_ABOVE });
+      });
     });
+    pan.setValue({ x: 0, y: 0 });
+    if (reducedMotion.get()) raise.setValue(LIFT_SCALE);
+    else {
+      raise.setValue(1);
+      Animated.timing(raise, { toValue: LIFT_SCALE, duration: 140, useNativeDriver: false }).start();
+    }
+    setDragging(true);
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+  };
+  const follow = (x: number, y: number) => {
+    const d = drag.current;
+    if (!d) return;
+    d.finger = { x, y };
+    pan.setValue({ x: x - d.start.x, y: y - d.start.y });
+    aim();
+  };
+  // The page has the gesture: the frames begin.
+  const take = () => {
+    const d = drag.current;
+    if (!d) return;
+    d.claimed = true;
+    d.last = 0;
+    if (d.frame == null) d.frame = requestAnimationFrame(run);
+  };
+  // The drag over: the page scrolls again, the frame goes, and the copy is left to be put away.
+  const release = (): Drag | null => {
+    const d = drag.current;
+    if (!d) return null;
+    drag.current = null;
+    if (d.frame != null) cancelAnimationFrame(d.frame);
+    setDragging(false);
+    setOver(null);
+    return d;
+  };
+  // The copy back to its print, wherever the page has carried it, and the print in its place again; at once under Reduce Motion.
+  const putBack = (d: Drag) => {
+    const gone = () => setLifted((now) => (now?.id === d.id ? null : now));
+    if (reducedMotion.get()) return gone();
+    // Brisk, and at rest within half a point, so the print is itself again as soon as the eye has it back.
+    const spring = { damping: 40, stiffness: 500, mass: 1, useNativeDriver: false };
+    Animated.parallel([
+      Animated.spring(pan, { ...spring, toValue: { x: 0, y: d.liftedAt - d.offset }, restDisplacementThreshold: 0.5, restSpeedThreshold: 10 }),
+      Animated.spring(raise, { ...spring, toValue: 1, restSpeedThreshold: 0.01 }),
+    ]).start(gone);
+  };
+  const cancel = () => {
+    const d = release();
+    if (d) putBack(d);
+  };
+  const drop = () => {
+    const d = drag.current;
+    if (!d) return;
+    aim();
+    const era = d.over ? summary.eras.find((e) => e.key === d.over) : undefined;
+    release();
+    if (era && moveTo(d.post, era.key, era.title)) setLifted((now) => (now?.id === d.id ? null : now));
+    else putBack(d);
+  };
+  // A print let go before the page took the gesture (held, never moved) goes back.
+  const letGo = () => {
+    if (drag.current && !drag.current.claimed) cancel();
+  };
+  // The responder is made once; it reaches the latest render's drag through `act`.
+  const act = useRef({ take, follow, drop, cancel });
+  act.current = { take, follow, drop, cancel };
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        // Nothing but a print already lifted, on the first move after: the print gives it up.
+        onMoveShouldSetPanResponderCapture: () => {
+          const d = drag.current;
+          if (!d || d.claimed) return false;
+          d.claimed = true;
+          return true;
+        },
+        onPanResponderReject: () => {
+          if (drag.current) drag.current.claimed = false;
+        },
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: () => act.current.take(),
+        onPanResponderStart: (_e, g) => {
+          if (g.numberActiveTouches > 1) act.current.cancel();
+        },
+        onPanResponderMove: (_e, g) => {
+          if (g.numberActiveTouches > 1) act.current.cancel();
+          else act.current.follow(g.moveX, g.moveY);
+        },
+        onPanResponderRelease: () => act.current.drop(),
+        onPanResponderTerminate: () => act.current.cancel(),
+      }),
+    [],
+  );
+  // Arranging over (DONE, or the editor gone), the drag goes with it; and nothing runs on once the page has gone.
+  useEffect(() => {
+    if (!arranging) act.current.cancel();
+  }, [arranging]);
+  useEffect(
+    () => () => {
+      const d = drag.current;
+      drag.current = null;
+      if (d?.frame != null) cancelAnimationFrame(d.frame);
+    },
+    [],
+  );
+  // The tabs hold still while a print is dragged, as they do for a pinch.
+  useEffect(() => (dragging ? holdTabSwipe() : undefined), [dragging]);
+  // The browser drags a photograph off the page itself once the mouse moves
+  // with it held, and takes the mouse from the page to do so; while
+  // arranging, a print's photograph stays where it is.
+  useEffect(() => {
+    if (Platform.OS !== "web" || !arranging) return;
+    const page = root.current as unknown as { contains?: (node: unknown) => boolean } | null;
+    const keep = (e: Event) => {
+      if (!page?.contains?.(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("dragstart", keep, true);
+    return () => window.removeEventListener("dragstart", keep, true);
+  }, [arranging]);
+  const overTitle = over ? summary.eras.find((e) => e.key === over)?.title : undefined;
 
   // While arranging, the bar over the chapters holds to the top of the page.
   // Outside it the list of what holds is empty, never absent: the web lays
@@ -246,7 +599,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   const barIndex = header ? 1 : 0;
 
   return (
-    <View style={styles.root}>
+    <View ref={root} collapsable={false} style={styles.root} {...responder.panHandlers}>
       <ScrollView
         ref={scroller}
         style={styles.root}
@@ -256,7 +609,9 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
           offset.current = e.nativeEvent.contentOffset.y;
           look();
         }}
+        onContentSizeChange={(_width, tall) => (contentTall.current = tall)}
         scrollEventThrottle={100}
+        scrollEnabled={!dragging}
         stickyHeaderIndices={arranging ? [barIndex] : []}
       >
         {header}
@@ -269,13 +624,26 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
               <View style={styles.barLine}>
                 <Text style={styles.barLabel}>{arranging ? "Arranging" : summary.eras.length === 1 ? "1 era" : `${summary.eras.length} eras`}</Text>
                 <View style={styles.barRule} />
+                {arranging ? (
+                  <Pressable
+                    onPress={() => setSheet({ kind: "new", chosen: [] })}
+                    hitSlop={12}
+                    style={({ pressed }) => pressed && styles.pressed}
+                    accessibilityRole="button"
+                    accessibilityLabel="New era"
+                    accessibilityHint="Name an era of your own, and choose its photographs."
+                    testID="eras-new"
+                  >
+                    <Text style={styles.barAction}>New era</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable
                   onPress={() => arrange(!arranging)}
                   hitSlop={12}
                   style={({ pressed }) => pressed && styles.pressed}
                   accessibilityRole="button"
                   accessibilityLabel={arranging ? "Done arranging eras" : "Edit eras"}
-                  accessibilityHint={arranging ? undefined : "Rename your eras, and move photographs from one to another."}
+                  accessibilityHint={arranging ? undefined : "Rename your eras, make new ones, and move photographs between them."}
                   testID="eras-edit"
                 >
                   <Text style={styles.barAction}>{arranging ? "Done" : "Edit"}</Text>
@@ -283,7 +651,9 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
               </View>
               {arranging ? (
                 <Text style={styles.barHint}>
-                  {canNameEras ? "Rename an era, or tap a photograph to move it." : "Tap a photograph to move it to another era."}
+                  {canNameEras
+                    ? "Rename an era or add to it. Tap a photograph to move it, or hold it and drag."
+                    : "Add to an era. Tap a photograph to move it, or hold it and drag."}
                 </Text>
               ) : null}
             </View>
@@ -304,9 +674,15 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
                 expanded={open.has(era.key)}
                 near={near.has(era.key)}
                 arranging={arranging}
+                lifted={lifted?.post.id ?? null}
+                target={over === era.key}
                 onToggle={() => toggle(era.key)}
-                onOpen={(post) => (arranging ? setMoving(post) : onOpenPost(post, era.key))}
+                onOpen={(post) => (arranging ? setSheet({ kind: "move", post }) : onOpenPost(post, era.key))}
                 onRename={() => rename(era)}
+                onAdd={() => setSheet({ kind: "add", key: era.key })}
+                onDelete={() => confirmDeleteEra(era.title, () => remove(era))}
+                onLift={(held, e) => lift(held, era.key, e)}
+                onLetGo={letGo}
                 pageRef={(node) => {
                   if (node) pages.current.set(era.key, node);
                   else pages.current.delete(era.key);
@@ -328,6 +704,50 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
           </>
         )}
       </ScrollView>
+      {lifted ? (
+        // The print in hand, over everything on the page, a little larger and
+        // on a shadow; and, once it is over another era, a slip a little above
+        // the finger saying which, across the middle of the screen so it is
+        // never cut off at a side. For the eye alone: the sheet says the same
+        // to VoiceOver.
+        <>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.lifted,
+              {
+                left: lifted.left,
+                top: lifted.top,
+                width: lifted.width,
+                height: lifted.height,
+                transform: [{ translateX: pan.x }, { translateY: pan.y }, { scale: raise }],
+              },
+            ]}
+            aria-hidden
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            testID="era-drag-print"
+          >
+            <PhotoTile post={lifted.post} size={lifted.width} height={lifted.height} full={lifted.full} onPress={() => undefined} />
+          </Animated.View>
+          {overTitle ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.slipRow, { top: lifted.slipTop, transform: [{ translateY: pan.y }] }]}
+              aria-hidden
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              testID="era-drag-slip"
+            >
+              <View style={styles.slip}>
+                <Text style={styles.noteText} numberOfLines={1}>
+                  {dropLabel(overTitle)}
+                </Text>
+              </View>
+            </Animated.View>
+          ) : null}
+        </>
+      ) : null}
       {note ? (
         <Animated.View
           pointerEvents="none"
@@ -347,7 +767,17 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
           {spoken ? <Text key={spoken.at}>{spoken.words}</Text> : null}
         </View>
       ) : null}
-      {editor ? <EraMoveSheet post={moving} choices={choices} onChoose={move} onClose={() => setMoving(null)} /> : null}
+      {editor ? (
+        <EraMoveSheet
+          view={view}
+          onMove={move}
+          onTakeOut={takeOut}
+          onNewEra={newEra}
+          onAdd={add}
+          onCreate={create}
+          onClose={() => setSheet(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -359,9 +789,15 @@ function Chapter({
   expanded,
   near,
   arranging,
+  lifted,
+  target,
   onToggle,
   onOpen,
   onRename,
+  onAdd,
+  onDelete,
+  onLift,
+  onLetGo,
   pageRef,
   onLayout,
 }: {
@@ -371,11 +807,23 @@ function Chapter({
   expanded: boolean;
   /** On the screen or within a screen of it, now or before: the lead is drawn full. */
   near: boolean;
-  /** Being arranged: every print laid out, each one moved by a tap, and the name renamed. */
+  /** Being arranged: every print laid out, each one moved by a tap or a drag, the name renamed, and photographs added. */
   arranging: boolean;
+  /** The photograph lifted to be dragged, by id, wherever it is. */
+  lifted: string | null;
+  /** The era a lifted print would go to, let go now. */
+  target: boolean;
   onToggle: () => void;
   onOpen: (post: PostRow) => void;
   onRename: () => void;
+  /** ADD: photographs from anywhere else, gathered into this era. */
+  onAdd: () => void;
+  /** An era the member made, deleted, where its name cannot be asked for (and so Delete era with it). */
+  onDelete: () => void;
+  /** A print held while arranging, to be dragged, and the touch that held it. */
+  onLift: (held: Held, e: GestureResponderEvent) => void;
+  /** A held print let go. */
+  onLetGo: () => void;
   /** The chapter's own view, so where it lies can be measured. */
   pageRef: (node: View | null) => void;
   onLayout: (e: LayoutChangeEvent) => void;
@@ -387,10 +835,23 @@ function Chapter({
   const rows: PostRow[][] = [];
   for (let i = 0; i < strip.length; i += ERA_STRIP) rows.push(strip.slice(i, i + ERA_STRIP));
   const more = arranging ? null : eraMore(era, expanded);
-  const hint = arranging ? "Moves it to another era." : undefined;
+  const print = { arranging, onOpen, onLift, onLetGo };
 
   return (
     <View ref={pageRef} style={[styles.chapter, first && styles.chapterFirst]} onLayout={onLayout}>
+      {target ? (
+        // Behind the chapter, so the prints are not washed; it moves nothing.
+        <View
+          style={[styles.target, first && styles.targetFirst]}
+          pointerEvents="none"
+          aria-hidden
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          testID="era-drop-target"
+        >
+          <View style={styles.targetWash} />
+        </View>
+      ) : null}
       {first ? null : <View style={styles.rule} />}
       <View style={styles.titleRow}>
         <Text style={styles.title} accessibilityRole="header" accessibilityLabel={eraHeading(era)}>
@@ -403,9 +864,35 @@ function Chapter({
             style={({ pressed }) => [styles.rename, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel={`Rename ${era.title}`}
-            accessibilityHint={era.renamed ? `Its automatic name is ${era.key}.` : "Gives this era a name of your own."}
+            accessibilityHint={
+              era.made ? "Renames this era of yours, or deletes it." : era.renamed ? `Its automatic name is ${era.key}.` : "Gives this era a name of your own."
+            }
           >
             <Text style={styles.renameText}>Rename</Text>
+          </Pressable>
+        ) : null}
+        {arranging && !canNameEras && era.made ? (
+          <Pressable
+            onPress={onDelete}
+            hitSlop={12}
+            style={({ pressed }) => [styles.rename, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${era.title}`}
+            accessibilityHint="Its photographs go back where they were."
+          >
+            <Text style={styles.renameText}>Delete</Text>
+          </Pressable>
+        ) : null}
+        {arranging ? (
+          <Pressable
+            onPress={onAdd}
+            hitSlop={12}
+            style={({ pressed }) => [styles.rename, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`Add to ${era.title}`}
+            accessibilityHint="Choose photographs of yours to add to this era."
+          >
+            <Text style={styles.renameText}>Add</Text>
           </Pressable>
         ) : null}
       </View>
@@ -413,23 +900,11 @@ function Chapter({
         {eraMeta(era)}
       </Text>
       <View style={styles.prints}>
-        <Print arranging={arranging}>
-          <PhotoTile
-            post={lead}
-            size={leadSize.width}
-            height={leadSize.height}
-            full={near}
-            onPress={() => onOpen(lead)}
-            accessibilityLabel={printLabel(lead)}
-            accessibilityHint={hint}
-          />
-        </Print>
+        <Print post={lead} size={leadSize.width} height={leadSize.height} full={near} dim={lifted === lead.id} {...print} />
         {rows.map((row, i) => (
           <View key={i} style={styles.strip}>
             {row.map((post) => (
-              <Print key={post.id} arranging={arranging}>
-                <PhotoTile post={post} size={cell} onPress={() => onOpen(post)} accessibilityLabel={printLabel(post)} accessibilityHint={hint} />
-              </Print>
+              <Print key={post.id} post={post} size={cell} dim={lifted === post.id} {...print} />
             ))}
           </View>
         ))}
@@ -452,14 +927,50 @@ function Chapter({
 
 /**
  * A print as it lies on the page; being arranged, it carries a small MOVE
- * in its top corner. The same view holds it either way, so EDIT and DONE
- * never draw a photograph afresh. MOVE is for the eye: VoiceOver hears it
- * in the print's own hint.
+ * in its top corner, and held a moment it lifts to be dragged, dimmed in
+ * its place while it is. The same view holds it either way, so EDIT and
+ * DONE never draw a photograph afresh. MOVE is for the eye: VoiceOver
+ * hears it in the print's own hint, and moves it from the sheet a tap
+ * opens.
  */
-function Print({ arranging, children }: { arranging: boolean; children: React.ReactElement }) {
+function Print({
+  post,
+  size,
+  height,
+  full,
+  dim,
+  arranging,
+  onOpen,
+  onLift,
+  onLetGo,
+}: {
+  post: PostRow;
+  size: number;
+  height?: number;
+  full?: boolean;
+  /** Lifted, and being dragged. */
+  dim: boolean;
+  arranging: boolean;
+  onOpen: (post: PostRow) => void;
+  onLift: (held: Held, e: GestureResponderEvent) => void;
+  onLetGo: () => void;
+}) {
+  const self = useRef<View>(null);
+  const hint = arranging ? "Moves it to another era." : undefined;
   return (
-    <View>
-      {children}
+    <View ref={self} collapsable={false} style={dim && styles.left}>
+      <PhotoTile
+        post={post}
+        size={size}
+        height={height}
+        full={full}
+        onPress={() => onOpen(post)}
+        onLongPress={arranging ? (e) => onLift({ post, view: self.current, width: size, height: height ?? size, full: full === true }, e) : undefined}
+        delayLongPress={LIFT_MS}
+        onPressOut={arranging ? onLetGo : undefined}
+        accessibilityLabel={printLabel(post)}
+        accessibilityHint={hint}
+      />
       {arranging ? (
         <View style={styles.mark} pointerEvents="none" aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           <Text style={styles.markText}>Move</Text>
@@ -560,6 +1071,42 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: colors.ink,
   },
+  // A print lifted to be dragged: off the page on a soft shadow.
+  lifted: {
+    position: "absolute",
+    backgroundColor: colors.paperSunken,
+    shadowColor: "#000",
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
+  },
+  // The print it was lifted from, waiting in its place.
+  left: { opacity: 0.3 },
+  // Where it would go, on a slip across the middle of the screen, set as
+  // the note that says where it went.
+  slipRow: { position: "absolute", left: spacing.lg, right: spacing.lg, alignItems: "center" },
+  slip: {
+    maxWidth: "100%",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.paperRaised,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+  },
+  // The era a lifted print is over: a quiet frame round its chapter, under
+  // its rule, washed faintly with the accent.
+  target: {
+    position: "absolute",
+    left: spacing.sm,
+    right: spacing.sm,
+    top: 1 + spacing.xxl - spacing.md,
+    bottom: spacing.xxl - spacing.md,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  targetFirst: { top: spacing.xl - spacing.md },
+  targetWash: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.accent, opacity: 0.07 },
   // Out of sight: for the web's screen readers only.
   spoken: { position: "absolute", width: 1, height: 1, overflow: "hidden", opacity: 0 },
   // Where a photograph went, said once at the foot of the screen.

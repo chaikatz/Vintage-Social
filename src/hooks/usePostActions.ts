@@ -10,6 +10,7 @@ import { blockMember } from "@/api/blocks";
 import { holdPost, notePostDeleted } from "@/uploads";
 import { INLINE_COMMENTS } from "@/components/PostCard";
 import { useSession } from "@/providers/SessionProvider";
+import { useEraEdits } from "@/hooks/useEraEdits";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 
 /**
@@ -24,6 +25,9 @@ export function usePostActions(userId: string, postIds: string[]) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { refreshProfile } = useSession();
+  // Your own eras can be arranged from any of your photographs once your
+  // arrangement has been read and there is somewhere to keep a change.
+  const erasReady = useEraEdits(userId).data?.ready === true;
 
   const likesQuery = useQuery({
     queryKey: ["my-likes", userId, postIds.join(",")],
@@ -171,9 +175,10 @@ export function usePostActions(userId: string, postIds: string[]) {
   );
 
   /**
-   * Your own post can be deleted, after one question; anyone else's can be
-   * reported. Nothing is removed automatically — an admin reviews every
-   * report by hand.
+   * Your own post can be deleted, after one question, or added to one of
+   * your eras (the same sheet as on your Eras page, opened over this one);
+   * anyone else's can be reported. Nothing is removed automatically — an
+   * admin reviews every report by hand.
    */
   const onMore = useCallback(
     (post: PostWithAuthor, afterDelete?: () => void) => {
@@ -187,6 +192,9 @@ export function usePostActions(userId: string, postIds: string[]) {
               router.push({ pathname: "/edit-caption", params: { postId: post.id } });
             },
           },
+          ...(erasReady
+            ? [{ text: "Add to an era…", onPress: () => router.push({ pathname: "/era-move", params: { postId: post.id } }) }]
+            : []),
           {
             text: "Delete post",
             style: "destructive",
@@ -238,7 +246,7 @@ export function usePostActions(userId: string, postIds: string[]) {
         ]);
       }
     },
-    [userId, router, queryClient, seed, deletePost],
+    [userId, router, queryClient, seed, deletePost, erasReady],
   );
 
   return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenPost, onOpenLikes, commentsFor };

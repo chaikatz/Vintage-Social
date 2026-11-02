@@ -1,4 +1,5 @@
 import type { Era, EraSummary } from "@/utils/memories";
+import { dated, placedAt } from "@/utils/eraEdits";
 import { shortDate } from "@/utils/time";
 
 /**
@@ -29,12 +30,18 @@ type Dated = { taken_at: string | null; created_at: string };
 /**
  * The first and last months of an era, and their years. An era read
  * automatically never crosses a year, its title says which; one a member
- * has moved photographs into can.
+ * has moved photographs into, or made, can.
+ *
+ * Read from the photographs that say when they were taken. One the member
+ * moved in without a capture date says only when it was posted, which is
+ * no part of when the era was; it is read from that only where no
+ * photograph in the era says more.
  */
 function months(era: Era<Dated>): { first: number; firstYear: number; last: number; year: number } {
-  const times = era.posts.map((p) => new Date(p.taken_at ?? p.created_at).getTime());
-  const first = new Date(Math.min(...times));
-  const last = new Date(Math.max(...times));
+  const taken = era.posts.filter(dated);
+  const times = (taken.length > 0 ? taken : era.posts).map(placedAt);
+  const first = new Date(times.reduce((a, b) => Math.min(a, b), Infinity));
+  const last = new Date(times.reduce((a, b) => Math.max(a, b), -Infinity));
   return { first: first.getMonth(), firstYear: first.getFullYear(), last: last.getMonth(), year: last.getFullYear() };
 }
 
