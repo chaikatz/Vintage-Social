@@ -308,6 +308,11 @@ export default function Gallery() {
               onMore={(p) => onMore(p, () => router.back())}
               active={ready && focused && item.id === visibleId}
               warm={isWarm(index, warm)}
+              // A card drawn only on the way down to the tapped one is its
+              // frame, the same height, until the gallery shows: nobody sees
+              // it, and its picture would only hold the tapped one back.
+              frameOnly={!ready && index >= MEASURE_LIMIT && item.id !== postId}
+              priority={item.id === postId ? "high" : "normal"}
               surface="gallery"
             />
           </View>

@@ -487,6 +487,42 @@ describe("the gallery, read from the source", () => {
   });
 });
 
+/** Every `<Tag … />` in a file. */
+function tags(source: string, tag: string): string[] {
+  return source.match(new RegExp(`<${tag}\\b[\\s\\S]*?\\/>`, "g")) ?? [];
+}
+
+describe("the cards drawn only on the way down", () => {
+  const gallery = code("app/gallery.tsx");
+  const card = code("src/components/PostCard.tsx");
+  const media = code("src/components/PostMedia.tsx");
+
+  it("are frames without pictures until the gallery shows, and the tapped photograph loads first", () => {
+    const cell = tags(gallery, "PostCard")[0] ?? "";
+    expect(cell).toMatch(/frameOnly=\{!ready && index >= MEASURE_LIMIT && item\.id !== postId\}/);
+    expect(cell).toMatch(/priority=\{item\.id === postId \? "high" : "normal"\}/);
+  });
+
+  it("are passed through the card to its picture, and nowhere else", () => {
+    expect(card).toMatch(/^\s*frameOnly = false,$/m);
+    expect(card).toMatch(/^\s*priority = "normal",$/m);
+    const picture = tags(card, "PostMedia")[0] ?? "";
+    expect(picture).toMatch(/frameOnly=\{frameOnly\}/);
+    expect(picture).toMatch(/priority=\{priority\}/);
+  });
+
+  it("draw the frame at the picture's own height, with no picture and no poster in it", () => {
+    expect(media).toMatch(/^\s*frameOnly = false,$/m);
+    // The frame is its own shape whatever is in it; the picture fills it from inside.
+    expect(media).toMatch(/const frame = \[styles\.media, bare && styles\.bare, \{ aspectRatio: ratio \}\];/);
+    expect(media).toMatch(/\{url && !frameOnly \? \(\s*<Animated\.View style=\{\[StyleSheet\.absoluteFill, zoomStyle\]\}>\s*<Image\s+source=\{url\}/);
+    const poster = tags(media, "VideoPoster")[0] ?? "";
+    expect(poster).toMatch(/poster=\{frameOnly \? null : post\.thumb_path\}/);
+    // A clip with its player is never held back.
+    expect(tags(media, "VideoMedia")[0]).not.toMatch(/frameOnly/);
+  });
+});
+
 describe("the skeleton's breathing", () => {
   const skeleton = code("src/components/Skeleton.tsx");
 

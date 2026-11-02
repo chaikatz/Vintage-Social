@@ -69,6 +69,16 @@ interface Props {
    * have one. A photograph ignores it.
    */
   warm?: boolean;
+  /**
+   * Draw the frame only, at the photograph's own shape, and not the
+   * picture in it yet: nothing is downloaded. The frame is exactly the
+   * height it is with the picture, so a list measured with it stays
+   * right. A clip without its player (not `warm`) draws no poster either;
+   * a clip with its player is as it always is. The gallery asks for it
+   * on the cards it draws only on its way down to the photograph tapped.
+   * Defaults to false.
+   */
+  frameOnly?: boolean;
   /** Where the card is, for the development build's start-up timings only (src/utils/videoTiming.ts). */
   surface?: ClipSurface;
 }
@@ -103,6 +113,7 @@ export function PostMedia({
   cachePolicy = "memory-disk",
   recyclingKey,
   warm = true,
+  frameOnly = false,
   surface,
 }: Props) {
   const lastTap = React.useRef(0);
@@ -287,7 +298,7 @@ export function PostMedia({
           />
         ) : (
           <VideoPoster
-            poster={post.thumb_path}
+            poster={frameOnly ? null : post.thumb_path}
             cssFilter={live?.filter ?? null}
             onPress={handlePress}
             cachePolicy={cachePolicy}
@@ -315,7 +326,7 @@ export function PostMedia({
       {...pinchResponder.panHandlers}
     >
     <Pressable onPress={handlePress} style={StyleSheet.absoluteFill}>
-      {url ? (
+      {url && !frameOnly ? (
         <Animated.View style={[StyleSheet.absoluteFill, zoomStyle]}>
           <Image
             source={url}
