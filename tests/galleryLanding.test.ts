@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  AWAY_MS,
   GIVE_UP_MS,
   LANDING_STEP_MS,
   STALL_MS,
@@ -112,6 +113,24 @@ describe("a step of the landing", () => {
   });
 });
 
+/**
+ * Looks one after another, as the gallery takes them, from `from` up to
+ * `to` ms at most, every `every` ms: until one shows, which is returned
+ * with when it came.
+ */
+function lookUntilShown(
+  landing: Landing,
+  at: (now: number) => Partial<Look>,
+  { from = 0, to, every = LANDING_STEP_MS }: { from?: number; to: number; every?: number },
+) {
+  for (let now = from; now <= to; now += every) {
+    const next = nextLanding(landing, look({ now, ...at(now) }));
+    landing = next.landing;
+    if (next.step.kind === "show") return { step: next.step, now, landing };
+  }
+  return { step: null, now: null, landing };
+}
+
 describe("when the landing gives up", () => {
   it("does not while the list is still drawing its way down", () => {
     let landing = startLanding(0);
@@ -122,39 +141,105 @@ describe("when the landing gives up", () => {
     }
   });
 
+  it("does not by the cap while the list is still drawing its way down, however long that takes", () => {
+    // A tap far down a long history on a slow phone: a card every look,
+    // for longer than the cap, and the tapped card not drawn yet.
+    const walk = lookUntilShown(startLanding(0), (now) => ({ index: 900, top: null, measured: 80 + now / LANDING_STEP_MS }), {
+      to: GIVE_UP_MS * 2,
+    });
+    expect(walk.step).toBeNull();
+    // Then it stops drawing, the card never drawn: the stall shows the top.
+    const stopped = lookUntilShown(walk.landing, () => ({ index: 900, top: null, measured: 80 + (GIVE_UP_MS * 2) / LANDING_STEP_MS }), {
+      from: GIVE_UP_MS * 2 + LANDING_STEP_MS,
+      to: GIVE_UP_MS * 3,
+    });
+    expect(stopped.step).toEqual({ kind: "show", offset: 0 });
+    expect(stopped.now! - GIVE_UP_MS * 2).toBeLessThanOrEqual(STALL_MS + LANDING_STEP_MS);
+  });
+
+  it("shows by the cap counted from when the tapped card was first drawn", () => {
+    // Drawn at last after twenty seconds of drawing its way down, and then
+    // pushed down by every look, so it never holds still.
+    const drawnAt = 20_000;
+    const shown = lookUntilShown(
+      startLanding(0),
+      (now) =>
+        now < drawnAt
+          ? { top: null, measured: 80 + now / LANDING_STEP_MS }
+          : { top: 50_000 + (now - drawnAt), scrolled: 50_000, measured: 80 + now / LANDING_STEP_MS },
+      { to: drawnAt + GIVE_UP_MS * 2 },
+    );
+    expect(shown.now).toBe(drawnAt + GIVE_UP_MS);
+    expect(shown.step?.kind).toBe("show");
+  });
+
   it("shows the top, not wherever the list was left, when nothing more is drawn and the card never was", () => {
-    let landing = startLanding(0);
-    let step = nextLanding(landing, look({ top: null, measured: 80 })).step;
-    for (let now = 0; step.kind === "approach"; now += LANDING_STEP_MS) {
-      const next = nextLanding(landing, look({ top: null, measured: 80, now }));
-      landing = next.landing;
-      step = next.step;
-      expect(now).toBeLessThanOrEqual(STALL_MS);
-    }
-    expect(step).toEqual({ kind: "show", offset: 0 });
+    const shown = lookUntilShown(startLanding(0), () => ({ top: null, measured: 80 }), { to: STALL_MS * 2 });
+    expect(shown.step).toEqual({ kind: "show", offset: 0 });
+    expect(shown.now).toBeLessThanOrEqual(STALL_MS);
   });
 
   it("shows where the card was last seen, if it was", () => {
-    let landing = nextLanding(startLanding(0), look({ top: 6000, measured: 80 })).landing;
-    const next = nextLanding(landing, look({ top: null, measured: 80, now: STALL_MS }));
-    landing = next.landing;
-    expect(next.step).toEqual({ kind: "show", offset: 6000 });
+    const landing = nextLanding(startLanding(0), look({ top: 6000, measured: 80 })).landing;
+    const shown = lookUntilShown(landing, () => ({ top: null, measured: 80 }), { from: LANDING_STEP_MS, to: STALL_MS * 2 });
+    expect(shown.step).toEqual({ kind: "show", offset: 6000 });
   });
 
   it("puts the list at the card before it shows, when it is late and the card has moved", () => {
     const landing = nextLanding(startLanding(0), look({ top: 6000, measured: 80 })).landing;
-    expect(nextLanding(landing, look({ top: 6400, measured: 80, now: GIVE_UP_MS })).step).toEqual({ kind: "show", offset: 6400 });
+    // Moving a little more at every look, and then once more on the look that is late.
+    const shown = lookUntilShown(landing, (now) => ({ top: 6000 + now, scrolled: 6000, measured: 80 }), {
+      from: LANDING_STEP_MS,
+      to: GIVE_UP_MS * 2,
+    });
+    expect(shown.now).toBe(GIVE_UP_MS);
+    expect(shown.step).toEqual({ kind: "show", offset: 6000 + GIVE_UP_MS });
+  });
+});
+
+describe("a landing the app was away from", () => {
+  it("goes on after a pause, rather than taking it for a stall", () => {
+    // Drawing its way down; then the phone is locked for a while, the list
+    // drawing nothing meanwhile.
+    let landing = startLanding(0);
+    for (let now = 0; now <= 1000; now += LANDING_STEP_MS) {
+      landing = nextLanding(landing, look({ index: 200, top: null, measured: 80 + now / LANDING_STEP_MS, now })).landing;
+    }
+    for (const pause of [2_500, 20_000, 120_000]) {
+      const back = nextLanding(landing, look({ index: 200, top: null, measured: 100, now: 1000 + pause }));
+      expect(back.step, `${pause} ms away`).toEqual({ kind: "approach" });
+    }
   });
 
-  it("shows by the cap however it is going", () => {
+  it("still gives up on a list that has stopped, once it is back", () => {
     let landing = startLanding(0);
-    let shown = false;
-    for (let now = 0, measured = 1; now <= GIVE_UP_MS; now += LANDING_STEP_MS, measured++) {
-      const next = nextLanding(landing, look({ top: null, measured, now }));
-      landing = next.landing;
-      if (next.step.kind === "show") shown = true;
-    }
-    expect(shown).toBe(true);
+    landing = nextLanding(landing, look({ top: null, measured: 80, now: 0 })).landing;
+    landing = nextLanding(landing, look({ top: null, measured: 80, now: 30_000 })).landing;
+    const shown = lookUntilShown(landing, () => ({ top: null, measured: 80 }), { from: 30_050, to: 40_000 });
+    expect(shown.step).toEqual({ kind: "show", offset: 0 });
+    expect(shown.now! - 30_000).toBeLessThanOrEqual(STALL_MS);
+  });
+
+  it("does not count a pause after the card is drawn towards the cap", () => {
+    // Drawn at once, pushed down at every look; ten seconds in, the tab is
+    // out of sight for a minute.
+    const moving = (now: number) => ({ top: 4000 + now, scrolled: 4000, measured: 80 });
+    let { landing } = lookUntilShown(startLanding(0), moving, { to: 10_000 });
+    const back = nextLanding(landing, look({ ...moving(70_000), now: 70_000 }));
+    expect(back.step.kind).toBe("place");
+    landing = back.landing;
+    const shown = lookUntilShown(landing, moving, { from: 70_050, to: 100_000 });
+    // Fifteen seconds of looking in all: ten before the pause, five after it.
+    expect(shown.now! - 70_000).toBeGreaterThan(GIVE_UP_MS - 10_000 - 2 * LANDING_STEP_MS);
+    expect(shown.now! - 70_000).toBeLessThanOrEqual(GIVE_UP_MS - 10_000 + LANDING_STEP_MS);
+  });
+
+  it("still gets there on a phone too busy to look on time", () => {
+    // Every look late, nothing new drawn: each counts as one ordinary look.
+    const slow = AWAY_MS + 100;
+    const shown = lookUntilShown(startLanding(0), () => ({ top: null, measured: 80 }), { every: slow, to: slow * 200 });
+    expect(shown.step).toEqual({ kind: "show", offset: 0 });
+    expect(shown.now! / slow).toBeLessThanOrEqual(STALL_MS / LANDING_STEP_MS + 1);
   });
 });
 
