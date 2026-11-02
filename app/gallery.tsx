@@ -17,7 +17,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
-import { galleryRows } from "@/utils/profileViews";
+import { galleryEra, galleryRows } from "@/utils/profileViews";
 import { isWarm, warmWindow } from "@/utils/videoWindow";
 import {
   LANDING_STEP_MS,
@@ -83,10 +83,22 @@ export default function Gallery() {
   const eraEdits = useEraEdits(authorId, Boolean(era));
   const waiting = Boolean(era) && !eraEdits.isFetched;
 
+  // The era it opened on, by its key: found once the rows and the
+  // arrangement are in, and kept from then on, so a photograph moved to
+  // another era from this gallery's "…" leaves it rather than taking the
+  // gallery with it. Found while drawing, so the list is drawn once, on
+  // the right rows.
+  const [pin, setPin] = useState<{ era: string; postId: string | undefined; key: string | null } | null>(null);
+  const found = pin && pin.era === era && pin.postId === postId ? pin : null;
+  if (era && !waiting && postsQ.data && !found) {
+    setPin({ era, postId, key: galleryEra(postsQ.data, era, postId, eraEdits.data?.edits)?.key ?? null });
+  }
+  const pinned = found?.key ?? null;
+
   // In the grid's order, or the era's alone (see galleryRows).
   const shown = useMemo(
-    () => galleryRows(postsQ.data ?? [], sort, era, postId, eraEdits.data?.edits),
-    [postsQ.data, sort, era, postId, eraEdits.data],
+    () => galleryRows(postsQ.data ?? [], sort, era, postId, eraEdits.data?.edits, pinned),
+    [postsQ.data, sort, era, postId, eraEdits.data, pinned],
   );
 
   // Every post here shares one author, so the join is a local attach rather

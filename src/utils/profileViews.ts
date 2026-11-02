@@ -1,5 +1,5 @@
 import { sortByTaken } from "./memories";
-import { NO_EDITS, editEras, editedEraOf, type EraEdits } from "./eraEdits";
+import { NO_EDITS, editEras, editedEraOf, type EditedEra, type EraEdits } from "./eraEdits";
 import type { PostRow } from "@/types/db";
 
 /**
@@ -52,6 +52,12 @@ export function opensGallery(view: ProfileView, post: { tagged_in?: boolean }): 
  * tapped has left the rows (deleted while the gallery was open), and the
  * rest of its era stays. If neither finds an era (it has come apart), the
  * whole taken order stands in, and `era` is null.
+ *
+ * Once found, the gallery keeps to that era by its key (`pinned`, from
+ * galleryEra when it opened): the photograph tapped can be moved to
+ * another era from the gallery's own "…", and the gallery stays with the
+ * era it was opened on, without it. Only if that era is gone is it found
+ * again as above.
  */
 export function galleryRows<T extends Pick<PostRow, "id" | "taken_at" | "created_at" | "location">>(
   rows: T[],
@@ -59,11 +65,28 @@ export function galleryRows<T extends Pick<PostRow, "id" | "taken_at" | "created
   era: string | undefined,
   postId: string | undefined,
   edits: EraEdits = NO_EDITS,
+  pinned: string | null = null,
 ): { rows: T[]; era: string | null } {
-  const tapped = postId !== undefined && rows.some((p) => p.id === postId);
-  const held = !era ? null : tapped ? editedEraOf(rows, postId, edits) : named(editEras(rows, edits), era);
+  const held = galleryEra(rows, era, postId, edits, pinned);
   if (held) return { rows: held.posts, era: held.title };
   return { rows: sort === "taken" || era ? sortByTaken(rows) : rows, era: null };
+}
+
+/** The era a gallery opened from an era holds, as galleryRows finds it, or null when it holds none. */
+export function galleryEra<T extends Pick<PostRow, "id" | "taken_at" | "created_at" | "location">>(
+  rows: T[],
+  era: string | undefined,
+  postId: string | undefined,
+  edits: EraEdits = NO_EDITS,
+  pinned: string | null = null,
+): EditedEra<T> | null {
+  if (!era) return null;
+  if (pinned != null) {
+    const kept = editEras(rows, edits).find((e) => e.key === pinned);
+    if (kept) return kept;
+  }
+  const tapped = postId !== undefined && rows.some((p) => p.id === postId);
+  return tapped ? editedEraOf(rows, postId, edits) : named(editEras(rows, edits), era);
 }
 
 /** An era by its key or, from an address older than keys, by the name it showed. */
