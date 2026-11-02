@@ -299,16 +299,17 @@ describe("the automatic reading underneath", () => {
     expect(memories).not.toMatch(/eraEdits|EraEdits|edits/);
   });
 
-  it("is where every arrangement starts, read in the arrangement's zone, never a second reading of its own", () => {
-    expect(eraEdits).toMatch(/const buckets = groupEras\(posts, 1, edits\.zone\);/);
-    expect(eraEdits).toMatch(/for \(const era of groupEras\(posts, 2, edits\.zone\)\) \{/);
-    expect(eraEdits.match(/groupEras\(posts(?:, \d, edits\.zone)?\)/g)).toEqual([
-      "groupEras(posts, 1, edits.zone)",
-      "groupEras(posts, 2, edits.zone)",
-      "groupEras(posts, 1, edits.zone)",
-      "groupEras(posts, 1, edits.zone)",
-    ]);
+  it("is where every arrangement starts, read once, in the arrangement's zone, never a second reading of its own", () => {
+    expect(eraEdits).toMatch(/const automatic = groupEras\(posts, 1, edits\.zone\);/);
+    expect(eraEdits.match(/groupEras\([^)]*\)/g)).toEqual(["groupEras(posts, 1, edits.zone)"]);
     expect(eraEdits).not.toMatch(/seasonOf|SEASONS|getFullYear/);
+  });
+
+  it("is read without the phone's random source, which only making an era reaches for", () => {
+    expect(eraEdits).not.toMatch(/expo-crypto|^import[^\n]*newEraKey/m);
+    expect(eraEdits.match(/require\(/g)).toHaveLength(1);
+    const create = eraEdits.match(/export function createEra\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(create).toMatch(/const key = \(makeId \?\? \(require\("\.\/newEraKey"\) as typeof import\("\.\/newEraKey"\)\)\.newEraKey\)\(\);/);
   });
 
   it("feeds On this day, which shows the member's names and arrangement too, once they have been read", () => {

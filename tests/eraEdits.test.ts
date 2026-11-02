@@ -58,8 +58,8 @@ describe("with no changes", () => {
   it("are exactly groupEras's eras, each keyed by its own title", () => {
     const automatic = groupEras(rows);
     const edited = editEras(rows);
-    expect(edited.map(({ key, renamed, ...era }) => era)).toEqual(automatic);
-    expect(edited.every((e) => e.key === e.title && !e.renamed)).toBe(true);
+    expect(edited.map(({ key, renamed, made, ...era }) => era)).toEqual(automatic);
+    expect(edited.every((e) => e.key === e.title && !e.renamed && !e.made)).toBe(true);
     expect(editEras(rows, NO_EDITS)).toEqual(edited);
   });
 
@@ -160,9 +160,15 @@ describe("a photograph the member moves", () => {
     expect(moved.find((e) => e.key === "Kyoto 2024")?.posts.map((p) => p.id)).toEqual(["k1"]);
   });
 
-  it("can bring in a photograph that was on its own, but never one without a date", () => {
+  it("can bring in a photograph that was on its own, and one without a date, which sits by when it was posted", () => {
     const moved = editEras(rows, edits({}, { alone: "Summer 2021", undated: "Summer 2021" }));
-    expect(moved.find((e) => e.key === "Summer 2021")?.posts.map((p) => p.id)).toEqual(["alone", "s2", "s1"]);
+    const summer = moved.find((e) => e.key === "Summer 2021")!;
+    // Posted on 1 September 2026, after every capture here.
+    expect(summer.posts.map((p) => p.id)).toEqual(["undated", "alone", "s2", "s1"]);
+    // Its months, and its place among the eras, are still those of the photographs that say when they were taken.
+    expect(summer.latest).toEqual(new Date("2022-01-10T12:00:00"));
+    expect(eraSpan(summer)).toBe("Jul 2021 – Jan 2022");
+    expect(moved.map((e) => e.key)).toEqual(["Kyoto 2024", "Lisbon 2023", "Summer 2021"]);
   });
 
   it("is let go when its photograph is gone, or its era is: a stale change breaks nothing", () => {
@@ -281,7 +287,7 @@ describe("an era the member built", () => {
         for (const key of keys) {
           const choice = offered.find((c) => c.key === key);
           const moved = moveToEra(arranged, posts, p.id, key) !== arranged;
-          expect(moved, `${p.id} → ${key}`).toBe(p.taken_at != null && choice != null && !choice.here);
+          expect(moved, `${p.id} → ${key}`).toBe(choice != null && !choice.here);
         }
       }
     }
