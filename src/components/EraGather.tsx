@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useLayoutEffect, useMemo, useState } from "react";
 import {
-  KeyboardAvoidingView,
+  Dimensions,
+  Keyboard,
+  LayoutAnimation,
   Platform,
   Pressable,
   ScrollView,
@@ -9,6 +11,7 @@ import {
   TextInput,
   View,
   useWindowDimensions,
+  type KeyboardEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@expo/vector-icons/Feather";
@@ -16,7 +19,7 @@ import { colors, spacing, type } from "@/theme";
 import { ERA_TITLE_MAX } from "@/utils/eraEdits";
 import { PhotoTile } from "./PhotoGrid";
 import { eraMeta, printLabel } from "./eraBook";
-import { CREATE, NEW_ERA_HEAD, addConfirm, addHead, canCreate, chosenCount, type EraSheetView } from "./eraSheet";
+import { CREATE, NEW_ERA_HEAD, addConfirm, addHead, canCreate, chosenCount, keyboardLift, type EraSheetView } from "./eraSheet";
 
 /** Photographs across the sheet, and the gap between them. */
 const ACROSS = 4;
@@ -71,8 +74,15 @@ export function EraGather({
   const [wide, setWide] = useState(screen);
   const cell = Math.max(0, Math.floor((wide - spacing.lg * 2 - GAP * (ACROSS - 1)) / ACROSS));
 
+  // On an iPhone the foot rises over the keyboard, by as far as it comes
+  // up (keyboardLift), and sits just above it, the home indicator under
+  // the keyboard then. Listened for as the sheet is laid out, before the
+  // name field's autoFocus can bring the keyboard up. Android makes room
+  // for the keyboard itself.
+  const lift = useKeyboardLift();
+
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <View style={[styles.root, { paddingBottom: lift }]}>
       <View style={styles.head}>
         <Text style={styles.eyebrow} accessibilityRole="header" numberOfLines={1}>
           {into == null ? NEW_ERA_HEAD : addHead(into)}
@@ -161,7 +171,7 @@ export function EraGather({
         ))}
       </ScrollView>
 
-      <View style={[styles.foot, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+      <View style={[styles.foot, { paddingBottom: lift > 0 ? spacing.md : Math.max(insets.bottom, spacing.md) }]}>
         <Text style={styles.count} numberOfLines={1}>
           {chosenCount(picked.length)}
         </Text>
@@ -186,8 +196,36 @@ export function EraGather({
           <Text style={styles.confirmText}>{label}</Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
+}
+
+/**
+ * How far the keyboard is up over the sheet now, on iOS; nothing
+ * elsewhere. Moves as the keyboard does, in its time, as
+ * KeyboardAvoidingView moves a page.
+ */
+function useKeyboardLift(): number {
+  const [lift, setLift] = useState(0);
+  useLayoutEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const move = (e: KeyboardEvent, to: number) => {
+      if (e.duration > 0) {
+        const duration = Math.max(e.duration, 10);
+        LayoutAnimation.configureNext({ duration, update: { duration, type: e.easing } });
+      }
+      setLift(to);
+    };
+    const shown = Keyboard.addListener("keyboardWillShow", (e) =>
+      move(e, keyboardLift(e.endCoordinates.screenY, Dimensions.get("window").height)),
+    );
+    const hidden = Keyboard.addListener("keyboardWillHide", (e) => move(e, 0));
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+  return lift;
 }
 
 const styles = StyleSheet.create({

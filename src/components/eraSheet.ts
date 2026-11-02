@@ -66,6 +66,21 @@ export function eraSheetView(posts: PostRow[], edits: EraEdits, sheet: EraSheetS
   return { kind: "new", groups: addChoices(posts, edits, null), chosen: sheet.chosen };
 }
 
+/**
+ * How far the keyboard comes up over the sheet, from where its top edge
+ * comes to rest (`screenY`, in the window) to the foot of the window. A
+ * sheet of ours reaches the foot of the screen, as a page sheet does on
+ * an iPhone, so this is how far its foot must rise. KeyboardAvoidingView
+ * measures the sheet from the sheet's own top, which is lower than the
+ * screen's, and left the foot that much under the keyboard. Nothing where
+ * the keyboard gives no place for itself, as with Prefer Cross-Fade
+ * Transitions (KeyboardAvoidingView does the same).
+ */
+export function keyboardLift(screenY: number, windowHeight: number): number {
+  if (!(screenY > 0) || !(windowHeight > 0)) return 0;
+  return Math.max(0, Math.round(windowHeight - screenY));
+}
+
 /** Whether a new era can be made: a name left once it is cleaned (cleanEraTitle), and a photograph for it. */
 export function canCreate(name: string, chosen: readonly string[]): boolean {
   return cleanEraTitle(name) !== "" && chosen.length > 0;

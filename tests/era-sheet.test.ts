@@ -10,6 +10,7 @@ import {
   chosenCount,
   deletedNote,
   eraSheetView,
+  keyboardLift,
   madeNote,
   movedNote,
   takeOutMeta,
@@ -128,6 +129,19 @@ describe("a new era", () => {
     const made = createEra(NO_EDITS, rows, "Saturdays", ["l1"], () => K).edits;
     const view = eraSheetView(rows, made, { kind: "add", key: K });
     expect(view?.kind === "add" && view.title).toBe("Saturdays");
+  });
+
+  it("lifts its foot over the keyboard by as far as the keyboard comes up from the foot of the screen", () => {
+    // An iPhone 15: a screen 852 high, a sheet 59 below its top, a keyboard 336 high.
+    // The whole of the keyboard, never the 277 measured from the sheet's own top.
+    expect(keyboardLift(852 - 336, 852)).toBe(336);
+    expect(keyboardLift(852 - 291.5, 852)).toBe(292);
+    // Gone below the screen, or giving no place for itself: nothing.
+    expect(keyboardLift(852, 852)).toBe(0);
+    expect(keyboardLift(900, 852)).toBe(0);
+    expect(keyboardLift(0, 852)).toBe(0);
+    expect(keyboardLift(Number.NaN, 852)).toBe(0);
+    expect(keyboardLift(500, 0)).toBe(0);
   });
 });
 

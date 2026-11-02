@@ -392,6 +392,23 @@ describe("ADD and NEW ERA", () => {
     expect(gather.match(/\bonCreate\(/g)).toHaveLength(1);
   });
 
+  it("keeps its foot above the iPhone's keyboard, listened for before the name field can bring it up", () => {
+    // KeyboardAvoidingView measures a sheet from the sheet's own top, and left the foot under the keyboard.
+    expect(gather).not.toMatch(/KeyboardAvoidingView/);
+    const hook = gather.slice(gather.indexOf("function useKeyboardLift(): number {"));
+    expect(hook).toMatch(/useLayoutEffect\(\(\) => \{\s*if \(Platform\.OS !== "ios"\) return;/);
+    expect(hook).toMatch(
+      /Keyboard\.addListener\("keyboardWillShow", \(e\) =>\s*move\(e, keyboardLift\(e\.endCoordinates\.screenY, Dimensions\.get\("window"\)\.height\)\),\s*\);/,
+    );
+    expect(hook).toMatch(/Keyboard\.addListener\("keyboardWillHide", \(e\) => move\(e, 0\)\);/);
+    expect(hook).toMatch(/return \(\) => \{\s*shown\.remove\(\);\s*hidden\.remove\(\);\s*\};\s*\}, \[\]\);/);
+    expect(hook).not.toMatch(/useEffect\(/);
+    // The whole sheet rises by it, and the foot sits just above the keyboard, the home indicator under it.
+    expect(gather).toMatch(/const lift = useKeyboardLift\(\);\s*return \(\s*<View style=\{\[styles\.root, \{ paddingBottom: lift \}\]\}>/);
+    expect(gather).toMatch(/<View style=\{\[styles\.foot, \{ paddingBottom: lift > 0 \? spacing\.md : Math\.max\(insets\.bottom, spacing\.md\) \}\]\}>/);
+    expect(sheetLogic).toMatch(/if \(!\(screenY > 0\) \|\| !\(windowHeight > 0\)\) return 0;\s*return Math\.max\(0, Math\.round\(windowHeight - screenY\)\);/);
+  });
+
   it("asks a new era's name in a field of its own, so it is asked the same way on every phone", () => {
     expect(gather).toMatch(/\{making \? \(\s*<View style=\{styles\.naming\}>[\s\S]*?<TextInput\s+value=\{name\}\s+onChangeText=\{setName\}\s+maxLength=\{ERA_TITLE_MAX\}/);
     expect(gather).toMatch(/accessibilityLabel="The new era’s name"/);
