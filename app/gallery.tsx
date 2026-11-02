@@ -290,6 +290,10 @@ export default function Gallery() {
         // list draws its way down to the tapped card, out of sight. A clip
         // among them is its poster, at its own height, and makes no player.
         initialNumToRender={Math.min(startIndex + 3, MEASURE_LIMIT)}
+        // While it is hidden it draws twice as many cards at a time: no one
+        // is scrolling it, and the cards it walks past are frames, quick to
+        // draw.
+        maxToRenderPerBatch={ready ? undefined : WALK_BATCH}
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         onScroll={onScroll}
         onLayout={onListLayout}
@@ -345,6 +349,8 @@ export default function Gallery() {
 const LIST_PADDING = 8;
 /** The most cards drawn at once to land; past this the list draws its way down to the tapped card. */
 const MEASURE_LIMIT = 80;
+/** The most cards the list draws at a time while it is hidden, twice its usual ten. */
+const WALK_BATCH = 20;
 
 /**
  * What the cards sit in: the list's content, scrolled as one. The phone

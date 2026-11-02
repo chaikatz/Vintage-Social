@@ -503,6 +503,11 @@ describe("the cards drawn only on the way down", () => {
     expect(cell).toMatch(/priority=\{item\.id === postId \? "high" : "normal"\}/);
   });
 
+  it("are drawn twenty at a time while the list is hidden, and as usual once it shows", () => {
+    expect(gallery).toMatch(/maxToRenderPerBatch=\{ready \? undefined : WALK_BATCH\}/);
+    expect(gallery).toMatch(/const WALK_BATCH = 20;/);
+  });
+
   it("are passed through the card to its picture, and nowhere else", () => {
     expect(card).toMatch(/^\s*frameOnly = false,$/m);
     expect(card).toMatch(/^\s*priority = "normal",$/m);
