@@ -677,7 +677,9 @@ describe("the editorial card", () => {
     expect(posted).toMatch(/\{postedAgo\(at, now\)\}/);
     expect(posted).not.toMatch(/taken_at/);
     expect(posted).toMatch(/style=\{styles\.posted\}/);
-    expect(style("posted")).toMatch(/\.\.\.line\(PRINT\.byline\),\s*textTransform: "uppercase",\s*color: colors\.inkFaint,/);
+    expect(style("posted")).toMatch(/\.\.\.line\(PRINT\.byline\),\s*color: colors\.inkFaint,/);
+    // Written as it is said: 29m ago, never 29M AGO, which reads as months.
+    expect(style("posted")).not.toMatch(/textTransform/);
   });
 
   it("follows the app's one clock for that line alone, and starts no timer of its own", () => {

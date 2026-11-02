@@ -179,8 +179,9 @@ export function EditorialPostCard({
 }
 
 /**
- * `29M AGO`: when the post went up, at the foot of the print, in the
- * label's typewriter face a shade fainter. The posting time, not the day
+ * `29m ago`: when the post went up, at the foot of the print, in the
+ * label's typewriter face a shade fainter, written as it is said (in
+ * capitals `29M AGO` would read as months). The posting time, not the day
  * it was taken, which the label already gives. It follows the app's one
  * clock, so it moves on by itself, and only this line is drawn again when
  * it does.
@@ -366,10 +367,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs,
   },
   author: { fontWeight: "600" },
-  // The label's typewriter line, a shade fainter than the date.
+  // The label's typewriter face, a shade fainter than the date, in small letters.
   posted: {
     ...line(PRINT.byline),
-    textTransform: "uppercase",
     color: colors.inkFaint,
     paddingHorizontal: EDGE,
     paddingTop: spacing.sm - 2,

@@ -20,14 +20,21 @@ Editorial sets each post out as a print, the way a photograph is shared
 from VINTAGE (`src/components/ExportCard.tsx`). Above the picture, where the
 original card has them, the member's picture and name, which open their
 profile, and the "…" at the end of that line. Then the picture inset on the
-paper with the print's margins, the hairline rule under it, and under the
-rule the print's label: on the right, as on the print, the place and the
+paper with the print's margins, the hairline rule under it, and just under
+the rule the print's label: on the right, as on the print, the place and the
 date in full in the typewriter face; on the left, where the wordmark is
 printed, the like, comment and send buttons. There are no counts, no
 `@name` on the label, no wordmark, no "Members only" and no membership
 number. Then the caption after the member's name, the way a comment is
-written, the newest comments, and last, in the label's typewriter capitals,
-when it was posted (`29M AGO`). Prints are separated by the paper alone.
+written, the newest comments, and last, in the label's typewriter face,
+when it was posted (`29m ago`).
+
+Only the picture keeps the print's margins. Everything around it is set
+where Instagram sets it: the member's picture and name, the buttons, the
+caption, the comments and the posted line start 12 pt in from the left of
+the screen, the "…" and the label end 12 pt in from the right, and the
+hairline runs between the same two edges. One post follows the next about
+as closely as on Instagram, separated by the paper alone.
 
 The whole feed is one paper, never two: the screen behind the prints, every
 print, and the bars around them. On Home that is the bar with the wordmark
@@ -37,9 +44,9 @@ the app's paper on the other tabs). In the gallery it is the bar with the
 member's name. In the dark appearance both papers are the dark print's
 brown.
 
-One thing does not follow the paper: while a new post is still on its way
-up, its card at the top of Home (`PendingPostCard`) stays on the off-white
-until it is posted and the print takes its place.
+A post still on its way up lies on the same paper: its card at the top of
+Home (`PendingPostCard`) has no paper of its own, a permanent change that
+is on `claude/product-polish` too.
 
 ## Where it lives
 

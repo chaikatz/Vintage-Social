@@ -409,7 +409,7 @@ check(
     foot.every(
       ([label, line]) =>
         /^Posted (just now|\d+ (minute|hour|day)s? ago|[A-Z][a-z]+ \d{1,2}(, \d{4})?)$/.test(label) &&
-        /^(JUST NOW|\d+[MHD] AGO|[A-Z]{3} \d{1,2}(, \d{4})?)$/.test(line),
+        /^(Just now|\d+[mhd] ago|[A-Z][a-z]{2} \d{1,2}(, \d{4})?)$/.test(line),
     ),
   foot[0]?.join(" / "),
 );
