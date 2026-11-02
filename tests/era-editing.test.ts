@@ -481,8 +481,26 @@ describe("Add to an era…, from a photograph's options", () => {
   });
 
   it("says plainly when the photograph is not yours any more, or the eras cannot be changed", () => {
-    expect(route).toMatch(/if \(!post \|\| !editor \|\| !view\) \{/);
-    expect(route).toMatch(/accessibilityRole="button" accessibilityLabel="Close"/);
+    expect(route).toMatch(/if \(stage !== "sheet" \|\| !post \|\| !editor \|\| !view\) \{/);
+    expect(route).toMatch(/\{stage === "notYours" \? "This photograph isn’t among yours any more\." : "Your eras can’t be arranged just now\. Try again in a moment\."\}/);
+  });
+
+  it("reads your photographs afresh, and never calls one not yours while a read is out, or after one failed", () => {
+    expect(route).toMatch(/queryFn: \(\) => fetchUserPosts\(userId\),\s*enabled: Boolean\(userId\),\s*refetchOnMount: "always",/);
+    expect(route).toMatch(
+      /const stage = eraMoveStage\(\{\s*answered: posts\.isFetched && eraEdits\.isFetched,\s*reading: posts\.fetchStatus !== "idle",\s*failed: posts\.isError \|\| !posts\.data,\s*found: post != null,\s*arrangeable: editor != null && view != null,\s*\}\);/,
+    );
+    // A failed read says so, with another try.
+    expect(route).toMatch(/stage === "readFailed" \? \(\s*<LoadFailed what="your photographs" onRetry=\{\(\) => void posts\.refetch\(\)\} \/>/);
+  });
+
+  it("offers Close whatever it shows, reading too", () => {
+    const waiting = route.slice(route.indexOf('if (stage !== "sheet"'), route.indexOf("return (\n    <View style={[styles.root, top]}>"));
+    expect(waiting).toMatch(/stage === "reading" \? \(\s*<ActivityIndicator/);
+    expect(waiting).toMatch(/\)\}\s*<Pressable onPress=\{close\} hitSlop=\{12\} accessibilityRole="button" accessibilityLabel="Close"/);
+    expect(route.match(/<ActivityIndicator\b/g)).toHaveLength(1);
+    expect(route.match(/return \(/g)).toHaveLength(2);
+    expect(route).toMatch(/onClose=\{close\}/);
   });
 });
 

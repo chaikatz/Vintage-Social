@@ -9,6 +9,7 @@ import {
   canCreate,
   chosenCount,
   deletedNote,
+  eraMoveStage,
   eraSheetView,
   gatherLines,
   keyboardLift,
@@ -168,6 +169,42 @@ describe("a new era", () => {
     expect(keyboardLift(0, 852)).toBe(0);
     expect(keyboardLift(Number.NaN, 852)).toBe(0);
     expect(keyboardLift(500, 0)).toBe(0);
+  });
+});
+
+describe("Add to an era…, as its reads stand", () => {
+  const stage = (reads: Partial<Parameters<typeof eraMoveStage>[0]>) =>
+    eraMoveStage({ answered: true, reading: false, failed: false, found: true, arrangeable: true, ...reads });
+
+  it("is the sheet once both are read, the photograph among the member's, and the eras can be changed", () => {
+    expect(stage({})).toBe("sheet");
+    // Read again in the background over a list that has it: the sheet all the while.
+    expect(stage({ reading: true })).toBe("sheet");
+    // An older list that has it, its new read failed: still theirs.
+    expect(stage({ failed: true })).toBe("sheet");
+  });
+
+  it("is still reading until both have answered, the photograph not among a list cached, or offline", () => {
+    expect(stage({ answered: false })).toBe("reading");
+    expect(stage({ answered: false, found: false })).toBe("reading");
+    // A list cached from before the photograph was posted, read again as the screen opens.
+    expect(stage({ found: false, reading: true })).toBe("reading");
+    // Waiting for the phone to be back online counts as reading.
+    expect(stage({ found: false, reading: true, failed: true })).toBe("reading");
+  });
+
+  it("says the read failed, never that the photograph is not theirs, when it did", () => {
+    expect(stage({ found: false, failed: true })).toBe("readFailed");
+    expect(stage({ found: false, failed: true, arrangeable: false })).toBe("readFailed");
+  });
+
+  it("says the photograph is not theirs only once a read has answered without it", () => {
+    expect(stage({ found: false })).toBe("notYours");
+    expect(stage({ found: false, arrangeable: false })).toBe("notYours");
+  });
+
+  it("says the eras cannot be changed just now where the arrangement cannot be saved", () => {
+    expect(stage({ arrangeable: false })).toBe("cannotArrange");
   });
 });
 

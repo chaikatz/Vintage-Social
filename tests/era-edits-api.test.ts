@@ -39,8 +39,9 @@ const h = vi.hoisted(() => ({
   /** Draws from the phone's random source, and, when set, a source that only ever gives bytes no key can use. */
   draws: 0,
   spent: false,
-  /** The member's photographs, as a read of them gives them back. */
+  /** The member's photographs, as a read of them gives them back, or the error it fails with. */
   posts: [] as unknown[],
+  postsError: null as unknown,
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -60,7 +61,9 @@ vi.mock("@/lib/supabase", () => ({
             return new Promise((resolve) => h.reads.push({ answer: resolve }));
           },
           // The member's photographs (fetchUserPosts), as many as there are.
-          is: () => ({ order: () => Promise.resolve({ data: h.posts, error: null }) }),
+          is: () => ({
+            order: () => Promise.resolve(h.postsError ? { data: null, error: h.postsError } : { data: h.posts, error: null }),
+          }),
         }),
       }),
       upsert: (row: unknown, options: unknown) => {
@@ -91,6 +94,7 @@ const { ERA_SAVE_FAILED, READ_WAIT_MS, changeEraEdits, eraEditsKey, eraEditsQuer
 const { MADE_ERA, NO_EDITS, ROWS_PER_READ, deviceZone, editEras, moveToEra, renameEra } = await import("@/utils/eraEdits");
 const { fetchUserPosts, userPostsCutShort } = await import("@/api/posts");
 const { removePostEverywhere } = await import("@/utils/postCache");
+const { eraMoveStage } = await import("@/components/eraSheet");
 const { newEraKey } = await import("@/utils/newEraKey");
 const { eraEditor } = await import("@/hooks/useEraEdits");
 const { errorMessage } = await import("@/utils/errorMessage");
@@ -126,6 +130,7 @@ beforeEach(() => {
   h.draws = 0;
   h.spent = false;
   h.posts = [];
+  h.postsError = null;
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 afterEach(async () => {
@@ -782,6 +787,62 @@ describe("the editor on the member's own page", () => {
       await tick();
       expect(saved()).toEqual({ titles: { "Lisbon 2023": "Lisboa" }, moves: {} });
     });
+  });
+});
+
+describe("Add to an era…, as the screen reads the member's photographs", () => {
+  const row = (id: string) => ({ id, taken_at: "2024-03-02T12:00:00", created_at: "2026-09-01T12:00:00", location: "Kyoto" });
+  const listKey = ["user-posts", ME];
+  /**
+   * The screen's read (app/era-move.tsx), and what it shows of `postId`:
+   * first as useQuery draws it, which knows a read is about to go out,
+   * then as each answer comes.
+   */
+  function opened(postId: string) {
+    // Kept fresh for 30 seconds, as the app's cache keeps every read (src/lib/queryClient.ts).
+    const options = { queryKey: listKey, queryFn: () => fetchUserPosts(ME), staleTime: 30_000, refetchOnMount: "always" as const };
+    const observer = new QueryObserver(client, options);
+    const seen: string[] = [];
+    const look = (posts = observer.getCurrentResult()) => {
+      const stage = eraMoveStage({
+        answered: posts.isFetched,
+        reading: posts.fetchStatus !== "idle",
+        failed: posts.isError || !posts.data,
+        found: (posts.data as { id: string }[] | undefined)?.some((p) => p.id === postId) ?? false,
+        arrangeable: true,
+      });
+      if (seen.at(-1) !== stage) seen.push(stage);
+    };
+    // As useQuery asks for its first result.
+    look(observer.getOptimisticResult({ ...client.defaultQueryOptions(options), _optimisticResults: "optimistic" }));
+    const stop = observer.subscribe(() => look());
+    return { seen, stop };
+  }
+
+  it("reads a list cached from before the photograph was posted again, fresh as it is, and finds it", async () => {
+    client.setQueryData(listKey, [row("k1")]);
+    h.posts = [row("new"), row("k1")];
+    const screen = opened("new");
+    await vi.waitFor(() => expect(screen.seen.at(-1)).toBe("sheet"));
+    screen.stop();
+    expect(screen.seen).toEqual(["reading", "sheet"]);
+  });
+
+  it("says a failed read failed, never that the photograph is not the member's", async () => {
+    h.postsError = { code: "", message: "TypeError: Network request failed" };
+    const screen = opened("k1");
+    await vi.waitFor(() => expect(screen.seen.at(-1)).not.toBe("reading"));
+    screen.stop();
+    expect(screen.seen).toEqual(["reading", "readFailed"]);
+  });
+
+  it("says the photograph is not the member's only once a read has answered without it", async () => {
+    client.setQueryData(listKey, [row("k1")]);
+    h.posts = [row("k1")];
+    const screen = opened("gone");
+    await vi.waitFor(() => expect(screen.seen.at(-1)).not.toBe("reading"));
+    screen.stop();
+    expect(screen.seen).toEqual(["reading", "notYours"]);
   });
 });
 

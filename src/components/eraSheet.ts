@@ -108,6 +108,38 @@ export function canCreate(name: string, chosen: readonly string[]): boolean {
   return cleanEraTitle(name) !== "" && chosen.length > 0;
 }
 
+/**
+ * What the Add to an era screen the feed opens shows, as its reads stand:
+ * still reading; the read of the member's photographs failed; the
+ * photograph is not among them; the eras cannot be changed just now; or
+ * the sheet.
+ */
+export type EraMoveStage = "reading" | "readFailed" | "notYours" | "cannotArrange" | "sheet";
+
+/**
+ * Only a read that has answered, and found nothing, says the photograph
+ * is not the member's any more. While one is on its way, or waits for
+ * the phone to be back online, it is still being read: the list cached
+ * may be from before the photograph was posted (on another phone, say).
+ * And a read that failed says so, rather than that.
+ */
+export function eraMoveStage(reads: {
+  /** Both reads have answered at least once: the photographs, and the arrangement. */
+  answered: boolean;
+  /** A read of the photographs is on its way, or waiting for the phone to be back online. */
+  reading: boolean;
+  /** The last read of the photographs failed, or none has brought any. */
+  failed: boolean;
+  /** The photograph is among those read. */
+  found: boolean;
+  /** The eras can be changed: the arrangement was read, and there is somewhere to keep a change. */
+  arrangeable: boolean;
+}): EraMoveStage {
+  if (!reads.answered || (!reads.found && reads.reading)) return "reading";
+  if (!reads.found) return reads.failed ? "readFailed" : "notYours";
+  return reads.arrangeable ? "sheet" : "cannotArrange";
+}
+
 // ---------------------------------------------------------------------------
 // The words
 // ---------------------------------------------------------------------------
