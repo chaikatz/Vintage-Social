@@ -17,9 +17,9 @@ import {
 } from "@/utils/library";
 
 /**
- * A handful of the member's own photographs, picked out of the library for
- * a reason — the rest of one night's roll, or this day in earlier years —
- * laid out to choose one from. Choosing opens the darkroom on it exactly as
+ * The member's own photographs, picked out of the library for a reason —
+ * the rest of one night's roll, or every one from this day in earlier
+ * years — laid out to choose one from. Choosing opens the darkroom on it exactly as
  * if it had come from the ordinary picker. Nothing here is uploaded; the
  * thumbnails are read straight off the phone.
  */

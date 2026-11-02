@@ -432,9 +432,11 @@ describe("On this day", () => {
   });
 
   it("keeps the library's thumbnails in memory only", () => {
-    const thumbs = memories.match(/<Image\s+key=\{p\.id\}[\s\S]*?\/>/g) ?? [];
+    // The library's photographs are drawn from their ph:// address, `p.uri`; a post is drawn from its URL.
+    const thumbs = memories.match(/<Image\s+source=\{p\.uri\}[\s\S]*?\/>/g) ?? [];
     expect(thumbs).toHaveLength(1);
     expect(thumbs[0]).toContain('cachePolicy="memory"');
+    expect(memories.match(/\bp\.uri\b/g)).toHaveLength(1);
   });
 });
 
