@@ -650,7 +650,11 @@ describe("the editorial card", () => {
 
   it("follows the app's one clock for that line alone, and starts no timer of its own", () => {
     expect(posted).toMatch(/const now = new Date\(useMinute\(\)\);/);
-    expect(body).not.toMatch(/useMinute\(/);
+    // Only the line follows the clock, so a tick draws the line again, not the card and its picture.
+    const whole = card.slice(card.indexOf("export function EditorialPostCard("), card.indexOf("function PostedTime("));
+    expect(whole.length).toBeGreaterThan(0);
+    expect(whole).not.toMatch(/useMinute\(/);
+    expect(card.match(/useMinute\(/g)).toHaveLength(1);
     expect(card).not.toMatch(/\bset(Interval|Timeout)\(|\bAppState\b/);
     expect(card).toMatch(/import \{ postedAgo, postedAgoSpoken \} from "@\/utils\/time";/);
     expect(card).toMatch(/import \{ useMinute \} from "@\/utils\/useMinute";/);
