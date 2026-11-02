@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, View, type LayoutChangeEvent, type ViewToken } from "react-native";
+import {
+  FlatList,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type ViewToken,
+} from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
@@ -11,6 +19,7 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { galleryRows } from "@/utils/profileViews";
 import { isWarm, warmWindow } from "@/utils/videoWindow";
+import { LANDING_STEP_MS, approachOffset, nextLanding, startLanding } from "@/utils/galleryLanding";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
@@ -26,12 +35,15 @@ import type { PostWithAuthor } from "@/types/db";
  * The grid is an index, not a dead end. Comments live one screen deeper, on
  * the single post, so this stays a viewing surface.
  *
- * Landing on the right photograph is done by measuring, not guessing.
- * Every card above the tapped one is drawn first (out of sight), reports
- * its height, and once they all have, the list is put at exactly their
- * sum and shown. Cards have no fixed height — captions and comments make
- * them what they are — so an estimate, or adding rows above a visible one
- * and hoping the list holds still, was what kept opening the wrong post.
+ * Landing on the right photograph is done by measuring where it is, not
+ * by working out where it ought to be. Out of sight, the cards up to it
+ * are drawn, the tapped one's top is measured within the list, and the
+ * list is put exactly there; then it is measured again until it holds
+ * still, and only then shown (see src/utils/galleryLanding.ts). Deep in a
+ * long history, past what is drawn at once, the list first draws its way
+ * down to it. Cards have no fixed height — captions and comments make
+ * them what they are — so a sum of heights, or adding rows above a visible
+ * one and hoping the list holds still, was what kept opening the wrong post.
  * After that, `maintainVisibleContentPosition` keeps the row you are on in
  * place if anything above it grows, such as comment previews arriving.
  */
@@ -90,9 +102,15 @@ export default function Gallery() {
     return index < 0 ? 0 : index;
   }, [posts, postId]);
 
-  // Heights of the cards above the tapped one, as they report them.
+  // The list and the tapped card: the landing measures where the card is
+  // within the list.
   const list = useRef<FlatList<PostWithAuthor>>(null);
+  const tapped = useRef<View>(null);
+  // Heights of the cards as they report them: to send the list towards a
+  // tapped card not drawn yet, and to tell that more have been drawn.
   const heights = useRef(new Map<string, number>());
+  // Where the list last said it is, and whether it could go no further.
+  const scrolled = useRef<{ offset: number; end: boolean } | null>(null);
   const settled = useRef(false);
   const [ready, setReady] = useState(false);
   // The last card reported on screen once the list was showing; the clips
@@ -100,60 +118,83 @@ export default function Gallery() {
   const [seenId, setSeenId] = useState<string | null>(null);
 
   useEffect(() => {
-    // A different photograph or order: measure again.
+    // A different photograph or order: land again.
     heights.current.clear();
     settled.current = false;
     setReady(false);
     setSeenId(null);
   }, [postId, sort, era]);
 
-  const settle = useCallback(() => {
-    if (settled.current || posts.length === 0) return;
-    // Cards past the render cap are never laid out, so their heights are
-    // estimated from the ones that were; otherwise a photograph deep in a
-    // long grid left the gallery blank forever, waiting on a measurement
-    // that could not come.
-    const measurable = Math.min(startIndex, MEASURE_LIMIT - 3);
-    let measuredSum = 0;
-    let measuredCount = 0;
-    for (let i = 0; i < measurable; i++) {
-      const h = heights.current.get(posts[i].id);
-      if (h == null) return; // not every card above has been measured yet
-      measuredSum += h;
-      measuredCount++;
-    }
-    const typical = measuredCount > 0 ? measuredSum / measuredCount : 0;
-    let offset = LIST_PADDING;
-    for (let i = 0; i < startIndex; i++) {
-      offset += heights.current.get(posts[i].id) ?? typical;
-    }
-    settled.current = true;
-    if (offset > LIST_PADDING) {
-      list.current?.scrollToOffset({ offset, animated: false });
-    }
-    // Shown one frame after the scroll lands, so the first thing seen is
-    // the tapped photograph and not the top of the list on its way there.
-    requestAnimationFrame(() => setReady(true));
-  }, [posts, startIndex]);
-
-  // With nothing above the tapped row, there is nothing to measure.
+  // Look where the tapped card is, put the list there, and look again
+  // until it holds still (see src/utils/galleryLanding.ts). A photograph
+  // no longer in the rows opens the gallery at the top.
   useEffect(() => {
-    if (posts.length > 0 && startIndex === 0 && !settled.current) {
-      settled.current = true;
-      setReady(true);
-    }
-  }, [posts.length, startIndex]);
+    if (posts.length === 0 || settled.current) return;
+    let landing = startLanding(Date.now());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let over = false;
+    const scrollTo = (offset: number) => list.current?.scrollToOffset({ offset, animated: false });
+    const look = () => {
+      let answered = false;
+      const answer = (top: number | null) => {
+        if (answered || over) return;
+        answered = true;
+        clearTimeout(timer);
+        const at = scrolled.current;
+        // As far down as it goes, with every card below the tapped one drawn.
+        const end = Boolean(at?.end) && posts.slice(startIndex + 1).every((p) => heights.current.has(p.id));
+        const next = nextLanding(landing, {
+          index: startIndex,
+          top,
+          scrolled: at?.offset ?? null,
+          end,
+          measured: heights.current.size,
+          now: Date.now(),
+        });
+        landing = next.landing;
+        const { step } = next;
+        if (step.kind === "show") {
+          over = true;
+          settled.current = true;
+          if (step.offset != null) scrollTo(step.offset);
+          // Shown one frame after the scroll lands, so the first thing seen is
+          // the tapped photograph and not the list on its way there.
+          requestAnimationFrame(() => setReady(true));
+          return;
+        }
+        if (step.kind === "approach") {
+          scrollTo(approachOffset(posts.slice(0, startIndex).map((p) => heights.current.get(p.id)), LIST_PADDING));
+        } else if (step.kind === "place") {
+          scrollTo(step.offset);
+        }
+        timer = setTimeout(look, LANDING_STEP_MS);
+      };
+      // On the web a measure goes unanswered if the card leaves the list
+      // meanwhile; that is a card not drawn, and the landing goes on.
+      timer = setTimeout(() => answer(null), LANDING_STEP_MS);
+      measureTop(tapped.current, contentOf(list.current), answer);
+    };
+    look();
+    return () => {
+      over = true;
+      clearTimeout(timer);
+    };
+    // Whenever the reset above runs, so a different photograph always
+    // lands, even one at the same place in the rows.
+  }, [posts, startIndex, postId, sort, era]);
 
-  const onCardLayout = useCallback(
-    (id: string, e: LayoutChangeEvent) => {
-      const h = e.nativeEvent.layout.height;
-      if (h <= 0) return;
-      const before = heights.current.get(id);
-      heights.current.set(id, h);
-      if (before !== h) settle();
-    },
-    [settle],
-  );
+  const onCardLayout = useCallback((id: string, e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 0) heights.current.set(id, h);
+  }, []);
+
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    scrolled.current = {
+      offset: contentOffset.y,
+      end: contentOffset.y + layoutMeasurement.height >= contentSize.height - 1,
+    };
+  }, []);
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
@@ -191,11 +232,14 @@ export default function Gallery() {
         contentContainerStyle={styles.list}
         style={ready ? undefined : styles.hidden}
         // Every card up to and past the tapped one is drawn at once, so the
-        // ones above it can be measured. Capped so a very long history
-        // does not draw itself entirely before showing anything. A clip
+        // tapped one is there to measure straight away and nothing above
+        // it is drawn later, under the reader. Capped so a very long
+        // history does not draw itself entirely at once; past the cap the
+        // list draws its way down to the tapped card, out of sight. A clip
         // among them is its poster, at its own height, and makes no player.
         initialNumToRender={Math.min(startIndex + 3, MEASURE_LIMIT)}
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        onScroll={onScroll}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         ListEmptyComponent={
@@ -209,7 +253,7 @@ export default function Gallery() {
           )
         }
         renderItem={({ item, index }) => (
-          <View onLayout={(e) => onCardLayout(item.id, e)}>
+          <View ref={item.id === postId ? tapped : undefined} onLayout={(e) => onCardLayout(item.id, e)}>
             <PostCard
               post={{ ...item, like_count: likeCountFor(item) }}
               likedByMe={isLiked(item)}
@@ -228,8 +272,8 @@ export default function Gallery() {
         )}
       />
       {!ready && !loading && posts.length > 0 ? (
-        // What is shown while the cards above are measured: a frame the
-        // shape of the tapped photograph, so the landing reads as a load.
+        // What is shown while the gallery lands: a frame the shape of the
+        // tapped photograph, so the landing reads as a load.
         <View style={styles.curtain} pointerEvents="none">
           <PostSkeleton ratio={ratioOf(posts[startIndex])} />
         </View>
@@ -238,10 +282,33 @@ export default function Gallery() {
   );
 }
 
-/** Top padding of the list, counted into the landing offset. */
+/** Top padding of the list, where the first card starts. */
 const LIST_PADDING = 8;
-/** Beyond this many cards above the tapped one, the landing is measured as far as it can be. */
+/** The most cards drawn at once to land; past this the list draws its way down to the tapped card. */
 const MEASURE_LIMIT = 80;
+
+/**
+ * What the cards sit in: the list's content, scrolled as one. The phone
+ * measures a view only from one that holds it, so the cards are measured
+ * from this and not from anything beside them.
+ */
+function contentOf(list: FlatList<PostWithAuthor> | null): View | null {
+  const scroller = list?.getNativeScrollRef() as { getInnerViewRef?: () => View | null } | null | undefined;
+  return scroller?.getInnerViewRef?.() ?? null;
+}
+
+/**
+ * The card's top within the list's content, padding and all, or null
+ * while the card is not drawn. Measured within the content, so where the
+ * list is scrolled does not enter in.
+ */
+function measureTop(card: View | null, content: View | null, then: (top: number | null) => void) {
+  if (!card || !content) {
+    then(null);
+    return;
+  }
+  card.measureLayout(content, (_x, y) => then(y), () => then(null));
+}
 
 function ratioOf(post: PostWithAuthor | undefined): number {
   if (!post?.width || !post.height) return 1;
