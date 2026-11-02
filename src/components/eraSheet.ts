@@ -81,6 +81,28 @@ export function keyboardLift(screenY: number, windowHeight: number): number {
   return Math.max(0, Math.round(windowHeight - screenY));
 }
 
+/** A line of the ADD and NEW ERA sheet: a group's heading, or a row of its photographs. */
+export type GatherLine<T extends { id: string } = PostRow> =
+  | { kind: "head"; key: string; group: AddGroup<T> }
+  | { kind: "row"; key: string; posts: T[]; first: boolean };
+
+/**
+ * The groups ADD and NEW ERA offer, as the lines of a list that draws
+ * only those near the screen: each group's heading, then its photographs
+ * `across` to a row, in the group's order. Every photograph is on exactly
+ * one row, so each line has a key of its own.
+ */
+export function gatherLines<T extends { id: string }>(groups: AddGroup<T>[], across: number): GatherLine<T>[] {
+  const lines: GatherLine<T>[] = [];
+  for (const group of groups) {
+    lines.push({ kind: "head", key: `head:${group.key ?? ""}`, group });
+    for (let i = 0; i < group.posts.length; i += across) {
+      lines.push({ kind: "row", key: `row:${group.posts[i].id}`, posts: group.posts.slice(i, i + across), first: i === 0 });
+    }
+  }
+  return lines;
+}
+
 /** Whether a new era can be made: a name left once it is cleaned (cleanEraTitle), and a photograph for it. */
 export function canCreate(name: string, chosen: readonly string[]): boolean {
   return cleanEraTitle(name) !== "" && chosen.length > 0;

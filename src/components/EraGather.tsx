@@ -1,29 +1,53 @@
-import React, { useLayoutEffect, useMemo, useState } from "react";
+import React, { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import {
   Dimensions,
+  FlatList,
   Keyboard,
   LayoutAnimation,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
   useWindowDimensions,
   type KeyboardEvent,
+  type ListRenderItemInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
-import { ERA_TITLE_MAX } from "@/utils/eraEdits";
+import { ERA_TITLE_MAX, type AddGroup } from "@/utils/eraEdits";
+import type { PostRow } from "@/types/db";
 import { PhotoTile } from "./PhotoGrid";
 import { eraMeta, printLabel } from "./eraBook";
-import { CREATE, NEW_ERA_HEAD, addConfirm, addHead, canCreate, chosenCount, keyboardLift, type EraSheetView } from "./eraSheet";
+import {
+  CREATE,
+  NEW_ERA_HEAD,
+  addConfirm,
+  addHead,
+  canCreate,
+  chosenCount,
+  gatherLines,
+  keyboardLift,
+  type EraSheetView,
+  type GatherLine,
+} from "./eraSheet";
 
 /** Photographs across the sheet, and the gap between them. */
 const ACROSS = 4;
 const GAP = 4;
+
+/**
+ * The lines drawn as the sheet opens, a screenful and some, and how many
+ * screens of them are kept drawn about the one in view.
+ */
+const FIRST_LINES = 12;
+const SCREENS_DRAWN = 7;
+
+const lineKey = (line: GatherLine) => line.key;
+// A square's own tap is never reached (it is drawn under the checkbox), and is the same every time, so it never draws one again.
+const noop = () => undefined;
 
 /**
  * Photographs gathered into an era: added to one (ADD), or made into a
@@ -36,6 +60,11 @@ const GAP = 4;
  * in a field of the sheet's own, so it is asked for the same way on every
  * phone. Nothing is done until the one button at the foot says so: Add,
  * with how many, or Create, once there is a name and a photograph.
+ *
+ * A list that draws only the lines near the screen (gatherLines), so a
+ * member with hundreds of photographs opens it as quickly as one with a
+ * few; and a square is drawn again only when it is chosen or let go, so
+ * typing the name, or choosing another, leaves the rest as they are.
  */
 export function EraGather({
   view,
@@ -57,8 +86,12 @@ export function EraGather({
 
   // Only those still offered: one deleted, or moved here, while the sheet is up is let go.
   const offered = useMemo(() => new Set(view.groups.flatMap((g) => g.posts.map((p) => p.id))), [view.groups]);
-  const picked = chosen.filter((id) => offered.has(id));
-  const toggle = (id: string) => setChosen((now) => (now.includes(id) ? now.filter((x) => x !== id) : [...now, id]));
+  const picked = useMemo(() => chosen.filter((id) => offered.has(id)), [chosen, offered]);
+  const pickedSet = useMemo(() => new Set(picked), [picked]);
+  const toggle = useCallback(
+    (id: string) => setChosen((now) => (now.includes(id) ? now.filter((x) => x !== id) : [...now, id])),
+    [],
+  );
 
   const ready = making ? canCreate(name, picked) : picked.length > 0;
   const label = making ? CREATE : addConfirm(picked.length);
@@ -81,6 +114,43 @@ export function EraGather({
   // for the keyboard itself.
   const lift = useKeyboardLift();
 
+  const lines = useMemo(() => gatherLines(view.groups, ACROSS), [view.groups]);
+  const renderLine = useCallback(
+    ({ item }: ListRenderItemInfo<GatherLine>) =>
+      item.kind === "head" ? (
+        <GatherHead group={item.group} />
+      ) : (
+        <View style={[styles.row, item.first && styles.rowFirst]}>
+          {item.posts.map((post) => (
+            <GatherTile key={post.id} post={post} on={pickedSet.has(post.id)} cell={cell} onToggle={toggle} />
+          ))}
+        </View>
+      ),
+    [pickedSet, cell, toggle],
+  );
+
+  const naming = making ? (
+    <View style={styles.naming}>
+      <Text style={styles.label}>Its name</Text>
+      <TextInput
+        value={name}
+        onChangeText={setName}
+        maxLength={ERA_TITLE_MAX}
+        placeholder="A summer, a city, a person"
+        placeholderTextColor={colors.inkFaint}
+        style={styles.name}
+        accessibilityLabel="The new era’s name"
+        accessibilityHint={`Up to ${ERA_TITLE_MAX} characters.`}
+        autoCapitalize="sentences"
+        autoCorrect={false}
+        autoFocus={view.kind === "new" && view.chosen.length > 0}
+        returnKeyType="done"
+        testID="era-name"
+      />
+      <View style={styles.nameRule} />
+    </View>
+  ) : null;
+
   return (
     <View style={[styles.root, { paddingBottom: lift }]}>
       <View style={styles.head}>
@@ -100,76 +170,23 @@ export function EraGather({
       </View>
       <View style={styles.rule} />
 
-      <ScrollView
+      <FlatList
         style={styles.root}
-        keyboardShouldPersistTaps="handled"
-        onLayout={(e) => setWide(e.nativeEvent.layout.width)}
-        contentContainerStyle={{ paddingBottom: spacing.xl }}
-      >
-        {making ? (
-          <View style={styles.naming}>
-            <Text style={styles.label}>Its name</Text>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              maxLength={ERA_TITLE_MAX}
-              placeholder="A summer, a city, a person"
-              placeholderTextColor={colors.inkFaint}
-              style={styles.name}
-              accessibilityLabel="The new era’s name"
-              accessibilityHint={`Up to ${ERA_TITLE_MAX} characters.`}
-              autoCapitalize="sentences"
-              autoCorrect={false}
-              autoFocus={view.kind === "new" && view.chosen.length > 0}
-              returnKeyType="done"
-              testID="era-name"
-            />
-            <View style={styles.nameRule} />
-          </View>
-        ) : null}
-
-        {view.groups.length === 0 ? (
+        data={lines}
+        keyExtractor={lineKey}
+        renderItem={renderLine}
+        ListHeaderComponent={naming}
+        ListEmptyComponent={
           <Text style={styles.none}>
             {making ? "There are no photographs of yours to choose from yet." : "Every photograph of yours is in this era already."}
           </Text>
-        ) : null}
-
-        {view.groups.map((group) => (
-          <View key={group.key ?? "none"} style={styles.group}>
-            <Text style={styles.groupTitle} accessibilityRole="header" numberOfLines={2}>
-              {group.title}
-            </Text>
-            <Text style={styles.groupMeta}>
-              {group.era ? eraMeta(group.era) : group.posts.length === 1 ? "1 photograph" : `${group.posts.length} photographs`}
-            </Text>
-            <View style={styles.grid}>
-              {group.posts.map((post) => {
-                const on = picked.includes(post.id);
-                // aria-checked as well, for the web, which reads no accessibilityState.
-                return (
-                  <Pressable
-                    key={post.id}
-                    onPress={() => toggle(post.id)}
-                    style={({ pressed }) => [{ width: cell, height: cell }, pressed && styles.pressed]}
-                    accessibilityRole="checkbox"
-                    accessibilityLabel={printLabel(post)}
-                    accessibilityState={{ checked: on }}
-                    aria-checked={on}
-                  >
-                    <View pointerEvents="none" style={on && styles.dimmed}>
-                      <PhotoTile post={post} size={cell} onPress={onClose} />
-                    </View>
-                    {on ? <View pointerEvents="none" style={styles.frame} /> : null}
-                    <View pointerEvents="none" style={[styles.tick, on && styles.tickOn]}>
-                      {on ? <Feather name="check" size={11} color={colors.paper} /> : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-        ))}
-      </ScrollView>
+        }
+        keyboardShouldPersistTaps="handled"
+        onLayout={(e) => setWide(e.nativeEvent.layout.width)}
+        contentContainerStyle={{ paddingBottom: spacing.xl }}
+        initialNumToRender={FIRST_LINES}
+        windowSize={SCREENS_DRAWN}
+      />
 
       <View style={[styles.foot, { paddingBottom: lift > 0 ? spacing.md : Math.max(insets.bottom, spacing.md) }]}>
         <Text style={styles.count} numberOfLines={1}>
@@ -199,6 +216,56 @@ export function EraGather({
     </View>
   );
 }
+
+/** Where a group's photographs are now: no era, or an era by the name it shows. */
+const GatherHead = React.memo(function GatherHead({ group }: { group: AddGroup<PostRow> }) {
+  return (
+    <View style={styles.group}>
+      <Text style={styles.groupTitle} accessibilityRole="header" numberOfLines={2}>
+        {group.title}
+      </Text>
+      <Text style={styles.groupMeta}>
+        {group.era ? eraMeta(group.era) : group.posts.length === 1 ? "1 photograph" : `${group.posts.length} photographs`}
+      </Text>
+    </View>
+  );
+});
+
+/**
+ * A photograph that can be chosen. Drawn again only when it is chosen or
+ * let go, or the squares change size: `onToggle` is the same every time.
+ */
+const GatherTile = React.memo(function GatherTile({
+  post,
+  on,
+  cell,
+  onToggle,
+}: {
+  post: PostRow;
+  on: boolean;
+  cell: number;
+  onToggle: (id: string) => void;
+}) {
+  // aria-checked as well, for the web, which reads no accessibilityState.
+  return (
+    <Pressable
+      onPress={() => onToggle(post.id)}
+      style={({ pressed }) => [{ width: cell, height: cell }, pressed && styles.pressed]}
+      accessibilityRole="checkbox"
+      accessibilityLabel={printLabel(post)}
+      accessibilityState={{ checked: on }}
+      aria-checked={on}
+    >
+      <View pointerEvents="none" style={on && styles.dimmed}>
+        <PhotoTile post={post} size={cell} onPress={noop} />
+      </View>
+      {on ? <View pointerEvents="none" style={styles.frame} /> : null}
+      <View pointerEvents="none" style={[styles.tick, on && styles.tickOn]}>
+        {on ? <Feather name="check" size={11} color={colors.paper} /> : null}
+      </View>
+    </Pressable>
+  );
+});
 
 /**
  * How far the keyboard is up over the sheet now, on iOS; nothing
@@ -279,7 +346,7 @@ const styles = StyleSheet.create({
 
   none: { ...type.caption, paddingHorizontal: spacing.lg, paddingTop: spacing.xl, color: colors.inkSoft },
 
-  // Where the photographs are now, each as a short chapter of squares.
+  // Where the photographs are now, each as a short chapter of squares, four to a row.
   group: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
   groupTitle: { fontFamily: type.serif, fontSize: 17, lineHeight: 22, color: colors.ink },
   groupMeta: {
@@ -291,7 +358,8 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: colors.inkSoft,
   },
-  grid: { marginTop: spacing.md, flexDirection: "row", flexWrap: "wrap", gap: GAP },
+  row: { flexDirection: "row", gap: GAP, paddingHorizontal: spacing.lg, marginTop: GAP },
+  rowFirst: { marginTop: spacing.md },
   dimmed: { opacity: 0.72 },
   // A chosen square is framed in the accent, and ticked.
   frame: { position: "absolute", left: 0, top: 0, right: 0, bottom: 0, borderWidth: 2, borderColor: colors.accent },

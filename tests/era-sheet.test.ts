@@ -10,6 +10,7 @@ import {
   chosenCount,
   deletedNote,
   eraSheetView,
+  gatherLines,
   keyboardLift,
   madeNote,
   movedNote,
@@ -129,6 +130,31 @@ describe("a new era", () => {
     const made = createEra(NO_EDITS, rows, "Saturdays", ["l1"], () => K).edits;
     const view = eraSheetView(rows, made, { kind: "add", key: K });
     expect(view?.kind === "add" && view.title).toBe("Saturdays");
+  });
+
+  it("is drawn as lines: each group's heading, then its photographs four to a row, every one once", () => {
+    const many = Array.from({ length: 9 }, (_, i) => post(`m${i}`, `2020-07-${String(10 + i).padStart(2, "0")}T12:00:00`, "Milan"));
+    const all = [...rows, ...many];
+    const view = eraSheetView(all, NO_EDITS, { kind: "new", chosen: [] });
+    if (view?.kind !== "new") throw new Error("no sheet");
+    const lines = gatherLines(view.groups, 4);
+    expect(lines.map((l) => (l.kind === "head" ? `# ${l.group.title}` : `${l.first ? "first " : ""}${l.posts.map((p) => p.id).join(" ")}`))).toEqual([
+      `# ${NOT_IN_AN_ERA}`,
+      "first alone",
+      "# Kyoto 2024",
+      "first k2 k1",
+      "# Lisbon 2023",
+      "first l2 l1",
+      "# Milan 2020",
+      "first m8 m7 m6 m5",
+      "m4 m3 m2 m1",
+      "m0",
+    ]);
+    // Every photograph offered is on one row, in the group's order, and every line has a key of its own.
+    const onRows = lines.flatMap((l) => (l.kind === "row" ? l.posts.map((p) => p.id) : []));
+    expect(onRows).toEqual(view.groups.flatMap((g) => g.posts.map((p) => p.id)));
+    expect(new Set(lines.map((l) => l.key)).size).toBe(lines.length);
+    expect(gatherLines([], 4)).toEqual([]);
   });
 
   it("lifts its foot over the keyboard by as far as the keyboard comes up from the foot of the screen", () => {

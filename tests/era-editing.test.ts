@@ -372,7 +372,7 @@ describe("ADD and NEW ERA", () => {
 
   it("chooses photographs as checkboxes, says which are chosen, and on the web too", () => {
     expect(gather).toMatch(/accessibilityRole="checkbox"\s+accessibilityLabel=\{printLabel\(post\)\}\s+accessibilityState=\{\{ checked: on \}\}\s+aria-checked=\{on\}/);
-    expect(gather).toMatch(/onPress=\{\(\) => toggle\(post\.id\)\}/);
+    expect(gather).toMatch(/onPress=\{\(\) => onToggle\(post\.id\)\}/);
     expect(gather).toMatch(/<Text style=\{styles\.groupTitle\} accessibilityRole="header"/);
   });
 
@@ -387,7 +387,7 @@ describe("ADD and NEW ERA", () => {
 
   it("makes one change for the lot, from what is still offered", () => {
     expect(gather).toMatch(/const confirm = \(\) => \{\s*if \(!ready\) return;\s*if \(making\) onCreate\(name, picked\);\s*else onAdd\(picked\);\s*\};/);
-    expect(gather).toMatch(/const picked = chosen\.filter\(\(id\) => offered\.has\(id\)\);/);
+    expect(gather).toMatch(/const picked = useMemo\(\(\) => chosen\.filter\(\(id\) => offered\.has\(id\)\), \[chosen, offered\]\);/);
     expect(gather.match(/\bonAdd\(/g)).toHaveLength(1);
     expect(gather.match(/\bonCreate\(/g)).toHaveLength(1);
   });
@@ -404,13 +404,36 @@ describe("ADD and NEW ERA", () => {
     expect(hook).toMatch(/return \(\) => \{\s*shown\.remove\(\);\s*hidden\.remove\(\);\s*\};\s*\}, \[\]\);/);
     expect(hook).not.toMatch(/useEffect\(/);
     // The whole sheet rises by it, and the foot sits just above the keyboard, the home indicator under it.
-    expect(gather).toMatch(/const lift = useKeyboardLift\(\);\s*return \(\s*<View style=\{\[styles\.root, \{ paddingBottom: lift \}\]\}>/);
+    expect(gather).toMatch(/const lift = useKeyboardLift\(\);/);
+    expect(gather).toMatch(/\) : null;\s*return \(\s*<View style=\{\[styles\.root, \{ paddingBottom: lift \}\]\}>/);
     expect(gather).toMatch(/<View style=\{\[styles\.foot, \{ paddingBottom: lift > 0 \? spacing\.md : Math\.max\(insets\.bottom, spacing\.md\) \}\]\}>/);
     expect(sheetLogic).toMatch(/if \(!\(screenY > 0\) \|\| !\(windowHeight > 0\)\) return 0;\s*return Math\.max\(0, Math\.round\(windowHeight - screenY\)\);/);
   });
 
+  it("draws only the lines near the screen, and a square again only when it is chosen or let go", () => {
+    // A list of headings and rows of four, made once for what is offered, drawing a screenful and those about it.
+    expect(gather).toMatch(/const lines = useMemo\(\(\) => gatherLines\(view\.groups, ACROSS\), \[view\.groups\]\);/);
+    expect(gather).toMatch(
+      /<FlatList\s+style=\{styles\.root\}\s+data=\{lines\}\s+keyExtractor=\{lineKey\}\s+renderItem=\{renderLine\}\s+ListHeaderComponent=\{naming\}/,
+    );
+    expect(gather).toMatch(/initialNumToRender=\{FIRST_LINES\}\s+windowSize=\{SCREENS_DRAWN\}/);
+    expect(gather).not.toMatch(/<ScrollView\b|\.map\(\(group\)/);
+    // Each square drawn again only when what it is given changes: whether it is chosen, its size, and a tap that never does.
+    expect(gather).toMatch(/const GatherTile = React\.memo\(function GatherTile\(/);
+    expect(gather).toMatch(/const GatherHead = React\.memo\(function GatherHead\(/);
+    expect(gather).toMatch(/<GatherTile key=\{post\.id\} post=\{post\} on=\{pickedSet\.has\(post\.id\)\} cell=\{cell\} onToggle=\{toggle\} \/>/);
+    expect(gather).toMatch(/const pickedSet = useMemo\(\(\) => new Set\(picked\), \[picked\]\);/);
+    expect(gather).toMatch(/const toggle = useCallback\(\s*\(id: string\) => setChosen\([\s\S]*?\),\s*\[\],\s*\);/);
+    expect(gather).toMatch(/const renderLine = useCallback\([\s\S]*?\[pickedSet, cell, toggle\],\s*\);/);
+    const tile = gather.slice(gather.indexOf("const GatherTile = React.memo("), gather.indexOf("function useKeyboardLift"));
+    expect(tile).toMatch(/<PhotoTile post=\{post\} size=\{cell\} onPress=\{noop\} \/>/);
+    expect(tile).not.toMatch(/onClose|picked\b/);
+    expect(gather).not.toMatch(/picked\.includes|chosen\.includes/);
+  });
+
   it("asks a new era's name in a field of its own, so it is asked the same way on every phone", () => {
-    expect(gather).toMatch(/\{making \? \(\s*<View style=\{styles\.naming\}>[\s\S]*?<TextInput\s+value=\{name\}\s+onChangeText=\{setName\}\s+maxLength=\{ERA_TITLE_MAX\}/);
+    expect(gather).toMatch(/const naming = making \? \(\s*<View style=\{styles\.naming\}>[\s\S]*?<TextInput\s+value=\{name\}\s+onChangeText=\{setName\}\s+maxLength=\{ERA_TITLE_MAX\}/);
+    expect(gather).toMatch(/ListHeaderComponent=\{naming\}/);
     expect(gather).toMatch(/accessibilityLabel="The new era’s name"/);
     expect(gather).not.toMatch(/Alert\.prompt|window\.prompt|canNameEras/);
   });
