@@ -34,9 +34,13 @@ page.on("console", (m) => {
 // showAlert falls back to window.confirm on web; Playwright dismisses
 // dialogs unless told otherwise, which would silently cancel every
 // confirmation the test gives. A prompt (an era's new name) is answered
-// with `promptAnswer` while one is set.
+// with `promptAnswer` while one is set. Every dialog's words are kept.
 let promptAnswer = null;
-page.on("dialog", (d) => (d.type() === "prompt" && promptAnswer != null ? d.accept(promptAnswer) : d.accept()));
+const dialogs = [];
+page.on("dialog", (d) => {
+  dialogs.push(d.message());
+  return d.type() === "prompt" && promptAnswer != null ? d.accept(promptAnswer) : d.accept();
+});
 
 const results = [];
 const check = (name, ok, detail = "") => {
@@ -294,6 +298,99 @@ check(
   (await byLabel("Edit eras").count()) > 0 && (await heading(/^The foggy winter, 3 photographs$/)) > 0,
 );
 await shot("13e-eras-arranged");
+
+// ADD, NEW ERA, "New era…", taking a photograph out and deleting an era
+// of her own, all in the same visit. The foggy winter holds the tram and
+// both of January's; Milan 2026 is left with the courtyard.
+await byLabel("Edit eras").first().click();
+await wait(900);
+check(
+  "Arranging offers ADD on every era, and NEW ERA in the bar",
+  (await byLabel("Add to The foggy winter").count()) > 0 &&
+    (await byLabel("Add to Milan 2026").count()) > 0 &&
+    (await byLabel("New era").count()) > 0,
+);
+await shot("13f-eras-add-new");
+const gather = () => seen(page.getByTestId("era-gather-sheet")).first();
+const confirmOff = async () => (await gather().getByTestId("era-gather-confirm").getAttribute("aria-disabled")) === "true";
+const pick = (caption) => seen(gather().getByRole("checkbox", { name: caption })).first();
+await byLabel("Add to Milan 2026").first().click();
+await wait(1200);
+check(
+  "ADD lists the photographs in other eras by era, and adds nothing until one is chosen",
+  /Add to Milan 2026/i.test(await gather().textContent()) &&
+    (await seen(gather().getByRole("heading", { name: "The foggy winter" })).count()) > 0 &&
+    (await confirmOff()),
+);
+await pick(/Fog on the Naviglio/).click();
+await wait(500);
+check("Choosing a photograph offers to add it, by count", !(await confirmOff()) && /Add 1/.test(await gather().textContent()));
+await shot("13g-era-add-sheet");
+await gather().getByTestId("era-gather-confirm").click();
+await wait(900);
+check(
+  "ADD brings a photograph over from another era, and the page says so",
+  (await heading(/^Milan 2026, 2 photographs$/)) > 0 &&
+    (await heading(/^The foggy winter, 2 photographs$/)) > 0 &&
+    /Added 1 to Milan 2026/i.test(await text()),
+);
+
+await byLabel("New era").first().click();
+await wait(1200);
+check("NEW ERA asks for a name and photographs, and makes nothing before both", /New era/i.test(await gather().textContent()) && (await confirmOff()));
+await seen(gather().getByTestId("era-name")).first().fill("Saturdays");
+await wait(300);
+const namedOnly = await confirmOff();
+await pick(/Saturday market/).click();
+await wait(500);
+check("A name and a photograph make it possible", namedOnly && !(await confirmOff()));
+await shot("13h-era-new-sheet");
+await gather().getByTestId("era-gather-confirm").click();
+await wait(900);
+check(
+  "A new era takes its place on the page, with its photograph",
+  (await heading(/^Saturdays, 1 photograph$/)) > 0 && (await heading(/^The foggy winter, 1 photograph$/)) > 0 && /Made Saturdays/i.test(await text()),
+);
+
+const moveSheet = () => seen(page.getByTestId("era-move-sheet")).first();
+await seen(page.getByLabel(/^Photograph, .*The 19 tram/)).first().click();
+await wait(1200);
+check(
+  "Move to offers a new era, and the way out of the era a move put it in",
+  (await moveSheet().getByRole("button", { name: "New era" }).count()) > 0 &&
+    (await moveSheet().getByRole("button", { name: /^Take out of The foggy winter\. Back to Milan 2026\.$/ }).count()) > 0,
+);
+await shot("13i-era-move-new");
+await moveSheet().getByRole("button", { name: "New era" }).click();
+await wait(1200);
+check("New era… turns the sheet to a new era with the photograph already chosen", (await pick(/The 19 tram/).getAttribute("aria-checked")) === "true");
+await seen(gather().getByTestId("era-name")).first().fill("Early trams");
+await gather().getByTestId("era-gather-confirm").click();
+await wait(900);
+check("The new era is made with it", (await heading(/^Early trams, 1 photograph$/)) > 0 && /Made Early trams/i.test(await text()));
+
+await seen(page.getByLabel(/^Photograph, .*The 19 tram/)).first().click();
+await wait(1200);
+await moveSheet().getByRole("button", { name: /^Take out of Early trams/ }).click();
+await wait(900);
+check(
+  "Taken out, a photograph goes back where it came from, and an era of the member's own goes with its last",
+  (await heading(/^Milan 2026, 3 photographs$/)) > 0 && (await heading(/^Early trams/)) === 0 && /Back in Milan 2026/i.test(await text()),
+);
+
+promptAnswer = "";
+await byLabel("Rename Saturdays").first().click();
+await wait(1200);
+promptAnswer = null;
+check(
+  "An era of the member's own is deleted from its name, asked once more, and its photograph goes back",
+  dialogs.some((m) => /Leave it empty to delete it/.test(m)) &&
+    dialogs.some((m) => /^Delete “Saturdays”\?/.test(m)) &&
+    (await heading(/^Saturdays/)) === 0 &&
+    (await heading(/^The foggy winter, 1 photograph$/)) > 0,
+);
+await byLabel("Done arranging eras").first().click();
+await wait(900);
 
 // A member's own name for their era, on their page, where it cannot be changed.
 await go("/user/niko.papadakis", 2800);

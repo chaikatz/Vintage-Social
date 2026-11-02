@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, type } from "@/theme";
-import { NO_EDITS, cleanEraTitle, editedEraSummary, moveChoices, type EditedEra, type EraEdits } from "@/utils/eraEdits";
+import { NO_EDITS, cleanEraTitle, editedEraSummary, type EditedEra, type EraEdits } from "@/utils/eraEdits";
 import { useReducedMotion } from "@/utils/useReducedMotion";
 import type { EraEditor } from "@/hooks/useEraEdits";
 import { EmptyState } from "./EmptyState";
@@ -23,7 +23,16 @@ import { PhotoTile } from "./PhotoGrid";
 import { aspectRatio } from "./PostMedia";
 import { GridSkeleton } from "./Skeleton";
 import { EraMoveSheet } from "./EraMoveSheet";
-import { askEraName, canNameEras } from "./eraName";
+import { askEraName, canNameEras, confirmDeleteEra } from "./eraName";
+import {
+  addedNote,
+  deletedNote,
+  eraSheetView,
+  madeNote,
+  movedNote,
+  takenOutNote,
+  type EraSheetState,
+} from "./eraSheet";
 import {
   ERA_RULE,
   ERA_STRIP,
@@ -90,15 +99,19 @@ interface Props {
  *
  * On your own page (`editor`), a quiet EDIT over the chapters opens them
  * for arranging, and holds on as you scroll. Each era's name takes a
- * RENAME beside it, every print is laid out and marked MOVE, and a tap on
- * one asks which era it belongs in (EraMoveSheet) instead of opening the
- * gallery. The change is on the page at once, and a line at the foot of
- * the screen says where the photograph went. DONE closes it again, on the
- * chapter the reader was at however far down they had gone. Moving
- * is chosen from a list rather than dragged: a drag across a long page
- * of chapters, under a scroll and a pull to refresh, is easy to drop in
- * the wrong one, and a list says exactly where a photograph will land.
- * Outside it, nothing differs from a member's page but the EDIT.
+ * RENAME and an ADD beside it, every print is laid out and marked MOVE,
+ * and a tap on one asks which era it belongs in (EraMoveSheet) instead of
+ * opening the gallery: any era, back out of one a move put it in, or a
+ * new one. ADD gathers photographs into an era from anywhere else, several
+ * at once, and NEW ERA, in the bar, makes one of the member's own, named
+ * and with its photographs; it takes its place among the others by date.
+ * The change is on the page at once, and a line at the foot of the screen
+ * says what was done. DONE closes it again, on the chapter the reader was
+ * at however far down they had gone. Moving is chosen from a list rather
+ * than dragged: a drag across a long page of chapters, under a scroll and
+ * a pull to refresh, is easy to drop in the wrong one, and a list says
+ * exactly where a photograph will land. Outside it, nothing differs from a
+ * member's page but the EDIT.
  */
 export function EraList({ posts, edits, editor, onOpenPost, header, member, loading, onRefresh, refreshing }: Props) {
   const { width, height } = useWindowDimensions();
@@ -116,8 +129,13 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   // Arranging, on your own page only, and only while there is an era to arrange.
   const [editing, setEditing] = useState(false);
   const arranging = editing && editor != null && summary.eras.length > 0;
-  const [moving, setMoving] = useState<PostRow | null>(null);
-  const choices = useMemo(() => (moving ? moveChoices(posts, arranged, moving.id) : []), [moving, posts, arranged]);
+  // The sheet a change is made in, and what it shows as the arrangement stands.
+  const [sheet, setSheet] = useState<EraSheetState | null>(null);
+  const view = useMemo(() => eraSheetView(posts, arranged, sheet), [sheet, posts, arranged]);
+  // An era ADD was for that has gone from the page takes its sheet with it, never to come back up on its own.
+  useEffect(() => {
+    if (sheet && !view) setSheet(null);
+  }, [sheet, view]);
 
   // Eras opened in place, by key (keys are unique; names a member gives need not be).
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
@@ -225,19 +243,47 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
     announce(words);
   };
 
+  // Each change is said only when the editor made it: not of a photograph
+  // gone from the page since the sheet opened, nor of one already there.
   const move = (key: string) => {
-    const post = moving;
-    const to = choices.find((c) => c.key === key);
-    setMoving(null);
-    if (!post || !to || !editor) return;
-    // Said only of a real move: not of a photograph gone from the page since the sheet opened.
-    if (editor.move(post, key)) say(`Moved to ${to.title}`);
+    const shown = view;
+    setSheet(null);
+    if (shown?.kind !== "move" || !editor) return;
+    const to = shown.choices.find((c) => c.key === key && !c.newEra);
+    if (!to) return;
+    if (editor.move(shown.post, key)) say(movedNote(to.title));
+  };
+  const takeOut = () => {
+    const shown = view;
+    setSheet(null);
+    if (shown?.kind !== "move" || !shown.out || !editor) return;
+    if (editor.takeOut(shown.post)) say(takenOutNote(shown.out));
+  };
+  const add = (photoIds: string[]) => {
+    const shown = view;
+    setSheet(null);
+    if (shown?.kind !== "add" || !editor) return;
+    if (editor.add(shown.key, photoIds)) say(addedNote(photoIds.length, shown.title));
+  };
+  const create = (name: string, photoIds: string[]) => {
+    setSheet(null);
+    if (editor?.create(name, photoIds)) say(madeNote(name));
+  };
+  // "New era…" turns Move to over to a new era, with the photograph already chosen.
+  const newEra = () => setSheet((now) => (now?.kind === "move" ? { kind: "new", chosen: [now.post.id] } : now));
+  const remove = (era: EditedEra<PostRow>) => {
+    if (editor?.deleteEra(era.key)) say(deletedNote(era.title));
   };
   const rename = (era: EditedEra<PostRow>) =>
-    askEraName(era, (title) => {
-      editor?.rename(era.key, title);
-      announce(`Named ${cleanEraTitle(title ?? "") || era.key}`);
-    });
+    askEraName(
+      era,
+      (title) => {
+        editor?.rename(era.key, title);
+        // An era the member made keeps its name when given none: it has no automatic one.
+        announce(`Named ${cleanEraTitle(title ?? "") || (era.made ? era.title : era.key)}`);
+      },
+      () => remove(era),
+    );
 
   // While arranging, the bar over the chapters holds to the top of the page.
   // Outside it the list of what holds is empty, never absent: the web lays
@@ -269,13 +315,26 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
               <View style={styles.barLine}>
                 <Text style={styles.barLabel}>{arranging ? "Arranging" : summary.eras.length === 1 ? "1 era" : `${summary.eras.length} eras`}</Text>
                 <View style={styles.barRule} />
+                {arranging ? (
+                  <Pressable
+                    onPress={() => setSheet({ kind: "new", chosen: [] })}
+                    hitSlop={12}
+                    style={({ pressed }) => pressed && styles.pressed}
+                    accessibilityRole="button"
+                    accessibilityLabel="New era"
+                    accessibilityHint="Name an era of your own, and choose its photographs."
+                    testID="eras-new"
+                  >
+                    <Text style={styles.barAction}>New era</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable
                   onPress={() => arrange(!arranging)}
                   hitSlop={12}
                   style={({ pressed }) => pressed && styles.pressed}
                   accessibilityRole="button"
                   accessibilityLabel={arranging ? "Done arranging eras" : "Edit eras"}
-                  accessibilityHint={arranging ? undefined : "Rename your eras, and move photographs from one to another."}
+                  accessibilityHint={arranging ? undefined : "Rename your eras, make new ones, and move photographs between them."}
                   testID="eras-edit"
                 >
                   <Text style={styles.barAction}>{arranging ? "Done" : "Edit"}</Text>
@@ -283,7 +342,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
               </View>
               {arranging ? (
                 <Text style={styles.barHint}>
-                  {canNameEras ? "Rename an era, or tap a photograph to move it." : "Tap a photograph to move it to another era."}
+                  {canNameEras ? "Rename an era or add to it, or tap a photograph to move it." : "Add to an era, or tap a photograph to move it."}
                 </Text>
               ) : null}
             </View>
@@ -305,8 +364,10 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
                 near={near.has(era.key)}
                 arranging={arranging}
                 onToggle={() => toggle(era.key)}
-                onOpen={(post) => (arranging ? setMoving(post) : onOpenPost(post, era.key))}
+                onOpen={(post) => (arranging ? setSheet({ kind: "move", post }) : onOpenPost(post, era.key))}
                 onRename={() => rename(era)}
+                onAdd={() => setSheet({ kind: "add", key: era.key })}
+                onDelete={() => confirmDeleteEra(era.title, () => remove(era))}
                 pageRef={(node) => {
                   if (node) pages.current.set(era.key, node);
                   else pages.current.delete(era.key);
@@ -347,7 +408,17 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
           {spoken ? <Text key={spoken.at}>{spoken.words}</Text> : null}
         </View>
       ) : null}
-      {editor ? <EraMoveSheet post={moving} choices={choices} onChoose={move} onClose={() => setMoving(null)} /> : null}
+      {editor ? (
+        <EraMoveSheet
+          view={view}
+          onMove={move}
+          onTakeOut={takeOut}
+          onNewEra={newEra}
+          onAdd={add}
+          onCreate={create}
+          onClose={() => setSheet(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -362,6 +433,8 @@ function Chapter({
   onToggle,
   onOpen,
   onRename,
+  onAdd,
+  onDelete,
   pageRef,
   onLayout,
 }: {
@@ -371,11 +444,15 @@ function Chapter({
   expanded: boolean;
   /** On the screen or within a screen of it, now or before: the lead is drawn full. */
   near: boolean;
-  /** Being arranged: every print laid out, each one moved by a tap, and the name renamed. */
+  /** Being arranged: every print laid out, each one moved by a tap, the name renamed, and photographs added. */
   arranging: boolean;
   onToggle: () => void;
   onOpen: (post: PostRow) => void;
   onRename: () => void;
+  /** ADD: photographs from anywhere else, gathered into this era. */
+  onAdd: () => void;
+  /** An era the member made, deleted, where its name cannot be asked for (and so Delete era with it). */
+  onDelete: () => void;
   /** The chapter's own view, so where it lies can be measured. */
   pageRef: (node: View | null) => void;
   onLayout: (e: LayoutChangeEvent) => void;
@@ -403,9 +480,35 @@ function Chapter({
             style={({ pressed }) => [styles.rename, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel={`Rename ${era.title}`}
-            accessibilityHint={era.renamed ? `Its automatic name is ${era.key}.` : "Gives this era a name of your own."}
+            accessibilityHint={
+              era.made ? "Renames this era of yours, or deletes it." : era.renamed ? `Its automatic name is ${era.key}.` : "Gives this era a name of your own."
+            }
           >
             <Text style={styles.renameText}>Rename</Text>
+          </Pressable>
+        ) : null}
+        {arranging && !canNameEras && era.made ? (
+          <Pressable
+            onPress={onDelete}
+            hitSlop={12}
+            style={({ pressed }) => [styles.rename, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${era.title}`}
+            accessibilityHint="Its photographs go back where they were."
+          >
+            <Text style={styles.renameText}>Delete</Text>
+          </Pressable>
+        ) : null}
+        {arranging ? (
+          <Pressable
+            onPress={onAdd}
+            hitSlop={12}
+            style={({ pressed }) => [styles.rename, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`Add to ${era.title}`}
+            accessibilityHint="Choose photographs of yours to add to this era."
+          >
+            <Text style={styles.renameText}>Add</Text>
           </Pressable>
         ) : null}
       </View>
