@@ -46,7 +46,8 @@ const FIRST_LINES = 12;
 const SCREENS_DRAWN = 7;
 
 const lineKey = (line: GatherLine) => line.key;
-// A square's own tap is never reached (it is drawn under the checkbox), and is the same every time, so it never draws one again.
+// A square's own tap, never reached (it is drawn under the checkbox), and
+// the same every time, so it never draws a square again.
 const noop = () => undefined;
 
 /**

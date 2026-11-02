@@ -70,13 +70,11 @@ function androidMenu(title: string, message: string | undefined, buttons: AlertB
   const cancel = buttons.find((b) => b.style === "cancel");
   const actions = buttons.filter((b) => b.style !== "cancel");
   const ordered = [...actions.filter((b) => b.style === "destructive"), ...actions.filter((b) => b.style !== "destructive")];
+  const rest = [...ordered.slice(ANDROID_MOST - 1), ...(cancel ? [cancel] : [])];
   const shown =
     ordered.length <= ANDROID_MOST
       ? ordered
-      : [
-          ...ordered.slice(0, ANDROID_MOST - 1),
-          { text: "More…", onPress: () => androidMenu(title, message, [...ordered.slice(ANDROID_MOST - 1), ...(cancel ? [cancel] : [])]) },
-        ];
+      : [...ordered.slice(0, ANDROID_MOST - 1), { text: "More…", onPress: () => androidMenu(title, message, rest) }];
   Alert.alert(title, message, shown, { cancelable: true, onDismiss: cancel?.onPress });
 }
 
