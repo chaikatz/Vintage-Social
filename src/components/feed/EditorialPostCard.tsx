@@ -5,31 +5,36 @@ import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { colors, spacing, type } from "@/theme";
 import { PRINT_WIDTH, exportLabelText, exportLayout, type TextBox } from "@/utils/exportLayout";
+import { paperStyle, useFeedPaper } from "@/utils/feedPaper";
+import { postedAgo, postedAgoSpoken } from "@/utils/time";
+import { useMinute } from "@/utils/useMinute";
+import { Avatar } from "../Avatar";
 import { INLINE_COMMENTS, PostCard } from "../PostCard";
 import { PostMedia } from "../PostMedia";
 
-/** Exactly PostCard's props: Home hands either card the same ones. */
+/** Exactly PostCard's props: a feed hands either card the same ones. */
 type Props = React.ComponentProps<typeof PostCard>;
 
 /**
  * Editorial (Preview): each post set out as a print, the way a photograph
- * leaves VINTAGE (see src/components/ExportCard.tsx). Home draws it in
- * place of PostCard when the member chooses it in Settings (see
+ * leaves VINTAGE (see src/components/ExportCard.tsx). Home and the gallery
+ * draw it in place of PostCard when the member chooses it in Settings (see
  * src/utils/feedLayout.ts); nothing else does.
  *
- * The picture sits on the paper inside the print's margins, with the
- * print's hairline under it and the print's label under that. The label
- * keeps its right-hand side as it is struck: where, when, and whose, in
- * the typewriter face. The wordmark's place on the left goes to the three
- * buttons, with the counts beneath them where "Members only" was, and the
- * "…" follows the member's name where their number was; the feed shows
- * neither. Then the member's own words, set like the comments, and the
- * newest comments, inside the same margins. One print follows another
- * with a strip of the darker paper between them.
+ * Above the picture, where the original card has them, the member's
+ * picture and name, and the "…" at the end of that line. Then the picture
+ * on the paper inside the print's margins, the print's hairline under it
+ * and the print's label under that. The label keeps its right-hand side as
+ * it is struck, where and when, in the typewriter face; the wordmark's
+ * place on the left goes to the three buttons. No counts and no number.
+ * Then the caption after the member's name, the way a comment is written,
+ * the newest comments, and last of all when it went up. One print follows
+ * another with nothing between them but the paper, the one chosen in
+ * Settings (see src/utils/feedPaper.ts).
  *
  * Nothing here decides anything. A like goes through the very same steps
- * as PostCard's, the double tap is PostMedia's, and the "…", the counts,
- * the name and the comments call what Home passes in.
+ * as PostCard's, the double tap is PostMedia's, and the name, the "…" and
+ * the comments call what the screen passes in.
  */
 export function EditorialPostCard({
   post,
@@ -39,7 +44,6 @@ export function EditorialPostCard({
   onOpenProfile,
   onMore,
   onShare,
-  onOpenLikes,
   comments,
   active = true,
   warm = true,
@@ -51,19 +55,40 @@ export function EditorialPostCard({
   };
 
   const preview = (comments ?? []).slice(-INLINE_COMMENTS);
-  const likes = `${post.like_count} ${post.like_count === 1 ? "like" : "likes"}`;
-  const replies = `${post.comment_count} ${post.comment_count === 1 ? "comment" : "comments"}`;
-  // The print's own words, given no membership number: the place, the date in full, and `@name`.
+  // The print's own words: the place and the date in full. Its `@name` is left off; the name is above the picture.
   const label = exportLabelText(post, null);
-  // Larger Text grows the label, up to its cap. The right-hand lines then
-  // ask for more room beside the buttons, and the name's line, whose
-  // targets reach above and below it, is taller.
+  const paper = paperStyle(useFeedPaper());
+  // Larger Text grows the label, up to its cap, and the right-hand lines
+  // then ask for more room beside the buttons.
   const scale = Math.min(Math.max(useWindowDimensions().fontScale, 1), LABEL_CAP);
   const dateline = { flexBasis: DATELINE * scale };
-  const reach = { marginVertical: -Math.max(0, TARGET - CREDIT_LINE * scale) / 2 };
 
   return (
-    <View style={styles.card} testID="editorial-post-card">
+    <View style={[styles.card, paper]} testID="editorial-post-card">
+      {/* The member, as the original card has them: their picture and name, which open their profile, and the "…". */}
+      <View style={styles.header}>
+        <Pressable
+          style={styles.member}
+          onPress={() => onOpenProfile(post.author.username)}
+          accessibilityRole="button"
+          accessibilityLabel={post.author.username}
+          accessibilityHint="Opens their profile"
+        >
+          <Avatar path={post.author.avatar_url} username={post.author.username} size={AVATAR} />
+          <Text style={styles.username} numberOfLines={1}>
+            {post.author.username}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.button, styles.more]}
+          onPress={() => onMore(post)}
+          accessibilityRole="button"
+          accessibilityLabel="Post options"
+        >
+          <Feather name="more-horizontal" size={DOTS} color={colors.inkSoft} />
+        </Pressable>
+      </View>
+
       {/* A print has no frame: the picture lies on the paper, without the hairlines PostMedia draws across a full-width feed. */}
       <PostMedia
         post={post}
@@ -77,47 +102,39 @@ export function EditorialPostCard({
 
       <View style={styles.rule} />
 
-      {/* The label: the buttons and their counts where the wordmark was, `MILAN / OCTOBER 28, 2026 / @elena …` on the right. */}
+      {/* The label: the buttons where the wordmark was, `MILAN / OCTOBER 28, 2026` on the right. */}
       <View style={styles.label}>
-        <View style={styles.buttons}>
-          <View style={styles.actions}>
+        <View style={styles.actions}>
+          <Pressable
+            style={styles.button}
+            onPress={() => like(!likedByMe)}
+            accessibilityRole="button"
+            accessibilityLabel={likedByMe ? "Unlike" : "Like"}
+          >
+            {/* Feather has no solid heart, so the filled state borrows one. */}
+            {likedByMe ? (
+              <MaterialCommunityIcons name="heart" size={22} color={colors.like} />
+            ) : (
+              <Feather name="heart" size={ICON} color={colors.ink} />
+            )}
+          </Pressable>
+          <Pressable
+            style={styles.button}
+            onPress={() => onOpenComments(post)}
+            accessibilityRole="button"
+            accessibilityLabel="Comments"
+          >
+            <Feather name="message-circle" size={ICON} color={colors.ink} />
+          </Pressable>
+          {onShare ? (
             <Pressable
               style={styles.button}
-              onPress={() => like(!likedByMe)}
-              accessibilityLabel={likedByMe ? "Unlike" : "Like"}
+              onPress={() => onShare(post)}
+              accessibilityRole="button"
+              accessibilityLabel="Send to"
             >
-              {/* Feather has no solid heart, so the filled state borrows one. */}
-              {likedByMe ? (
-                <MaterialCommunityIcons name="heart" size={22} color={colors.like} />
-              ) : (
-                <Feather name="heart" size={ICON} color={colors.ink} />
-              )}
+              <Feather name="send" size={ICON - 2} color={colors.ink} />
             </Pressable>
-            <Pressable style={styles.button} onPress={() => onOpenComments(post)} accessibilityLabel="Comments">
-              <Feather name="message-circle" size={ICON} color={colors.ink} />
-            </Pressable>
-            {onShare ? (
-              <Pressable style={styles.button} onPress={() => onShare(post)} accessibilityLabel="Send to">
-                <Feather name="send" size={ICON - 2} color={colors.ink} />
-              </Pressable>
-            ) : null}
-          </View>
-
-          {/* The counts, each opening its list, as the line under the buttons. */}
-          {post.like_count > 0 || post.comment_count > 0 ? (
-            <View style={styles.counts}>
-              {post.like_count > 0 ? (
-                <Pressable style={styles.count} onPress={() => onOpenLikes?.(post)} disabled={!onOpenLikes}>
-                  <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.countText}>{likes}</Text>
-                </Pressable>
-              ) : null}
-              {post.like_count > 0 && post.comment_count > 0 ? <Text maxFontSizeMultiplier={LABEL_CAP} style={[styles.countText, styles.dot]}>·</Text> : null}
-              {post.comment_count > 0 ? (
-                <Pressable style={styles.count} onPress={() => onOpenComments(post)} accessibilityRole="button">
-                  <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.countText}>{replies}</Text>
-                </Pressable>
-              ) : null}
-            </View>
           ) : null}
         </View>
 
@@ -130,33 +147,47 @@ export function EditorialPostCard({
           <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.date} numberOfLines={1}>
             {label.date}
           </Text>
-          <View style={styles.credit}>
-            <Pressable
-              style={[styles.name, reach]}
-              onPress={() => onOpenProfile(post.author.username)}
-              accessibilityRole="button"
-            >
-              <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.creditText} numberOfLines={1}>
-                {label.credit}
-              </Text>
-            </Pressable>
-            <Pressable style={[styles.button, styles.more, reach]} onPress={() => onMore(post)} accessibilityLabel="Post options">
-              <Feather name="more-horizontal" size={DOTS} color={colors.inkSoft} />
-            </Pressable>
-          </View>
         </View>
       </View>
 
-      {post.caption ? <Text style={styles.caption}>{post.caption}</Text> : null}
+      {post.caption ? (
+        <Text style={styles.caption}>
+          <Text style={styles.author}>{post.author.username}</Text> {post.caption}
+        </Text>
+      ) : null}
 
       {preview.map((c) => (
         <Pressable key={c.id} onPress={() => onOpenComments(post)}>
           <Text style={styles.comment} numberOfLines={2}>
-            <Text style={styles.commenter}>{c.author.username}</Text> {c.body}
+            <Text style={styles.author}>{c.author.username}</Text> {c.body}
           </Text>
         </Pressable>
       ))}
+
+      {/* When it went up, last, under everything said about it. */}
+      <PostedTime at={post.created_at} />
     </View>
+  );
+}
+
+/**
+ * `29M AGO`: when the post went up, at the foot of the print, in the
+ * label's typewriter face a shade fainter. The posting time, not the day
+ * it was taken, which the label already gives. It follows the app's one
+ * clock, so it moves on by itself, and only this line is drawn again when
+ * it does.
+ */
+function PostedTime({ at }: { at: string }) {
+  const now = new Date(useMinute());
+  return (
+    <Text
+      maxFontSizeMultiplier={LABEL_CAP}
+      style={styles.posted}
+      numberOfLines={1}
+      accessibilityLabel={postedAgoSpoken(at, now)}
+    >
+      {postedAgo(at, now)}
+    </Text>
   );
 }
 
@@ -201,6 +232,9 @@ const ICON = 21;
 /** The "…", a little smaller; Feather's three dots span three quarters of its width. */
 const DOTS = 18;
 
+/** The member's picture, the size the original card gives it. */
+const AVATAR = 34;
+
 /**
  * How far the label's typewriter lines grow with Larger Text. At twice
  * their size the longest date still fits across a 320 pt screen, on a
@@ -223,21 +257,31 @@ const BETWEEN = PRINT.byline.y - (PRINT.place.y + PRINT.place.height);
 const LABEL_TOP = PRINT.place.y - PRINT.rule.y;
 const INSET = (TARGET - ICON) / 2;
 
-/** The height of the name's line at the standard text size. */
-const CREDIT_LINE = line(PRINT.credit).lineHeight;
-
 const styles = StyleSheet.create({
-  // A sheet of the paper: a little of it above the picture, the print's
-  // margins at the sides, and the darker paper underneath, where the next
-  // print begins.
+  // A sheet of the paper: the print's margins at the sides, a little of
+  // it above the member's name, and more under the last line, where the
+  // next print begins. The paper itself is the one chosen (see `paper`).
   card: {
     paddingHorizontal: share(PRINT.margin),
     paddingTop: share(GAP),
     paddingBottom: share(PRINT.margin),
-    backgroundColor: colors.paper,
-    borderBottomWidth: spacing.sm,
-    borderBottomColor: colors.paperSunken,
   },
+  // As near the picture as on the original card: the picture's top edge
+  // is as far under the member's picture as there.
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.md - (TARGET - AVATAR) / 2,
+  },
+  // Their picture starts at the margin, level with the photograph's edge.
+  member: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    minHeight: TARGET,
+  },
+  username: { flexShrink: 1, fontSize: 14, fontWeight: "600", color: colors.ink },
   // As far under the picture as on the print, and as the paper above it.
   rule: {
     height: PRINT.rule.height,
@@ -245,7 +289,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.borderStrong,
   },
   // On a narrow screen, or with large text, the right-hand lines go under
-  // the buttons and their counts, still set against the right margin.
+  // the buttons, still set against the right margin.
   label: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -253,14 +297,13 @@ const styles = StyleSheet.create({
     columnGap: spacing.md,
     marginTop: LABEL_TOP,
   },
-  // The outlines start level with the first line; their targets reach up into the paper under the rule.
-  buttons: { marginTop: -INSET },
+  // The outlines start level with the first line; their targets reach up
+  // into the paper under the rule, and the heart's outline, not its
+  // target, starts at the margin.
   actions: {
     flexDirection: "row",
-    // The heart's outline, not its target, starts at the margin.
+    marginTop: -INSET,
     marginLeft: -INSET,
-    // Over the counts' targets where the two meet, so a button is always a whole target.
-    zIndex: 1,
   },
   button: {
     minWidth: TARGET,
@@ -268,36 +311,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // The counts' targets begin in the empty foot of the buttons' and their
-  // words where the buttons' end: the line sits as close under the outlines
-  // as the right-hand lines do under one another, and the label stays one
-  // block rather than a block with a gap under it.
-  counts: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "flex-start",
-    columnGap: 6,
-    marginTop: -INSET,
-  },
-  count: {
-    minWidth: TARGET,
-    minHeight: TARGET,
-    paddingTop: INSET,
-  },
-  countText: {
-    ...line(PRINT.byline),
-    textTransform: "uppercase",
-    color: colors.inkSoft,
-  },
-  // Level with the words, which start below the head of their targets.
-  dot: { color: colors.inkFaint, paddingTop: INSET },
-  // As much paper under the last line as the counts' targets leave under
-  // theirs, so the caption starts the same distance below either.
+  // As much paper under the last line as the buttons' targets leave under
+  // their outlines, so the caption starts the same distance below either.
   dateline: {
     flexGrow: 1,
     flexShrink: 1,
     alignItems: "flex-end",
-    paddingBottom: TARGET - INSET - line(PRINT.byline).lineHeight,
+    paddingBottom: INSET,
   },
   // Tracking follows the last letter too; the words, not that space, end at the margin.
   place: {
@@ -308,24 +328,11 @@ const styles = StyleSheet.create({
     marginRight: -PRINT.place.spacing,
   },
   date: { ...line(PRINT.byline), textAlign: "right", color: colors.inkSoft, marginRight: -PRINT.byline.spacing },
-  credit: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: BETWEEN,
-  },
-  // Full targets that keep the line's own height: the name and the "…"
-  // reach above and below it, by as much as `reach` says.
-  name: {
-    flexShrink: 1,
-    minHeight: TARGET,
-    justifyContent: "center",
-  },
-  creditText: { ...line(PRINT.credit), textAlign: "right", color: colors.inkFaint },
   more: {
     // The dots, not their target, end at the margin.
     marginRight: -(TARGET - DOTS * 0.75) / 2,
   },
-  // The member's words in the comments' own type, so the text under a picture reads as one.
+  // The member's words in the comments' own type, after their name, so the text under a picture reads as one.
   caption: {
     ...type.body,
     fontSize: 14,
@@ -337,5 +344,12 @@ const styles = StyleSheet.create({
     color: colors.ink,
     paddingTop: spacing.xs + 2,
   },
-  commenter: { fontWeight: "600" },
+  author: { fontWeight: "600" },
+  // The label's typewriter line, a shade fainter than the date.
+  posted: {
+    ...line(PRINT.byline),
+    textTransform: "uppercase",
+    color: colors.inkFaint,
+    paddingTop: spacing.sm,
+  },
 });

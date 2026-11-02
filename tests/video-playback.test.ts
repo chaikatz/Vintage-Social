@@ -135,7 +135,10 @@ describe("the gallery", () => {
   });
 
   it("gives a player only to the clips around the card on screen", () => {
-    const card = tags(gallery, "PostCard")[0] ?? "";
+    // One card tag, whichever card the feed layout picks (see src/utils/feedLayout.ts).
+    const cards = tags(gallery, "(?:PostCard|FeedCard)");
+    expect(cards).toHaveLength(1);
+    const card = cards[0] ?? "";
     expect(card).toMatch(/warm=\{isWarm\(index, warm\)\}/);
     expect(gallery).toMatch(/renderItem=\{\(\{ item, index \}\) =>/);
     expect(gallery).toMatch(/warmWindow\(\{ ready, startIndex, seenIndex: seenIndex < 0 \? null : seenIndex, count: posts\.length \}\)/);

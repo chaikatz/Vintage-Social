@@ -15,6 +15,7 @@ import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { onHomeAgain } from "@/utils/homeRefresh";
 import { useFeedLayout } from "@/utils/feedLayout";
+import { useFeedBackground } from "@/utils/feedPaper";
 import { notePostsInFeed, setOutboxProfileRefresher, usePendingPosts, type PendingState } from "@/uploads";
 import { pendingNeedsTop } from "@/uploads/store";
 import type { PostWithAuthor } from "@/types/db";
@@ -135,8 +136,10 @@ export default function Home() {
   }).current;
 
   // Editorial (Preview), chosen in Settings: the same props, set out by
-  // another card. Everything else about the list stays as it is.
+  // another card, on the paper chosen with it. Everything else about the
+  // list stays as it is.
   const FeedCard = useFeedLayout() === "editorial" ? EditorialPostCard : PostCard;
+  const paper = useFeedBackground();
 
   const renderItem = useCallback(
     ({ item }: { item: (typeof posts)[number] }) => (
@@ -175,7 +178,7 @@ export default function Home() {
     ) : null;
 
   return (
-    <Screen padded={false}>
+    <Screen padded={false} style={paper}>
       <FlatList
         ref={listRef}
         data={posts}

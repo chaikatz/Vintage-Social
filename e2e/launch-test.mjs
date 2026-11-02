@@ -232,49 +232,174 @@ check("Comment posts into the thread", /doing all the work/.test(await text()));
 await shot("12-comments");
 
 // Editorial (Preview): the same feed set out by another card, chosen in
-// Settings. Only Home draws that card, so once Original is chosen again
-// none is left anywhere in the page, and the original's own line (the
-// caption after the member's name) is back.
-const feedLayout = async (label) => {
+// Settings with the paper it lies on. Home and the gallery draw that card,
+// and the whole of the feed is the one paper: the screen, the bars and
+// every print. Once Original is chosen again no editorial card is left
+// anywhere in the page, Home is on the app's own paper whatever paper was
+// chosen, and the original's own line (the caption after the member's
+// name) is back.
+const choose = async (...labels) => {
   await tab("profile");
   await byLabel("Settings").first().click();
   await wait(2200);
-  await seen(page.getByRole("radio", { name: label, exact: true })).first().click();
-  await wait(900);
+  for (const label of labels) {
+    await seen(page.getByRole("radio", { name: label, exact: true })).first().click();
+    await wait(900);
+  }
+  // The paper is offered only while the feed is Editorial.
+  const papers = await seen(page.getByRole("radiogroup", { name: "Paper" })).count();
   await tab("home");
+  return papers;
 };
-await feedLayout("Editorial (Preview)");
+/** The colour seen at the middle of something: the first background there, whatever draws it (a bar's may be a layer of its own). */
+const paperOf = (locator) =>
+  locator.first().evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    for (const n of document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)) {
+      const c = getComputedStyle(n).backgroundColor;
+      if (c !== "rgba(0, 0, 0, 0)" && c !== "transparent") return c;
+    }
+    return "";
+  });
+/** The colour of the screen a card lies on: the first background among the card's containers. */
+const screenUnder = (card) =>
+  card.first().evaluate((el) => {
+    for (let n = el.parentElement; n; n = n.parentElement) {
+      const c = getComputedStyle(n).backgroundColor;
+      if (c !== "rgba(0, 0, 0, 0)" && c !== "transparent") return c;
+    }
+    return "";
+  });
+const tabBar = () => seen(page.locator('[role="tablist"]'));
+/** Every print on screen, the screen behind them and the bars around it: the colours they come to. */
+const papersOf = async (cards, ...bars) => {
+  const prints = await cards.evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor));
+  const around = [await screenUnder(cards)];
+  for (const bar of bars) around.push(await paperOf(bar));
+  return [...new Set([...prints, ...around])];
+};
+const OFF_WHITE = "rgb(250, 246, 239)";
+const WHITE = "rgb(255, 255, 255)";
+const wordmark = () => byText("VINTAGE");
+
+check("The paper is offered once Editorial is chosen", (await choose("Editorial (Preview)")) > 0);
 const editorial = seen(page.locator('[data-testid="editorial-post-card"]'));
 check("Editorial (Preview) sets Home out with the editorial card", (await editorial.count()) > 0);
-// Each post a print: the date in full and the member's @name on its label, and no membership number.
-const print = (await editorial.first().textContent()) ?? "";
+// Each post a print: the place and the date in full on its label, and no @name, number or count.
+const prints = await editorial.evaluateAll((els) => els.map((el) => el.textContent ?? ""));
+const print = prints[0] ?? "";
 check(
-  "The editorial card is labelled like a print",
-  /[A-Z]+ \d{1,2}, \d{4}/.test(print) && /@[a-z0-9._]+/.test(print) && !/MEMBER|NO\. \d{5}/.test(print),
+  "The editorial card is labelled like a print, without the @name",
+  /[A-Z]+ \d{1,2}, \d{4}/.test(print) && prints.every((p) => !/@[a-z0-9._]+/.test(p) && !/MEMBER|NO\. \d{5}/.test(p)),
   print.slice(0, 120),
 );
+check("The editorial card has no like or comment counts", prints.every((p) => !/\d+ (likes?|comments?)\b/i.test(p)));
+// Above the picture, as on the original card: the member's picture and name, and the "…" at the end of their line.
+const head = await editorial.first().evaluate((el) => {
+  const member = el.firstElementChild?.querySelector('[role="button"]');
+  const more = el.firstElementChild?.querySelector('[aria-label="Post options"]');
+  const heart = el.querySelector('[aria-label="Like"], [aria-label="Unlike"]');
+  const box = (n) => n?.getBoundingClientRect() ?? { top: 0, bottom: 0, left: 0, right: 0 };
+  const m = box(member);
+  const o = box(more);
+  return {
+    name: member?.getAttribute("aria-label") ?? "",
+    picture: Boolean(member?.querySelector("img, [data-expoimage]")),
+    above: m.bottom > 0 && m.bottom <= box(heart).top && o.bottom <= box(heart).top,
+    level: Math.abs((m.top + m.bottom) / 2 - (o.top + o.bottom) / 2) < 2 && o.left > m.left,
+  };
+});
+check(
+  "The member’s picture and name sit above the picture, with the “…” at the end of their line",
+  /^[a-z0-9._]+$/.test(head.name) && head.picture && head.above && head.level,
+  JSON.stringify(head),
+);
+// The caption after the member's name, in bold, as a comment is written.
+const captioned = await editorial.first().evaluate(
+  (el, name) =>
+    [...el.querySelectorAll("div, span")].some(
+      (n) =>
+        n.textContent?.startsWith(`${name} `) &&
+        n.firstElementChild?.textContent === name &&
+        Number(getComputedStyle(n.firstElementChild).fontWeight) >= 600,
+    ),
+  head.name,
+);
+check("The caption follows its member’s name, as a comment does", captioned);
+// Last on each print, when it went up, in the label's capitals.
+const foot = await editorial.evaluateAll((els) =>
+  els.map((el) => [el.lastElementChild?.getAttribute("aria-label") ?? "", el.lastElementChild?.innerText ?? ""]),
+);
+check(
+  "Every print ends with when it went up",
+  foot.length > 0 &&
+    foot.every(
+      ([label, line]) =>
+        /^Posted (just now|\d+ (minute|hour|day)s? ago|[A-Z][a-z]+ \d{1,2}(, \d{4})?)$/.test(label) &&
+        /^(JUST NOW|\d+[MHD] AGO|[A-Z]{3} \d{1,2}(, \d{4})?)$/.test(line),
+    ),
+  foot[0]?.join(" / "),
+);
+const offWhite = await papersOf(editorial, wordmark(), tabBar());
+const strips = await editorial.evaluateAll((els) => els.filter((el) => getComputedStyle(el).borderBottomWidth !== "0px").length);
+check(
+  "Off-white: the prints, the screen and both bars are one paper, with nothing between the prints",
+  offWhite.length === 1 && offWhite[0] === OFF_WHITE && strips === 0,
+  offWhite.join(" | "),
+);
 await shot("12b-editorial");
-const likesIn = async (card) => Number(/(\d+) likes?/.exec((await card.textContent()) ?? "")?.[1] ?? 0);
 let editorialLike = "no card to like";
 // The member has liked most of the first few already; the first one not yet liked will do.
 for (let i = 0; i < (await editorial.count()); i++) {
   const card = editorial.nth(i);
   if (!(await card.getByLabel("Like", { exact: true }).count())) continue;
-  const before = await likesIn(card);
   await card.getByLabel("Like", { exact: true }).click();
   await wait(1500);
-  const after = await likesIn(card);
-  const hearts = await card.getByLabel("Unlike", { exact: true }).count();
-  editorialLike = hearts > 0 && after === before + 1 ? "" : `${before} → ${after} likes`;
+  editorialLike = (await card.getByLabel("Unlike", { exact: true }).count()) > 0 ? "" : "the heart did not fill";
   break;
 }
 check("Like still works on the editorial card", editorialLike === "", editorialLike);
-await feedLayout("Original");
+
+await choose("White");
+const white = await papersOf(editorial, wordmark(), tabBar());
+check("White: the prints, the screen and both bars are all white", white.length === 1 && white[0] === WHITE, white.join(" | "));
+await shot("12c-editorial-white");
+
+// A profile's photographs in feed view: the gallery a grid square opens, set out the same way, on the same paper.
+const author = editorial.nth(1).locator('[role="button"]').first();
+const member = (await author.getAttribute("aria-label")) ?? "";
+await author.click();
+await wait(2600);
+const squares = await seen(page.locator("img")).evaluateAll((els) =>
+  els
+    .map((e) => e.getBoundingClientRect())
+    .filter((r) => r.width > 100 && Math.abs(r.width - r.height) < 1)
+    .map((r) => [r.x + r.width / 2, r.y + r.height / 2]),
+);
+if (squares.length > 1) await page.mouse.click(squares[1][0], squares[1][1]);
+await wait(3200);
+const galleryCards = seen(page.locator('[data-testid="editorial-post-card"]'));
+const shownInGallery = await galleryCards.count();
+const galleryPaper = shownInGallery ? await papersOf(galleryCards, seen(page.getByRole("heading", { name: member }))) : [];
+check(
+  "A profile’s gallery is set out in prints too, on the same paper under the same bar",
+  /\/gallery\?/.test(page.url()) && shownInGallery > 0 && galleryPaper.length === 1 && galleryPaper[0] === WHITE,
+  `${member}: ${galleryPaper.join(" | ")}`,
+);
+await shot("12d-editorial-gallery");
+
+check("The paper is not offered once Original is chosen again", (await choose("Original")) === 0);
 check(
   "Original comes back as it was",
   (await page.locator('[data-testid="editorial-post-card"]').count()) === 0 &&
     (await byText("elena.marchetti The 19 tram, before anyone was awake.").count()) > 0,
 );
+// White is still the paper chosen, but the paper is the editorial feed's
+// alone. An original card ends with its posted time, so the line's parent
+// is the card.
+const originalCard = seen(page.getByLabel(/^Posted /)).first().locator("xpath=..");
+const original = [await screenUnder(originalCard), await paperOf(wordmark()), await paperOf(tabBar())];
+check("Original lies on the app’s own paper, whatever paper was chosen", original.every((c) => c === OFF_WHITE), original.join(" | "));
 
 await go("/user/tomas.lindqvist", 2800);
 const tomas = await text();

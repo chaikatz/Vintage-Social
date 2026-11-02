@@ -5,6 +5,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
+import { EditorialPostCard } from "@/components/feed/EditorialPostCard";
 import { EmptyState } from "@/components/EmptyState";
 import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
@@ -14,6 +15,8 @@ import { isWarm, warmWindow } from "@/utils/videoWindow";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
+import { useFeedLayout } from "@/utils/feedLayout";
+import { useFeedBackground } from "@/utils/feedPaper";
 import type { PostWithAuthor } from "@/types/db";
 
 /**
@@ -180,10 +183,15 @@ export default function Gallery() {
 
   const loading = !postsQ.isFetched || !authorQ.isFetched || waiting;
 
+  // Editorial (Preview), as on Home: the same props, set out by another
+  // card, on the paper chosen with it, under a bar on that paper too.
+  const FeedCard = useFeedLayout() === "editorial" ? EditorialPostCard : PostCard;
+  const paper = useFeedBackground();
+
   return (
-    <Screen padded={false}>
+    <Screen padded={false} style={paper}>
       {/* An era's gallery is titled with the era; every card still names its author. */}
-      <Stack.Screen options={{ title: shown.era ?? authorQ.data?.username ?? "" }} />
+      <Stack.Screen options={{ title: shown.era ?? authorQ.data?.username ?? "", headerStyle: paper as { backgroundColor: string } }} />
       <FlatList
         ref={list}
         data={posts}
@@ -210,7 +218,7 @@ export default function Gallery() {
         }
         renderItem={({ item, index }) => (
           <View onLayout={(e) => onCardLayout(item.id, e)}>
-            <PostCard
+            <FeedCard
               post={{ ...item, like_count: likeCountFor(item) }}
               likedByMe={isLiked(item)}
               onToggleLike={toggleLike}

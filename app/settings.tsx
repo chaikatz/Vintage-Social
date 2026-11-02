@@ -21,6 +21,7 @@ import { forgetDarkroomHistory } from "@/darkroom/forget";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
 import { loadAppearance, setAppearance, type AppearanceChoice } from "@/utils/appearance";
 import { FEED_LAYOUTS, setFeedLayout, useFeedLayout } from "@/utils/feedLayout";
+import { FEED_PAPERS, setFeedPaper, useFeedPaper } from "@/utils/feedPaper";
 import {
   DEFAULT_PREFS,
   fetchNotificationPrefs,
@@ -49,8 +50,10 @@ export default function Settings() {
     setAppearanceChoice(choice);
     setAppearance(choice);
   };
-  // Editorial (Preview): how Home sets out each post. Takes effect at once, on this phone only.
+  // Editorial (Preview): how a feed sets out each post, and the paper it is
+  // set on. Each takes effect at once, on this phone only.
   const feedLayout = useFeedLayout();
+  const feedPaper = useFeedPaper();
 
   // What the phone is allowed to say. Read once; each switch writes at once.
   const userId = session?.user?.id ?? "";
@@ -310,6 +313,32 @@ export default function Settings() {
           );
         })}
       </View>
+
+      {/* The paper is the editorial feed's alone, so it is offered only while that is the feed. */}
+      {feedLayout === "editorial" ? (
+        <>
+          <View style={[styles.settingText, styles.subSetting]}>
+            <Text style={styles.prefLabel}>Paper</Text>
+            <Text style={styles.prefHint}>One paper for the whole feed. Dark stays brown.</Text>
+          </View>
+          <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel="Paper">
+            {FEED_PAPERS.map(({ value, label }) => {
+              const on = feedPaper === value;
+              return (
+                <Pressable
+                  key={value}
+                  style={[styles.choice, on && styles.choiceOn]}
+                  onPress={() => setFeedPaper(value)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                >
+                  <Text style={[styles.choiceText, on && styles.choiceTextOn]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
 
       <View style={styles.divider} />
 

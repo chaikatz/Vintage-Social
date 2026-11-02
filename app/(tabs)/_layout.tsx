@@ -12,6 +12,7 @@ import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { emitHomeAgain } from "@/utils/homeRefresh";
 import { usePushRegistration } from "@/utils/push";
+import { useFeedBackground } from "@/utils/feedPaper";
 
 /**
  * Home / Search / Post / Activity / Profile — nothing else.
@@ -31,6 +32,8 @@ export default function TabsLayout() {
   const toldPager = useRef(false);
   // An approved member on a real phone: ask once, file the token.
   usePushRegistration(session?.user?.id, profileLoaded && profile?.status === "approved");
+  // Editorial (Preview): while Home is in front, the tab bar is on the feed's paper too.
+  const paper = useFeedBackground();
 
   if (session === null) return <Redirect href="/(gate)/landing" />;
   if (profileLoaded && profile?.status !== "approved") {
@@ -78,6 +81,7 @@ export default function TabsLayout() {
           options={{
             title: "Home",
             tabBarIcon: ({ color }) => <Feather name="home" size={23} color={color} />,
+            tabBarStyle: [styles.bar, { paddingBottom: insets.bottom }, paper],
           }}
           // Tapping Home while already on Home is "again": the feed goes
           // back to the top and asks for what is new. From any other tab it
@@ -138,6 +142,8 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
   const segments = useSegments() as string[];
   const tab = segments[1] ?? "index";
   const insets = useSafeAreaInsets();
+  // Editorial (Preview): Home's bar is on the feed's paper; the other tabs keep the app's.
+  const paper = useFeedBackground();
 
   const title = tab === "profile" ? username ?? "Profile" : TITLES[tab] ?? null;
 
@@ -150,7 +156,7 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
   });
 
   return (
-    <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+    <View style={[styles.header, tab === "index" && paper, { paddingTop: insets.top + spacing.sm }]}>
       {title === null ? (
         <Text style={styles.wordmark}>VINTAGE</Text>
       ) : (

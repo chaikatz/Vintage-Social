@@ -2,16 +2,17 @@ import { useSyncExternalStore } from "react";
 import { readDiskCache, writeDiskCache } from "@/utils/diskCache";
 
 /**
- * Editorial (Preview): how Home sets out each post, a trial.
+ * Editorial (Preview): how a feed sets out each post, a trial.
  *
  * Original is the feed as it has always been. Editorial is the same posts
  * and the same buttons, each set out as a print, the way a photograph is
- * shared from VINTAGE (see src/components/feed/EditorialPostCard.tsx). Only
- * Home reads it; every other screen that shows a post keeps the original
- * card.
+ * shared from VINTAGE (see src/components/feed/EditorialPostCard.tsx), on
+ * the paper chosen with it (src/utils/feedPaper.ts). Home reads it, and
+ * so does the gallery, the feed a profile opens into; a post's own page
+ * and every other screen keep the original card.
  *
  * A preference of the phone's, like the appearance: one small file in
- * Documents, read once when Home first draws, written the moment it is
+ * Documents, read once when a feed first draws, written the moment it is
  * changed, never sent anywhere. Signing out leaves it, as it leaves the
  * light or dark print; it says how this phone shows a feed, not anything
  * about the member.
@@ -45,7 +46,7 @@ export function getFeedLayout(): FeedLayout {
   return layout;
 }
 
-/** Takes effect at once on a Home already drawn, and is kept for the next launch. */
+/** Takes effect at once on a feed already drawn, and is kept for the next launch. */
 export function setFeedLayout(next: FeedLayout): void {
   if (getFeedLayout() === next) return;
   layout = next;
