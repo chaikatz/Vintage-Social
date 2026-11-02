@@ -38,6 +38,7 @@ import {
   eraStrip,
   erasEmpty,
   erasFootnote,
+  eraWhole,
   leadPrint,
   printLabel,
   type ChapterPlace,
@@ -142,24 +143,56 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   // at the top: as far into its chapter as they were, or the chapter's
   // own top where it has closed up (depthAfter). They are left where they
   // were, not some chapters on.
+  //
+  // The first chapter's top as the reader taps, and how far the bar
+  // reaches down the screen each time, are measured as they lie then,
+  // never taken from what they last reported: the web reports a view's
+  // place only when its size changes, so the first chapter's can be from
+  // before the bar grew or shrank above it, and the bar tells how tall
+  // arranging has made it only after the reader has been put back (on the
+  // web, which sets it in a new holder as it begins to hold to the top,
+  // not at all). The
+  // web answers measures a moment later, in the order they were asked;
+  // React Native answers at once. Either way the bar's is in hand by the
+  // next.
   const scroller = useRef<ScrollView>(null);
   const pages = useRef(new Map<string, View>());
-  const barTall = useRef(0);
+  const bar = useRef<View>(null);
   const anchor = useRef<ChapterPlace | null>(null);
   const arrange = (on: boolean) => {
-    const seen = offset.current + (arranging ? barTall.current : 0);
-    anchor.current = chapterAt(summary.eras.map((era) => era.key), spans.current, seen);
-    setEditing(on);
+    const keys = summary.eras.map((era) => era.key);
+    const first = pages.current.get(keys[0]);
+    const book = innerView(scroller.current);
+    let under = 0;
+    let held = false;
+    // Once: with the place, when the first chapter has been measured, or
+    // without it, when it cannot be or goes unanswered (the timer runs
+    // after the web's answer, and long after React Native's), so the tap
+    // is never lost.
+    const hold = (top?: number) => {
+      if (held) return;
+      held = true;
+      anchor.current = top == null ? null : chapterAt(keys, spans.current, top, offset.current + under);
+      setEditing(on);
+    };
+    if (!first || !book) return hold();
+    if (arranging) bar.current?.measureLayout(book, (_x, _y, _width, tall) => (under = tall));
+    first.measureLayout(book, (_x, top) => hold(top), () => hold());
+    setTimeout(() => hold(), 0);
   };
   useLayoutEffect(() => {
     const place = anchor.current;
     anchor.current = null;
+    const era = place ? summary.eras.find((e) => e.key === place.key) : undefined;
     const page = place ? pages.current.get(place.key) : undefined;
     const book = innerView(scroller.current);
-    if (!place || !page || !book) return;
-    const under = arranging ? barTall.current : 0;
+    if (!place || !era || !page || !book) return;
+    let under = 0;
+    if (arranging) bar.current?.measureLayout(book, (_x, _y, _width, tall) => (under = tall));
+    // Arranging lays every photograph out; after DONE, only an era opened, or one the strip holds whole.
+    const whole = arranging || eraWhole(era, open.has(era.key));
     page.measureLayout(book, (_x, top, _width, tall) =>
-      scroller.current?.scrollTo({ y: Math.max(0, top + depthAfter(place, tall) - under), animated: false }),
+      scroller.current?.scrollTo({ y: Math.max(0, top + depthAfter(place, tall, whole) - under), animated: false }),
     );
   }, [arranging]);
 
@@ -179,10 +212,17 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
     }, NOTE_MS);
     return () => clearTimeout(t);
   }, [note, still, shown]);
+  // Said aloud as well. The web has no announceForAccessibility (react-native-web's
+  // does nothing), so there a polite live region, always on the page, says it instead.
+  const [spoken, setSpoken] = useState<{ words: string; at: number } | null>(null);
+  const announce = (words: string) => {
+    AccessibilityInfo.announceForAccessibility(words);
+    if (Platform.OS === "web") setSpoken({ words, at: Date.now() });
+  };
   const say = (words: string) => {
     setNote({ words, at: Date.now() });
     if (Platform.OS !== "web") Haptics.selectionAsync().catch(() => undefined);
-    AccessibilityInfo.announceForAccessibility(words);
+    announce(words);
   };
 
   const move = (key: string) => {
@@ -196,7 +236,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   const rename = (era: EditedEra<PostRow>) =>
     askEraName(era, (title) => {
       editor?.rename(era.key, title);
-      AccessibilityInfo.announceForAccessibility(`Named ${cleanEraTitle(title ?? "") || era.key}`);
+      announce(`Named ${cleanEraTitle(title ?? "") || era.key}`);
     });
 
   // While arranging, the bar over the chapters holds to the top of the page.
@@ -221,27 +261,32 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
       >
         {header}
         {editor && !loading && summary.eras.length > 0 ? (
-          <View style={[styles.bar, arranging && styles.barOn]} onLayout={(e) => (barTall.current = e.nativeEvent.layout.height)}>
-            <View style={styles.barLine}>
-              <Text style={styles.barLabel}>{arranging ? "Arranging" : summary.eras.length === 1 ? "1 era" : `${summary.eras.length} eras`}</Text>
-              <View style={styles.barRule} />
-              <Pressable
-                onPress={() => arrange(!arranging)}
-                hitSlop={12}
-                style={({ pressed }) => pressed && styles.pressed}
-                accessibilityRole="button"
-                accessibilityLabel={arranging ? "Done arranging eras" : "Edit eras"}
-                accessibilityHint={arranging ? undefined : "Rename your eras, and move photographs from one to another."}
-                testID="eras-edit"
-              >
-                <Text style={styles.barAction}>{arranging ? "Done" : "Edit"}</Text>
-              </Pressable>
+          // Measured by the view that holds to the top: React Native moves a
+          // sticky child's own style onto the holder it wraps it in, so the
+          // padding and the rule sit one view in, and the bar measures whole.
+          <View ref={bar} collapsable={false}>
+            <View style={[styles.bar, arranging && styles.barOn]}>
+              <View style={styles.barLine}>
+                <Text style={styles.barLabel}>{arranging ? "Arranging" : summary.eras.length === 1 ? "1 era" : `${summary.eras.length} eras`}</Text>
+                <View style={styles.barRule} />
+                <Pressable
+                  onPress={() => arrange(!arranging)}
+                  hitSlop={12}
+                  style={({ pressed }) => pressed && styles.pressed}
+                  accessibilityRole="button"
+                  accessibilityLabel={arranging ? "Done arranging eras" : "Edit eras"}
+                  accessibilityHint={arranging ? undefined : "Rename your eras, and move photographs from one to another."}
+                  testID="eras-edit"
+                >
+                  <Text style={styles.barAction}>{arranging ? "Done" : "Edit"}</Text>
+                </Pressable>
+              </View>
+              {arranging ? (
+                <Text style={styles.barHint}>
+                  {canNameEras ? "Rename an era, or tap a photograph to move it." : "Tap a photograph to move it to another era."}
+                </Text>
+              ) : null}
             </View>
-            {arranging ? (
-              <Text style={styles.barHint}>
-                {canNameEras ? "Rename an era, or tap a photograph to move it." : "Tap a photograph to move it to another era."}
-              </Text>
-            ) : null}
           </View>
         ) : null}
         {loading ? (
@@ -287,6 +332,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
         <Animated.View
           pointerEvents="none"
           style={[styles.note, { bottom: Math.max(insets.bottom, spacing.lg), opacity: shown }]}
+          aria-hidden
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         >
@@ -294,6 +340,12 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
             {note.words}
           </Text>
         </Animated.View>
+      ) : null}
+      {editor && Platform.OS === "web" ? (
+        // Keyed by when, so the same words said twice are said twice.
+        <View style={styles.spoken} aria-live="polite">
+          {spoken ? <Text key={spoken.at}>{spoken.words}</Text> : null}
+        </View>
       ) : null}
       {editor ? <EraMoveSheet post={moving} choices={choices} onChoose={move} onClose={() => setMoving(null)} /> : null}
     </View>
@@ -409,7 +461,7 @@ function Print({ arranging, children }: { arranging: boolean; children: React.Re
     <View>
       {children}
       {arranging ? (
-        <View style={styles.mark} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <View style={styles.mark} pointerEvents="none" aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           <Text style={styles.markText}>Move</Text>
         </View>
       ) : null}
@@ -508,6 +560,8 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: colors.ink,
   },
+  // Out of sight: for the web's screen readers only.
+  spoken: { position: "absolute", width: 1, height: 1, overflow: "hidden", opacity: 0 },
   // Where a photograph went, said once at the foot of the screen.
   note: {
     position: "absolute",
