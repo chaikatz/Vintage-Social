@@ -34,11 +34,18 @@ page.on("console", (m) => {
 // showAlert falls back to window.confirm on web; Playwright dismisses
 // dialogs unless told otherwise, which would silently cancel every
 // confirmation the test gives. A prompt (an era's new name) is answered
-// with `promptAnswer` while one is set. Every dialog's words are kept.
+// with `promptAnswer` while one is set. A menu of several (a post's "…")
+// asks for the number of one: `promptChoice` names the one to take, and
+// without it the menu is left as it was. Every dialog's words are kept.
 let promptAnswer = null;
+let promptChoice = null;
 const dialogs = [];
 page.on("dialog", (d) => {
   dialogs.push(d.message());
+  if (d.type() === "prompt" && promptChoice != null) {
+    const line = d.message().split("\n").find((l) => l.trim().endsWith(promptChoice));
+    return d.accept(line?.trim().match(/^\d+/)?.[0] ?? "");
+  }
   return d.type() === "prompt" && promptAnswer != null ? d.accept(promptAnswer) : d.accept();
 });
 
@@ -391,6 +398,40 @@ check(
 );
 await byLabel("Done arranging eras").first().click();
 await wait(900);
+
+// From the feed: the "…" on her own photograph adds it to an era; on
+// another member's, it never does. Tapped, so the arrangement stays.
+await tab("home");
+const cardOf = (caption) =>
+  seen(page.locator("div").filter({ hasText: caption }).filter({ has: page.getByLabel("Post options", { exact: true }) })).last();
+await cardOf("Last ferry of the evening").getByLabel("Post options", { exact: true }).first().click();
+await wait(900);
+const theirs = dialogs.at(-1) ?? "";
+check("Another member's post offers no era", /Report post/.test(theirs) && !/Add to an era/.test(theirs));
+await cardOf("The 19 tram").scrollIntoViewIfNeeded();
+await shot("13j-feed-own-post");
+promptChoice = "Add to an era…";
+await cardOf("The 19 tram").getByLabel("Post options", { exact: true }).first().click();
+await wait(2200);
+promptChoice = null;
+check(
+  "Your own post's options add it to an era, in the sheet the Eras page uses",
+  /Add to an era…/.test(dialogs.at(-1) ?? "") &&
+    /\/era-move\?postId=/.test(page.url()) &&
+    /Move to/i.test(await moveSheet().textContent()) &&
+    (await moveSheet().getByRole("button", { name: "New era" }).count()) > 0,
+);
+await shot("13j-feed-add-to-era-sheet");
+await moveSheet().getByRole("button", { name: /^The foggy winter, 1 photograph/ }).click();
+await wait(1600);
+// The web lays the tabs out afresh under a screen pushed over them, as it does after Edit caption.
+await tab("profile");
+await tap("Eras", 2000);
+check(
+  "Your Eras show the change made from the feed",
+  !/\/era-move/.test(page.url()) && (await heading(/^The foggy winter, 2 photographs$/)) > 0 && (await heading(/^Milan 2026, 2 photographs$/)) > 0,
+);
+await shot("13k-eras-after-feed");
 
 // A member's own name for their era, on their page, where it cannot be changed.
 await go("/user/niko.papadakis", 2800);

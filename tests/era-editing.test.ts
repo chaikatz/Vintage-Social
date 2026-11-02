@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
  * nothing, nothing about the page changes outside arranging but EDIT
  * itself, what VoiceOver hears of it, how a name is asked for, and that
  * the automatic reading underneath is the one it always was. Then ADD,
- * NEW ERA, the way out of an era and the deleting of one. The logic is
+ * NEW ERA, the way out of an era and the deleting of one, and "Add to an
+ * era…" from a photograph's options anywhere it is shown. The logic is
  * tested in eraEdits.test.ts, era-making.test.ts, era-edits-api.test.ts
  * and era-sheet.test.ts.
  */
@@ -30,6 +31,8 @@ const sheet = code("src/components/EraMoveSheet.tsx");
 const gather = code("src/components/EraGather.tsx");
 const sheetLogic = code("src/components/eraSheet.ts");
 const naming = code("src/components/eraName.ts");
+const route = code("app/era-move.tsx");
+const actions = code("src/hooks/usePostActions.ts");
 const hook = code("src/hooks/useEraEdits.ts");
 const eras = (screen: string) => screen.match(/view === "eras"[^?]*\? \(\s*<EraList[\s\S]*?\/>/)?.[0] ?? "";
 
@@ -372,6 +375,46 @@ describe("ADD and NEW ERA", () => {
   });
 });
 
+describe("Add to an era…, from a photograph's options", () => {
+  it("is offered on your own photographs only, and only once your arrangement can be saved", () => {
+    expect(actions).toMatch(/const erasReady = useEraEdits\(userId\)\.data\?\.ready === true;/);
+    const own = actions.slice(actions.indexOf("if (post.author_id === userId) {"), actions.indexOf("} else {", actions.indexOf("if (post.author_id === userId) {")));
+    expect(own).toMatch(
+      /\.\.\.\(erasReady\s*\? \[\{ text: "Add to an era…", onPress: \(\) => router\.push\(\{ pathname: "\/era-move", params: \{ postId: post\.id \} \}\) \}\]\s*: \[\]\)/,
+    );
+    expect(actions.match(/Add to an era…/g)).toHaveLength(1);
+    expect(actions).toMatch(/\[userId, router, queryClient, seed, deletePost, erasReady\]/);
+  });
+
+  it("opens over the screen it came from, as a sheet with its own head", () => {
+    const layout = code("app/_layout.tsx");
+    expect(layout).toMatch(/<Stack\.Screen name="era-move" options=\{\{ presentation: "modal", headerShown: false, title: "Add to an era" \}\} \/>/);
+  });
+
+  it("reads your photographs and arrangement where your page does, and changes them with the same editor", () => {
+    expect(route).toMatch(/queryKey: \["user-posts", userId\],\s*queryFn: \(\) => fetchUserPosts\(userId\),/);
+    expect(route).toMatch(/const eraEdits = useEraEdits\(userId\);/);
+    expect(route).toMatch(/const editor = useEraEditor\(userId, posts\.data\);/);
+    expect(route).toMatch(/eraSheetView\(posts\.data \?\? \[\], eraEdits\.data\?\.edits \?\? NO_EDITS, sheet\)/);
+    expect(route).not.toMatch(/changeEraEdits|saveEraEdits|setQueryData/);
+  });
+
+  it("opens on the photograph as Move to, turns to a new era with it chosen, and closes after one change", () => {
+    expect(route).toMatch(/turned \?\? \(post \? \{ kind: "move", post \} : null\)/);
+    expect(route).toMatch(/onNewEra=\{\(\) => setTurned\(\(now\) => now \?\? \{ kind: "new", chosen: \[post\.id\] \}\)\}/);
+    expect(route).toMatch(/<EraSheetBody\s+view=\{view\}\s+live\s/);
+    expect(route).toMatch(/after\(to && editor\.move\(post, key\) \? movedNote\(to\.title\) : null\);/);
+    expect(route).toMatch(/after\(out && editor\.takeOut\(post\) \? takenOutNote\(out\) : null\);/);
+    expect(route).toMatch(/onCreate=\{\(name, photoIds\) => after\(editor\.create\(name, photoIds\) \? madeNote\(name\) : null\)\}/);
+    expect(route).toMatch(/const after = \(words: string \| null\) => \{\s*if \(words\) AccessibilityInfo\.announceForAccessibility\(words\);\s*close\(\);\s*\};/);
+  });
+
+  it("says plainly when the photograph is not yours any more, or the eras cannot be changed", () => {
+    expect(route).toMatch(/if \(!post \|\| !editor \|\| !view\) \{/);
+    expect(route).toMatch(/accessibilityRole="button" accessibilityLabel="Close"/);
+  });
+});
+
 describe("asking for a name", () => {
   it("is iOS's own text alert, holding the name the era shows", () => {
     expect(naming).toMatch(/Alert\.prompt\(\s*ERA_NAME_TITLE,\s*message,/);
@@ -415,6 +458,7 @@ describe("the words", () => {
       ["EraMoveSheet", sheet],
       ["EraGather", gather],
       ["eraSheet", sheetLogic],
+      ["era-move", route],
       ["eraName", naming],
     ] as const) {
       expect(src, file).not.toMatch(/"[^"\n]*![^"\n]*"|`[^`\n]*![^=`\n][^`\n]*`/);

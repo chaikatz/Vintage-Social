@@ -26,8 +26,21 @@ export function showAlert(title: string, message?: string, buttons?: AlertButton
     return;
   }
 
-  const action = buttons.find((b) => b.style !== "cancel") ?? buttons[0];
   const cancel = buttons.find((b) => b.style === "cancel");
+  // A menu of several (your post's "…": edit, add to an era, delete) asks
+  // which, by number, so every one of them can be reached in the browser.
+  // The first is written in already, so OK alone does what it always did.
+  const actions = buttons.filter((b) => b.style !== "cancel");
+  if (actions.length > 1) {
+    const list = actions.map((b, i) => `${i + 1}  ${b.text}`).join("\n");
+    const answer = window.prompt(`${text}\n\n${list}\n\nType the number of the one you want.`, "1")?.trim() ?? "";
+    const chosen = /^\d+$/.test(answer) ? actions[Number(answer) - 1] : undefined;
+    if (chosen) chosen.onPress?.();
+    else cancel?.onPress?.();
+    return;
+  }
+
+  const action = actions[0] ?? buttons[0];
   const confirmed = window.confirm(`${text}\n\nOK → ${action.text}`);
   if (confirmed) action.onPress?.();
   else cancel?.onPress?.();

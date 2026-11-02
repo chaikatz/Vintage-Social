@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NEW_ERA, NEW_ERA_TITLE, NOT_IN_AN_ERA, NO_EDITS, createEra, moveToEra, type EraEdits } from "@/utils/eraEdits";
 import {
   CREATE,
@@ -18,12 +18,16 @@ import {
 } from "@/components/eraSheet";
 import type { PostRow } from "@/types/db";
 
+// The alerts as the browser has them (src/utils/alert.ts); nothing else here reaches React Native.
+vi.mock("react-native", () => ({ Platform: { OS: "web" }, Alert: { alert: vi.fn(), prompt: vi.fn() } }));
+
 /**
  * The sheet a member arranges their eras in, as it reads the arrangement:
  * what Move to offers a photograph (every era, New era… last, and the way
  * out of an era a move put it in), what ADD offers an era, what a new era
  * offers, when Create can be pressed, and the words said once a change is
- * made.
+ * made. And the browser's stand-in for a menu of several, which is how the
+ * demo reaches "Add to an era…" among a post's options.
  */
 
 const post = (id: string, taken: string | null, location: string | null = null) =>
@@ -148,5 +152,76 @@ describe("the words", () => {
     expect(takenOutNote({ from: "Saturdays", back: "Kyoto 2024" })).toBe("Back in Kyoto 2024");
     expect(takenOutNote({ from: "Saturdays", back: null })).toBe("Taken out of Saturdays");
     expect(deletedNote("Saturdays")).toBe("Deleted Saturdays");
+  });
+});
+
+describe("a menu of several, in the browser", () => {
+  async function menu(answer: string | null) {
+    const { showAlert } = await import("@/utils/alert");
+    const pressed: string[] = [];
+    const asked: { message: string; preset: string | undefined }[] = [];
+    vi.stubGlobal("window", {
+      prompt: (message: string, preset?: string) => {
+        asked.push({ message, preset });
+        return answer;
+      },
+      confirm: () => {
+        pressed.push("confirm asked");
+        return true;
+      },
+      alert: () => undefined,
+    });
+    showAlert("Your post", undefined, [
+      { text: "Edit caption", onPress: () => pressed.push("Edit caption") },
+      { text: "Add to an era…", onPress: () => pressed.push("Add to an era…") },
+      { text: "Delete post", style: "destructive", onPress: () => pressed.push("Delete post") },
+      { text: "Cancel", style: "cancel", onPress: () => pressed.push("Cancel") },
+    ]);
+    vi.unstubAllGlobals();
+    return { pressed, asked };
+  }
+
+  it("lists every one by number, the first written in, so OK alone does what it always did", async () => {
+    const { pressed, asked } = await menu("1");
+    expect(asked).toEqual([
+      {
+        message: "Your post\n\n1  Edit caption\n2  Add to an era…\n3  Delete post\n\nType the number of the one you want.",
+        preset: "1",
+      },
+    ]);
+    expect(pressed).toEqual(["Edit caption"]);
+  });
+
+  it("takes the one whose number is given", async () => {
+    expect((await menu(" 2 ")).pressed).toEqual(["Add to an era…"]);
+    expect((await menu("3")).pressed).toEqual(["Delete post"]);
+  });
+
+  it("cancels on Cancel, or on anything that is not one of the numbers", async () => {
+    for (const answer of [null, "", "0", "4", "1.5", "two", "0x2", "-1"]) {
+      expect((await menu(answer)).pressed, String(answer)).toEqual(["Cancel"]);
+    }
+  });
+
+  it("still asks a single action as it did, OK or Cancel", async () => {
+    const { showAlert } = await import("@/utils/alert");
+    const pressed: string[] = [];
+    let asked = "";
+    vi.stubGlobal("window", {
+      prompt: () => {
+        throw new Error("no menu for one");
+      },
+      confirm: (message: string) => {
+        asked = message;
+        return true;
+      },
+    });
+    showAlert("Delete this photograph?", "It’s removed for good.", [
+      { text: "Delete", style: "destructive", onPress: () => pressed.push("Delete") },
+      { text: "Cancel", style: "cancel", onPress: () => pressed.push("Cancel") },
+    ]);
+    vi.unstubAllGlobals();
+    expect(asked).toBe("Delete this photograph?\n\nIt’s removed for good.\n\nOK → Delete");
+    expect(pressed).toEqual(["Delete"]);
   });
 });
