@@ -265,6 +265,40 @@ check(
 );
 await shot("13c-era-gallery");
 
+// The gallery opens on the photograph tapped, with the ones before it
+// above. Elena's third photograph, opened as her grid opens it, is the
+// first card in view, its top at the top of the list; scrolling up finds
+// the one before it. The card at the top is read from the list in front.
+const cardAtTop = () =>
+  page.evaluate(() => {
+    let list = document.elementFromPoint(195, 500);
+    while (list && !(/(auto|scroll)/.test(getComputedStyle(list).overflowY) && list.scrollHeight > list.clientHeight)) {
+      list = list.parentElement;
+    }
+    if (!list) return null;
+    const top = list.getBoundingClientRect().top;
+    for (const cell of list.firstElementChild?.children ?? []) {
+      const r = cell.getBoundingClientRect();
+      if (r.height > 0 && r.bottom > top + 1) {
+        return { text: cell.textContent ?? "", delta: Math.round(r.top - top), opacity: getComputedStyle(list).opacity };
+      }
+    }
+    return null;
+  });
+await go("/gallery?" + new URLSearchParams({ authorId: "demo-user-elena", postId: "demo-post-03", sort: "posted" }).toString(), 3200);
+const landedOn = await cardAtTop();
+check(
+  "A photograph tapped in a grid opens the gallery on it",
+  /Fog on the Naviglio/.test(landedOn?.text ?? "") && Math.abs(landedOn.delta) <= 1 && landedOn.opacity === "1",
+  JSON.stringify(landedOn && { delta: landedOn.delta, card: landedOn.text.slice(0, 48) }),
+);
+await shot("13c-gallery-landed");
+await page.mouse.move(195, 500);
+await page.mouse.wheel(0, -350);
+await wait(900);
+const cardBefore = await cardAtTop();
+check("Scrolling up from it finds the photograph before", /Nonna.s courtyard/.test(cardBefore?.text ?? ""), cardBefore?.text.slice(0, 48));
+
 // Eras the member arranges, on their own page only: EDIT, rename an era,
 // move a photograph into it, DONE. Two of the demo's Milan photographs of
 // Elena's were taken in January 2025, so she has two Milan eras. All of
