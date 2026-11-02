@@ -433,6 +433,124 @@ check(
 );
 await shot("13k-eras-after-feed");
 
+// Dragging, while arranging: a print held a moment lifts, and goes to the
+// era it is let go over; over its own, or off the page, it goes back. The
+// page scrolls itself, so each print is first brought to a set place.
+await byLabel("Edit eras").first().click();
+await wait(900);
+const scrollerTop = (locator) =>
+  locator.evaluate((el) => {
+    let s = el.parentElement;
+    while (s && !(s.scrollHeight > s.clientHeight + 1 && /(auto|scroll|hidden)/.test(getComputedStyle(s).overflowY))) s = s.parentElement;
+    return s ? { top: s.scrollTop, bottom: s.getBoundingClientRect().bottom, free: getComputedStyle(s).overflowY !== "hidden" } : null;
+  });
+const bringTo = async (locator, y) => {
+  await locator.evaluate((el, at) => {
+    let s = el.parentElement;
+    while (s && !(s.scrollHeight > s.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(s).overflowY))) s = s.parentElement;
+    if (s) s.scrollTop += el.getBoundingClientRect().top - at;
+  }, y);
+  await wait(500);
+};
+const hold = async (locator) => {
+  const b = await locator.boundingBox();
+  const at = { x: b.x + b.width / 2, y: b.y + Math.min(b.height, 80) / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await wait(300);
+  return at;
+};
+const printOf = (caption) => seen(page.getByLabel(new RegExp(`^Photograph, .*${caption}`))).first();
+const lifted = () => seen(page.getByTestId("era-drag-print")).count();
+const framed = () => seen(page.getByTestId("era-drop-target")).count();
+// Put back, the copy flies home and goes; a move takes it at once.
+const putBack = () =>
+  page.waitForFunction(() => !document.querySelector('[data-testid="era-drag-print"]'), null, { timeout: 4000 }).then(
+    () => true,
+    () => false,
+  );
+// The note at the foot of the screen; the words stay on in the web's live region, which is not it.
+const noted = (words) =>
+  page.evaluate((w) => [...document.querySelectorAll('[dir="auto"]')].some((t) => t.textContent === w && !t.closest("[aria-live]")), words);
+// Milan 2026 holds the courtyard and the Naviglio's fog; The foggy winter
+// the market and the tram. The two that lie nearest each other, one from
+// each, are brought into view together, the upper a little under the bar.
+let pair = null;
+for (const from of ["Nonna’s courtyard", "Fog on the Naviglio"]) {
+  for (const to of ["Saturday market", "The 19 tram"]) {
+    const a = await printOf(from).boundingBox();
+    const b = await printOf(to).boundingBox();
+    if (!pair || Math.abs(a.y - b.y) < pair.apart) pair = { from, to, apart: Math.abs(a.y - b.y), upper: a.y < b.y ? from : to };
+  }
+}
+await bringTo(printOf(pair.upper), 260);
+const fromAt = await hold(printOf(pair.from));
+const lifts = await lifted();
+const toBox = await printOf(pair.to).boundingBox();
+await page.mouse.move(fromAt.x + 8, fromAt.y + 8, { steps: 3 });
+await page.mouse.move(toBox.x + toBox.width / 2, toBox.y + Math.min(toBox.height, 80) / 2, { steps: 12 });
+await wait(400);
+check(
+  "A print held while arranging lifts, and the era under it is framed and named",
+  lifts > 0 && (await framed()) === 1 && /^Move to The foggy winter$/.test(await seen(page.getByTestId("era-drag-slip")).first().textContent()),
+);
+await shot("13l-eras-drag");
+await page.mouse.up();
+await wait(900);
+check(
+  "Let go over another era, the photograph moves there, and the page says so",
+  (await heading(/^The foggy winter, 3 photographs$/)) > 0 &&
+    (await heading(/^Milan 2026, 1 photograph$/)) > 0 &&
+    (await noted("Moved to The foggy winter")) &&
+    (await lifted()) === 0,
+);
+await wait(2600);
+
+// What is left in Milan 2026, nudged within it.
+const stays = pair.from === "Fog on the Naviglio" ? "Nonna’s courtyard" : "Fog on the Naviglio";
+await bringTo(printOf(stays), 300);
+const homeAt = await hold(printOf(stays));
+await page.mouse.move(homeAt.x + 30, homeAt.y + 40, { steps: 8 });
+await wait(300);
+const ownLifted = await lifted();
+const ownFramed = (await framed()) + (await seen(page.getByTestId("era-drag-slip")).count());
+await page.mouse.up();
+check(
+  "Let go over its own era, it goes back and nothing changes",
+  ownLifted > 0 &&
+    ownFramed === 0 &&
+    (await putBack()) &&
+    (await heading(/^The foggy winter, 3 photographs$/)) > 0 &&
+    (await heading(/^Milan 2026, 1 photograph$/)) > 0 &&
+    !(await noted("Moved to The foggy winter")) &&
+    !(await noted("Moved to Milan 2026")),
+);
+
+const firstPrint = seen(page.getByLabel(/^Photograph, /)).first();
+await bringTo(firstPrint, 300);
+const runFrom = await scrollerTop(firstPrint);
+const runAt = await hold(firstPrint);
+await page.mouse.move(runAt.x, runFrom.bottom - 60, { steps: 8 });
+await page.mouse.move(runAt.x, runFrom.bottom - 6, { steps: 4 });
+await wait(700);
+const running = await scrollerTop(firstPrint);
+await page.mouse.move(runAt.x, runFrom.bottom + 20, { steps: 3 });
+await page.mouse.up();
+const home = await putBack();
+const ranTo = await scrollerTop(firstPrint);
+check(
+  "Held near the foot of the page, it scrolls on its own, and let go off it, nothing moves",
+  running.top > runFrom.top + 100 &&
+    !running.free &&
+    home &&
+    ranTo.free &&
+    (await heading(/^The foggy winter, 3 photographs$/)) > 0 &&
+    (await heading(/^Milan 2026, 1 photograph$/)) > 0,
+  `${runFrom.top} → ${running.top}`,
+);
+await byLabel("Done arranging eras").first().click();
+await wait(900);
+
 // A member's own name for their era, on their page, where it cannot be changed.
 await go("/user/niko.papadakis", 2800);
 await tap("Eras", 2000);

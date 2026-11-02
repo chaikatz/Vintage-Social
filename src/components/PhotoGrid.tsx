@@ -1,5 +1,5 @@
 import React from "react";
-import { Dimensions, FlatList, Pressable, StyleSheet, View } from "react-native";
+import { Dimensions, FlatList, Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from "react-native";
 import { Image } from "expo-image";
 import Feather from "@expo/vector-icons/Feather";
 import { colors } from "@/theme";
@@ -49,7 +49,8 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
  * small marks. Given a `height` it is a print of other proportions, as the
  * lead of an era is, drawn from the same small copy; and `full`, it is a
  * photograph drawn from itself, over that copy until it is in. A label
- * makes it an image button VoiceOver can name.
+ * makes it an image button VoiceOver can name. Held (`onLongPress`), it
+ * is a print lifted to be dragged, as an era being arranged lifts one.
  */
 export function PhotoTile({
   post,
@@ -57,6 +58,9 @@ export function PhotoTile({
   height,
   full,
   onPress,
+  onLongPress,
+  delayLongPress,
+  onPressOut,
   accessibilityLabel,
   accessibilityHint,
 }: {
@@ -66,6 +70,11 @@ export function PhotoTile({
   /** Drawn too large for the small copy to stay sharp. A film keeps its poster all the same. */
   full?: boolean;
   onPress: () => void;
+  /** Held for `delayLongPress`, the print lifts instead of opening; let go sooner, it is a tap as ever. */
+  onLongPress?: (e: GestureResponderEvent) => void;
+  delayLongPress?: number;
+  /** The finger has let go, or the press was taken over (a scroll, a drag). */
+  onPressOut?: () => void;
   accessibilityLabel?: string;
   /** What a tap does, when it is not the usual (an era being arranged moves the photograph). */
   accessibilityHint?: string;
@@ -87,6 +96,13 @@ export function PhotoTile({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={delayLongPress}
+      // The browser counts a hold from 50 ms after the touch (its own
+      // delayPressIn, which React Native's Pressable does not name); held to
+      // lift, it counts from the touch, as a phone does.
+      {...(onLongPress && Platform.OS === "web" ? ({ delayPressIn: 0 } as object) : null)}
+      onPressOut={onPressOut}
       style={{ width: size, height: height ?? size }}
       accessibilityRole={accessibilityLabel ? "imagebutton" : undefined}
       accessibilityLabel={accessibilityLabel}

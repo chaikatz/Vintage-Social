@@ -8,10 +8,11 @@ import { describe, expect, it } from "vitest";
  * nothing, nothing about the page changes outside arranging but EDIT
  * itself, what VoiceOver hears of it, how a name is asked for, and that
  * the automatic reading underneath is the one it always was. Then ADD,
- * NEW ERA, the way out of an era and the deleting of one, and "Add to an
- * era…" from a photograph's options anywhere it is shown. The logic is
- * tested in eraEdits.test.ts, era-making.test.ts, era-edits-api.test.ts
- * and era-sheet.test.ts.
+ * NEW ERA, the way out of an era and the deleting of one, "Add to an
+ * era…" from a photograph's options anywhere it is shown, and a print
+ * dragged to another era. The logic is tested in eraEdits.test.ts,
+ * era-making.test.ts, era-edits-api.test.ts, era-sheet.test.ts and
+ * eraDrag.test.ts.
  */
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -114,14 +115,22 @@ describe("the Eras view outside arranging", () => {
   it("lays out the prints, the strip and Show all as before", () => {
     expect(list).toMatch(/const strip = eraStrip\(era, expanded \|\| arranging\);/);
     expect(list).toMatch(/const more = arranging \? null : eraMore\(era, expanded\);/);
-    // A print is the tile in a plain view, with nothing else in it.
-    expect(list).toMatch(/return \(\s*<View>\s*\{children\}\s*\{arranging \? \(\s*<View style=\{styles\.mark\}[^>]*>[\s\S]*?\) : null\}\s*<\/View>\s*\);/);
+    // A print is the tile in a view of its own, with nothing else in it but MOVE while arranging;
+    // the view only ever dims, while the print is lifted.
+    expect(list).toMatch(
+      /return \(\s*<View ref=\{self\} collapsable=\{false\} style=\{dim && styles\.left\}>\s*<PhotoTile\b[\s\S]*?\/>\s*\{arranging \? \(\s*<View style=\{styles\.mark\}[^>]*>[\s\S]*?\) : null\}\s*<\/View>\s*\);/,
+    );
+    expect(list).toMatch(/left: \{ opacity: 0\.3 \},/);
     expect(list).toMatch(/const hint = arranging \? "Moves it to another era\." : undefined;/);
+    // Every print, the lead and the strip alike, is one Print, the lead alone given `full`.
+    expect(list).toMatch(/<Print post=\{lead\} size=\{leadSize\.width\} height=\{leadSize\.height\} full=\{near\} dim=\{lifted === lead\.id\} \{\.\.\.print\} \/>/);
+    expect(list).toMatch(/<Print key=\{post\.id\} post=\{post\} size=\{cell\} dim=\{lifted === post\.id\} \{\.\.\.print\} \/>/);
   });
 
   it("draws nothing afresh on EDIT or DONE: the same view holds each print, and the page's children keep their places", () => {
     // Print has one shape: the tile is never handed back bare.
-    const print = list.match(/function Print\([\s\S]*?\n\}/)?.[0] ?? "";
+    const print = list.match(/function Print\([\s\S]*?\n\}\n/)?.[0] ?? "";
+    expect(print).toMatch(/<PhotoTile\b/);
     expect(print).not.toMatch(/return children;/);
     expect(print.match(/return /g)).toHaveLength(1);
     // A list either way: on the web an absent one gives the header and chapters new keys.
@@ -203,12 +212,18 @@ describe("arranging, as VoiceOver hears it", () => {
   });
 
   it("gives every print the hint that a tap moves it, and announces where it went", () => {
-    expect(list.match(/accessibilityHint=\{hint\}/g)).toHaveLength(2);
+    // One Print draws every print, lead and strip alike.
+    expect(list.match(/accessibilityHint=\{hint\}/g)).toHaveLength(1);
+    expect(list.match(/<Print\b/g)).toHaveLength(2);
     expect(list).toMatch(/AccessibilityInfo\.announceForAccessibility\(words\)/);
   });
 
   it("says a change, by note, touch and voice, only when the editor made it", () => {
-    expect(list).toMatch(/if \(editor\.move\(shown\.post, key\)\) say\(movedNote\(to\.title\)\);/);
+    // A move, from the sheet or a print let go over another era, through the one door.
+    expect(list).toMatch(
+      /const moveTo = \(post: PostRow, key: string, title: string\): boolean => \{\s*if \(!editor\?\.move\(post, key\)\) return false;\s*say\(movedNote\(title\)\);\s*return true;\s*\};/,
+    );
+    expect(list).toMatch(/if \(!to\) return;\s*moveTo\(shown\.post, key, to\.title\);/);
     expect(list).toMatch(/if \(editor\.takeOut\(shown\.post\)\) say\(takenOutNote\(shown\.out\)\);/);
     expect(list).toMatch(/if \(editor\.add\(shown\.key, photoIds\)\) say\(addedNote\(photoIds\.length, shown\.title\)\);/);
     expect(list).toMatch(/if \(editor\?\.create\(name, photoIds\)\) say\(madeNote\(name\)\);/);
@@ -415,6 +430,115 @@ describe("Add to an era…, from a photograph's options", () => {
   });
 });
 
+describe("dragging a print to another era", () => {
+  const print = list.match(/function Print\([\s\S]*?\n\}\n/)?.[0] ?? "";
+  const lift = list.match(/const lift = \(held: Held, from: string, e: GestureResponderEvent\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
+  const responder = list.match(/const responder = useMemo\([\s\S]*?\n  \);/)?.[0] ?? "";
+
+  it("lifts a print only while arranging, held for LIFT_MS, from the print's own press, so a tap still opens the sheet", () => {
+    expect(print).toMatch(
+      /onPress=\{\(\) => onOpen\(post\)\}\s*onLongPress=\{arranging \? \(e\) => onLift\(\{ post, view: self\.current, width: size, height: height \?\? size, full: full === true \}, e\) : undefined\}\s*delayLongPress=\{LIFT_MS\}\s*onPressOut=\{arranging \? onLetGo : undefined\}/,
+    );
+    expect(lift).toMatch(/if \(!arranging \|\| drag\.current \|\| !print \|\| !book \|\| !page\) return;/);
+    // The tile hands the hold to its own Pressable, counted from the touch in the browser too.
+    const tile = code("src/components/PhotoGrid.tsx");
+    expect(tile).toMatch(/onPress=\{onPress\}\s*onLongPress=\{onLongPress\}\s*delayLongPress=\{delayLongPress\}/);
+    expect(tile).toMatch(/\{\.\.\.\(onLongPress && Platform\.OS === "web" \? \(\{ delayPressIn: 0 \} as object\) : null\)\}\s*onPressOut=\{onPressOut\}/);
+  });
+
+  it("takes the gesture from the print only once it has lifted, on the first move, and never a touch or a scroll", () => {
+    expect(list).toMatch(/<View ref=\{root\} collapsable=\{false\} style=\{styles\.root\} \{\.\.\.responder\.panHandlers\}>/);
+    expect(responder).toMatch(
+      /onMoveShouldSetPanResponderCapture: \(\) => \{\s*const d = drag\.current;\s*if \(!d \|\| d\.claimed\) return false;\s*d\.claimed = true;\s*return true;\s*\},/,
+    );
+    // Nothing asks for a touch as it starts, nor for a move it was not lifted for.
+    expect(responder).not.toMatch(/onStartShouldSetPanResponder|onMoveShouldSetPanResponder:/);
+    expect(responder).toMatch(/onPanResponderTerminationRequest: \(\) => false,/);
+    expect(responder).toMatch(/onPanResponderReject: \(\) => \{\s*if \(drag\.current\) drag\.current\.claimed = false;\s*\},/);
+    // Made once: it reads the drag from refs, never from what a render closed over.
+    expect(responder).toMatch(/\}\),\n    \[\],\n  \);$/);
+  });
+
+  it("holds the page and the tabs still while a print is dragged, and gives them back after", () => {
+    expect(list).toMatch(/scrollEnabled=\{!dragging\}/);
+    expect(list).toMatch(/useEffect\(\(\) => \(dragging \? holdTabSwipe\(\) : undefined\), \[dragging\]\);/);
+    expect(lift).toMatch(/setDragging\(true\);/);
+    expect(list).toMatch(/drag\.current = null;\s*if \(d\.frame != null\) cancelAnimationFrame\(d\.frame\);\s*setDragging\(false\);\s*setOver\(null\);/);
+    expect(list.match(/setDragging\(/g)).toHaveLength(2);
+  });
+
+  it("measures where the chapters and the bar lie as the print lifts, against the page's own view, never as they last said", () => {
+    expect(lift).toMatch(/const book = innerView\(scroller\.current\);/);
+    // The bar first, so its height is in hand by the first chapter's answer, and laid just above that chapter.
+    expect(lift).toMatch(
+      /let under = 0;\s*bar\.current\?\.measureLayout\(book, \(_x, _y, _width, tall\) => \(under = tall\)\);\s*keys\.forEach\(\(key, i\) =>\s*pages\.current\.get\(key\)\?\.measureLayout\(book, \(_x, top, _width, tall\) => \{\s*if \(drag\.current !== d\) return;\s*d\.chapters\.set\(key, \{ key, top, height: tall \}\);\s*if \(i === 0\) d\.bar = \{ top: top - under, height: under \};/,
+    );
+    // The view and the print on the screen, the copy at the tile's own size.
+    expect(lift).toMatch(/page\.measureInWindow\(\(x, y, _width, tall\) => \{\s*if \(drag\.current !== d\) return;\s*d\.view = \{ y, height: tall \};/);
+    expect(lift).toMatch(/const \{ post, full, width: w, height: h \} = held;/);
+  });
+
+  it("finds the era under the finger and runs the page on near its edges by the tested arithmetic, with the page's own scroll", () => {
+    expect(list).toMatch(/const to = dropTarget\(d\.from, eraUnderFinger\(pageOf\(d\), d\.finger\.y - d\.view\.y\)\);/);
+    expect(list).toMatch(/const speed = edgeSpeed\(d\.finger\.y - d\.view\.y, \{ top: d\.bar\?\.height \?\? 0, bottom: d\.view\.height \}\);/);
+    expect(list).toMatch(/const next = scrolledTo\(d\.offset, speed, ms, contentTall\.current - d\.view\.height\);/);
+    expect(list).toMatch(/d\.offset = next;\s*scroller\.current\?\.scrollTo\(\{ y: next, animated: false \}\);\s*aim\(\);/);
+    expect(list).toMatch(/onContentSizeChange=\{\(_width, tall\) => \(contentTall\.current = tall\)\}/);
+    // The frames run once the page has the gesture, and stop with it, or with the page.
+    expect(list).toMatch(/onPanResponderGrant: \(\) => act\.current\.take\(\),/);
+    expect(list).toMatch(/if \(d\.frame == null\) d\.frame = requestAnimationFrame\(run\);/);
+    expect(list.match(/cancelAnimationFrame\(d\.frame\)/g)).toHaveLength(2);
+  });
+
+  it("moves a print let go over another era by the sheet's own change, said as the sheet says it", () => {
+    expect(list).toMatch(/onPanResponderRelease: \(\) => act\.current\.drop\(\),/);
+    expect(list).toMatch(
+      /const era = d\.over \? summary\.eras\.find\(\(e\) => e\.key === d\.over\) : undefined;\s*release\(\);\s*if \(era && moveTo\(d\.post, era\.key, era\.title\)\) setLifted\(\(now\) => \(now\?\.id === d\.id \? null : now\)\);\s*else putBack\(d\);/,
+    );
+    // Over its own era, there is nowhere to go.
+    expect(code("src/components/eraDrag.ts")).toMatch(/return under != null && under !== from \? under : null;/);
+  });
+
+  it("puts the print back on anything else: another finger, the phone taking the touch, a hold let go, arranging over", () => {
+    expect(responder).toMatch(/onPanResponderStart: \(_e, g\) => \{\s*if \(g\.numberActiveTouches > 1\) act\.current\.cancel\(\);\s*\},/);
+    expect(responder).toMatch(/onPanResponderMove: \(_e, g\) => \{\s*if \(g\.numberActiveTouches > 1\) act\.current\.cancel\(\);\s*else act\.current\.follow\(g\.moveX, g\.moveY\);\s*\},/);
+    expect(responder).toMatch(/onPanResponderTerminate: \(\) => act\.current\.cancel\(\),/);
+    expect(list).toMatch(/const letGo = \(\) => \{\s*if \(drag\.current && !drag\.current\.claimed\) cancel\(\);\s*\};/);
+    expect(list).toMatch(/useEffect\(\(\) => \{\s*if \(!arranging\) act\.current\.cancel\(\);\s*\}, \[arranging\]\);/);
+    // Back to the print wherever the page has carried it.
+    expect(list).toMatch(/Animated\.spring\(pan, \{ \.\.\.spring, toValue: \{ x: 0, y: d\.liftedAt - d\.offset \}/);
+  });
+
+  it("lifts and puts back at once under Reduce Motion, and lifts with a light touch on a phone", () => {
+    expect(lift).toMatch(/if \(reducedMotion\.get\(\)\) raise\.setValue\(LIFT_SCALE\);\s*else \{/);
+    expect(list).toMatch(/const gone = \(\) => setLifted\(\(now\) => \(now\?\.id === d\.id \? null : now\)\);\s*if \(reducedMotion\.get\(\)\) return gone\(\);/);
+    expect(lift).toMatch(/if \(Platform\.OS !== "web"\) Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Light\)/);
+  });
+
+  it("is for the eye and hand alone: nothing it draws is heard, touched or focused, and it adds no control", () => {
+    const hidden = /pointerEvents="none"[\s\S]{0,400}?aria-hidden\s+accessibilityElementsHidden\s+importantForAccessibility="no-hide-descendants"\s+testID="(era-drag-print|era-drag-slip|era-drop-target)"/g;
+    expect([...list.matchAll(hidden)].map((m) => m[1]).sort()).toEqual(["era-drag-print", "era-drag-slip", "era-drop-target"]);
+    // Drawn over the page, so none of it moves a chapter under the finger.
+    for (const style of ["lifted", "slipRow", "target"]) {
+      expect(list, style).toMatch(new RegExp(`\\n  ${style}: \\{\\s*position: "absolute",`));
+    }
+    // The controls are those arranging already had: NEW ERA, EDIT and DONE, RENAME, DELETE, ADD, and Show all.
+    expect(list.match(/<Pressable\b/g)).toHaveLength(6);
+    expect(list.match(/accessibilityRole=/g)).toHaveLength(7);
+  });
+
+  it("keeps the browser from dragging a photograph away itself while arranging", () => {
+    expect(list).toMatch(
+      /if \(Platform\.OS !== "web" \|\| !arranging\) return;[\s\S]*?if \(!page\?\.contains\?\.\(e\.target\)\) return;\s*e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*\};\s*window\.addEventListener\("dragstart", keep, true\);\s*return \(\) => window\.removeEventListener\("dragstart", keep, true\);/,
+    );
+  });
+
+  it("says in the bar that a photograph can be held and dragged", () => {
+    expect(list).toMatch(/"Rename an era or add to it\. Tap a photograph to move it, or hold it and drag\."/);
+    expect(list).toMatch(/"Add to an era\. Tap a photograph to move it, or hold it and drag\."/);
+  });
+});
+
 describe("asking for a name", () => {
   it("is iOS's own text alert, holding the name the era shows", () => {
     expect(naming).toMatch(/Alert\.prompt\(\s*ERA_NAME_TITLE,\s*message,/);
@@ -460,6 +584,7 @@ describe("the words", () => {
       ["eraSheet", sheetLogic],
       ["era-move", route],
       ["eraName", naming],
+      ["eraDrag", code("src/components/eraDrag.ts")],
     ] as const) {
       expect(src, file).not.toMatch(/"[^"\n]*![^"\n]*"|`[^`\n]*![^=`\n][^`\n]*`/);
       expect(src, file).not.toMatch(/"[^"\n]*\w'\w[^"\n]*"|>[^<{]*\w'\w[^<{]*</);

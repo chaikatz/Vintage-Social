@@ -383,9 +383,16 @@ describe("the Eras view, read from the source", () => {
   });
 
   it("draws only a lead full size, and only once its chapter has come near the screen", () => {
-    expect(list.match(/<PhotoTile\b[\s\S]*?\/>/g)?.filter((t) => /\bfull=/.test(t))).toEqual([
+    // The lead's print alone is given `full`, by its chapter's nearness; a print hands its tile what it was given,
+    // and a print lifted to be dragged is drawn as it lay.
+    expect(list.match(/<Print\b[\s\S]*?\/>/g)?.filter((t) => /\bfull=/.test(t))).toEqual([
       expect.stringMatching(/post=\{lead\}[\s\S]*full=\{near\}/),
     ]);
+    expect(list.match(/<PhotoTile\b[\s\S]*?\/>/g)?.filter((t) => /\bfull=/.test(t))).toEqual([
+      expect.stringMatching(/post=\{lifted\.post\}[\s\S]*full=\{lifted\.full\}/),
+      expect.stringMatching(/post=\{post\}[\s\S]*full=\{full\}/),
+    ]);
+    expect(list).toMatch(/onLift\(\{ post, view: self\.current, width: size, height: height \?\? size, full: full === true \}, e\)/);
     expect(list).toMatch(/near=\{near\.has\(era\.key\)\}/);
     expect(list).toMatch(/setNear\(\(prev\) => chaptersNear\(prev, spans\.current, offset\.current, height\)\)/);
     expect(list).toMatch(/onScroll=\{\(e\) => \{\s*offset\.current = e\.nativeEvent\.contentOffset\.y;\s*look\(\);/);
@@ -411,7 +418,9 @@ describe("the Eras view, read from the source", () => {
 
   it("names the eras as headers and the prints as image buttons", () => {
     expect(list).toMatch(/accessibilityRole="header" accessibilityLabel=\{eraHeading\(era\)\}/);
-    expect(list.match(/accessibilityLabel=\{printLabel\(/g)).toHaveLength(2);
+    // Every print, lead and strip, is one Print; the copy a drag lifts is hidden, and named nothing.
+    expect(list.match(/accessibilityLabel=\{printLabel\(/g)).toHaveLength(1);
+    expect(list).toMatch(/<PhotoTile post=\{lifted\.post\} size=\{lifted\.width\} height=\{lifted\.height\} full=\{lifted\.full\} onPress=\{\(\) => undefined\} \/>/);
     const tile = code("src/components/PhotoGrid.tsx");
     expect(tile).toMatch(/accessibilityRole=\{accessibilityLabel \? "imagebutton" : undefined\}/);
   });
