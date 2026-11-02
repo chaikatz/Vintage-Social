@@ -552,12 +552,43 @@ describe("the editorial card", () => {
     expect(style("author")).toMatch(/fontWeight: "600"/);
   });
 
-  it("keeps the print's margins: the picture inset by the print's share of the width", () => {
+  it("keeps the print's margins for the print alone: the picture inset by the print's share of the width", () => {
     expect(card).toMatch(/const PRINT = exportLayout\(1, "print", PRINT_WIDTH\);/);
-    expect(style("card")).toMatch(/paddingHorizontal: share\(PRINT\.margin\),/);
+    expect(style("print")).toMatch(/paddingHorizontal: share\(PRINT\.margin\),/);
+    // The picture is the print's; the card itself runs to the screen's sides.
+    expect(body).toMatch(/<View style=\{styles\.print\}>\s*<PostMedia\b[\s\S]*?\/>\s*<\/View>/);
+    expect(style("card")).not.toMatch(/paddingHorizontal|marginHorizontal/);
     // About 7% of the width, as on the member's print.
     expect(L.margin / PRINT_WIDTH).toBeGreaterThan(0.065);
     expect(L.margin / PRINT_WIDTH).toBeLessThan(0.075);
+  });
+
+  it("sets everything around the print where Instagram does: one edge on the left, the same on the right", () => {
+    expect(card).toMatch(/const EDGE = 12;/);
+    // The member, the label with its buttons, the caption, the comments and when it went up start EDGE in.
+    for (const name of ["header", "label", "caption", "comment", "posted"]) {
+      expect(style(name), name).toMatch(/paddingHorizontal: EDGE,/);
+    }
+    // The hairline runs between the same two edges.
+    expect(style("rule")).toMatch(/marginHorizontal: EDGE,/);
+    // Outlines, not targets, at the edge: the heart's on the left, the dots' on the right.
+    expect(style("actions")).toMatch(/marginLeft: -INSET,/);
+    expect(style("more")).toMatch(/marginRight: -\(TARGET - DOTS \* 0\.75\) \/ 2,/);
+    // And nothing else sets its own sides.
+    const written = card.slice(card.indexOf("const styles = StyleSheet.create("));
+    expect(written.match(/padding(Horizontal|Left|Right): /g)).toHaveLength(6);
+  });
+
+  it("puts the buttons just under the hairline, and the place and the date level with them", () => {
+    const { label, rule } = sheet!;
+    expect(card).toMatch(/const UNDER_RULE = 10;/);
+    expect(style("label")).toMatch(/marginTop: UNDER_RULE - INSET,/);
+    expect(style("label")).toMatch(/alignItems: "center",/);
+    // The heart's outline starts UNDER_RULE under the hairline: its target, 44 tall, reaches just up to it.
+    const outlineTop = Number(label.marginTop) + (44 - 21) / 2;
+    expect(outlineTop).toBe(10);
+    expect(Number(label.marginTop)).toBeLessThan(0);
+    expect(Number(label.marginTop)).toBeGreaterThan(-Number(rule.height) - 2);
   });
 
   it("lies on the paper chosen, with nothing between one print and the next but that paper", () => {
@@ -569,16 +600,16 @@ describe("the editorial card", () => {
     expect(card).not.toMatch(/paperSunken|paperRaised|borderBottom|shadow|elevation|borderRadius/);
   });
 
-  it("leaves more paper between two prints than anywhere inside one, on any phone", () => {
-    const { card: paper, rule, header: row } = sheet!;
-    for (const width of [320, 390, 430]) {
-      const room = width - 2 * of(paper.paddingHorizontal, width);
-      // Inside a print the widest space is the one between the picture and the rule.
-      const widest = Math.max(of(rule.marginTop, room), (44 - 34) / 2 + Number(row.marginBottom));
-      // From the foot of one print to the next member's picture.
-      const between = of(paper.paddingBottom, width) + of(paper.paddingTop, width) + (44 - 34) / 2;
-      expect(between, `${width} pt`).toBeGreaterThan(2 * widest);
-    }
+  it("leaves about Instagram's gap between one post and the next, the same on any phone", () => {
+    const { card: paper, header: row } = sheet!;
+    expect(card).toMatch(/const FOOT = 14;/);
+    expect(card).toMatch(/const HEAD = 4;/);
+    // From the foot of one post's last line to the next member's picture, in points, not a share of the width.
+    const between = Number(paper.paddingBottom) + Number(paper.paddingTop) + (44 - 34) / 2;
+    expect(between).toBeGreaterThanOrEqual(20);
+    expect(between).toBeLessThanOrEqual(28);
+    // The member's row still sits as close over their picture as on the original card.
+    expect((44 - 34) / 2 + Number(row.marginBottom)).toBe(12);
   });
 
   it("draws the rule under the picture as the print does", () => {
@@ -588,25 +619,23 @@ describe("the editorial card", () => {
   });
 
   it("leaves the print's paper between the picture and the rule, on any phone", () => {
-    const { card: paper, rule } = sheet!;
+    const { print: sheetOfPrint, rule } = sheet!;
     expect(card).toMatch(/const GAP = PRINT\.rule\.y - \(PRINT\.photo\.y \+ PRINT\.photo\.height\);/);
     const GAP = L.rule.y - (L.photo.y + L.photo.height);
     for (const width of [320, 390, 430]) {
       // The card is the print at the phone's width: at 390 pt the print's 29 pt gap comes to about 20.9 pt.
-      const gap = (GAP * width) / PRINT_WIDTH;
-      // The card's own paddings are taken of its whole width; a length inside them of the room between them, which the picture fills.
-      const room = width - 2 * of(paper.paddingHorizontal, width);
-      expect(room).toBeCloseTo((L.photo.width * width) / PRINT_WIDTH, 1);
-      expect(of(rule.marginTop, room)).toBeCloseTo(gap, 1);
+      expect(of(rule.marginTop, width)).toBeCloseTo((GAP * width) / PRINT_WIDTH, 1);
+      // And the picture is the print's picture at that width.
+      expect(width - 2 * of(sheetOfPrint.paddingHorizontal, width)).toBeCloseTo((L.photo.width * width) / PRINT_WIDTH, 1);
     }
   });
 
-  it("gives a length inside the card as a share of the picture's width, not the card's", () => {
+  it("takes only the print's own lengths as shares of the width; the rest is in points, as Instagram's", () => {
     const written = card.slice(card.indexOf("const styles = StyleSheet.create("));
-    // Only the card's own paddings are a share of the whole width.
-    expect(written.match(/\bshare\(/g)).toHaveLength(3);
-    expect(style("card").match(/\bshare\(/g)).toHaveLength(3);
-    expect(style("rule")).toMatch(/marginTop: inner\(GAP\),/);
+    expect(written.match(/\bshare\(/g)).toHaveLength(2);
+    expect(style("print")).toMatch(/share\(PRINT\.margin\)/);
+    expect(style("rule")).toMatch(/marginTop: share\(GAP\),/);
+    expect(card).not.toMatch(/\binner\(/);
   });
 
   it("sets the place and the date right-aligned, in the print's typewriter lines and inks", () => {
@@ -674,10 +703,10 @@ describe("the editorial card", () => {
     expect(card).toMatch(/const scale = Math\.min\(Math\.max\(useWindowDimensions\(\)\.fontScale, 1\), LABEL_CAP\);/);
     expect(card).toMatch(/style=\{\[styles\.dateline, dateline\]\}/);
     expect(card).toMatch(/const dateline = \{ flexBasis: DATELINE \* scale \};/);
-    // At the cap the longest date still fits across a 320 pt screen, inside the margins.
+    // At the cap the longest date still fits across a 320 pt screen, inside the edges.
     // React Native grows the letters with Larger Text and leaves their tracking as set.
     const longest = "SEPTEMBER 30, 2026".length * (L.byline.size * 0.6 * 2 + L.byline.spacing);
-    expect(longest).toBeLessThan(320 * (1 - (2 * L.margin) / PRINT_WIDTH));
+    expect(longest).toBeLessThan(320 - 2 * 12);
   });
 
   it("draws the picture exactly as PostCard does, without the hairlines a print has no need of", () => {

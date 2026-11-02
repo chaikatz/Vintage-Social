@@ -325,6 +325,65 @@ check(
   /^[a-z0-9._]+$/.test(head.name) && head.picture && head.above && head.level,
   JSON.stringify(head),
 );
+// Around the print, everything starts where Instagram's does: the member,
+// the heart, the caption and when it went up from one edge, the hairline
+// between the same edges, the buttons just under it, and the next post about
+// as close as Instagram's.
+const lines = await editorial.evaluateAll((els) => {
+  const inside = (n) => {
+    const r = n.getBoundingClientRect();
+    const st = getComputedStyle(n);
+    return { left: r.left + parseFloat(st.paddingLeft), right: r.right - parseFloat(st.paddingRight), top: r.top, bottom: r.bottom - parseFloat(st.paddingBottom) };
+  };
+  return els.slice(0, 2).map((el) => {
+    const card = el.getBoundingClientRect();
+    const member = el.firstElementChild?.querySelector('[role="button"]');
+    const heart = el.querySelector('[aria-label="Like"], [aria-label="Unlike"]');
+    const rule = [...el.querySelectorAll("div")].find((d) => {
+      const r = d.getBoundingClientRect();
+      return r.height > 0 && r.height < 2 && r.width > 200;
+    });
+    const caption = [...el.querySelectorAll("div")].find(
+      (d) => d.firstElementChild?.tagName === "SPAN" && d.textContent?.startsWith(`${d.firstElementChild.textContent} `),
+    );
+    const h = heart?.getBoundingClientRect();
+    const r = rule?.getBoundingClientRect();
+    return {
+      width: card.width,
+      member: member ? member.getBoundingClientRect().left - card.left : null,
+      heart: h ? (h.left + h.right) / 2 - card.left : null,
+      underRule: h && r ? (h.top + h.bottom) / 2 - r.bottom : null,
+      rule: r ? [r.left - card.left, card.right - r.right] : null,
+      caption: caption ? inside(caption).left - card.left : null,
+      posted: el.lastElementChild ? inside(el.lastElementChild).left - card.left : null,
+      foot: el.lastElementChild ? inside(el.lastElementChild).bottom : null,
+      head: member ? member.getBoundingClientRect().top + 5 : null,
+    };
+  });
+});
+const near = (a, b, by = 1.5) => a != null && Math.abs(a - b) <= by;
+check(
+  "The member, the heart, the caption and when it went up start at Instagram's edge, under a hairline between the same edges",
+  lines.length > 0 &&
+    lines.every(
+      (l) =>
+        near(l.member, 12) &&
+        near(l.heart, 12 + 21 / 2, 2) &&
+        (l.caption == null || near(l.caption, 12)) &&
+        near(l.posted, 12) &&
+        l.rule != null &&
+        near(l.rule[0], 12) &&
+        near(l.rule[1], 12),
+    ),
+  JSON.stringify(lines[0]),
+);
+check(
+  "The buttons sit just under the hairline",
+  lines.length > 0 && lines.every((l) => l.underRule != null && l.underRule >= 16 && l.underRule <= 25),
+  lines.map((l) => l.underRule?.toFixed(1)).join(", "),
+);
+const gapBetween = lines.length > 1 ? lines[1].head - lines[0].foot : null;
+check("One post follows the next about as closely as on Instagram", gapBetween != null && gapBetween >= 18 && gapBetween <= 30, String(gapBetween));
 // The caption after the member's name, in bold, as a comment is written.
 const captioned = await editorial.first().evaluate(
   (el, name) =>

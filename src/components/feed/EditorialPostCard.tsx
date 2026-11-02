@@ -26,11 +26,16 @@ type Props = React.ComponentProps<typeof PostCard>;
  * on the paper inside the print's margins, the print's hairline under it
  * and the print's label under that. The label keeps its right-hand side as
  * it is struck, where and when, in the typewriter face; the wordmark's
- * place on the left goes to the three buttons. No counts and no number.
- * Then the caption after the member's name, the way a comment is written,
- * the newest comments, and last of all when it went up. One print follows
- * another with nothing between them but the paper, the one chosen in
- * Settings (see src/utils/feedPaper.ts).
+ * place on the left goes to the three buttons, just under the hairline.
+ * No counts and no number. Then the caption after the member's name, the
+ * way a comment is written, the newest comments, and last of all when it
+ * went up.
+ *
+ * Only the print keeps the print's margins. Everything said around it —
+ * the member, the buttons, the label, the words — is set where Instagram
+ * sets it: from one edge, the same distance in from the screen's side
+ * (EDGE), and one post follows another as closely as there. Between them
+ * is nothing but the paper chosen in Settings (see src/utils/feedPaper.ts).
  *
  * Nothing here decides anything. A like goes through the very same steps
  * as PostCard's, the double tap is PostMedia's, and the name, the "…" and
@@ -89,16 +94,19 @@ export function EditorialPostCard({
         </Pressable>
       </View>
 
-      {/* A print has no frame: the picture lies on the paper, without the hairlines PostMedia draws across a full-width feed. */}
-      <PostMedia
-        post={post}
-        onDoubleTap={() => like(true)}
-        active={active}
-        recyclingKey={post.id}
-        warm={warm}
-        surface={surface}
-        bare
-      />
+      {/* A print has no frame: the picture lies on the paper inside the print's margins, without the hairlines PostMedia draws across a full-width feed. The hairline under it runs edge to edge with the words. */}
+      <View style={styles.print}>
+        <PostMedia
+          post={post}
+          onDoubleTap={() => like(true)}
+          active={active}
+          recyclingKey={post.id}
+          warm={warm}
+          surface={surface}
+          bare
+        />
+
+      </View>
 
       <View style={styles.rule} />
 
@@ -198,19 +206,9 @@ function PostedTime({ at }: { at: string }) {
  */
 const PRINT = exportLayout(1, "print", PRINT_WIDTH);
 
-/** A length on the print as a share of its width, for the card's own paddings. */
+/** A length on the print as a share of its width: the card is the print at the screen's width. */
 function share(length: number): `${number}%` {
   return `${Math.round((length / PRINT_WIDTH) * 10000) / 100}%`;
-}
-
-/**
- * A length inside the card, as a share of the room between its margins.
- * React Native and the web take a percentage there from that room, not
- * from the whole card. The picture fills it, as the print's picture fills
- * the print less its two margins.
- */
-function inner(length: number): `${number}%` {
-  return `${Math.round((length / (PRINT_WIDTH - 2 * PRINT.margin)) * 10000) / 100}%`;
 }
 
 /** One line of the label, as the print sets it. */
@@ -253,27 +251,43 @@ const DATELINE = "SEPTEMBER 30, 2026".length * (PRINT.byline.size * 0.6 + PRINT.
 const GAP = PRINT.rule.y - (PRINT.photo.y + PRINT.photo.height);
 const BETWEEN = PRINT.byline.y - (PRINT.place.y + PRINT.place.height);
 
-/** Where the label's first line starts under the rule; the buttons' outlines start there too. */
-const LABEL_TOP = PRINT.place.y - PRINT.rule.y;
+/**
+ * Where Instagram sets what is around a post: the member's picture, the
+ * first button and every line of words start this far in from the left of
+ * the screen, and the "…" and the label end this far in from the right.
+ */
+const EDGE = 12;
+
+/** The buttons' outlines start this far under the hairline, as Instagram's start under the picture. */
+const UNDER_RULE = 10;
+
+/** The paper under one post's last line, and over the next one's row: together about Instagram's gap. */
+const FOOT = 14;
+const HEAD = 4;
+
+/** How far a target reaches past its outline on each side. */
 const INSET = (TARGET - ICON) / 2;
 
+/** The caption starts this much inside the buttons' lower reach, as close under them as Instagram's words. */
+const UNDER_WORDS = 4;
+
 const styles = StyleSheet.create({
-  // A sheet of the paper: the print's margins at the sides, a little of
-  // it above the member's name, and more under the last line, where the
-  // next print begins. The paper itself is the one chosen (see `paper`).
+  // A sheet of the paper, a little of it above the member's row and a
+  // little under the last line, where the next post begins, about as
+  // close as Instagram's. The paper itself is the one chosen (see `paper`).
   card: {
-    paddingHorizontal: share(PRINT.margin),
-    paddingTop: share(GAP),
-    paddingBottom: share(PRINT.margin),
+    paddingTop: HEAD,
+    paddingBottom: FOOT,
   },
   // As near the picture as on the original card: the picture's top edge
   // is as far under the member's picture as there.
   header: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: EDGE,
     marginBottom: spacing.md - (TARGET - AVATAR) / 2,
   },
-  // Their picture starts at the margin, level with the photograph's edge.
+  // Their picture starts at the edge Instagram's does.
   member: {
     flex: 1,
     flexDirection: "row",
@@ -282,27 +296,35 @@ const styles = StyleSheet.create({
     minHeight: TARGET,
   },
   username: { flexShrink: 1, fontSize: 14, fontWeight: "600", color: colors.ink },
-  // As far under the picture as on the print, and as the paper above it.
+  // The print alone keeps the print's margins, a share of the width.
+  print: {
+    paddingHorizontal: share(PRINT.margin),
+  },
+  // As far under the picture as on the print, and as wide as the words
+  // under it, so the buttons and the label lie just beneath it.
   rule: {
     height: PRINT.rule.height,
-    marginTop: inner(GAP),
+    marginHorizontal: EDGE,
+    marginTop: share(GAP),
     backgroundColor: colors.borderStrong,
   },
-  // On a narrow screen, or with large text, the right-hand lines go under
-  // the buttons, still set against the right margin.
+  // Just under the hairline: the buttons' outlines start UNDER_RULE below
+  // it, and their targets reach up to it. The place and the date sit level
+  // with them, centred on the buttons as Instagram's last one is. On a
+  // narrow screen, or with large text, the right-hand lines go under the
+  // buttons, still set against the right edge.
   label: {
     flexDirection: "row",
     flexWrap: "wrap",
-    alignItems: "flex-start",
+    alignItems: "center",
     columnGap: spacing.md,
-    marginTop: LABEL_TOP,
+    paddingHorizontal: EDGE,
+    marginTop: UNDER_RULE - INSET,
+    marginBottom: -UNDER_WORDS,
   },
-  // The outlines start level with the first line; their targets reach up
-  // into the paper under the rule, and the heart's outline, not its
-  // target, starts at the margin.
+  // The heart's outline, not its target, starts at the edge.
   actions: {
     flexDirection: "row",
-    marginTop: -INSET,
     marginLeft: -INSET,
   },
   button: {
@@ -311,13 +333,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // As much paper under the last line as the buttons' targets leave under
-  // their outlines, so the caption starts the same distance below either.
   dateline: {
     flexGrow: 1,
     flexShrink: 1,
     alignItems: "flex-end",
-    paddingBottom: INSET,
   },
   // Tracking follows the last letter too; the words, not that space, end at the margin.
   place: {
@@ -329,7 +348,7 @@ const styles = StyleSheet.create({
   },
   date: { ...line(PRINT.byline), textAlign: "right", color: colors.inkSoft, marginRight: -PRINT.byline.spacing },
   more: {
-    // The dots, not their target, end at the margin.
+    // The dots, not their target, end at the edge.
     marginRight: -(TARGET - DOTS * 0.75) / 2,
   },
   // The member's words in the comments' own type, after their name, so the text under a picture reads as one.
@@ -337,12 +356,14 @@ const styles = StyleSheet.create({
     ...type.body,
     fontSize: 14,
     color: colors.ink,
+    paddingHorizontal: EDGE,
   },
   comment: {
     ...type.body,
     fontSize: 14,
     color: colors.ink,
-    paddingTop: spacing.xs + 2,
+    paddingHorizontal: EDGE,
+    paddingTop: spacing.xs,
   },
   author: { fontWeight: "600" },
   // The label's typewriter line, a shade fainter than the date.
@@ -350,6 +371,7 @@ const styles = StyleSheet.create({
     ...line(PRINT.byline),
     textTransform: "uppercase",
     color: colors.inkFaint,
-    paddingTop: spacing.sm,
+    paddingHorizontal: EDGE,
+    paddingTop: spacing.sm - 2,
   },
 });
