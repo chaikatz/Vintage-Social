@@ -58,8 +58,31 @@ describe("who may arrange Eras", () => {
     expect(hook).toMatch(/showAlert\(ERA_SAVE_FAILED\.title, errorMessage\(err, ERA_SAVE_FAILED\.body\)\)/);
     // Each over the member's photographs, so what no longer applies is let go as it saves.
     expect(hook).toMatch(/rename: \(key, title\) => void arrange\(\(e\) => renameEra\(e, key, title, posts\)\)/);
-    expect(hook).toMatch(/const change = \(e: EraEdits\) => moveToEra\(e, posts, post\.id, key\);/);
+    expect(hook).toMatch(/move: \(post, key\) => changes\(\(e\) => moveToEra\(e, posts, post\.id, key\)\),/);
     expect(hook).toMatch(/void arrange\(change\);\s*return true;/);
+  });
+
+  it("adds, makes, takes out and deletes as one change each, through the one door that says whether it changed anything", () => {
+    expect(hook).toMatch(/add: \(key: string, photoIds: string\[\]\) => boolean;/);
+    expect(hook).toMatch(/create: \(name: string, photoIds: string\[\]\) => string \| null;/);
+    expect(hook).toMatch(/takeOut: \(post: PostRow\) => boolean;/);
+    expect(hook).toMatch(/deleteEra: \(key: string\) => boolean;/);
+    expect(hook).toMatch(/add: \(key, photoIds\) => changes\(\(e\) => addToEra\(e, posts, key, photoIds\)\),/);
+    expect(hook).toMatch(/takeOut: \(post\) => changes\(\(e\) => takeOut\(e, posts, post\.id\)\),/);
+    expect(hook).toMatch(/deleteEra: \(key\) => changes\(\(e\) => deleteEra\(e, posts, key\)\),/);
+    // Every change but a rename goes through `changes`, which arranges only a real one.
+    expect(hook.match(/void arrange\(/g)).toHaveLength(2);
+    expect(hook.match(/\bchanges\(\(e\) =>/g)).toHaveLength(5);
+  });
+
+  it("draws a new era's key once, from the phone's secure source, outside the change that may be made again", () => {
+    expect(hook).toMatch(/import \{ newEraKey \} from "@\/utils\/newEraKey";/);
+    expect(hook).toMatch(/makeKey: \(\) => string = newEraKey,/);
+    expect(hook).toMatch(/const key = makeKey\(\);\s*return changes\(\(e\) => createEra\(e, posts, name, photoIds, \(\) => key\)\.edits\) \? key : null;/);
+    expect(hook.match(/makeKey\(\)/g)).toHaveLength(1);
+    const keys = code("src/utils/newEraKey.ts");
+    expect(keys).toMatch(/import \{ getRandomBytes \} from "expo-crypto";/);
+    expect(keys).toMatch(/const key = eraKeyFrom\(getRandomBytes\(ERA_KEY_BYTES\)\);/);
   });
 
   it("says whether a move was made, so the page announces only a real one", () => {

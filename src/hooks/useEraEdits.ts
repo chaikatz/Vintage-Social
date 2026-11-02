@@ -3,7 +3,8 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { ERA_SAVE_FAILED, changeEraEdits, eraEditsKey, eraEditsQuery, type EraEditsState } from "@/api/eraEdits";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
-import { moveToEra, renameEra, sameEdits, type EraEdits } from "@/utils/eraEdits";
+import { addToEra, createEra, deleteEra, moveToEra, renameEra, sameEdits, takeOut, type EraEdits } from "@/utils/eraEdits";
+import { newEraKey } from "@/utils/newEraKey";
 import type { PostRow } from "@/types/db";
 
 /**
@@ -20,9 +21,13 @@ export function useEraEdits(authorId: string | undefined, enabled = true) {
   });
 }
 
-/** What the Eras view may change, on the member's own page only. */
+/**
+ * What the Eras view may change, on the member's own page only. Each is
+ * one change, saved once, and each but rename says whether it changed the
+ * eras on the page, so only a real change is said aloud.
+ */
 export interface EraEditor {
-  /** The member's name for the era of `key`; null, or nothing, gives it back its automatic name. */
+  /** The member's name for the era of `key`; null, or nothing, gives it back its automatic name (an era they made keeps its own). */
   rename: (key: string, title: string | null) => void;
   /**
    * The photograph moved into the era of `key`. True when that changes the
@@ -30,6 +35,28 @@ export interface EraEditor {
    * has gone, or that era cannot take it), so only a real move is said.
    */
   move: (post: PostRow, key: string) => boolean;
+  /**
+   * The photographs of `photoIds` added to the era of `key`, from no era or
+   * from another (addToEra). True when any of them moved.
+   */
+  add: (key: string, photoIds: string[]) => boolean;
+  /**
+   * A new era of the member's own, named `name`, holding the photographs of
+   * `photoIds` (createEra): its key, or null when nothing was made (no name
+   * left once cleaned, or none of the photographs among theirs).
+   */
+  create: (name: string, photoIds: string[]) => string | null;
+  /**
+   * The photograph taken out of the era a move put it in, back where the
+   * automatic reading puts it, which may be no era (takeOut). True when a
+   * move had put it there.
+   */
+  takeOut: (post: PostRow) => boolean;
+  /**
+   * An era the member made, gone, and its photographs back where the
+   * automatic reading puts them (deleteEra). True when there was one.
+   */
+  deleteEra: (key: string) => boolean;
 }
 
 /**
@@ -37,23 +64,39 @@ export interface EraEditor {
  * photographs (`posts`, as read). A change shows at once
  * (changeEraEdits); one that does not save is taken back and the member
  * is told, in words of ours. Each change lets go of what no longer
- * applies to the photographs (renameEra, moveToEra).
+ * applies to the photographs (renameEra, addToEra and the rest). A new
+ * era's key is drawn by `makeKey`, the phone's secure random source
+ * unless the tests give another.
  */
-export function eraEditor(queryClient: QueryClient, userId: string, posts: PostRow[]): EraEditor {
+export function eraEditor(
+  queryClient: QueryClient,
+  userId: string,
+  posts: PostRow[],
+  makeKey: () => string = newEraKey,
+): EraEditor {
   const arrange = (change: Parameters<typeof changeEraEdits>[2]) =>
     changeEraEdits(queryClient, userId, change).catch((err) =>
       showAlert(ERA_SAVE_FAILED.title, errorMessage(err, ERA_SAVE_FAILED.body)),
     );
+  /** Whether `change` changes what the page shows now, the member's latest change among it; made only if it does. */
+  const changes = (change: (e: EraEdits) => EraEdits): boolean => {
+    const shown = queryClient.getQueryData<EraEditsState>(eraEditsKey(userId));
+    if (!shown?.ready || sameEdits(change(shown.edits), shown.edits)) return false;
+    void arrange(change);
+    return true;
+  };
   return {
     rename: (key, title) => void arrange((e) => renameEra(e, key, title, posts)),
-    move: (post, key) => {
-      const change = (e: EraEdits) => moveToEra(e, posts, post.id, key);
-      // What the page shows now, the member's latest change among it.
-      const shown = queryClient.getQueryData<EraEditsState>(eraEditsKey(userId));
-      if (!shown?.ready || sameEdits(change(shown.edits), shown.edits)) return false;
-      void arrange(change);
-      return true;
+    move: (post, key) => changes((e) => moveToEra(e, posts, post.id, key)),
+    add: (key, photoIds) => changes((e) => addToEra(e, posts, key, photoIds)),
+    create: (name, photoIds) => {
+      // Drawn once, here: the change may be made again over a newer
+      // arrangement (changeEraEdits), and is the same era every time.
+      const key = makeKey();
+      return changes((e) => createEra(e, posts, name, photoIds, () => key).edits) ? key : null;
     },
+    takeOut: (post) => changes((e) => takeOut(e, posts, post.id)),
+    deleteEra: (key) => changes((e) => deleteEra(e, posts, key)),
   };
 }
 
