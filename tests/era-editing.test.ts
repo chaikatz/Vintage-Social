@@ -71,7 +71,7 @@ describe("who may arrange Eras", () => {
 
 describe("the Eras view outside arranging", () => {
   it("offers EDIT only to an editor, and only over eras that are there", () => {
-    expect(list).toMatch(/\{editor && !loading && summary\.eras\.length > 0 \? \(\s*<View ref=\{bar\} style=\{\[styles\.bar, arranging && styles\.barOn\]\}>/);
+    expect(list).toMatch(/\{editor && !loading && summary\.eras\.length > 0 \? \([\s\S]{0,400}?<View ref=\{bar\} collapsable=\{false\}>\s*<View style=\{\[styles\.bar, arranging && styles\.barOn\]\}>/);
     expect(list).toMatch(/const arranging = editing && editor != null && summary\.eras\.length > 0;/);
     expect(list).toMatch(/\{editor \? <EraMoveSheet /);
   });
@@ -138,6 +138,11 @@ describe("the Eras view outside arranging", () => {
     expect(arrange.indexOf("bar.current?.measureLayout(")).toBeLessThan(arrange.indexOf("first.measureLayout("));
     // Nothing kept of what the bar said of itself.
     expect(list).not.toMatch(/barTall/);
+    // The view measured is the one that holds to the top, and carries no style of its own:
+    // React Native's sticky holder takes the child's style (padding, rule) onto itself and
+    // leaves the child flex: 1, so a styled child would measure short of the bar by its padding.
+    expect(list).toMatch(/<View ref=\{bar\} collapsable=\{false\}>/);
+    expect(list).not.toMatch(/<View ref=\{bar\}[^>]*style=/);
     expect(list).toMatch(/const bar = useRef<View>\(null\);/);
   });
 
@@ -181,6 +186,15 @@ describe("arranging, as VoiceOver hears it", () => {
     expect(list).toMatch(
       /<View style=\{styles\.mark\} pointerEvents="none" aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants">\s*<Text style=\{styles\.markText\}>Move<\/Text>/,
     );
+  });
+
+  it("says moves and names aloud on the web too, where announceForAccessibility does nothing", () => {
+    expect(list).toMatch(/const announce = \(words: string\) => \{\s*AccessibilityInfo\.announceForAccessibility\(words\);\s*if \(Platform\.OS === "web"\) setSpoken\(\{ words, at: Date\.now\(\) \}\);\s*\};/);
+    expect(list).toMatch(/const say = \(words: string\) => \{[\s\S]{0,200}?announce\(words\);\s*\};/);
+    expect(list).toMatch(/announce\(`Named \$\{cleanEraTitle\(title \?\? ""\) \|\| era\.key\}`\);/);
+    expect(list.match(/AccessibilityInfo\.announceForAccessibility\(/g)).toHaveLength(1);
+    // Always on the page while there is an editor, so a screen reader is listening before the words come.
+    expect(list).toMatch(/\{editor && Platform\.OS === "web" \? \(\s*<View style=\{styles\.spoken\} aria-live="polite">[\s\S]*?\{spoken \? <Text key=\{spoken\.at\}>\{spoken\.words\}<\/Text> : null\}/);
   });
 
   it("does not read out the note of where a photograph went, which it announces itself", () => {
