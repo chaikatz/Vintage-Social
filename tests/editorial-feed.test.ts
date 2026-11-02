@@ -395,7 +395,10 @@ describe("the gallery", () => {
       "warm={isWarm(index, warm)}",
       'surface="gallery"',
     ]);
-    expect(gallery).toMatch(/<View onLayout=\{\(e\) => onCardLayout\(item\.id, e\)\}>\s*<FeedCard\b/);
+    // The row the landing measures (and, for the tapped one, looks for) holds the card.
+    expect(gallery).toMatch(
+      /<View ref=\{item\.id === postId \? tapped : undefined\} onLayout=\{\(e\) => onCardLayout\(item\.id, e\)\}>\s*<FeedCard\b/,
+    );
   });
 
   it("lies on the feed's paper, under a bar on the same paper", () => {

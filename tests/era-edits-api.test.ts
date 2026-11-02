@@ -36,6 +36,9 @@ const h = vi.hoisted(() => ({
   hold: false,
   saveError: null as unknown,
   alerts: [] as string[],
+  /** Draws from the phone's random source, and, when set, a source that only ever gives bytes no key can use. */
+  draws: 0,
+  spent: false,
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -67,11 +70,22 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios" }, Alert: { alert: () => undefined } }));
+// The phone's secure random source, as node has one: a new era's key is drawn from it (newEraKey).
+vi.mock("expo-crypto", async () => {
+  const { randomBytes } = await import("node:crypto");
+  return {
+    getRandomBytes: (n: number) => {
+      h.draws++;
+      return h.spent ? new Uint8Array(n).fill(255) : new Uint8Array(randomBytes(n));
+    },
+  };
+});
 vi.mock("@/utils/alert", () => ({ showAlert: (title: string) => void h.alerts.push(title) }));
 
 const { ERA_SAVE_FAILED, READ_WAIT_MS, changeEraEdits, eraEditsKey, eraEditsQuery, fetchEraEdits, readEraEdits, saveEraEdits } =
   await import("@/api/eraEdits");
-const { NO_EDITS, deviceZone, editEras, moveToEra, renameEra } = await import("@/utils/eraEdits");
+const { MADE_ERA, NO_EDITS, deviceZone, editEras, moveToEra, renameEra } = await import("@/utils/eraEdits");
+const { newEraKey } = await import("@/utils/newEraKey");
 const { eraEditor } = await import("@/hooks/useEraEdits");
 const { errorMessage } = await import("@/utils/errorMessage");
 const demo = await import("@/demo/store");
@@ -103,6 +117,8 @@ beforeEach(() => {
   h.hold = false;
   h.saveError = null;
   h.alerts.length = 0;
+  h.draws = 0;
+  h.spent = false;
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 afterEach(async () => {
@@ -576,6 +592,125 @@ describe("the editor on the member's own page", () => {
     eraEditor(client, ME, posts).rename("Lisbon 2023", "Portugal");
     await vi.waitFor(() => expect(h.alerts).toEqual([ERA_SAVE_FAILED.title]));
   });
+
+  // Kyoto 2024 (k1, k2) and Lisbon 2023 (l1, l2), and one posted without a capture date.
+  const undated = { ...post("u1", "2023-05-03T12:00:00", "Lisbon"), taken_at: null } as PostRow;
+  const all = [...posts, undated];
+  /** Keys drawn in turn, as a source would give them, counting each draw. */
+  const keys = () => {
+    let n = 0;
+    return Object.assign(() => `~${String(++n).padStart(10, "0")}`, { drawn: () => n });
+  };
+
+  it("adds photographs to an era as one change, saved once, and says whether any moved", async () => {
+    client.setQueryData(key, { edits: NO_EDITS, ready: true });
+    const editor = eraEditor(client, ME, all);
+    expect(editor.add("Kyoto 2024", ["l1", "u1", "k1"])).toBe(true);
+    expect(shown()?.edits.moves).toEqual({ l1: "Kyoto 2024", u1: "Kyoto 2024" });
+    await tick();
+    expect(h.upserts).toHaveLength(1);
+    // All there already; an era that is not one; photographs deleted elsewhere; nothing at all.
+    expect(editor.add("Kyoto 2024", ["l1", "u1"])).toBe(false);
+    expect(editor.add("Paris 1999", ["l2"])).toBe(false);
+    expect(editor.add("Lisbon 2023", ["gone"])).toBe(false);
+    expect(editor.add("Lisbon 2023", [])).toBe(false);
+    await tick();
+    expect(h.upserts).toHaveLength(1);
+  });
+
+  it("makes a new era, saved once, and gives back its key, drawn once", async () => {
+    client.setQueryData(key, { edits: NO_EDITS, ready: true });
+    const draw = keys();
+    const editor = eraEditor(client, ME, all, draw);
+    const made = editor.create("  Portugal ", ["l1", "u1", "gone"]);
+    expect(made).toBe("~0000000001");
+    expect(draw.drawn()).toBe(1);
+    expect(shown()?.edits).toMatchObject({ titles: { "~0000000001": "Portugal" }, moves: { l1: "~0000000001", u1: "~0000000001" } });
+    await tick();
+    expect(h.upserts).toEqual([
+      {
+        author_id: ME,
+        titles: { "~0000000001": "Portugal" },
+        moves: { l1: "~0000000001", u1: "~0000000001" },
+        time_zone: HERE ?? null,
+      },
+    ]);
+    const era = editEras(all, shown()!.edits).find((e) => e.key === made);
+    expect(era).toMatchObject({ title: "Portugal", made: true, renamed: false });
+    // No name; no photographs of theirs: nothing made, and nothing saved.
+    expect(editor.create("   ", ["l2"])).toBeNull();
+    expect(editor.create("Elsewhere", ["gone"])).toBeNull();
+    await tick();
+    expect(h.upserts).toHaveLength(1);
+  });
+
+  it("makes the same era, by the key it gave back, when the change is made again over a read that lands", async () => {
+    // This phone holds an older arrangement; another has since named Lisbon.
+    client.setQueryData(key, { edits: NO_EDITS, ready: true });
+    h.holdReads = true;
+    void new QueryObserver(client, eraEditsQuery(ME)).refetch();
+    await tick();
+    const draw = keys();
+    const made = eraEditor(client, ME, all, draw).create("Portugal", ["l1", "l2"]);
+    expect(made).toBe("~0000000001");
+    h.reads[0].answer(row({ "Lisbon 2023": "From iPad" }, {}, "Europe/Lisbon"));
+    await vi.waitFor(() => expect(h.upserts).toHaveLength(1));
+    expect(h.upserts[0]).toEqual({
+      author_id: ME,
+      titles: { "Lisbon 2023": "From iPad", "~0000000001": "Portugal" },
+      moves: { l1: "~0000000001", l2: "~0000000001" },
+      time_zone: "Europe/Lisbon",
+    });
+    expect(draw.drawn()).toBe(1);
+  });
+
+  it("takes a photograph out, and deletes an era the member made, each once, and says whether it did", async () => {
+    const made = "~0000000001";
+    client.setQueryData(key, {
+      edits: { titles: { [made]: "Portugal" }, moves: { l1: made, l2: made, k1: "Lisbon 2023" } },
+      ready: true,
+    });
+    const editor = eraEditor(client, ME, all);
+    expect(editor.takeOut(posts[0])).toBe(true);
+    expect(shown()?.edits.moves).toEqual({ l1: made, l2: made });
+    // In Kyoto of itself now, with nothing to take it out of.
+    expect(editor.takeOut(posts[0])).toBe(false);
+    expect(editor.takeOut(undated)).toBe(false);
+    await tick();
+    expect(editor.deleteEra(made)).toBe(true);
+    expect(shown()?.edits).toMatchObject({ titles: {}, moves: {} });
+    expect(editor.deleteEra(made)).toBe(false);
+    // An automatic era is how the photographs fall, not something to delete.
+    expect(editor.deleteEra("Lisbon 2023")).toBe(false);
+    await tick();
+    expect(h.upserts).toHaveLength(2);
+  });
+
+  it("changes nothing before the arrangement has been read", () => {
+    const editor = eraEditor(client, ME, all, keys());
+    expect(editor.add("Kyoto 2024", ["l1"])).toBe(false);
+    expect(editor.create("Portugal", ["l1"])).toBeNull();
+    expect(editor.takeOut(posts[2])).toBe(false);
+    expect(editor.deleteEra("~0000000001")).toBe(false);
+    expect(h.calls).toEqual([]);
+  });
+
+  it("draws a new era's key from the phone's secure source, a new one each time", () => {
+    const drawn = Array.from({ length: 500 }, () => newEraKey());
+    expect(drawn.every((k) => MADE_ERA.test(k))).toBe(true);
+    expect(new Set(drawn).size).toBe(drawn.length);
+    expect(h.draws).toBe(500);
+    // And the editor reaches for it when the tests give none.
+    client.setQueryData(key, { edits: NO_EDITS, ready: true });
+    expect(eraEditor(client, ME, all).create("Portugal", ["l1"])).toMatch(MADE_ERA);
+    expect(h.draws).toBe(501);
+  });
+
+  it("says so, rather than go on drawing, from a source that never gives a byte a key can use", () => {
+    h.spent = true;
+    expect(() => newEraKey()).toThrow("There was no randomness to make an era’s key from.");
+    expect(h.draws).toBe(8);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -631,6 +766,39 @@ describe("the demo store", () => {
     await expect(saveEraEdits(DEMO_IDS.elena, { titles: { "Milan 2025": "é".repeat(61) }, moves: {} })).rejects.toMatchObject(refused);
     await expect(saveEraEdits(DEMO_IDS.elena, { titles: {}, moves: {}, zone: "Rome; drop table" })).rejects.toMatchObject(refused);
     await expect(saveEraEdits(DEMO_IDS.elena, { titles: { "Milan 2025": "é".repeat(60) }, moves: {}, zone: "Europe/Rome" })).resolves.toBeUndefined();
+  });
+
+  it("keeps an era the member made as the database does, its key a word like any other", async () => {
+    const posts = demo.demoFetchUserPosts(DEMO_IDS.elena);
+    client.setQueryData(eraEditsKey(DEMO_IDS.elena), await fetchEraEdits(DEMO_IDS.elena));
+    const made = eraEditor(client, DEMO_IDS.elena, posts, () => "~k3j9x0ab12").create("Two winters in Milan", [
+      "demo-post-01",
+      "demo-post-03",
+    ]);
+    expect(made).toBe("~k3j9x0ab12");
+    await vi.waitFor(() => expect(demo.demoFetchEraEdits(DEMO_IDS.elena).titles).toEqual({ "~k3j9x0ab12": "Two winters in Milan" }));
+    const kept = demo.demoFetchEraEdits(DEMO_IDS.elena);
+    expect(kept.moves).toEqual({ "demo-post-01": "~k3j9x0ab12", "demo-post-03": "~k3j9x0ab12" });
+    // The admin, who follows everyone, reads it as Elena does.
+    demo.demoSignIn("admin@vintage.club");
+    const theirs = editEras(posts, (await fetchEraEdits(DEMO_IDS.elena)).edits).find((e) => e.key === made);
+    expect(theirs).toMatchObject({ title: "Two winters in Milan", made: true });
+    expect(theirs?.posts.map((p) => p.id).sort()).toEqual(["demo-post-01", "demo-post-03"]);
+  });
+
+  it("refuses a row past the database's size, and takes a thousand photographs moved into eras of the member's own", async () => {
+    const refused = { code: "23514" };
+    const key = (i: number) => `~${String(i).padStart(10, "0")}`;
+    // As supabase/tests/07_era_edits.sql tries it.
+    const far = Object.fromEntries(Array.from({ length: 8000 }, (_, i) => [`post-${i}`, "Lisbon 2023 and a long way after"]));
+    await expect(saveEraEdits(DEMO_IDS.elena, { titles: {}, moves: far })).rejects.toMatchObject(refused);
+    const names = Object.fromEntries(Array.from({ length: 600 }, (_, i) => [key(i), "é".repeat(30)]));
+    await expect(saveEraEdits(DEMO_IDS.elena, { titles: names, moves: {} })).rejects.toMatchObject(refused);
+    const uuid = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+    const moves = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [uuid(i), key(i % 50)]));
+    const titles = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [key(i), "A".repeat(60)]));
+    await expect(saveEraEdits(DEMO_IDS.elena, { titles, moves })).resolves.toBeUndefined();
+    expect(demo.demoFetchEraEdits(DEMO_IDS.elena)).toEqual({ titles, moves });
   });
 
   it("moves a photograph as the page does, through the cache, and keeps the zone it was read in", async () => {

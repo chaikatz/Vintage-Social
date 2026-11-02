@@ -9,13 +9,24 @@ import { colors, spacing } from "@/theme";
  * the place the photograph will land reads as *arriving*, which is the
  * truth. These breathe rather than shimmer — nothing on VINTAGE glints.
  */
+
+/**
+ * One breath, in or out. It is not an interaction: on the phone it runs on
+ * the native driver and never counts as one, but on the web it runs in
+ * JavaScript, and by default it counted as one for as long as it breathed.
+ * That held back everything waiting for interactions to finish, a list
+ * drawing its next cards among them, so the gallery could not draw its
+ * way to a photograph deep in a long history while its skeleton showed.
+ */
+const BREATH = { duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true, isInteraction: false };
+
 function usePulse(): Animated.Value {
   const pulse = React.useRef(new Animated.Value(0.55)).current;
   React.useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0.55, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, ...BREATH }),
+        Animated.timing(pulse, { toValue: 0.55, ...BREATH }),
       ]),
     );
     loop.start();

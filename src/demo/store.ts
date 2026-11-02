@@ -533,19 +533,33 @@ export function demoFetchEraEdits(authorId: string): EraEdits {
 }
 
 /**
+ * The size of a map of words as the database measures it (0022's
+ * era_edits_size): in bytes, written out as jsonb writes itself, with a
+ * space after every colon and every comma.
+ */
+function jsonbBytes(words: Record<string, string>): number {
+  const pairs = Object.keys(words).length;
+  return new TextEncoder().encode(JSON.stringify(words)).length + pairs + Math.max(0, pairs - 1);
+}
+
+/**
  * Only the member writes their own, whole, over what was there: the names,
  * the moves and the time zone they were read in, none when none is given.
  * The row holds to the database's checks (0022): every name 1 to 60
- * characters, every move an era's name, and the zone an IANA name. Names
- * and moves that no longer apply are let go by the app before it saves
- * (renameEra, moveToEra), here as there.
+ * characters, every move an era's key, the zone an IANA name, and the
+ * whole of a size (32 KB of names, 256 KB of moves). A key may be any
+ * word, so an era the member made ("~" and ten letters and digits) is
+ * kept as any other. Names and moves that no longer apply are let go by
+ * the app before it saves (renameEra, addToEra and the rest), here as
+ * there.
  */
 export function demoSaveEraEdits(authorId: string, edits: EraEdits): void {
   if (authorId !== state.currentUserId) throw new Error("Only you can arrange your own eras.");
   const names = Object.values(edits.titles).every((t) => typeof t === "string" && /^.{1,60}$/su.test(t));
   const moves = Object.values(edits.moves).every((m) => typeof m === "string");
   const zone = edits.zone === undefined || /^[A-Za-z0-9_+/-]{1,64}$/.test(edits.zone);
-  if (!names || !moves || !zone) {
+  const size = jsonbBytes(edits.titles) <= 32768 && jsonbBytes(edits.moves) <= 262144;
+  if (!names || !moves || !zone || !size) {
     // As PostgREST answers a check that fails: the database's words, which the app never shows.
     throw { code: "23514", message: 'new row for relation "era_edits" violates check constraint', details: null, hint: null };
   }

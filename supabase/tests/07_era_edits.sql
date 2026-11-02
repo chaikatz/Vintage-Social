@@ -151,6 +151,29 @@ select tests.run('and so is every shape of IANA name', :'follower', 'OK',
         end loop;
       end
       $d$ $q$);
+-- An era the member makes (src/utils/eraEdits.ts) is keyed "~" and ten
+-- letters and digits, a word like any other, and named in 1 to 60
+-- characters like any other: the row takes it as it is, with no change
+-- to 0022.
+select tests.run('an era the member made is kept: its own key, its name, and the photographs moved into it', :'follower', 'OK',
+  $q$ update public.era_edits
+         set titles = titles || '{"~k3j9x0ab12":"The long weekend"}',
+             moves = '{"p1":"~k3j9x0ab12","p2":"~k3j9x0ab12","p3":"Lisbon 2023"}'
+       where author_id = 'e0000000-0000-4000-8000-000000000003' $q$);
+insert into tests.results (name, expected, actual) values
+  ('and reads back as it was saved', 'The long weekend · ~k3j9x0ab12',
+   coalesce((select (titles ->> '~k3j9x0ab12') || ' · ' || (moves ->> 'p2') from public.era_edits
+              where author_id = 'e0000000-0000-4000-8000-000000000003'), '<none>'));
+select tests.run('a thousand photographs moved into fifty of them, named in sixty characters each, fit', :'follower', 'OK',
+  $q$ update public.era_edits
+         set titles = (select jsonb_object_agg('~' || lpad(to_hex(n), 10, '0'), repeat('é', 60)) from generate_series(1, 50) n),
+             moves = (select jsonb_object_agg(gen_random_uuid()::text, '~' || lpad(to_hex(n % 50 + 1), 10, '0'))
+                        from generate_series(1, 1000) n)
+       where author_id = 'e0000000-0000-4000-8000-000000000003' $q$);
+insert into tests.results (name, expected, actual) values
+  ('every one of them', '50 names · 1000 moves',
+   coalesce((select (select count(*) from jsonb_object_keys(titles)) || ' names · ' || (select count(*) from jsonb_object_keys(moves)) || ' moves'
+               from public.era_edits where author_id = 'e0000000-0000-4000-8000-000000000003'), '<none>'));
 select tests.run('one of 61 is refused', :'follower', 'ERROR:23514',
   $q$ update public.era_edits set titles = jsonb_build_object('Lisbon 2023', repeat('é', 61))
       where author_id = 'e0000000-0000-4000-8000-000000000003' $q$);
