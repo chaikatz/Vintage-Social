@@ -39,13 +39,15 @@ import {
 import {
   LIFT_MS,
   LIFT_SCALE,
+  armedSpeed,
   dropLabel,
   dropTarget,
-  edgeSpeed,
   eraUnderFinger,
+  reached,
   scrolledTo,
   type ChapterBox,
   type DragPage,
+  type Reach,
 } from "./eraDrag";
 import {
   ERA_RULE,
@@ -85,6 +87,8 @@ interface Drag {
   /** Where the finger was as the print lifted, and where it is now. */
   start: { x: number; y: number };
   finger: { x: number; y: number };
+  /** How far the finger has gone above and below where it lifted: the page runs on at an edge only once the finger has meant it to. */
+  reach: Reach;
   /** The view the page scrolls in, on the screen; null until it has been measured. */
   view: { y: number; height: number } | null;
   /** Each chapter where it lies in the page, as it answers. */
@@ -407,14 +411,16 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
     d.over = to;
     setOver(to);
   };
-  // Near the top of the view, under the bar, or near its foot, the page runs on a frame at a time.
+  // Near the top of the view, under the bar, or near its foot, the page runs
+  // on a frame at a time: at an edge the print lifted near, only once the
+  // finger has gone on toward it, or been clear of it (armedSpeed).
   const run = (now: number) => {
     const d = drag.current;
     if (!d) return;
     const ms = d.last ? now - d.last : 16;
     d.last = now;
     if (d.view) {
-      const speed = edgeSpeed(d.finger.y - d.view.y, { top: d.bar?.height ?? 0, bottom: d.view.height });
+      const speed = armedSpeed(d.finger.y - d.view.y, d.start.y - d.view.y, d.reach, { top: d.bar?.height ?? 0, bottom: d.view.height });
       const next = scrolledTo(d.offset, speed, ms, contentTall.current - d.view.height);
       if (next !== d.offset) {
         d.offset = next;
@@ -437,6 +443,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
       from,
       start: at,
       finger: at,
+      reach: { up: 0, down: 0 },
       view: null,
       chapters: new Map(),
       bar: null,
@@ -483,6 +490,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
     const d = drag.current;
     if (!d) return;
     d.finger = { x, y };
+    d.reach = reached(d.reach, d.start.y, y);
     pan.setValue({ x: x - d.start.x, y: y - d.start.y });
     aim();
   };

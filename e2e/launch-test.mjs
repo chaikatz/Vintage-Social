@@ -586,6 +586,52 @@ check(
     (await heading(/^Milan 2026, 1 photograph$/)) > 0,
   `${runFrom.top} → ${running.top}`,
 );
+
+// Lifted in the last row on the screen, or the top row under the bar, a
+// print is held where it is while the finger settles: the page runs on at
+// that edge only once the finger goes on toward it, or has been clear of
+// it. Let go over its own era, it goes back, and nothing has moved.
+const settle = async (locator, top, zone) => {
+  await bringTo(locator, top);
+  const from = await scrollerTop(locator);
+  const at = await hold(locator);
+  for (const [dx, dy] of [[3, 2], [-2, 4], [1, -3], [-1, 1]]) await page.mouse.move(at.x + dx, at.y + dy, { steps: 2 });
+  await wait(800);
+  const held = await scrollerTop(locator);
+  const up = await lifted();
+  const marked = (await framed()) + (await seen(page.getByTestId("era-drag-slip")).count());
+  await page.mouse.up();
+  const home = await putBack();
+  const inZone = at.y >= zone[0] && at.y < zone[1];
+  return { ok: inZone && up > 0 && !held.free && marked === 0 && home && held.top === from.top, ran: held.top - from.top, at: Math.round(at.y), zone };
+};
+const foot = (await scrollerTop(printOf(stays))).bottom;
+const low = await settle(printOf(stays), foot - 70, [foot - 72, foot]);
+// A print of the strip under The foggy winter's lead, the first chapter, brought up under the bar as it holds to the top.
+let strip = null;
+for (const name of ["Saturday market", "The 19 tram", pair.from]) {
+  const b = await printOf(name).boundingBox();
+  if (!strip && b && b.width < 120) strip = printOf(name);
+}
+await bringTo(strip, 300);
+const barFoot = await seen(page.getByText("Arranging", { exact: true }))
+  .first()
+  .evaluate((el) => {
+    let bar = el;
+    while (bar && getComputedStyle(bar).position !== "sticky") bar = bar.parentElement;
+    return bar ? bar.getBoundingClientRect().bottom : Number.NaN;
+  });
+const high = await settle(strip, barFoot - 4, [barFoot, barFoot + 72]);
+check(
+  "Lifted in the top or the last row, it waits for the finger before the page runs on, and let go, nothing moves",
+  low.ok &&
+    high.ok &&
+    (await heading(/^The foggy winter, 3 photographs$/)) > 0 &&
+    (await heading(/^Milan 2026, 1 photograph$/)) > 0 &&
+    !(await noted("Moved to The foggy winter")) &&
+    !(await noted("Moved to Milan 2026")),
+  JSON.stringify({ low, high }),
+);
 await byLabel("Done arranging eras").first().click();
 await wait(900);
 

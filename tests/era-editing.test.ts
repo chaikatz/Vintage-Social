@@ -480,7 +480,13 @@ describe("dragging a print to another era", () => {
 
   it("finds the era under the finger and runs the page on near its edges by the tested arithmetic, with the page's own scroll", () => {
     expect(list).toMatch(/const to = dropTarget\(d\.from, eraUnderFinger\(pageOf\(d\), d\.finger\.y - d\.view\.y\)\);/);
-    expect(list).toMatch(/const speed = edgeSpeed\(d\.finger\.y - d\.view\.y, \{ top: d\.bar\?\.height \?\? 0, bottom: d\.view\.height \}\);/);
+    // At an edge the print lifted near, only once the finger has meant it to: the farthest it has gone either way is kept on every move.
+    expect(list).toMatch(
+      /const speed = armedSpeed\(d\.finger\.y - d\.view\.y, d\.start\.y - d\.view\.y, d\.reach, \{ top: d\.bar\?\.height \?\? 0, bottom: d\.view\.height \}\);/,
+    );
+    expect(list).not.toMatch(/\bedgeSpeed\(/);
+    expect(list).toMatch(/d\.finger = \{ x, y \};\s*d\.reach = reached\(d\.reach, d\.start\.y, y\);/);
+    expect(list).toMatch(/start: at,\s*finger: at,\s*reach: \{ up: 0, down: 0 \},/);
     expect(list).toMatch(/const next = scrolledTo\(d\.offset, speed, ms, contentTall\.current - d\.view\.height\);/);
     expect(list).toMatch(/d\.offset = next;\s*scroller\.current\?\.scrollTo\(\{ y: next, animated: false \}\);\s*aim\(\);/);
     expect(list).toMatch(/onContentSizeChange=\{\(_width, tall\) => \(contentTall\.current = tall\)\}/);

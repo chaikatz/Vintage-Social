@@ -2,7 +2,8 @@
  * Dragging a print from one era to another while arranging (EraList),
  * the arithmetic of it kept apart from the component so it can be read,
  * and tested, without a phone: which era is under the finger, and how
- * fast the page runs on while the finger is held near its top or foot.
+ * fast the page runs on while the finger is held near its top or foot,
+ * once the finger has meant it to.
  *
  * All of it in points. "The view" is the part of the screen the page
  * scrolls in, and a finger's place in it is measured from its top. A
@@ -20,6 +21,8 @@ export const LIFT_SCALE = 1.05;
 export const EDGE = 72;
 /** How fast the page runs on, in points a second, with the finger at the edge itself or past it. */
 export const EDGE_SPEED = 960;
+/** How far on toward the top or the foot a finger that lifted a print near it goes before the page runs on there. */
+export const ARM = 24;
 /** The longest step taken at once, so a slow frame never throws the page on. */
 export const STEP_MS = 48;
 
@@ -87,6 +90,35 @@ export function edgeSpeed(y: number, view: { top: number; bottom: number }, edge
   if (up > 0) return -most * Math.min(1, up);
   const down = (y - (view.bottom - zone)) / zone;
   if (down > 0) return most * Math.min(1, down);
+  return 0;
+}
+
+/** How far the finger has gone above and below where the print lifted, at the most, in points. */
+export interface Reach {
+  up: number;
+  down: number;
+}
+
+/** The reach once the finger is at `y`, having lifted the print at `from`. */
+export function reached(reach: Reach, from: number, y: number): Reach {
+  return { up: Math.max(reach.up, from - y), down: Math.max(reach.down, y - from) };
+}
+
+/**
+ * How fast the page runs on with the finger at `y`, as edgeSpeed has it,
+ * but only at an edge the finger has armed since the print lifted at
+ * `from`: by being clear of that edge at some time since, where it lifted
+ * included, or by going on ARM toward it. So a print lifted in the top
+ * row under the bar, or in the last row, sets nothing running the moment
+ * it is held, and the finger can settle; moved away and back, or on
+ * toward the edge, it runs. `reach` is how far the finger has gone above
+ * and below `from`.
+ */
+export function armedSpeed(y: number, from: number, reach: Reach, view: { top: number; bottom: number }): number {
+  const speed = edgeSpeed(y, view);
+  // The farthest the finger has been from each edge: the lowest it went, from the top; the highest, from the foot.
+  if (speed < 0) return reach.up >= ARM || edgeSpeed(from + reach.down, view) >= 0 ? speed : 0;
+  if (speed > 0) return reach.down >= ARM || edgeSpeed(from - reach.up, view) <= 0 ? speed : 0;
   return 0;
 }
 
