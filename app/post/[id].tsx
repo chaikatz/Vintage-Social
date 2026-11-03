@@ -40,7 +40,7 @@ export default function PostDetail() {
   const userId = session?.user?.id ?? "";
   // Comments or a profile pushed on top of this screen pause its video.
   const focused = useIsFocused();
-  // Editorial (Preview): every username on the page, not bold.
+  // Editorial (Preview): every username on the page, half bold.
   const face = useNameFace();
 
   // Who was there, as far as the viewer is allowed to know: accepted tags,
@@ -191,8 +191,10 @@ export default function PostDetail() {
       ) : null}
 
       {post.caption ? (
+        // Editorial (Preview): the caption's author is left as under Original. It takes the caption's serif, which has no
+        // half bold, and the phone would match 500 to the serif's bold.
         <Text style={styles.caption}>
-          <Text style={[styles.captionAuthor, face]}>{post.author.username}</Text> {post.caption}
+          <Text style={styles.captionAuthor}>{post.author.username}</Text> {post.caption}
         </Text>
       ) : null}
 

@@ -101,7 +101,7 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
   };
 
   const tagged = draft.tagIds.length;
-  // Editorial (Preview): the member's username, not bold.
+  // Editorial (Preview): the member's username, half bold.
   const face = useNameFace();
 
   return (

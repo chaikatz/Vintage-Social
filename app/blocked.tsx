@@ -15,7 +15,7 @@ export default function Blocked() {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
-  // Editorial (Preview): each member's username, not bold.
+  // Editorial (Preview): each member's username, half bold.
   const face = useNameFace();
 
   const blocked = useQuery({

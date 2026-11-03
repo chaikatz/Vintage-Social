@@ -65,8 +65,8 @@ function ConversationRow({
   const last = conversation.last_message;
   const unread = conversation.unread_count > 0;
   const preview = inboxPreview(last);
-  // Editorial (Preview): who it is with, not bold, before an unread thread's style, so an unread thread's name is bold
-  // again, as under Original.
+  // Editorial (Preview): who it is with, half bold, before an unread thread's style, so an unread thread's name is
+  // semibold, as under Original, a step above the rest.
   const face = useNameFace();
 
   return (

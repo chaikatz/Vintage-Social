@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function ProfileHeader({ profile, action, onPressStat }: Props) {
-  // Editorial (Preview): where the name falls back to the username, not bold.
+  // Editorial (Preview): where the name falls back to the username, half bold.
   const face = useNameFace();
   return (
     <View style={styles.wrap}>

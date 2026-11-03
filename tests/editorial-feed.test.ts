@@ -407,7 +407,7 @@ describe("the gallery", () => {
   it("lies on the feed's paper, under a bar on the same paper", () => {
     expect(gallery).toMatch(/const paper = useFeedBackground\(\);/);
     expect(gallery).toMatch(/<Screen padded=\{false\} style=\{paper\}>/);
-    // Its title, the author's username or the era, in the stack's serif; the username's not bold under Editorial (tests/editorial-names.test.ts).
+    // Its title, the author's username or the era, in the stack's serif; the username's regular under Editorial (tests/editorial-names.test.ts).
     expect(gallery).toMatch(
       /<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/,
     );
@@ -517,7 +517,7 @@ describe("the editorial card", () => {
     // The original card's size for the picture.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    // The original card's face, size and ink for the name, not bold, as every name is under Editorial (see tests/editorial-names.test.ts).
+    // The original card's face, size and ink for the name, half bold, as every name is under Editorial (see tests/editorial-names.test.ts).
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
     expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "500", color: colors\.ink \},/);
     expect(sheet!.username).toEqual({ flexShrink: 1, fontSize: 14, color: colors.ink, ...nameFace("editorial") });
@@ -566,7 +566,7 @@ describe("the editorial card", () => {
       /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}\s*<\/Text>\s*\) : null\}/,
     );
     expect(body).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
-    // Who wrote it, in the words' own face, size and ink, not bold: exactly the face every name takes under Editorial.
+    // Who wrote it, in the words' own face, size and ink, half bold: exactly the face every name takes under Editorial.
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
     expect(card).toMatch(/\n {2}author: \{ fontWeight: "500" \},/);
     expect(sheet!.author).toEqual(nameFace("editorial"));

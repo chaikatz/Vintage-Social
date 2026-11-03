@@ -126,7 +126,7 @@ export default function Compose() {
   // Who was there. Sent with the post; each of them decides.
   const [tags, setTags] = useState<Taggable[]>([]);
   const [picking, setPicking] = useState(false);
-  // Editorial (Preview): their usernames, not bold.
+  // Editorial (Preview): their usernames, half bold.
   const face = useNameFace();
 
   // One post per visit to this screen. The id is the post's from the first

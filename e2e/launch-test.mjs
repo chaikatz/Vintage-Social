@@ -646,9 +646,10 @@ check(
 const originalCard = seen(page.getByLabel(/^Posted /)).first().locator("xpath=..");
 const original = [await screenUnder(originalCard), await paperOf(wordmark()), await paperOf(tabBar())];
 check("Original lies on the app’s own paper, whatever paper was chosen", original.every((c) => c === OFF_WHITE), original.join(" | "));
-// And every username bold again where it was bold, and otherwise exactly
-// as Editorial drew it: on Home, in Activity and in the inbox; and a
-// profile's title back at the stack's own weight.
+// And every username back at its own weight, bold where it was bold and
+// regular where it was regular, and otherwise exactly as Editorial drew it:
+// on Home, in Activity and in the inbox; and a profile's title back at the
+// stack's own weight.
 const homeAgain = await namesOnScreen();
 check(
   "Original: every name on Home is in the app's own face, untracked",

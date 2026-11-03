@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Editorial (Preview): members' usernames, not bold.
+ * Editorial (Preview): members' usernames, half bold.
  *
  * While the feed is Editorial every username the app draws as a name is
  * drawn as it is under Original, in the app's own face, size, colour and
@@ -215,7 +215,6 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
     "who was there, a pending tag's style after the face",
     /style=\{\[styles\.withName, face, t\.status === "pending" && styles\.withPending\]\}\s*onPress=\{\(\) => router\.push\(`\/user\/\$\{t\.member\.username\}`\)\}\s*>\s*\{t\.member\.username\}\s*\{t\.status === "pending" \? " \(pending\)" : ""\}/,
   ],
-  ["app/post/[id].tsx", "the caption's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/],
   ["app/post/[id].tsx", "each comment's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{c\.author\.username\}<\/Text> \{c\.body\}/],
   ["app/requests.tsx", "each member asking", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
   ["app/share.tsx", "the photograph's author", /<Text style=\{\[styles\.previewAuthor, face\]\}>\{post\?\.author\.username \?\? ""\}<\/Text>/],
@@ -262,7 +261,7 @@ describe("every username the app draws", () => {
     }
   });
 
-  it("on the editorial card is the original card's name, not bold, set in its sheet, since it is drawn only under Editorial", () => {
+  it("on the editorial card is the original card's name, half bold, set in its sheet, since it is drawn only under Editorial", () => {
     const card = code("src/components/feed/EditorialPostCard.tsx");
     const original = code("src/components/PostCard.tsx");
     expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "500", color: colors\.ink \},/);
@@ -291,6 +290,8 @@ describe("every username the app draws", () => {
       "src/components/PostCard.tsx": /^\{(post|c)\.author\.username\}$/,
       // The initial that stands in for a picture, not the name.
       "src/components/Avatar.tsx": /^\{\(username\[0\] \?\? "\?"\)\.toUpperCase\(\)\}$/,
+      // A post's own page: the caption's author, in the caption's serif, which has no half bold (see below).
+      "app/post/[id].tsx": /^\{post\.author\.username\}$/,
     };
     const drawn: string[] = [];
     for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
@@ -451,6 +452,23 @@ const arrays = () =>
   READERS.flatMap((file) => [...code(file).matchAll(/style=\{(\[[^\]]*\bface\b[^\]]*\])\}/g)].map((m) => [file, m[1]] as const));
 
 describe("a name under each layout", () => {
+  it("is never given to a name inside words set in a face with no half bold, where the phone would draw it bold", () => {
+    // A serif or the typewriter has a regular and a bold cut and nothing between, and iOS matches 500 to the bold.
+    const block = (file: string, name: string) =>
+      code(file).match(new RegExp(`\\n  ${name}: \\{([\\s\\S]*?)\\},?\\n`))?.[1] ?? "";
+    let nested = 0;
+    for (const file of READERS) {
+      for (const m of code(file).matchAll(/<Text style=\{styles\.(\w+)\}[^>]*>\s*<Text style=\{\[[^\]]*\bface\b[^\]]*\]\}/g)) {
+        nested += 1;
+        expect(block(file, m[1]), `${file}: inside styles.${m[1]}`).not.toMatch(/type\.(serif|mono)|fontFamily/);
+      }
+    }
+    expect(nested).toBeGreaterThan(0);
+    // The one name left as under Original for that reason: a post's own caption is set in the serif.
+    expect(block("app/post/[id].tsx", "caption")).toMatch(/fontFamily: type\.serif/);
+    expect(code("app/post/[id].tsx")).toMatch(/<Text style=\{styles\.caption\}>\s*<Text style=\{styles\.captionAuthor\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/);
+  });
+
   it("is found in every style array that holds the face, one for each place above", () => {
     expect(arrays()).toHaveLength(SITES.length);
   });

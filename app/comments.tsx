@@ -47,7 +47,7 @@ export default function Comments() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
-  // Editorial (Preview): who wrote each line, not bold.
+  // Editorial (Preview): who wrote each line, half bold.
   const face = useNameFace();
 
   const postQ = useQuery({

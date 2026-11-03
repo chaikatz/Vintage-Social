@@ -17,7 +17,7 @@ const TABS: ApplicationStatus[] = ["pending", "waitlisted", "approved", "rejecte
 export default function AdminApplications() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ApplicationStatus>("pending");
-  // Editorial (Preview): the username each applicant asked for, not bold.
+  // Editorial (Preview): the username each applicant asked for, half bold.
   const face = useNameFace();
 
   const apps = useQuery({

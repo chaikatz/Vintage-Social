@@ -51,7 +51,7 @@ export default function Thread() {
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
   const focused = useIsFocused();
-  // Editorial (Preview): the title, who it is with, not bold.
+  // Editorial (Preview): the title, who it is with, not bold (the serif has no half).
   const titleStyle = useNameTitleStyle();
 
   const peerQ = useQuery({
@@ -155,7 +155,7 @@ function Bubble({
   const thumb = shared
     ? mediaUrl("thumbnails", shared.thumb_path) ?? mediaUrl("media", shared.media_path)
     : null;
-  // Editorial (Preview): whose photograph it is, not bold. Your own dark bubble's light ink comes after it.
+  // Editorial (Preview): whose photograph it is, half bold. Your own dark bubble's light ink comes after it.
   const face = useNameFace();
 
   return (

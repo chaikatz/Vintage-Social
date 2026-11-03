@@ -56,8 +56,10 @@ but half bold: medium (500), a step above the words around it, so a name
 stands apart from a caption or a comment, and a step below the semibold it
 is under Original. That holds everywhere a name is drawn: the
 member's name over each print and before its caption and comments, the
-notices in Activity, the Comments screen, a post's own page and the members
-tagged in it, the card of a post on its way up, every list of members
+notices in Activity, the Comments screen, a post's own page (its author, its
+comments and the members tagged in it; the name before its caption is left
+as under Original, since that caption is set in the serif, which has no half
+bold, and the phone would draw 500 there as the serif's bold), the card of a post on its way up, every list of members
 (Search and its recent searches, Followers and Following, Likes, the admin's
 Members), Tag people, the photograph's author in Send to, the admin's
 Applications, a profile's name where it falls back to the username, and a
@@ -91,7 +93,7 @@ what a member types into a field, and what members wrote (captions,
 comments, messages) are as they were. A system alert titled with a username
 is drawn by iOS in its own bold and cannot be styled.
 
-`src/utils/nameFace.ts` holds it: `useNameFace()` is `{ fontWeight: "400" }`
+`src/utils/nameFace.ts` holds it: `useNameFace()` is `{ fontWeight: "500" }`
 under Editorial and nothing at all under Original, and is added to a name's
 style after the place's own and before any state's. `useNameTitleStyle()` is
 the title style of a bar titled with a username: the stack's own

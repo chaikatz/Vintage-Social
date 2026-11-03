@@ -40,7 +40,7 @@ export default function Activity() {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
-  // Editorial (Preview): who did it, not bold.
+  // Editorial (Preview): who did it, half bold.
   const face = useNameFace();
 
   const activity = useQuery({

@@ -36,7 +36,7 @@ export default function Share() {
   const [selected, setSelected] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  // Editorial (Preview): every username in the sheet, not bold.
+  // Editorial (Preview): every username in the sheet, half bold.
   const face = useNameFace();
 
   const postQ = useQuery({
