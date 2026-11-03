@@ -423,13 +423,34 @@ check(
     ),
   lastLines[0]?.join(" / "),
 );
-// Usernames, all around the app, in the print's typewriter face while
-// Editorial is chosen (type.mono: "monospace" on the web), each at its own
+// Usernames, all around the app, set as the print sets its credit while
+// Editorial is chosen: the typewriter face (type.mono: "monospace" on the
+// web), regular, tracked 0.08 em and in the faint ink, each at its own
 // size; what was written with them, and display names, keep their own face.
+// Each is read as "face|weight|colour|tracking".
 const MONO = /monospace/;
 const allMono = (faces) => faces.length > 0 && faces.every((f) => MONO.test(f));
 const noneMono = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(f));
-/** Every username drawn on screen, as its face: words that are a username alone, in an element of their own. */
+/** The print's credit ink (colors.inkFaint, the light print's), and its 0.08 em at a name's 14 pt and at a title's 17 pt. */
+const FAINT = "rgb(156, 146, 127)";
+const INK = "rgb(43, 38, 32)";
+const TRACKED = 1.1;
+const TITLE_TRACKED = 1.36;
+const drawnAs = (f) => {
+  const [face, weight, color, spacing] = (f ?? "").split("|");
+  return { face, weight, color, spacing };
+};
+/** About so many pixels apart; "normal" is no tracking at all. */
+const trackedAt = (spacing, px) => Math.abs(parseFloat(spacing) - px) < 0.05;
+/** Set as the print's credit: the face, regular, in the faint ink, tracked. */
+const asCredit = (f, px = TRACKED) => {
+  const s = drawnAs(f);
+  return MONO.test(s.face) && s.weight === "400" && s.color === FAINT && trackedAt(s.spacing, px);
+};
+const allCredit = (faces, px) => faces.length > 0 && faces.every((f) => asCredit(f, px));
+/** Neither the credit's ink nor its tracking. */
+const noneCredit = (faces) => faces.length > 0 && faces.every((f) => drawnAs(f).color !== FAINT && drawnAs(f).spacing === "normal");
+/** Every username drawn on screen, as it is drawn: words that are a username alone, in an element of their own. */
 const namesOnScreen = () =>
   page.evaluate(() => {
     const out = [];
@@ -437,40 +458,66 @@ const namesOnScreen = () =>
       if (el.childElementCount > 0 || !/^[a-z][a-z0-9]*(?:[._][a-z0-9]+)+$/.test(el.textContent ?? "")) continue;
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height || r.left < 0 || r.right > innerWidth || r.bottom < 0 || r.top > innerHeight) continue;
-      out.push(`${el.textContent}: ${getComputedStyle(el).fontFamily}`);
+      const s = getComputedStyle(el);
+      out.push(`${el.textContent}: ${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}`);
     }
     return out;
   });
 const facesOf = (names) => names.map((n) => n.slice(n.indexOf(": ") + 2));
-const titleFace = (name) => seen(page.getByRole("heading", { name, exact: true })).first().evaluate((el) => getComputedStyle(el).fontFamily);
-const onHome = await editorial.evaluateAll((els) => {
-  // The face, and after a bar its weight: names are regular, as the print sets its credit.
-  const face = (n) => (n ? `${getComputedStyle(n).fontFamily}|${getComputedStyle(n).fontWeight}` : "");
-  const leaf = (root, words) => [...root.querySelectorAll("*")].find((n) => n.childElementCount === 0 && n.textContent === words);
-  const seenFaces = { header: [], captions: [], comments: [], words: [] };
-  for (const el of els) {
-    const member = el.firstElementChild?.querySelector('[role="button"]');
-    const name = member?.getAttribute("aria-label") ?? "";
-    if (name) seenFaces.header.push(face(leaf(member, name)));
-    // A line led by a name in bold: the caption, a child of the card, or a comment, in a button of its own.
-    for (const line of el.querySelectorAll("div")) {
-      const lead = line.firstElementChild;
-      if (lead?.tagName !== "SPAN" || !line.textContent?.startsWith(`${lead.textContent} `)) continue;
-      (line.parentElement === el ? seenFaces.captions : seenFaces.comments).push(face(lead));
-      seenFaces.words.push(face(line));
+/** A bar's title, as it is drawn. */
+const titleDrawn = (name) =>
+  seen(page.getByRole("heading", { name, exact: true }))
+    .first()
+    .evaluate((el) => {
+      const s = getComputedStyle(el);
+      return `${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}`;
+    });
+const titleFace = async (name) => drawnAs(await titleDrawn(name)).face;
+/**
+ * On each card, its names as drawn: the first, over the picture; the one
+ * leading the caption, a line of the card's own; and the one leading each
+ * comment, in a button of its own. And the words those lines go on in.
+ */
+const namesOnCards = (cards) =>
+  cards.evaluateAll((els) => {
+    const NAME = /^[a-z][a-z0-9]*(?:[._][a-z0-9]+)+$/;
+    const drawn = (n) => {
+      const s = getComputedStyle(n);
+      return `${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}`;
+    };
+    const found = { header: [], captions: [], comments: [], words: [] };
+    for (const el of els) {
+      const head = [...el.querySelectorAll("*")].find((n) => n.childElementCount === 0 && NAME.test(n.textContent ?? ""));
+      if (head) found.header.push(drawn(head));
+      for (const line of el.querySelectorAll("div")) {
+        const lead = line.firstElementChild;
+        if (lead?.tagName !== "SPAN" || !line.textContent?.startsWith(`${lead.textContent} `)) continue;
+        (line.parentElement === el ? found.captions : found.comments).push(drawn(lead));
+        found.words.push(drawn(line));
+      }
     }
-  }
-  return seenFaces;
-});
+    return found;
+  });
+const onHome = await namesOnCards(editorial);
 check("Editorial: the member's name over each print is in the print's typewriter face", allMono(onHome.header), onHome.header[0]);
 check("Editorial: so is the name before each caption", allMono(onHome.captions), `${onHome.captions.length}: ${onHome.captions[0]}`);
 check("Editorial: and the name before each comment", allMono(onHome.comments), `${onHome.comments.length}: ${onHome.comments[0]}`);
 check("Editorial: the captions and comments themselves keep their own face", noneMono(onHome.words), onHome.words[0]);
-const regular = (faces) => faces.length > 0 && faces.every((f) => f.endsWith("|400"));
+const regular = (faces) => faces.length > 0 && faces.every((f) => drawnAs(f).weight === "400");
 check(
   "Editorial: the names are regular, as the print sets its credit, not bold",
   regular(onHome.header) && regular(onHome.captions) && regular(onHome.comments),
   [onHome.header[0], onHome.captions[0], onHome.comments[0]].join(" / "),
+);
+check(
+  `Editorial: the name over each print, before each caption and before each comment take the credit's ink (${FAINT}) and its tracking (~${TRACKED}px)`,
+  allCredit(onHome.header) && allCredit(onHome.captions) && allCredit(onHome.comments),
+  [onHome.header[0], onHome.captions[0], onHome.comments[0]].join(" / "),
+);
+check(
+  "Editorial: the captions and comments themselves keep their own ink, untracked",
+  onHome.words.length > 0 && onHome.words.every((f) => drawnAs(f).color === INK && drawnAs(f).spacing === "normal"),
+  onHome.words[0],
 );
 const offWhite = await papersOf(editorial, wordmark(), tabBar());
 const strips = await editorial.evaluateAll((els) => els.filter((el) => getComputedStyle(el).borderBottomWidth !== "0px").length);
@@ -499,12 +546,34 @@ const inComments = await namesOnScreen();
 check("Editorial: every name in the comments is in the typewriter face", /Add a comment/.test(
   (await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "",
 ) && allMono(facesOf(inComments)), inComments.slice(0, 3).join(" | "));
+check("Editorial: and in the credit's ink and tracking", allCredit(facesOf(inComments)), inComments.slice(0, 3).join(" | "));
 await shot("12e-editorial-comments");
 await back(2200);
 await tab("activity");
 const inActivity = await namesOnScreen();
 check("Editorial: every name in Activity is in the typewriter face", allMono(facesOf(inActivity)), inActivity.slice(0, 3).join(" | "));
+// An unread notice is marked by its row's paper alone, so its name is set as every name is.
+check("Editorial: and in the credit's ink and tracking, read or not", allCredit(facesOf(inActivity)), inActivity.slice(0, 3).join(" | "));
 await shot("12f-editorial-activity");
+
+// The inbox: a thread with something unread keeps its dark, bold name, as
+// its preview is, in the names' face and tracking; a read one is set as
+// every name is. In the demo only Tomas has written since it was read.
+await go("/messages", 2600);
+const inInbox = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), drawnAs(n.slice(n.indexOf(": ") + 2))]));
+const unreadName = inInbox["tomas.lindqvist"];
+const readNames = Object.entries(inInbox).filter(([name]) => name !== "tomas.lindqvist").map(([, s]) => s);
+check(
+  "Editorial: an unread thread's name stays dark and bold, in the face and its tracking",
+  unreadName != null && MONO.test(unreadName.face) && unreadName.color === INK && unreadName.weight === "600" && trackedAt(unreadName.spacing, TRACKED),
+  JSON.stringify(unreadName),
+);
+check(
+  "Editorial: a read thread's name is set as the credit",
+  readNames.length > 0 && readNames.every((s) => asCredit(`${s.face}|${s.weight}|${s.color}|${s.spacing}`)),
+  JSON.stringify(readNames[0]),
+);
+await go("/", 2400);
 
 await choose("White");
 const white = await papersOf(editorial, wordmark(), tabBar());
@@ -519,6 +588,13 @@ await wait(2600);
 // Their profile is titled with their username, in the typewriter face, at the bar's own size.
 const profileTitle = await titleFace(member);
 check("Editorial: a profile's title, its username, is in the typewriter face", MONO.test(profileTitle), `${member}: ${profileTitle}`);
+// In the credit's ink, and its 0.08 em at the title's 17 pt (the web's bar is drawn by the stack; on iOS the system's bar takes no tracking).
+const profileTitleDrawn = await titleDrawn(member);
+check(
+  `Editorial: and in the credit's ink and its tracking at the bar's size (~${TITLE_TRACKED}px)`,
+  asCredit(profileTitleDrawn, TITLE_TRACKED),
+  profileTitleDrawn,
+);
 await shot("12g-editorial-profile");
 const squares = await seen(page.locator("img")).evaluateAll((els) =>
   els
@@ -536,15 +612,16 @@ check(
   /\/gallery\?/.test(page.url()) && shownInGallery > 0 && galleryPaper.length === 1 && galleryPaper[0] === WHITE,
   `${member}: ${galleryPaper.join(" | ")}`,
 );
-const galleryTitle = shownInGallery ? await titleFace(member) : "";
-check("Editorial: the gallery's title, its author's username, is in the typewriter face", MONO.test(galleryTitle), galleryTitle);
+const galleryTitle = shownInGallery ? await titleDrawn(member) : "";
+check("Editorial: the gallery's title, its author's username, is set as the credit", asCredit(galleryTitle, TITLE_TRACKED), galleryTitle);
 await shot("12d-editorial-gallery");
 
 // An empty list's sentence, written with the member's username in it: the
-// name alone in the typewriter face, the rest of the sentence in its own,
-// and the name at the sentence's own size, weight and colour. Nobody
-// follows the founding account; an applicant follows nobody yet.
-/** The words of a sentence drawn whole on screen, and the name within it: their faces, sizes, weights and colours. */
+// name alone set as the credit, in the typewriter face, the credit's ink and
+// its tracking, the rest of the sentence in its own face, ink and spacing,
+// and the name at the sentence's own size and weight. Nobody follows the
+// founding account; an applicant follows nobody yet.
+/** The words of a sentence drawn whole on screen, and the name within it: their faces, sizes, weights, colours and tracking. */
 const sentence = (words, name) =>
   page.evaluate(
     ([words, name]) => {
@@ -553,12 +630,28 @@ const sentence = (words, name) =>
       const span = line && [...line.querySelectorAll("span")].find((s) => s.textContent === name);
       if (!line || !span) return null;
       const [l, n] = [getComputedStyle(line), getComputedStyle(span)];
-      return { line: l.fontFamily, name: n.fontFamily, sizes: [l.fontSize, n.fontSize], weights: [l.fontWeight, n.fontWeight], colours: [l.color, n.color] };
+      return {
+        line: l.fontFamily,
+        name: n.fontFamily,
+        sizes: [l.fontSize, n.fontSize],
+        weights: [l.fontWeight, n.fontWeight],
+        colours: [l.color, n.color],
+        spacings: [l.letterSpacing, n.letterSpacing],
+      };
     },
     [words, name],
   );
 const same = ([a, b]) => a === b;
-const nameAlone = (s) => s != null && MONO.test(s.name) && !MONO.test(s.line) && same(s.sizes) && same(s.weights) && same(s.colours);
+const nameAlone = (s) =>
+  s != null &&
+  MONO.test(s.name) &&
+  !MONO.test(s.line) &&
+  same(s.sizes) &&
+  same(s.weights) &&
+  s.colours[1] === FAINT &&
+  s.colours[0] !== FAINT &&
+  trackedAt(s.spacings[1], TRACKED) &&
+  s.spacings[0] === "normal";
 await go("/user/vintage", 2800);
 await byLabel("0 followers").first().click();
 await wait(2400);
@@ -585,22 +678,43 @@ check("Original lies on the app’s own paper, whatever paper was chosen", origi
 // And every username is back in its own face: on Home, in Activity, and in a profile's title.
 const homeAgain = await namesOnScreen();
 check("Original: no name on Home is in the typewriter face", noneMono(facesOf(homeAgain)), homeAgain.slice(0, 3).join(" | "));
+check("Original: nor in the credit's ink or tracking", noneCredit(facesOf(homeAgain)), homeAgain.slice(0, 3).join(" | "));
+// The name over each picture, before each caption and before each comment: dark, bold and untracked, as they always were.
+const onHomeAgain = await namesOnCards(seen(page.getByLabel(/^Posted /)).locator("xpath=.."));
+const asBefore = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(f) && drawnAs(f).color === INK && drawnAs(f).weight === "600" && drawnAs(f).spacing === "normal");
+check(
+  "Original: the name over each picture, before each caption and before each comment is dark, bold and untracked again",
+  asBefore(onHomeAgain.header) && asBefore(onHomeAgain.captions) && asBefore(onHomeAgain.comments),
+  [onHomeAgain.header.length, onHomeAgain.captions.length, onHomeAgain.comments.length].join("/") + ": " + [onHomeAgain.header[0], onHomeAgain.captions[0], onHomeAgain.comments[0]].join(" / "),
+);
 await tab("activity");
 const activityAgain = await namesOnScreen();
 check("Original: no name in Activity is in the typewriter face", noneMono(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
+check("Original: nor in the credit's ink or tracking", noneCredit(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
 await go("/user/vintage", 2800);
 await byLabel("0 followers").first().click();
 await wait(2400);
 const nobodyAgain = await sentence("Nobody follows vintage yet.", "vintage");
 check(
-  "Original: an empty list's sentence is all in its own face again",
-  nobodyAgain != null && !MONO.test(nobodyAgain.name) && nobodyAgain.name === nobodyAgain.line && same(nobodyAgain.sizes),
+  "Original: an empty list's sentence is all in its own face, ink and spacing again",
+  nobodyAgain != null &&
+    !MONO.test(nobodyAgain.name) &&
+    nobodyAgain.name === nobodyAgain.line &&
+    same(nobodyAgain.sizes) &&
+    same(nobodyAgain.colours) &&
+    same(nobodyAgain.spacings),
   JSON.stringify(nobodyAgain),
 );
 
 await go("/user/tomas.lindqvist", 2800);
-const tomasTitle = await titleFace("tomas.lindqvist");
+const tomasTitleDrawn = await titleDrawn("tomas.lindqvist");
+const tomasTitle = drawnAs(tomasTitleDrawn).face;
 check("Original: a profile's title is back in the bar's serif", !MONO.test(tomasTitle) && /serif/.test(tomasTitle), tomasTitle);
+check(
+  "Original: and in the bar's own ink, untracked",
+  drawnAs(tomasTitleDrawn).color === INK && drawnAs(tomasTitleDrawn).spacing === "normal",
+  tomasTitleDrawn,
+);
 const tomas = await text();
 check("Profile shows MEMBER and number", /MEMBER · NO\. \d{5}/.test(tomas));
 await shot("13-profile-founding");

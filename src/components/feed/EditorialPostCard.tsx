@@ -297,8 +297,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     minHeight: TARGET,
   },
-  // The member's username in the face the print sets its credit in, regular as the print sets it, as every username is under Editorial.
-  username: { flexShrink: 1, fontFamily: type.mono, fontSize: 14, fontWeight: "400", color: colors.ink },
+  // The member's username set as the print sets its credit, as every username is under Editorial (src/utils/nameFace.ts): the
+  // typewriter face, regular, tracked 0.08 em (0.08 × 14 ≈ 1.1 pt) in the faint ink, at the original card's size.
+  username: { flexShrink: 1, fontFamily: type.mono, fontSize: 14, fontWeight: "400", letterSpacing: 1.1, color: colors.inkFaint },
   // The print alone keeps the print's margins, a share of the width, and
   // the same paper over the picture as under it, before the hairline. The
   // paper itself lets a touch through to the member's row under it.
@@ -375,7 +376,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: EDGE,
     paddingTop: spacing.xs,
   },
-  author: { fontFamily: type.mono, fontWeight: "400" },
+  // Who wrote it, set as the name over the print is, at the words' own size.
+  author: { fontFamily: type.mono, fontWeight: "400", letterSpacing: 1.1, color: colors.inkFaint },
   // The label's typewriter face, a shade fainter than the date, in small letters.
   posted: {
     ...line(PRINT.byline),

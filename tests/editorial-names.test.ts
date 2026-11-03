@@ -3,14 +3,16 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Editorial (Preview): members' usernames in the print's typewriter face.
+ * Editorial (Preview): members' usernames set as the print sets its credit.
  *
  * While the feed is Editorial every username the app draws as a name is set
- * in type.mono, the face of the print's credit line, and nothing else about
- * it changes; under Original nothing changes at all. First the module that
- * says so, then, read from the source, every place that draws a username,
- * so that none is dropped and none is added without it. Last, which files
- * may read the module, so the trial still comes out cleanly.
+ * as the print's credit line is: type.mono, regular, tracked 0.08 em, in the
+ * faint ink, each at its own size; where a place marks a name for a state
+ * of its own, the state still wins. Under Original nothing changes at all.
+ * First the module that says so, then, read from the source, every place
+ * that draws a username, so that none is dropped and none is added without
+ * it, and every state that still wins over it. Last, which files may read
+ * the module, so the trial still comes out cleanly.
  */
 
 vi.mock("react-native", () => ({
@@ -27,7 +29,8 @@ vi.mock("react", async (original) => ({
 
 const { aroundName, nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = await import("@/utils/nameFace");
 const { setFeedLayout, __resetFeedLayoutForTest } = await import("@/utils/feedLayout");
-const { type } = await import("@/theme");
+const { colors, light, type } = await import("@/theme");
+const { PRINT_WIDTH, exportLayout } = await import("@/utils/exportLayout");
 const { erasEmpty } = await import("@/components/eraBook");
 const { eraSummary } = await import("@/utils/memories");
 
@@ -57,32 +60,54 @@ const sources = () =>
 
 afterEach(() => __resetFeedLayoutForTest());
 
+/** The print's credit line as ExportCard sets it: its style, from its box to the end of the array. */
+const credit = () => code("src/components/ExportCard.tsx").match(/rect\(L\.credit\),[\s\S]*?\]/)?.[0] ?? "";
+
 describe("the names' face", () => {
-  it("is the print's credit face under Editorial, and nothing at all under Original", () => {
-    expect(nameFace("editorial")).toEqual({ fontFamily: type.mono, fontWeight: "400" });
-    expect(nameFace("editorial")).toEqual({ fontFamily: "Courier New", fontWeight: "400" });
+  it("is the print's credit under Editorial, and nothing at all under Original", () => {
+    expect(nameFace("editorial")).toEqual({ fontFamily: type.mono, fontWeight: "400", letterSpacing: 1.1, color: colors.inkFaint });
+    // On the phone: Courier New, regular, 1.1 pt apart, in the light print's faint ink (the dark print's in the dark appearance).
+    expect(nameFace("editorial")).toEqual({ fontFamily: "Courier New", fontWeight: "400", letterSpacing: 1.1, color: "#9C927F" });
     // Nothing, not an empty style: a style array is exactly what it was.
     expect(nameFace("original")).toBeUndefined();
     // The same object each time, so nothing redraws for it alone.
     expect(nameFace("editorial")).toBe(nameFace("editorial"));
   });
 
-  it("is the same face the print sets its credit line in", () => {
-    const print = code("src/components/ExportCard.tsx");
-    expect(print).toMatch(/rect\(L\.credit\),[\s\S]*?fontFamily: type\.mono,/);
+  it("is the face, weight and ink the print sets its credit line in", () => {
+    expect(credit()).toMatch(/fontFamily: type\.mono,/);
+    // Regular: the print sets no weight, so a name a place sets in bold is set regular under Editorial.
+    expect(credit()).not.toMatch(/fontWeight/);
+    // The print's faint ink, the same token on either paper as the app's.
+    expect(credit()).toMatch(/color: c\.inkFaint,/);
+    expect(code("src/components/ExportCard.tsx")).toMatch(/const p = paper === "darkroom" \? dark : light;\s*return \{[^}]*inkFaint: p\.inkFaint,/);
+    expect(nameFace("editorial")!.color).toBe(light.inkFaint);
   });
 
-  it("changes the face and its weight alone, regular as the print sets it: no size, colour or spacing", () => {
-    expect(Object.keys(nameFace("editorial")!)).toEqual(["fontFamily", "fontWeight"]);
-    // Regular: a name a place sets in bold is set regular under Editorial, as the print's credit is.
+  it("is tracked as the print tracks its credit, 0.08 em, at a name's usual size", () => {
+    expect(credit()).toMatch(/letterSpacing: L\.credit\.spacing,/);
+    expect(code("src/utils/exportLayout.ts")).toMatch(/spacing: r2\(creditSize \* 0\.08\),/);
+    const L = exportLayout(1, "print", PRINT_WIDTH);
+    expect(L.credit.spacing / L.credit.size).toBeCloseTo(0.08, 2);
+    // In points: the credit's 0.08 em at 14 pt, and within a tenth of a point of it at the 13 and 15 pt most names are set at.
+    const { letterSpacing } = nameFace("editorial")!;
+    expect(letterSpacing).toBeCloseTo(0.08 * 14, 1);
+    for (const size of [13, 14, 15]) expect(Math.abs(letterSpacing - 0.08 * size), `${size} pt`).toBeLessThanOrEqual(0.1);
+    // And within a quarter of a point at the few set smaller or larger (a sent photograph's 11 pt, a chip's 12, a sentence's 16).
+    for (const size of [11, 12, 16]) expect(Math.abs(letterSpacing - 0.08 * size), `${size} pt`).toBeLessThanOrEqual(0.25);
+  });
+
+  it("sets the face, weight, tracking and ink, and never a size: each name keeps its own", () => {
+    expect(Object.keys(nameFace("editorial")!)).toEqual(["fontFamily", "fontWeight", "letterSpacing", "color"]);
     expect(nameFace("editorial")!.fontWeight).toBe("400");
-    expect(code("src/components/ExportCard.tsx").match(/rect\(L\.credit\),[\s\S]*?\]/)?.[0] ?? "").not.toMatch(/fontWeight/);
+    expect(nameFace("editorial")).not.toHaveProperty("fontSize");
+    expect(nameFace("editorial")).not.toHaveProperty("lineHeight");
   });
 
   it("follows the layout chosen in Settings, the moment it changes", () => {
     expect(useNameFace()).toBeUndefined();
     setFeedLayout("editorial");
-    expect(useNameFace()).toEqual({ fontFamily: type.mono, fontWeight: "400" });
+    expect(useNameFace()).toEqual({ fontFamily: type.mono, fontWeight: "400", letterSpacing: 1.1, color: colors.inkFaint });
     setFeedLayout("original");
     expect(useNameFace()).toBeUndefined();
   });
@@ -136,19 +161,38 @@ describe("a sentence the app writes with a username in it", () => {
 });
 
 describe("a bar titled with a username", () => {
-  it("keeps the stack's own title size and colour, and changes the face alone", () => {
+  it("keeps the stack's own title size, and sets the name as the print's credit: face, weight, tracking and ink", () => {
     // The stack's title, as app/_layout.tsx sets it for every screen; its colour is the bar's tint.
     expect(code("app/_layout.tsx")).toMatch(/headerTitleStyle: \{ fontFamily: type\.serif, fontSize: 17 \},/);
+    expect(code("app/_layout.tsx")).toMatch(/headerTintColor: colors\.ink as unknown as string,/);
     expect(nameTitleStyle("original")).toEqual({ fontFamily: type.serif, fontSize: 17 });
-    expect(nameTitleStyle("editorial")).toEqual({ fontFamily: type.mono, fontSize: 17, fontWeight: "400" });
-    // The stack's size kept; only the face, and its regular weight, added.
-    expect(Object.keys(nameTitleStyle("editorial"))).toEqual([...Object.keys(nameTitleStyle("original")), "fontWeight"]);
+    expect(nameTitleStyle("editorial")).toEqual({
+      fontFamily: type.mono,
+      fontSize: 17,
+      fontWeight: "400",
+      letterSpacing: 1.36,
+      color: colors.inkFaint,
+    });
+    // The credit's 0.08 em at the title's 17 pt, and the names' own ink.
+    expect(nameTitleStyle("editorial").letterSpacing).toBeCloseTo(0.08 * 17, 5);
+    expect(nameTitleStyle("editorial").color).toBe(nameFace("editorial")!.color);
+    // The stack's size kept; the face, its regular weight, its tracking and its ink added.
+    expect(Object.keys(nameTitleStyle("editorial"))).toEqual([...Object.keys(nameTitleStyle("original")), "fontWeight", "letterSpacing", "color"]);
+  });
+
+  it("is given its ink as the title's own colour, which the stack takes over the bar's tint", () => {
+    // Under Original the title has no colour of its own and is the bar's tint, as before.
+    expect(nameTitleStyle("original")).not.toHaveProperty("color");
+    // The stack draws a title in its style's colour when it has one, else in the tint: on iOS as the native title's colour.
+    const stack = readFileSync(path.join(root, "node_modules/@react-navigation/native-stack/src/views/useHeaderConfigProps.tsx"), "utf8");
+    expect(stack).toMatch(/const titleColor =\s*'color' in headerTitleStyleFlattened\s*\? headerTitleStyleFlattened\.color/);
+    expect(stack).toMatch(/\n {4}titleColor,\n/);
   });
 
   it("follows the layout, and keeps the serif where the title is not a name", () => {
     expect(useNameTitleStyle()).toEqual({ fontFamily: type.serif, fontSize: 17 });
     setFeedLayout("editorial");
-    expect(useNameTitleStyle()).toEqual({ fontFamily: type.mono, fontSize: 17, fontWeight: "400" });
+    expect(useNameTitleStyle()).toEqual({ fontFamily: type.mono, fontSize: 17, fontWeight: "400", letterSpacing: 1.36, color: colors.inkFaint });
     expect(useNameTitleStyle(false)).toEqual({ fontFamily: type.serif, fontSize: 17 });
     setFeedLayout("original");
     expect(useNameTitleStyle()).toEqual({ fontFamily: type.serif, fontSize: 17 });
@@ -172,9 +216,9 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ["app/follows.tsx", "… isn't following anyone yet.", /<Text style=\{face\}>\{username\}<\/Text>\s*\{" isn't following anyone yet\."\}/],
   ["app/compose.tsx", "who was there",/<Text style=\{\[styles\.tagNames, face\]\} numberOfLines=\{1\}>\s*\{tags\.map\(\(t\) => t\.username\)\.join\(", "\)\}/],
   ["app/gallery.tsx", "its title, when it is the author's username", /const titleStyle = useNameTitleStyle\(!shown\.era\);[\s\S]*?<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/],
-  ["app/messages/index.tsx", "who each thread is with", /<Text style=\{\[styles\.username, unread && styles\.unreadText, face\]\}>\s*\{conversation\.peer\.username\}/],
+  ["app/messages/index.tsx", "who each thread is with, an unread thread's emphasis after it", /<Text style=\{\[styles\.username, face, unread && styles\.unreadText\]\}>\s*\{conversation\.peer\.username\}/],
   ["app/messages/[id].tsx", "the thread's title", /<Stack\.Screen options=\{\{ title: peerQ\.data\?\.username \?\? "", headerTitleStyle: titleStyle \}\} \/>/],
-  ["app/messages/[id].tsx", "whose photograph was sent", /<Text style=\{\[styles\.sharedCaption, mine && styles\.textMine, face\]\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/],
+  ["app/messages/[id].tsx", "whose photograph was sent, your own bubble's ink after it", /<Text style=\{\[styles\.sharedCaption, face, mine && styles\.textMine\]\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/],
   ["app/post/[id].tsx", "the author", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/],
   ["app/post/[id].tsx", "who was there, without \" (pending)\" or the commas", /<Text style=\{face\}>\{t\.member\.username\}<\/Text>\s*\{t\.status === "pending" \? " \(pending\)" : ""\}/],
   ["app/post/[id].tsx", "the caption's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/],
@@ -241,8 +285,10 @@ describe("every username the app draws", () => {
 
   it("on the editorial card is always in the face, set in its sheet, since it is drawn only under Editorial", () => {
     const card = code("src/components/feed/EditorialPostCard.tsx");
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.mono, fontSize: 14, fontWeight: "400", color: colors\.ink \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.mono, fontWeight: "400" \},/);
+    // The print's credit, as the names' face sets it (its values, here as written; tests/editorial-feed.test.ts compares the sheet itself).
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.mono, fontSize: 14, fontWeight: "400", letterSpacing: 1\.1, color: colors\.inkFaint \},/);
+    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.mono, fontWeight: "400", letterSpacing: 1\.1, color: colors\.inkFaint \},/);
+    expect(nameFace("editorial")).toEqual({ fontFamily: type.mono, fontWeight: "400", letterSpacing: 1.1, color: colors.inkFaint });
     expect(card).toMatch(/<Text style=\{styles\.username\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/);
     expect(card).toMatch(/<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/);
     expect(card).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
@@ -382,6 +428,118 @@ describe("every username the app draws", () => {
     for (const file of ["app/user/[username].tsx", "app/(tabs)/profile.tsx"]) {
       expect(code(file), file).toMatch(/pathname: "\/follows",\s*params: \{ userId[^{}]*, kind, username: profile\.username \}/);
     }
+  });
+});
+
+/** A word of a one-line rule, as the value it stands for here (each colour as the light print's). */
+function valueOf(words: string): unknown {
+  if (/^colors\.\w+$/.test(words)) return colors[words.slice("colors.".length) as keyof typeof colors];
+  if (/^type\.\w+$/.test(words)) return type[words.slice("type.".length) as keyof typeof type];
+  if (/^"[^"]*"$/.test(words)) return words.slice(1, -1);
+  if (/^-?\d+(\.\d+)?$/.test(words)) return Number(words);
+  throw new Error(`Not a value: ${words}`);
+}
+
+/** A one-line rule of a file's sheet (`  name: { … },`), as its values. */
+function rule(file: string, name: string): Record<string, unknown> {
+  const body = code(file).match(new RegExp(`\\n  ${name}: \\{ ([^\\n{}]*?) \\},`))?.[1];
+  if (body == null) throw new Error(`${file}: no one-line rule styles.${name}`);
+  return Object.fromEntries(
+    body.split(/,\s*/).map((pair) => {
+      const [key, words] = pair.split(/:\s*/);
+      return [key, valueOf(words)];
+    }),
+  );
+}
+
+/**
+ * A Text's style array as written at a site, drawn under a layout with its
+ * state on or off, flattened as React Native flattens it: each style over
+ * the ones before it, and a state's style only while the state holds.
+ */
+function drawn(file: string, array: string, layout: "original" | "editorial", state: boolean): Record<string, unknown> {
+  const parts = array.replace(/^\[|\]$/g, "").split(/,\s*/);
+  return Object.assign(
+    {},
+    ...parts.map((part) => {
+      if (part === "face") return nameFace(layout);
+      const plain = part.match(/^styles\.(\w+)$/);
+      if (plain) return rule(file, plain[1]);
+      const when = part.match(/^.+ && styles\.(\w+)$/);
+      if (when) return state ? rule(file, when[1]) : undefined;
+      throw new Error(`${file}: not a style: ${part}`);
+    }),
+  );
+}
+
+describe("a state a place marks a name for", () => {
+  /** Every style array that holds the face, in every file that reads it. */
+  const arrays = () =>
+    Object.keys(READERS).flatMap((file) =>
+      [...code(file).matchAll(/style=\{(\[[^\]]*\bface\b[^\]]*\])\}/g)].map((m) => [file, m[1]] as const),
+    );
+
+  it("comes after the face wherever a name is given both, so the state still wins over the names' ink and weight", () => {
+    const found = arrays();
+    // Each array listed above among the places a username is drawn.
+    expect(found).toHaveLength(20);
+    for (const [file, array] of found) {
+      const parts = array.slice(1, -1).split(/,\s*/);
+      const at = parts.findIndex((part) => /\bface\b/.test(part));
+      // Before the face only the place's own style, never one that depends on a state.
+      for (const before of parts.slice(0, at)) expect(before, `${file}: ${array}`).toMatch(/^styles\.\w+$/);
+    }
+    // The two that a state marks, each with its state after the face.
+    const marked = found.filter(([, array]) => /&& styles\./.test(array)).map(([file, array]) => `${file}: ${array}`);
+    expect(marked).toEqual([
+      "app/messages/[id].tsx: [styles.sharedCaption, face, mine && styles.textMine]",
+      "app/messages/index.tsx: [styles.username, face, unread && styles.unreadText]",
+    ]);
+  });
+
+  it("an unread thread: its name dark and bold again, as its preview is, still in the face and its tracking", () => {
+    const file = "app/messages/index.tsx";
+    const array = code(file).match(/<Text style=\{(\[[^\]]*\])\}>\s*\{conversation\.peer\.username\}/)![1];
+    expect(rule(file, "unreadText")).toEqual({ color: colors.ink, fontWeight: "600" });
+    // The preview under it is marked by the same style.
+    expect(code(file)).toMatch(/<Text style=\{\[styles\.preview, unread && styles\.unreadText\]\} numberOfLines=\{1\}>\s*\{preview\}/);
+    const face = { fontFamily: type.mono, letterSpacing: 1.1 };
+    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 15, ...face, color: colors.ink, fontWeight: "600" });
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 15, ...face, color: colors.inkFaint, fontWeight: "400" });
+    // Under Original exactly as before the trial.
+    expect(drawn(file, array, "original", true)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "600" });
+    expect(drawn(file, array, "original", false)).toEqual({ fontSize: 15, color: colors.ink });
+  });
+
+  it("a photograph sent in your own bubble: its author's name in the bubble's light ink on its dark paper, still in the face", () => {
+    const file = "app/messages/[id].tsx";
+    const array = code(file).match(/<Text style=\{(\[[^\]]*\])\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/)![1];
+    expect(rule(file, "bubbleMine")).toEqual({ backgroundColor: colors.shutter, borderColor: colors.shutter });
+    expect(rule(file, "textMine")).toEqual({ color: colors.onShutter });
+    const face = { fontFamily: type.mono, fontWeight: "400", letterSpacing: 1.1 };
+    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 11, marginTop: 4, ...face, color: colors.onShutter });
+    // In their bubble, on the raised paper, the names' own faint ink.
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 11, marginTop: 4, ...face, color: colors.inkFaint });
+    // Under Original exactly as before the trial.
+    expect(drawn(file, array, "original", true)).toEqual({ fontSize: 11, marginTop: 4, color: colors.onShutter });
+    expect(drawn(file, array, "original", false)).toEqual({ fontSize: 11, marginTop: 4, color: colors.inkFaint });
+  });
+
+  it("a member tagged who has not yet accepted: faint and regular, as the state sets it, with \"(pending)\" after", () => {
+    const file = "app/post/[id].tsx";
+    const source = code(file);
+    // The state is on the words around the name; the name's own Text holds the face alone.
+    const array = source.match(/style=\{(\[styles\.withName, [^\]]*\])\}/)![1];
+    expect(array).toBe('[styles.withName, t.status === "pending" && styles.withPending]');
+    expect(source).toMatch(/<Text style=\{face\}>\{t\.member\.username\}<\/Text>\s*\{t\.status === "pending" \? " \(pending\)" : ""\}/);
+    const pending = rule(file, "withPending");
+    expect(pending).toEqual({ fontWeight: "400", color: colors.inkFaint });
+    // The name draws over the words around it: under Editorial, a pending name is the state's own ink and weight.
+    const name = (layout: "original" | "editorial", state: boolean) => ({ ...drawn(file, array, layout, state), ...nameFace(layout) });
+    expect(name("editorial", true)).toMatchObject({ color: pending.color, fontWeight: pending.fontWeight, fontFamily: type.mono, letterSpacing: 1.1 });
+    // Under Original exactly as before the trial: an accepted name dark and bold, a pending one faint and regular.
+    expect(name("original", false)).toEqual({ fontWeight: "600", color: colors.ink });
+    expect(name("original", true)).toEqual(pending);
   });
 });
 

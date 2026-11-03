@@ -1,18 +1,21 @@
-import { type } from "@/theme";
+import { colors, type } from "@/theme";
 import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
 
 /**
- * Editorial (Preview): members' usernames in the print's typewriter face.
+ * Editorial (Preview): members' usernames set as the print sets its credit.
  *
  * While the feed is Editorial, every username the app draws as a name (a
- * bar's title, a row in a list, the bold name before a caption, a comment
- * or a notice, a chip, a sheet, the sentence an empty page says about a
- * member) is set in the face the print sets its credit in
- * (`@chai · MEMBER NO. 00001`, src/components/ExportCard.tsx): type.mono,
- * in its regular weight, as the print sets it — a name that was bold is
- * set regular. Only the face and its weight change. Size, colour, spacing
- * and layout stay as each place sets them, and under Original nothing
- * changes: a name bold there stays bold.
+ * bar's title, a row in a list, the name before a caption, a comment or a
+ * notice, a chip, a sheet, the sentence an empty page says about a member)
+ * is set the way the print sets its credit (`@chai · MEMBER NO. 00001`,
+ * src/components/ExportCard.tsx): in type.mono, regular, tracked 0.08 em,
+ * in the print's faint ink, inkFaint. A name that was bold is set regular,
+ * and a name that was near-black takes the faint ink. Each name keeps its
+ * own size and its place. Where a place marks a name for a state of its own
+ * (an unread thread, a photograph sent in your own dark bubble), the state's
+ * colour and weight still win, and the name keeps the face and the
+ * tracking. Under Original nothing changes: a name bold and dark there
+ * stays so.
  *
  * Display names, what a member types, and what they wrote (captions,
  * comments, messages) keep their own face.
@@ -21,12 +24,26 @@ import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
  * lists every place that reads it.
  */
 
-/** The face and weight a name takes; appended last, so it overrides a bold the place sets. */
-type NameFace = { fontFamily: string; fontWeight: "400" };
+/**
+ * The print tracks its credit 0.08 em (src/utils/exportLayout.ts: the
+ * credit's spacing is its size times 0.08). React Native tracks in points,
+ * and a name is set at 13 to 15 pt nearly everywhere, so a name takes the
+ * credit's tracking at 14 pt, 0.08 × 14 ≈ 1.1 pt: within a tenth of a point
+ * of 0.08 em at 13 or 15 pt, and within a quarter at the 11 to 16 pt of the
+ * few places set smaller or larger.
+ */
+const NAME_TRACKING = 1.1;
 
-const MONO: NameFace = { fontFamily: type.mono, fontWeight: "400" };
+/**
+ * The face, weight, tracking and ink a name takes. A place puts it after
+ * its own style, so it overrides a bold or a dark ink the place sets, and
+ * before a state's style, so the state still wins.
+ */
+type NameFace = { fontFamily: string; fontWeight: "400"; letterSpacing: number; color: typeof colors.inkFaint };
 
-/** Appended to a name's style: the typewriter face, regular, under Editorial, and nothing at all under Original. */
+const MONO: NameFace = { fontFamily: type.mono, fontWeight: "400", letterSpacing: NAME_TRACKING, color: colors.inkFaint };
+
+/** Added to a name's style: the print's credit, at the name's own size, under Editorial, and nothing at all under Original. */
 export function nameFace(layout: FeedLayout): NameFace | undefined {
   return layout === "editorial" ? MONO : undefined;
 }
@@ -52,17 +69,25 @@ export function aroundName(write: (name: string) => string): string[] {
 
 /**
  * A bar's title, where the title is a username. The app's stack sets every
- * title in the serif at 17 pt (headerTitleStyle in app/_layout.tsx); a
- * screen's own headerTitleStyle replaces that whole, so this carries the
- * same size and changes the face alone, set regular as every name is.
- * Under Original it is the stack's own style, so a title set while
- * Editorial was on goes back with it.
+ * title in the serif at 17 pt (headerTitleStyle in app/_layout.tsx), in the
+ * bar's tint; a screen's own headerTitleStyle replaces that whole, so this
+ * carries the same size and sets the name as every name is set: the
+ * typewriter face, regular, tracked 0.08 em at 17 pt (0.08 × 17 = 1.36 pt),
+ * in the faint ink. The ink is the title's own colour, which the stack
+ * takes over the bar's tint (react-native-screens draws it as the title's
+ * colour on iOS). The bar on iOS is the system's own, and react-native-screens
+ * hands it a title's face, size, weight and colour but no tracking, so there
+ * a pushed screen's title is set untracked; the web's bar, and the Profile
+ * tab's title, which the app draws itself, are tracked.
+ * Under Original it is the stack's own style, with no colour of its own, so
+ * a title set while Editorial was on goes back to the bar's tint with it.
  */
-type TitleStyle = { fontFamily: string; fontSize: number; fontWeight?: "400" };
+type TitleStyle = { fontFamily: string; fontSize: number; fontWeight?: "400"; letterSpacing?: number; color?: string };
 
 const TITLES: Record<FeedLayout, TitleStyle> = {
   original: { fontFamily: type.serif, fontSize: 17 },
-  editorial: { fontFamily: type.mono, fontSize: 17, fontWeight: "400" },
+  // The stack types a title's colour as a string; a dynamic colour is handed on as one, as the bar's tint is (app/_layout.tsx).
+  editorial: { fontFamily: type.mono, fontSize: 17, fontWeight: "400", letterSpacing: 1.36, color: colors.inkFaint as unknown as string },
 };
 
 export function nameTitleStyle(layout: FeedLayout): TitleStyle {

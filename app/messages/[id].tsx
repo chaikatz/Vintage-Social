@@ -155,7 +155,7 @@ function Bubble({
   const thumb = shared
     ? mediaUrl("thumbnails", shared.thumb_path) ?? mediaUrl("media", shared.media_path)
     : null;
-  // Editorial (Preview): whose photograph it is, in the names' face.
+  // Editorial (Preview): whose photograph it is, in the names' face. In your own dark bubble its light ink still wins, after it.
   const face = useNameFace();
 
   return (
@@ -164,7 +164,7 @@ function Bubble({
         {shared ? (
           <Pressable style={styles.shared} onPress={() => onOpenPost(shared.id)}>
             {thumb ? <Image source={thumb} style={styles.sharedImage} contentFit="cover" /> : null}
-            <Text style={[styles.sharedCaption, mine && styles.textMine, face]} numberOfLines={1}>
+            <Text style={[styles.sharedCaption, face, mine && styles.textMine]} numberOfLines={1}>
               {shared.author.username}
             </Text>
           </Pressable>

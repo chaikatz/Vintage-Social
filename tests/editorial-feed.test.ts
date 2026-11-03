@@ -95,6 +95,7 @@ const {
   __subscribeToPaperForTest,
 } = await import("@/utils/feedPaper");
 const { colors, dark, light } = await import("@/theme");
+const { nameFace } = await import("@/utils/nameFace");
 await import("@/components/feed/EditorialPostCard");
 
 const FILE = "document/feed-layout.json";
@@ -514,8 +515,9 @@ describe("the editorial card", () => {
     // The original card's size for the picture, and its weight and size for the name.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    // The original card's size for the name; its weight regular, in the print's typewriter face (see tests/editorial-names.test.ts).
-    expect(style("username")).toMatch(/fontSize: 14, fontWeight: "400", color: colors\.ink/);
+    // The original card's size for the name, set as the print sets its credit: regular, tracked, faint (see tests/editorial-names.test.ts).
+    expect(style("username")).toMatch(/fontSize: 14, fontWeight: "400", letterSpacing: 1\.1, color: colors\.inkFaint/);
+    expect(sheet!.username).toEqual({ flexShrink: 1, fontSize: 14, ...nameFace("editorial") });
     // Only the name: the place and the date are on the label.
     expect(header).not.toMatch(/label\.|Byline|taken_at|location/);
     // The "…" ends the row, after the name.
@@ -560,6 +562,10 @@ describe("the editorial card", () => {
     );
     expect(body).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
     expect(style("author")).toMatch(/fontWeight: "400"/);
+    // Who wrote it, set exactly as every name is under Editorial: the print's credit, at the words' own size.
+    expect(sheet!.author).toEqual(nameFace("editorial"));
+    expect(sheet!.author).toEqual({ fontFamily: "Courier New", fontWeight: "400", letterSpacing: 1.1, color: light.inkFaint });
+    expect(sheet!.author).not.toHaveProperty("fontSize");
   });
 
   it("keeps the print's margins for the print alone: the picture inset by the print's share of the width", () => {
