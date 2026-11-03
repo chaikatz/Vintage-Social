@@ -10,7 +10,9 @@
  * chapter's place is in the page's own terms, from the top of all it
  * holds, measured as the print is lifted; it does not move as the page
  * scrolls under the finger, and the drag changes nothing that would move
- * it.
+ * it. Should anything else lay the page out afresh while a print is
+ * held, the print goes back (EraList), so these places are never read
+ * once they are out of date.
  */
 
 /** How long a print is held before it lifts: a beat past a tap, well short of a long press anywhere else. */

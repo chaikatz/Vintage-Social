@@ -517,6 +517,13 @@ describe("dragging a print to another era", () => {
     expect(responder).toMatch(/onPanResponderTerminate: \(\) => act\.current\.cancel\(\),/);
     expect(list).toMatch(/const letGo = \(\) => \{\s*if \(drag\.current && !drag\.current\.claimed\) cancel\(\);\s*\};/);
     expect(list).toMatch(/useEffect\(\(\) => \{\s*if \(!arranging\) act\.current\.cancel\(\);\s*\}, \[arranging\]\);/);
+    // The page laid out afresh under it (a photograph come in, a save taken back, another width): the places
+    // measured at the lift are out of date, so it goes back rather than frame and drop the wrong era. A drop
+    // releases the drag before its own move lays the page out, so it never calls itself off.
+    expect(list).toMatch(/useEffect\(\(\) => \{\s*if \(drag\.current\) act\.current\.cancel\(\);\s*\}, \[summary, cell\]\);/);
+    const drop = list.match(/const drop = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
+    expect(drop.indexOf("release();")).toBeGreaterThan(-1);
+    expect(drop.indexOf("release();")).toBeLessThan(drop.indexOf("moveTo("));
     // Back to the print wherever the page has carried it.
     expect(list).toMatch(/Animated\.spring\(pan, \{ \.\.\.spring, toValue: \{ x: 0, y: d\.liftedAt - d\.offset \}/);
   });

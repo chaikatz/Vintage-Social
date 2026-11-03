@@ -395,7 +395,10 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   // Where the chapters and the bar lie is measured as the print lifts, as
   // EDIT measures them, never taken from what they last reported; nothing
   // the drag changes moves them, so the page's scroll is all that changes
-  // under the finger.
+  // under the finger. Something else can: a photograph come in, or a save
+  // that did not go through taken back, lays the page out afresh, and then
+  // the print goes back as it was, rather than frame and drop an era that
+  // is no longer under the finger.
   const root = useRef<View>(null);
   const contentTall = useRef(0);
   const drag = useRef<Drag | null>(null);
@@ -584,6 +587,11 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   useEffect(() => {
     if (!arranging) act.current.cancel();
   }, [arranging]);
+  // The page laid out afresh under a held print, its eras or its width changed: it goes back.
+  // A print let go is released before its move changes the eras, so a drop never calls itself off.
+  useEffect(() => {
+    if (drag.current) act.current.cancel();
+  }, [summary, cell]);
   useEffect(
     () => () => {
       const d = drag.current;
