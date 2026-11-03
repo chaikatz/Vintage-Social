@@ -397,14 +397,14 @@ check(
 );
 const gapBetween = lines.length > 1 ? lines[1].head - lines[0].foot : null;
 check("One post follows the next about as closely as on Instagram", gapBetween != null && gapBetween >= 18 && gapBetween <= 30, String(gapBetween));
-// The caption after the member's name, in bold, as a comment is written.
+// The caption after the member's name, set apart in a face of its own, as a comment is written.
 const captioned = await editorial.first().evaluate(
   (el, name) =>
     [...el.querySelectorAll("div, span")].some(
       (n) =>
         n.textContent?.startsWith(`${name} `) &&
         n.firstElementChild?.textContent === name &&
-        Number(getComputedStyle(n.firstElementChild).fontWeight) >= 600,
+        getComputedStyle(n.firstElementChild).fontFamily !== getComputedStyle(n).fontFamily,
     ),
   head.name,
 );
@@ -444,7 +444,8 @@ const namesOnScreen = () =>
 const facesOf = (names) => names.map((n) => n.slice(n.indexOf(": ") + 2));
 const titleFace = (name) => seen(page.getByRole("heading", { name, exact: true })).first().evaluate((el) => getComputedStyle(el).fontFamily);
 const onHome = await editorial.evaluateAll((els) => {
-  const face = (n) => (n ? getComputedStyle(n).fontFamily : "");
+  // The face, and after a bar its weight: names are regular, as the print sets its credit.
+  const face = (n) => (n ? `${getComputedStyle(n).fontFamily}|${getComputedStyle(n).fontWeight}` : "");
   const leaf = (root, words) => [...root.querySelectorAll("*")].find((n) => n.childElementCount === 0 && n.textContent === words);
   const seenFaces = { header: [], captions: [], comments: [], words: [] };
   for (const el of els) {
@@ -465,6 +466,12 @@ check("Editorial: the member's name over each print is in the print's typewriter
 check("Editorial: so is the name before each caption", allMono(onHome.captions), `${onHome.captions.length}: ${onHome.captions[0]}`);
 check("Editorial: and the name before each comment", allMono(onHome.comments), `${onHome.comments.length}: ${onHome.comments[0]}`);
 check("Editorial: the captions and comments themselves keep their own face", noneMono(onHome.words), onHome.words[0]);
+const regular = (faces) => faces.length > 0 && faces.every((f) => f.endsWith("|400"));
+check(
+  "Editorial: the names are regular, as the print sets its credit, not bold",
+  regular(onHome.header) && regular(onHome.captions) && regular(onHome.comments),
+  [onHome.header[0], onHome.captions[0], onHome.comments[0]].join(" / "),
+);
 const offWhite = await papersOf(editorial, wordmark(), tabBar());
 const strips = await editorial.evaluateAll((els) => els.filter((el) => getComputedStyle(el).borderBottomWidth !== "0px").length);
 check(

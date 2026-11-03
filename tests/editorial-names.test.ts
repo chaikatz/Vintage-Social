@@ -59,8 +59,8 @@ afterEach(() => __resetFeedLayoutForTest());
 
 describe("the names' face", () => {
   it("is the print's credit face under Editorial, and nothing at all under Original", () => {
-    expect(nameFace("editorial")).toEqual({ fontFamily: type.mono });
-    expect(nameFace("editorial")).toEqual({ fontFamily: "Courier New" });
+    expect(nameFace("editorial")).toEqual({ fontFamily: type.mono, fontWeight: "400" });
+    expect(nameFace("editorial")).toEqual({ fontFamily: "Courier New", fontWeight: "400" });
     // Nothing, not an empty style: a style array is exactly what it was.
     expect(nameFace("original")).toBeUndefined();
     // The same object each time, so nothing redraws for it alone.
@@ -72,14 +72,17 @@ describe("the names' face", () => {
     expect(print).toMatch(/rect\(L\.credit\),[\s\S]*?fontFamily: type\.mono,/);
   });
 
-  it("changes the face alone: no size, weight, colour or spacing", () => {
-    expect(Object.keys(nameFace("editorial")!)).toEqual(["fontFamily"]);
+  it("changes the face and its weight alone, regular as the print sets it: no size, colour or spacing", () => {
+    expect(Object.keys(nameFace("editorial")!)).toEqual(["fontFamily", "fontWeight"]);
+    // Regular: a name a place sets in bold is set regular under Editorial, as the print's credit is.
+    expect(nameFace("editorial")!.fontWeight).toBe("400");
+    expect(code("src/components/ExportCard.tsx").match(/rect\(L\.credit\),[\s\S]*?\]/)?.[0] ?? "").not.toMatch(/fontWeight/);
   });
 
   it("follows the layout chosen in Settings, the moment it changes", () => {
     expect(useNameFace()).toBeUndefined();
     setFeedLayout("editorial");
-    expect(useNameFace()).toEqual({ fontFamily: type.mono });
+    expect(useNameFace()).toEqual({ fontFamily: type.mono, fontWeight: "400" });
     setFeedLayout("original");
     expect(useNameFace()).toBeUndefined();
   });
@@ -137,14 +140,15 @@ describe("a bar titled with a username", () => {
     // The stack's title, as app/_layout.tsx sets it for every screen; its colour is the bar's tint.
     expect(code("app/_layout.tsx")).toMatch(/headerTitleStyle: \{ fontFamily: type\.serif, fontSize: 17 \},/);
     expect(nameTitleStyle("original")).toEqual({ fontFamily: type.serif, fontSize: 17 });
-    expect(nameTitleStyle("editorial")).toEqual({ fontFamily: type.mono, fontSize: 17 });
-    expect(Object.keys(nameTitleStyle("editorial"))).toEqual(Object.keys(nameTitleStyle("original")));
+    expect(nameTitleStyle("editorial")).toEqual({ fontFamily: type.mono, fontSize: 17, fontWeight: "400" });
+    // The stack's size kept; only the face, and its regular weight, added.
+    expect(Object.keys(nameTitleStyle("editorial"))).toEqual([...Object.keys(nameTitleStyle("original")), "fontWeight"]);
   });
 
   it("follows the layout, and keeps the serif where the title is not a name", () => {
     expect(useNameTitleStyle()).toEqual({ fontFamily: type.serif, fontSize: 17 });
     setFeedLayout("editorial");
-    expect(useNameTitleStyle()).toEqual({ fontFamily: type.mono, fontSize: 17 });
+    expect(useNameTitleStyle()).toEqual({ fontFamily: type.mono, fontSize: 17, fontWeight: "400" });
     expect(useNameTitleStyle(false)).toEqual({ fontFamily: type.serif, fontSize: 17 });
     setFeedLayout("original");
     expect(useNameTitleStyle()).toEqual({ fontFamily: type.serif, fontSize: 17 });
@@ -237,8 +241,8 @@ describe("every username the app draws", () => {
 
   it("on the editorial card is always in the face, set in its sheet, since it is drawn only under Editorial", () => {
     const card = code("src/components/feed/EditorialPostCard.tsx");
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.mono, fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.mono, fontWeight: "600" \},/);
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.mono, fontSize: 14, fontWeight: "400", color: colors\.ink \},/);
+    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.mono, fontWeight: "400" \},/);
     expect(card).toMatch(/<Text style=\{styles\.username\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/);
     expect(card).toMatch(/<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/);
     expect(card).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);

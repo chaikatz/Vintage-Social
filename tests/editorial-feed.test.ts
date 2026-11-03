@@ -514,7 +514,8 @@ describe("the editorial card", () => {
     // The original card's size for the picture, and its weight and size for the name.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    expect(style("username")).toMatch(/fontSize: 14, fontWeight: "600", color: colors\.ink/);
+    // The original card's size for the name; its weight regular, in the print's typewriter face (see tests/editorial-names.test.ts).
+    expect(style("username")).toMatch(/fontSize: 14, fontWeight: "400", color: colors\.ink/);
     // Only the name: the place and the date are on the label.
     expect(header).not.toMatch(/label\.|Byline|taken_at|location/);
     // The "…" ends the row, after the name.
@@ -558,7 +559,7 @@ describe("the editorial card", () => {
       /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}\s*<\/Text>\s*\) : null\}/,
     );
     expect(body).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
-    expect(style("author")).toMatch(/fontWeight: "600"/);
+    expect(style("author")).toMatch(/fontWeight: "400"/);
   });
 
   it("keeps the print's margins for the print alone: the picture inset by the print's share of the width", () => {

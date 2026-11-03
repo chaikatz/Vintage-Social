@@ -8,9 +8,11 @@ import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
  * bar's title, a row in a list, the bold name before a caption, a comment
  * or a notice, a chip, a sheet, the sentence an empty page says about a
  * member) is set in the face the print sets its credit in
- * (`@chai · MEMBER NO. 00001`, src/components/ExportCard.tsx): type.mono.
- * Only the face changes. Size, weight, colour, spacing and layout stay as
- * each place sets them, and under Original nothing changes.
+ * (`@chai · MEMBER NO. 00001`, src/components/ExportCard.tsx): type.mono,
+ * in its regular weight, as the print sets it — a name that was bold is
+ * set regular. Only the face and its weight change. Size, colour, spacing
+ * and layout stay as each place sets them, and under Original nothing
+ * changes: a name bold there stays bold.
  *
  * Display names, what a member types, and what they wrote (captions,
  * comments, messages) keep their own face.
@@ -19,15 +21,18 @@ import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
  * lists every place that reads it.
  */
 
-const MONO = { fontFamily: type.mono };
+/** The face and weight a name takes; appended last, so it overrides a bold the place sets. */
+type NameFace = { fontFamily: string; fontWeight: "400" };
 
-/** Appended to a name's style: the typewriter face under Editorial, and nothing at all under Original. */
-export function nameFace(layout: FeedLayout): { fontFamily: string } | undefined {
+const MONO: NameFace = { fontFamily: type.mono, fontWeight: "400" };
+
+/** Appended to a name's style: the typewriter face, regular, under Editorial, and nothing at all under Original. */
+export function nameFace(layout: FeedLayout): NameFace | undefined {
   return layout === "editorial" ? MONO : undefined;
 }
 
 /** The name face for the layout in effect, redrawn the moment Settings changes it. */
-export function useNameFace(): { fontFamily: string } | undefined {
+export function useNameFace(): NameFace | undefined {
   return nameFace(useFeedLayout());
 }
 
@@ -49,15 +54,18 @@ export function aroundName(write: (name: string) => string): string[] {
  * A bar's title, where the title is a username. The app's stack sets every
  * title in the serif at 17 pt (headerTitleStyle in app/_layout.tsx); a
  * screen's own headerTitleStyle replaces that whole, so this carries the
- * same size and changes the face alone. Under Original it is the stack's
- * own style, so a title set while Editorial was on goes back with it.
+ * same size and changes the face alone, set regular as every name is.
+ * Under Original it is the stack's own style, so a title set while
+ * Editorial was on goes back with it.
  */
-const TITLES: Record<FeedLayout, { fontFamily: string; fontSize: number }> = {
+type TitleStyle = { fontFamily: string; fontSize: number; fontWeight?: "400" };
+
+const TITLES: Record<FeedLayout, TitleStyle> = {
   original: { fontFamily: type.serif, fontSize: 17 },
-  editorial: { fontFamily: type.mono, fontSize: 17 },
+  editorial: { fontFamily: type.mono, fontSize: 17, fontWeight: "400" },
 };
 
-export function nameTitleStyle(layout: FeedLayout): { fontFamily: string; fontSize: number } {
+export function nameTitleStyle(layout: FeedLayout): TitleStyle {
   return TITLES[layout];
 }
 
@@ -66,7 +74,7 @@ export function nameTitleStyle(layout: FeedLayout): { fontFamily: string; fontSi
  * same bar is sometimes titled with something else (an era's gallery), so
  * that title keeps the stack's own serif.
  */
-export function useNameTitleStyle(isName = true): { fontFamily: string; fontSize: number } {
+export function useNameTitleStyle(isName = true): TitleStyle {
   const layout = useFeedLayout();
   return nameTitleStyle(isName ? layout : "original");
 }
