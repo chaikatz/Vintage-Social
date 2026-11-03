@@ -32,6 +32,15 @@ interface Props {
   active?: boolean;
   /** Whether its clip may have a player yet; see PostMedia. Defaults to true. */
   warm?: boolean;
+  /**
+   * Draw the picture's frame and not the picture yet; see PostMedia. The
+   * card is the same height either way. Defaults to false. Like `warm`,
+   * it only passes through to the picture, so a card that takes these
+   * props hands it straight on.
+   */
+  frameOnly?: boolean;
+  /** Load this card's picture ahead of the others'; see PostMedia. Defaults to "normal". */
+  priority?: "high" | "normal";
   /** Where the card is, for the development build's start-up timings only. */
   surface?: ClipSurface;
 }
@@ -48,6 +57,8 @@ export function PostCard({
   comments,
   active = true,
   warm = true,
+  frameOnly = false,
+  priority = "normal",
   surface = "feed",
 }: Props) {
   const like = (next: boolean) => {
@@ -82,6 +93,8 @@ export function PostCard({
         active={active}
         recyclingKey={post.id}
         warm={warm}
+        frameOnly={frameOnly}
+        priority={priority}
         surface={surface}
       />
 

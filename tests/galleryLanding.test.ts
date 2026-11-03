@@ -2,12 +2,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  AWAY_MS,
   GIVE_UP_MS,
   LANDING_STEP_MS,
   STALL_MS,
   STILL_LOOKS,
   approachOffset,
+  atListEnd,
   nextLanding,
+  playingCard,
   startLanding,
   type Landing,
   type Look,
@@ -112,6 +115,24 @@ describe("a step of the landing", () => {
   });
 });
 
+/**
+ * Looks one after another, as the gallery takes them, from `from` up to
+ * `to` ms at most, every `every` ms: until one shows, which is returned
+ * with when it came.
+ */
+function lookUntilShown(
+  landing: Landing,
+  at: (now: number) => Partial<Look>,
+  { from = 0, to, every = LANDING_STEP_MS }: { from?: number; to: number; every?: number },
+) {
+  for (let now = from; now <= to; now += every) {
+    const next = nextLanding(landing, look({ now, ...at(now) }));
+    landing = next.landing;
+    if (next.step.kind === "show") return { step: next.step, now, landing };
+  }
+  return { step: null, now: null, landing };
+}
+
 describe("when the landing gives up", () => {
   it("does not while the list is still drawing its way down", () => {
     let landing = startLanding(0);
@@ -122,39 +143,150 @@ describe("when the landing gives up", () => {
     }
   });
 
+  it("does not by the cap while the list is still drawing its way down, however long that takes", () => {
+    // A tap far down a long history on a slow phone: a card every look,
+    // for longer than the cap, and the tapped card not drawn yet.
+    const walk = lookUntilShown(startLanding(0), (now) => ({ index: 900, top: null, measured: 80 + now / LANDING_STEP_MS }), {
+      to: GIVE_UP_MS * 2,
+    });
+    expect(walk.step).toBeNull();
+    // Then it stops drawing, the card never drawn: the stall shows the top.
+    const stopped = lookUntilShown(walk.landing, () => ({ index: 900, top: null, measured: 80 + (GIVE_UP_MS * 2) / LANDING_STEP_MS }), {
+      from: GIVE_UP_MS * 2 + LANDING_STEP_MS,
+      to: GIVE_UP_MS * 3,
+    });
+    expect(stopped.step).toEqual({ kind: "show", offset: 0 });
+    expect(stopped.now! - GIVE_UP_MS * 2).toBeLessThanOrEqual(STALL_MS + LANDING_STEP_MS);
+  });
+
+  it("shows by the cap counted from when the tapped card was first drawn", () => {
+    // Drawn at last after twenty seconds of drawing its way down, and then
+    // pushed down by every look, so it never holds still.
+    const drawnAt = 20_000;
+    const shown = lookUntilShown(
+      startLanding(0),
+      (now) =>
+        now < drawnAt
+          ? { top: null, measured: 80 + now / LANDING_STEP_MS }
+          : { top: 50_000 + (now - drawnAt), scrolled: 50_000, measured: 80 + now / LANDING_STEP_MS },
+      { to: drawnAt + GIVE_UP_MS * 2 },
+    );
+    expect(shown.now).toBe(drawnAt + GIVE_UP_MS);
+    expect(shown.step?.kind).toBe("show");
+  });
+
   it("shows the top, not wherever the list was left, when nothing more is drawn and the card never was", () => {
-    let landing = startLanding(0);
-    let step = nextLanding(landing, look({ top: null, measured: 80 })).step;
-    for (let now = 0; step.kind === "approach"; now += LANDING_STEP_MS) {
-      const next = nextLanding(landing, look({ top: null, measured: 80, now }));
-      landing = next.landing;
-      step = next.step;
-      expect(now).toBeLessThanOrEqual(STALL_MS);
-    }
-    expect(step).toEqual({ kind: "show", offset: 0 });
+    const shown = lookUntilShown(startLanding(0), () => ({ top: null, measured: 80 }), { to: STALL_MS * 2 });
+    expect(shown.step).toEqual({ kind: "show", offset: 0 });
+    expect(shown.now).toBeLessThanOrEqual(STALL_MS);
   });
 
   it("shows where the card was last seen, if it was", () => {
-    let landing = nextLanding(startLanding(0), look({ top: 6000, measured: 80 })).landing;
-    const next = nextLanding(landing, look({ top: null, measured: 80, now: STALL_MS }));
-    landing = next.landing;
-    expect(next.step).toEqual({ kind: "show", offset: 6000 });
+    const landing = nextLanding(startLanding(0), look({ top: 6000, measured: 80 })).landing;
+    const shown = lookUntilShown(landing, () => ({ top: null, measured: 80 }), { from: LANDING_STEP_MS, to: STALL_MS * 2 });
+    expect(shown.step).toEqual({ kind: "show", offset: 6000 });
   });
 
   it("puts the list at the card before it shows, when it is late and the card has moved", () => {
     const landing = nextLanding(startLanding(0), look({ top: 6000, measured: 80 })).landing;
-    expect(nextLanding(landing, look({ top: 6400, measured: 80, now: GIVE_UP_MS })).step).toEqual({ kind: "show", offset: 6400 });
+    // Moving a little more at every look, and then once more on the look that is late.
+    const shown = lookUntilShown(landing, (now) => ({ top: 6000 + now, scrolled: 6000, measured: 80 }), {
+      from: LANDING_STEP_MS,
+      to: GIVE_UP_MS * 2,
+    });
+    expect(shown.now).toBe(GIVE_UP_MS);
+    expect(shown.step).toEqual({ kind: "show", offset: 6000 + GIVE_UP_MS });
+  });
+});
+
+describe("a landing the app was away from", () => {
+  it("goes on after a pause, rather than taking it for a stall", () => {
+    // Drawing its way down; then the phone is locked for a while, the list
+    // drawing nothing meanwhile.
+    let landing = startLanding(0);
+    for (let now = 0; now <= 1000; now += LANDING_STEP_MS) {
+      landing = nextLanding(landing, look({ index: 200, top: null, measured: 80 + now / LANDING_STEP_MS, now })).landing;
+    }
+    for (const pause of [2_500, 20_000, 120_000]) {
+      const back = nextLanding(landing, look({ index: 200, top: null, measured: 100, now: 1000 + pause }));
+      expect(back.step, `${pause} ms away`).toEqual({ kind: "approach" });
+    }
   });
 
-  it("shows by the cap however it is going", () => {
+  it("still gives up on a list that has stopped, once it is back", () => {
     let landing = startLanding(0);
-    let shown = false;
-    for (let now = 0, measured = 1; now <= GIVE_UP_MS; now += LANDING_STEP_MS, measured++) {
-      const next = nextLanding(landing, look({ top: null, measured, now }));
-      landing = next.landing;
-      if (next.step.kind === "show") shown = true;
-    }
-    expect(shown).toBe(true);
+    landing = nextLanding(landing, look({ top: null, measured: 80, now: 0 })).landing;
+    landing = nextLanding(landing, look({ top: null, measured: 80, now: 30_000 })).landing;
+    const shown = lookUntilShown(landing, () => ({ top: null, measured: 80 }), { from: 30_050, to: 40_000 });
+    expect(shown.step).toEqual({ kind: "show", offset: 0 });
+    expect(shown.now! - 30_000).toBeLessThanOrEqual(STALL_MS);
+  });
+
+  it("does not count a pause after the card is drawn towards the cap", () => {
+    // Drawn at once, pushed down at every look; ten seconds in, the tab is
+    // out of sight for a minute.
+    const moving = (now: number) => ({ top: 4000 + now, scrolled: 4000, measured: 80 });
+    let { landing } = lookUntilShown(startLanding(0), moving, { to: 10_000 });
+    const back = nextLanding(landing, look({ ...moving(70_000), now: 70_000 }));
+    expect(back.step.kind).toBe("place");
+    landing = back.landing;
+    const shown = lookUntilShown(landing, moving, { from: 70_050, to: 100_000 });
+    // Fifteen seconds of looking in all: ten before the pause, five after it.
+    expect(shown.now! - 70_000).toBeGreaterThan(GIVE_UP_MS - 10_000 - 2 * LANDING_STEP_MS);
+    expect(shown.now! - 70_000).toBeLessThanOrEqual(GIVE_UP_MS - 10_000 + LANDING_STEP_MS);
+  });
+
+  it("still gets there on a phone too busy to look on time", () => {
+    // Every look late, nothing new drawn: each counts as one ordinary look.
+    const slow = AWAY_MS + 100;
+    const shown = lookUntilShown(startLanding(0), () => ({ top: null, measured: 80 }), { every: slow, to: slow * 200 });
+    expect(shown.step).toEqual({ kind: "show", offset: 0 });
+    expect(shown.now! / slow).toBeLessThanOrEqual(STALL_MS / LANDING_STEP_MS + 1);
+  });
+});
+
+describe("the clip that plays once the gallery shows", () => {
+  it("is the tapped card's, while it is on screen", () => {
+    expect(playingCard(["a", "b"], "a", true)).toBe("a");
+    // Landed at the end: the tapped card is the last, under one that shows more of itself.
+    expect(playingCard(["p298", "p299"], "p299", true)).toBe("p299");
+  });
+
+  it("is the first card's on screen once the reader has moved off the tapped one", () => {
+    expect(playingCard(["p298", "p299"], "p299", false)).toBe("p298");
+  });
+
+  it("is the first card's on screen when the tapped one is not on screen, or not there at all", () => {
+    expect(playingCard(["a", "b"], "z", true)).toBe("a");
+    expect(playingCard(["a", "b"], undefined, true)).toBe("a");
+  });
+
+  it("is no one's between two cards", () => {
+    expect(playingCard([], "a", true)).toBeNull();
+  });
+});
+
+describe("whether the list can go no further", () => {
+  it("is where it last said it is, against how long it is now", () => {
+    expect(atListEnd(88_088, 760, 88_848)).toBe(true);
+    expect(atListEnd(88_088.4, 760, 88_849)).toBe(true); // the browser's rounding
+    expect(atListEnd(88_088, 760, 88_850)).toBe(false);
+  });
+
+  it("is not, once more is drawn below, though it was when the list last said where it is", () => {
+    // Stopped at the end of what was drawn; five more cards drawn since, and no word from the list.
+    expect(atListEnd(88_088, 760, 88_848 + 5 * 540)).toBe(false);
+  });
+
+  it("is from the start for a list that fits on the screen, which never says where it is", () => {
+    expect(atListEnd(null, 900, 766)).toBe(true);
+    expect(atListEnd(null, 760, 4_000)).toBe(false);
+  });
+
+  it("is not before the list and its content have been laid out", () => {
+    expect(atListEnd(null, 0, 0)).toBe(false);
+    expect(atListEnd(null, 760, 0)).toBe(false);
+    expect(atListEnd(0, 0, 766)).toBe(false);
   });
 });
 
@@ -177,32 +309,41 @@ describe("where the list is sent before the card is drawn", () => {
  * A list that behaves the way the gallery's does, on the phone and in the
  * browser: cards of their own heights, the first eighty drawn at once, and
  * no scrolling past what is drawn. A scroll that reaches the end of what
- * is drawn draws the next few, as the list does when it is scrolled.
+ * is drawn draws the next few after it, before the next look, as the
+ * list does when it is scrolled; growing says nothing, so where the list
+ * last said it is can be from before. A list that cannot move says
+ * nothing either. Its end is read the way the gallery reads it.
  */
 function galleryList(heights: number[], { drawnAtOnce = 80, perScroll = 10, viewport = 760 } = {}) {
   let drawn = Math.min(drawnAtOnce, heights.length);
+  let drawMore = false;
   let offset = 0;
   let said: number | null = null;
   const top = (i: number) => PADDING + heights.slice(0, i).reduce((a, b) => a + b, 0);
   const length = () => top(drawn) + (drawn === heights.length ? PADDING : 0);
-  const atEnd = () => offset + viewport >= length() - 1;
   return {
     top,
     viewport,
+    /** The furthest the whole list, all of it drawn, can be scrolled. */
+    furthest: () => Math.max(0, top(heights.length) + PADDING - viewport),
     get offset() {
       return offset;
     },
     scrollTo(y: number) {
       const next = Math.min(Math.max(0, y), Math.max(0, length() - viewport));
       if (next !== offset) said = offset = next;
-      if (atEnd()) drawn = Math.min(heights.length, drawn + perScroll);
+      if (offset + viewport >= length() - 1) drawMore = true;
     },
     look(index: number, now: number): Look {
+      if (drawMore) {
+        drawn = Math.min(heights.length, drawn + perScroll);
+        drawMore = false;
+      }
       return {
         index,
         top: index < drawn ? top(index) : null,
         scrolled: said,
-        end: said != null && atEnd() && drawn === heights.length,
+        end: atListEnd(said, viewport, length()) && drawn === heights.length,
         measured: drawn,
         now,
       };
@@ -247,6 +388,26 @@ describe("landing in a long history", () => {
     expect(list.top(148) - offset + HEIGHTS[148]).toBeLessThanOrEqual(list.viewport);
   });
 
+  it("opens one of the last photographs as high as it can be, however the list draws below it", () => {
+    // The list put at the card, stopped at the end of what was drawn, and
+    // the rest drawn below it after: where it last said it is was the end
+    // then and is not now.
+    for (const perScroll of [6, 8, 10, 12, 15]) {
+      for (let index = 130; index < HEIGHTS.length; index++) {
+        const list = galleryList(HEIGHTS, { perScroll });
+        const { offset } = land(list, index);
+        expect(offset, `card ${index}, ${perScroll} at a time`).toBe(Math.min(list.top(index), list.furthest()));
+      }
+    }
+  });
+
+  it("shows a gallery that fits on the screen at once, though the list never says where it is", () => {
+    const list = galleryList([300.5, 250, 200.25], { viewport: 900 });
+    const { offset, after } = land(list, 1);
+    expect(offset).toBe(0);
+    expect(after).toBeLessThanOrEqual(STILL_LOOKS * LANDING_STEP_MS);
+  });
+
   it("does not open on the same card for different photographs", () => {
     const landed = [90, 110, 130].map((index) => {
       const list = galleryList(HEIGHTS);
@@ -272,19 +433,49 @@ describe("the gallery, read from the source", () => {
 
   it("takes each step from the landing, with where the list says it is", () => {
     expect(gallery).toMatch(
-      /nextLanding\(landing, \{\s*index: startIndex,\s*top,\s*scrolled: at\?\.offset \?\? null,\s*end,\s*measured: heights\.current\.size,\s*now: Date\.now\(\),\s*\}\)/,
+      /nextLanding\(landing, \{\s*index: startIndex,\s*top,\s*scrolled: at,\s*end,\s*measured: heights\.current\.size,\s*now: Date\.now\(\),\s*\}\)/,
     );
-    expect(gallery).toMatch(/const end = Boolean\(at\?\.end\) && posts\.slice\(startIndex \+ 1\)\.every\(\(p\) => heights\.current\.has\(p\.id\)\);/);
-    expect(gallery).toMatch(/end: contentOffset\.y \+ layoutMeasurement\.height >= contentSize\.height - 1,/);
+    expect(gallery).toMatch(/const at = scrolled\.current;/);
+    expect(gallery).toMatch(/scrolled\.current = e\.nativeEvent\.contentOffset\.y;/);
     expect(gallery).toMatch(/onScroll=\{onScroll\}/);
     expect(gallery).toMatch(/scrollTo\(approachOffset\(posts\.slice\(0, startIndex\)\.map\(\(p\) => heights\.current\.get\(p\.id\)\), LIST_PADDING\)\);/);
     expect(gallery).toMatch(/\} else if \(step\.kind === "place"\) \{\s*scrollTo\(step\.offset\);/);
   });
 
+  it("reads the end from the list as it is at each look, not from when it last moved", () => {
+    expect(gallery).toMatch(
+      /const end =\s*atListEnd\(at, viewport\.current, content\.current\) &&\s*posts\.slice\(startIndex \+ 1\)\.every\(\(p\) => heights\.current\.has\(p\.id\)\);/,
+    );
+    // Its height on screen and its content's, as each last reported them.
+    expect(gallery).toMatch(/viewport\.current = e\.nativeEvent\.layout\.height;/);
+    expect(gallery).toMatch(/const onContentSizeChange = useCallback\(\(_width: number, height: number\) => \{\s*content\.current = height;/);
+    expect(gallery).toMatch(/onLayout=\{onListLayout\}\s*onContentSizeChange=\{onContentSizeChange\}/);
+    // Not the end as a scroll event once said it.
+    expect(gallery).not.toMatch(/contentSize\.height|layoutMeasurement/);
+  });
+
   it("shows nothing until it has landed, and then in the frame after", () => {
     expect(gallery).toMatch(/style=\{ready \? undefined : styles\.hidden\}/);
-    expect(gallery).toMatch(/if \(step\.offset != null\) scrollTo\(step\.offset\);\s*requestAnimationFrame\(\(\) => setReady\(true\)\);/);
+    // Nor can it be tapped while hidden: the browser hit-tests a clear view.
+    expect(gallery).toMatch(/hidden: \{ opacity: 0, pointerEvents: "none" \},/);
+    expect(gallery).toMatch(/if \(step\.offset != null\) scrollTo\(step\.offset\);\s*requestAnimationFrame\(\(\) => \{[^}]*\{[^}]*\}\s*setReady\(true\);\s*\}\);/);
     expect(gallery).toMatch(/\{!ready && !loading && posts\.length > 0 \? \(\s*<View style=\{styles\.curtain\} pointerEvents="none">/);
+  });
+
+  it("only notes what the hidden list reports on screen, and chooses the clip that plays when it shows", () => {
+    // Noted while hidden, and nothing set: setting it drew every card again at each step of the landing.
+    expect(gallery).toMatch(
+      /onScreen\.current = viewableItems\.filter\(\(v\) => v\.isViewable\)\.map\(\(v\) => \(v\.item as \{ id: string \}\)\.id\);\s*if \(!readyRef\.current\) return;\s*const id = playingCard\(onScreen\.current, tappedId\.current, onTapped\.current\);/,
+    );
+    expect(gallery).toMatch(/if \(id !== tappedId\.current\) onTapped\.current = false;\s*setVisibleId\(id\);\s*if \(id\) setSeenId\(id\);/);
+    // Shown: from what the list last reported, the tapped card first.
+    expect(gallery).toMatch(
+      /requestAnimationFrame\(\(\) => \{\s*const id = playingCard\(onScreen\.current, postId, onTapped\.current\);\s*if \(id\) \{\s*setVisibleId\(id\);\s*setSeenId\(id\);\s*\}\s*setReady\(true\);/,
+    );
+    // A different photograph starts again, on the tapped card.
+    expect(gallery).toMatch(/setVisibleId\(postId \?\? null\);\s*onScreen\.current = \[\];\s*onTapped\.current = true;\s*\}, \[postId, sort, era\]\);/);
+    // Nowhere else.
+    expect(gallery.match(/setVisibleId\(/g)).toHaveLength(3);
   });
 
   it("goes on looking when a measure goes unanswered", () => {
@@ -293,6 +484,47 @@ describe("the gallery, read from the source", () => {
 
   it("lands again whenever the photograph or the order changes", () => {
     expect(gallery).toMatch(/\}, \[posts, startIndex, postId, sort, era\]\);/);
+  });
+});
+
+/** Every `<Tag … />` in a file. */
+function tags(source: string, tag: string): string[] {
+  return source.match(new RegExp(`<${tag}\\b[\\s\\S]*?\\/>`, "g")) ?? [];
+}
+
+describe("the cards drawn only on the way down", () => {
+  const gallery = code("app/gallery.tsx");
+  const card = code("src/components/PostCard.tsx");
+  const media = code("src/components/PostMedia.tsx");
+
+  it("are frames without pictures until the gallery shows, and the tapped photograph loads first", () => {
+    const cell = tags(gallery, "PostCard")[0] ?? "";
+    expect(cell).toMatch(/frameOnly=\{!ready && index >= MEASURE_LIMIT && item\.id !== postId\}/);
+    expect(cell).toMatch(/priority=\{item\.id === postId \? "high" : "normal"\}/);
+  });
+
+  it("are drawn twenty at a time while the list is hidden, and as usual once it shows", () => {
+    expect(gallery).toMatch(/maxToRenderPerBatch=\{ready \? undefined : WALK_BATCH\}/);
+    expect(gallery).toMatch(/const WALK_BATCH = 20;/);
+  });
+
+  it("are passed through the card to its picture, and nowhere else", () => {
+    expect(card).toMatch(/^\s*frameOnly = false,$/m);
+    expect(card).toMatch(/^\s*priority = "normal",$/m);
+    const picture = tags(card, "PostMedia")[0] ?? "";
+    expect(picture).toMatch(/frameOnly=\{frameOnly\}/);
+    expect(picture).toMatch(/priority=\{priority\}/);
+  });
+
+  it("draw the frame at the picture's own height, with no picture and no poster in it", () => {
+    expect(media).toMatch(/^\s*frameOnly = false,$/m);
+    // The frame is its own shape whatever is in it; the picture fills it from inside.
+    expect(media).toMatch(/const frame = \[styles\.media, bare && styles\.bare, \{ aspectRatio: ratio \}\];/);
+    expect(media).toMatch(/\{url && !frameOnly \? \(\s*<Animated\.View style=\{\[StyleSheet\.absoluteFill, zoomStyle\]\}>\s*<Image\s+source=\{url\}/);
+    const poster = tags(media, "VideoPoster")[0] ?? "";
+    expect(poster).toMatch(/poster=\{frameOnly \? null : post\.thumb_path\}/);
+    // A clip with its player is never held back.
+    expect(tags(media, "VideoMedia")[0]).not.toMatch(/frameOnly/);
   });
 });
 
