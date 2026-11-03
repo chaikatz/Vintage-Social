@@ -469,10 +469,15 @@ const titleDrawn = (name) =>
       const s = getComputedStyle(el);
       return `${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}|${s.fontSize}`;
     });
-/** The stack's own title: its serif, not the typewriter's, in the bar's ink, untracked, and not bold. */
-const stackTitle = (f) => {
+/**
+ * A bar's title in the stack's serif, not the typewriter's, in the bar's
+ * ink, untracked, whatever its weight. The stack's own weight is its
+ * platform's (the web's medium here, the system's bold on iOS); a title
+ * that is a username is regular under Editorial.
+ */
+const serifTitle = (f) => {
   const s = drawnAs(f);
-  return !MONO.test(s.face) && /serif/.test(s.face) && s.color === INK && s.spacing === "normal" && Number(s.weight) < 600;
+  return !MONO.test(s.face) && /serif/.test(s.face) && s.color === INK && s.spacing === "normal";
 };
 /**
  * On each card, its names as drawn: the first, over the picture; the one
@@ -574,6 +579,14 @@ check(
   unreadName != null && readNames.length > 0 && readNames.every((f) => allButWeight(f) === allButWeight(unreadName)),
   `${unreadName} / ${readNames[0]}`,
 );
+// A bar titled with other words: the stack's own title, at the stack's own
+// weight, under either layout. A username's title is compared with it below.
+const wordsTitle = await titleDrawn("Messages");
+check(
+  "Editorial: a bar titled with other words, the inbox's, keeps the stack's own title: its serif, at the stack's weight",
+  serifTitle(wordsTitle) && Number(drawnAs(wordsTitle).weight) > 400,
+  wordsTitle,
+);
 await go("/", 2400);
 
 await choose("White");
@@ -586,11 +599,15 @@ const author = editorial.nth(1).locator('[role="button"]').first();
 const member = (await author.getAttribute("aria-label")) ?? "";
 await author.click();
 await wait(2600);
-// Their profile is titled with their username, as the stack titles every
-// bar: its serif, in the bar's ink, untracked, and not bold. It is compared
-// with a profile's title under Original below.
+// Their profile is titled with their username: in the stack's serif, ink
+// and size, as the inbox's title is, but regular. It is compared with a
+// profile's title under Original below.
 const profileTitle = await titleDrawn(member);
-check("Editorial: a profile's title, its username, is the stack's own title: its serif, not bold", stackTitle(profileTitle), `${member}: ${profileTitle}`);
+check(
+  "Editorial: a profile's title, its username, is the stack's serif, ink and size, and regular",
+  serifTitle(profileTitle) && drawnAs(profileTitle).weight === "400" && allButWeight(profileTitle) === allButWeight(wordsTitle),
+  `${member}: ${profileTitle} / ${wordsTitle}`,
+);
 await shot("12g-editorial-profile");
 const squares = await seen(page.locator("img")).evaluateAll((els) =>
   els
@@ -610,8 +627,8 @@ check(
 );
 const galleryTitle = shownInGallery ? await titleDrawn(member) : "";
 check(
-  "Editorial: the gallery's title, its author's username, is the stack's own title too, drawn as the profile's is",
-  stackTitle(galleryTitle) && galleryTitle === profileTitle,
+  "Editorial: the gallery's title, its author's username, is drawn as the profile's is: the stack's serif, regular",
+  serifTitle(galleryTitle) && galleryTitle === profileTitle,
   galleryTitle,
 );
 await shot("12d-editorial-gallery");
@@ -629,8 +646,8 @@ const originalCard = seen(page.getByLabel(/^Posted /)).first().locator("xpath=..
 const original = [await screenUnder(originalCard), await paperOf(wordmark()), await paperOf(tabBar())];
 check("Original lies on the app’s own paper, whatever paper was chosen", original.every((c) => c === OFF_WHITE), original.join(" | "));
 // And every username bold again where it was bold, and otherwise exactly
-// as Editorial drew it: on Home, in Activity, in the inbox and in a
-// profile's title.
+// as Editorial drew it: on Home, in Activity and in the inbox; and a
+// profile's title back at the stack's own weight.
 const homeAgain = await namesOnScreen();
 check(
   "Original: every name on Home is in the app's own face, untracked",
@@ -664,12 +681,19 @@ check(
   Object.keys(inboxAgain).length > 0 && JSON.stringify(inboxAgain) === JSON.stringify(inInbox),
   `${inboxAgain["tomas.lindqvist"]} / ${Object.keys(inboxAgain).length}`,
 );
+const wordsTitleAgain = await titleDrawn("Messages");
+check("Original: a bar titled with other words is drawn exactly as under Editorial", wordsTitleAgain === wordsTitle, `${wordsTitleAgain} / ${wordsTitle}`);
 
 await go("/user/tomas.lindqvist", 2800);
 const tomasTitleDrawn = await titleDrawn("tomas.lindqvist");
 check(
-  "Original: a profile's title is the stack's own, drawn exactly as under Editorial",
-  stackTitle(tomasTitleDrawn) && tomasTitleDrawn === profileTitle,
+  "Original: a profile's title is the stack's own again, drawn exactly as a bar titled with other words",
+  serifTitle(tomasTitleDrawn) && tomasTitleDrawn === wordsTitleAgain,
+  `${tomasTitleDrawn} / ${wordsTitleAgain}`,
+);
+check(
+  "Original: in the serif, ink, tracking and size Editorial drew it in: only the weight differs",
+  allButWeight(tomasTitleDrawn) === allButWeight(profileTitle) && drawnAs(tomasTitleDrawn).weight !== drawnAs(profileTitle).weight,
   `${tomasTitleDrawn} / ${profileTitle}`,
 );
 const tomas = await text();

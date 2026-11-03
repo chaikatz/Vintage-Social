@@ -9,8 +9,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * drawn as it is under Original, in the app's own face, size, colour and
  * spacing, but regular where it is bold there. Where a place marks a name
  * for a state of its own, the state still wins: an unread thread's name is
- * bold again. A bar's title is regular already and is left as it is. Under
- * Original nothing changes at all.
+ * bold again. A bar titled with a username, bold on the phone because the
+ * stack lays its title over the system's bold, is the same serif, regular.
+ * Under Original nothing changes at all.
  * First the module that says so, then the bars, then, read from the source,
  * every place that draws a username, so that none is dropped and none is
  * added without it, and every state that still wins over it. Last, which
@@ -30,7 +31,7 @@ vi.mock("react", async (original) => ({
 }));
 
 const nameFaceModule = await import("@/utils/nameFace");
-const { nameFace, useNameFace } = nameFaceModule;
+const { nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = nameFaceModule;
 const { setFeedLayout, __resetFeedLayoutForTest } = await import("@/utils/feedLayout");
 const { colors, type } = await import("@/theme");
 /** A name under Editorial: regular, and nothing else of its own. */
@@ -76,8 +77,10 @@ describe("the names' face", () => {
     for (const own of ["fontFamily", "fontSize", "lineHeight", "letterSpacing", "color", "textTransform"]) {
       expect(nameFace("editorial"), own).not.toHaveProperty(own);
     }
-    // Nor does the module set any of them anywhere, or name the typewriter face.
-    expect(code("src/utils/nameFace.ts")).not.toMatch(/fontFamily|letterSpacing|color|type\.mono|Courier|@\/theme/);
+    // Nor does the module set tracking or a colour anywhere, or name the typewriter face; its one family is the stack's serif, for a bar's title (below).
+    const source = code("src/utils/nameFace.ts");
+    expect(source).not.toMatch(/letterSpacing|color|colors\.|type\.mono|Courier/);
+    expect(source.match(/fontFamily: [^,;}]+/g)).toEqual(["fontFamily: string", "fontFamily: type.serif", "fontFamily: type.serif"]);
   });
 
   it("follows the layout chosen in Settings, the moment it changes", () => {
@@ -88,37 +91,102 @@ describe("the names' face", () => {
     expect(useNameFace()).toBeUndefined();
   });
 
-  it("is read from the one layout preference, and nowhere else", () => {
+  it("is read from the one layout preference, and nowhere else; the theme only for the stack's serif", () => {
     const source = readFileSync(path.join(root, "src/utils/nameFace.ts"), "utf8");
-    expect(source.match(/from "[^"]+"/g)).toEqual(['from "@/utils/feedLayout"']);
+    expect(source.match(/from "[^"]+"/g)).toEqual(['from "@/theme"', 'from "@/utils/feedLayout"']);
+    expect(source).toMatch(/^import \{ type \} from "@\/theme";$/m);
     expect(code("src/utils/nameFace.ts")).toMatch(/return nameFace\(useFeedLayout\(\)\);/);
+    expect(code("src/utils/nameFace.ts")).toMatch(/const layout = useFeedLayout\(\);\s*return nameTitleStyle\(isName \? layout : "original"\);/);
   });
 
-  it("is all the module gives: no title style, no ink, nothing to cut a sentence with", () => {
-    expect(Object.keys(nameFaceModule).sort()).toEqual(["nameFace", "useNameFace"]);
+  it("is all the module gives: the face and a username's title style, no ink, nothing to cut a sentence with", () => {
+    expect(Object.keys(nameFaceModule).sort()).toEqual(["nameFace", "nameTitleStyle", "useNameFace", "useNameTitleStyle"]);
   });
 });
 
+/** The stack's own title style, as app/_layout.tsx sets it for every screen, as its values. */
+function stackTitleStyle(): Record<string, unknown> {
+  const body = code("app/_layout.tsx").match(/\n {12}headerTitleStyle: \{ ([^\n{}]*?) \},\n/)?.[1];
+  if (body == null) throw new Error("app/_layout.tsx: no one-line headerTitleStyle");
+  return Object.fromEntries(
+    body.split(/,\s*/).map((pair) => {
+      const [key, words] = pair.split(/:\s*/);
+      return [key, valueOf(words)];
+    }),
+  );
+}
+
+/** The screens titled with a username, and how each takes the title style. */
+const TITLE_READERS: Record<string, RegExp> = {
+  // An era's gallery is titled with the era, which keeps the stack's own.
+  "app/gallery.tsx": /const titleStyle = useNameTitleStyle\(!shown\.era\);/,
+  "app/messages/[id].tsx": /const titleStyle = useNameTitleStyle\(\);/,
+  "app/user/[username].tsx": /const titleStyle = useNameTitleStyle\(\);/,
+};
+
 describe("a bar titled with a username", () => {
-  it("is the stack's own title under either layout: the serif at 17 pt, never bold, in the bar's tint", () => {
-    expect(code("app/_layout.tsx")).toMatch(/headerTitleStyle: \{ fontFamily: type\.serif, fontSize: 17 \},/);
+  it("is laid by the stack over its own title face, bold on the phone, which the app's serif does not replace", () => {
+    // The app's title style: a family and a size, no weight of its own.
+    expect(stackTitleStyle()).toEqual({ fontFamily: type.serif, fontSize: 17 });
     expect(code("app/_layout.tsx")).toMatch(/headerTintColor: colors\.ink as unknown as string,/);
     expect(code("app/_layout.tsx")).not.toMatch(/nameFace|fontWeight/);
+    // Laid over the system's bold on iOS (its medium elsewhere), so the weight under it stands: the serif's bold cut.
+    const stack = readFileSync(path.join(root, "node_modules/@react-navigation/native-stack/src/views/useHeaderConfigProps.tsx"), "utf8");
+    expect(stack).toMatch(/const headerTitleStyleFlattened =\s*StyleSheet\.flatten\(\[\s*Platform\.select\(\{ ios: fonts\.bold, default: fonts\.medium \}\),\s*headerTitleStyle,\s*\]\)/);
+    const fonts = readFileSync(path.join(root, "node_modules/@react-navigation/native/src/theming/fonts.tsx"), "utf8");
+    expect(fonts.slice(fonts.indexOf("  ios: {"))).toMatch(/^ {2}ios: \{[\s\S]*?\n {4}bold: \{\s*fontFamily: 'System',\s*fontWeight: '600',\s*\}/);
   });
 
-  it("is given no title style of a screen's own, so the stack's stands", () => {
+  it("under Original is the stack's own title style, exactly", () => {
+    expect(nameTitleStyle("original")).toEqual(stackTitleStyle());
+    expect(Object.keys(nameTitleStyle("original"))).toEqual(Object.keys(stackTitleStyle()));
+  });
+
+  it("under Editorial is the same serif at the same size, regular", () => {
+    expect(nameTitleStyle("editorial")).toEqual({ ...stackTitleStyle(), fontWeight: "400" });
+    expect(Object.keys(nameTitleStyle("editorial"))).toEqual([...Object.keys(stackTitleStyle()), "fontWeight"]);
+    // The weight the names take, and nothing else of the face's.
+    expect(nameTitleStyle("editorial").fontWeight).toBe(nameFace("editorial")!.fontWeight);
+    // The same object each time, so nothing redraws for it alone.
+    expect(nameTitleStyle("editorial")).toBe(nameTitleStyle("editorial"));
+    expect(nameTitleStyle("original")).toBe(nameTitleStyle("original"));
+  });
+
+  it("follows the layout, and keeps the stack's own where the title is not a name", () => {
+    expect(useNameTitleStyle()).toEqual(stackTitleStyle());
+    setFeedLayout("editorial");
+    expect(useNameTitleStyle()).toEqual({ fontFamily: type.serif, fontSize: 17, fontWeight: "400" });
+    expect(useNameTitleStyle(false)).toEqual(stackTitleStyle());
+    setFeedLayout("original");
+    expect(useNameTitleStyle()).toEqual(stackTitleStyle());
+  });
+
+  it("is handed a style under either layout, never left out, since a screen's options are merged into the ones it set before", () => {
+    // What a screen sets is laid over what it set last: a title left without a style would keep Editorial's after Settings turns it off.
+    const cache = readFileSync(path.join(root, "node_modules/@react-navigation/core/src/useNavigationCache.tsx"), "utf8");
+    expect(cache).toMatch(/\[route\.key\]: \{ \.\.\.o\[route\.key\], \.\.\.options \}/);
+    for (const layout of ["original", "editorial"] as const) expect(nameTitleStyle(layout), layout).toBeDefined();
+  });
+
+  it("is given the title style wherever a bar is titled with a username, and nowhere else", () => {
     const titled: string[] = [];
     for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
       for (const [, options] of code(file).matchAll(/<Stack\.Screen options=\{\{(.*?)\}\} \/>/g)) {
         if (!/\btitle: [^,]*username/.test(options)) continue;
         titled.push(file);
-        expect(options, file).not.toMatch(/headerTitleStyle/);
+        // The style itself, never undefined, at the end of the options.
+        expect(options, file).toMatch(/, headerTitleStyle: titleStyle $/);
       }
     }
     // The scan finds what it is meant to: a member's profile (while it loads and once it has), their gallery, a message thread.
     expect(titled.sort()).toEqual(["app/gallery.tsx", "app/messages/[id].tsx", "app/user/[username].tsx", "app/user/[username].tsx"]);
-    // No screen sets a title style of its own at all.
-    expect(sources().filter((f) => f !== "app/_layout.tsx" && /headerTitleStyle/.test(code(f)))).toEqual([]);
+    for (const [file, hook] of Object.entries(TITLE_READERS)) {
+      expect(code(file).match(/const titleStyle = useNameTitleStyle\([^)]*\);/g), file).toHaveLength(1);
+      expect(code(file), file).toMatch(hook);
+      expect(code(file).match(/\btitleStyle\b/g)?.length, file).toBe(file === "app/user/[username].tsx" ? 3 : 2);
+    }
+    // No other screen sets a title style of its own.
+    expect(sources().filter((f) => f !== "app/_layout.tsx" && /headerTitleStyle/.test(code(f))).sort()).toEqual(Object.keys(TITLE_READERS).sort());
   });
 
   it("on the Profile tab, which the app draws itself, is the serif at the stack's size, regular, as it always was", () => {
@@ -158,7 +226,7 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ["src/components/TagPicker.tsx", "each member to choose", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
 ];
 
-/** The files that read the module: each reads the hook, and nothing else. */
+/** The files that read the names' face: each reads its hook, once. */
 const READERS = [
   "app/(tabs)/activity.tsx",
   "app/admin/applications.tsx",
@@ -481,31 +549,34 @@ describe("a state a place marks a name for", () => {
   });
 });
 
+/** Every file that reads the module: a name's face, a username's title, or both. */
+const ALL_READERS = [...new Set([...READERS, ...Object.keys(TITLE_READERS)])];
+
 describe("the trial still comes out cleanly", () => {
-  it("is read by exactly these files, each reading the hook alone", () => {
+  it("is read by exactly these files, each reading a hook and nothing else", () => {
     const readers = sources().filter((rel) => /from "@\/utils\/nameFace"/.test(code(rel)));
-    expect(readers.sort()).toEqual([...READERS].sort());
-    for (const file of READERS) {
-      expect(code(file), file).toMatch(/import \{ useNameFace \} from "@\/utils\/nameFace";/);
+    expect(readers.sort()).toEqual([...ALL_READERS].sort());
+    for (const file of ALL_READERS) {
+      const hooks = [READERS.includes(file) && "useNameFace", file in TITLE_READERS && "useNameTitleStyle"].filter(Boolean).join(", ");
+      expect(code(file).match(/import \{ ([^}]*) \} from "@\/utils\/nameFace";/)?.[1], file).toBe(hooks);
     }
   });
 
-  it("leaves the places where a name was already regular in a sentence, or a title, as they were", () => {
-    for (const file of [
-      "app/follows.tsx",
-      "app/user/[username].tsx",
-      "app/admin/reports.tsx",
-      "src/components/EraList.tsx",
-      "src/components/EmptyState.tsx",
-    ]) {
+  it("leaves the places where a name was already regular in a sentence as they were", () => {
+    for (const file of ["app/follows.tsx", "app/admin/reports.tsx", "src/components/EraList.tsx", "src/components/EmptyState.tsx"]) {
       expect(readFileSync(path.join(root, file), "utf8"), file).not.toMatch(/Editorial|nameFace|useNameTitleStyle|aroundName/);
       expect(code(file), file).not.toMatch(/\bface\b/);
     }
+    // A member's profile takes the title style alone: its sentences are as they were (above), and nothing on it takes the face.
+    const profile = readFileSync(path.join(root, "app/user/[username].tsx"), "utf8");
+    expect(profile).not.toMatch(/useNameFace|aroundName/);
+    expect(code("app/user/[username].tsx")).not.toMatch(/\bface\b/);
+    expect(profile.match(/Editorial/g)).toHaveLength(1);
   });
 
   it("is listed, with every file it touches, where the page says how to take the trial out", () => {
     const page = readFileSync(path.join(root, "EDITORIAL_FEED_PREVIEW.md"), "utf8");
-    for (const file of ["src/utils/nameFace.ts", "tests/editorial-names.test.ts", ...READERS]) {
+    for (const file of ["src/utils/nameFace.ts", "tests/editorial-names.test.ts", ...ALL_READERS]) {
       expect(page, file).toContain(file);
     }
     const out = page.slice(page.indexOf("## Taking it out of a branch that has it"));
@@ -517,9 +588,8 @@ describe("the trial still comes out cleanly", () => {
     const named = checkout.split(/\s+/).map((f) => f.replace(/^"|"$/g, ""));
     expect(named.sort()).toEqual(
       [
-        ...READERS,
+        ...ALL_READERS,
         "app/(tabs)/index.tsx",
-        "app/gallery.tsx",
         "app/(tabs)/_layout.tsx",
         "app/settings.tsx",
         "tests/video-playback.test.ts",

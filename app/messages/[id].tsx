@@ -28,7 +28,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { PHOTOGRAPH_UNAVAILABLE, photographUnavailable } from "@/utils/messageText";
-import { useNameFace } from "@/utils/nameFace";
+import { useNameFace, useNameTitleStyle } from "@/utils/nameFace";
 import { postAge } from "@/utils/time";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
@@ -51,6 +51,8 @@ export default function Thread() {
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
   const focused = useIsFocused();
+  // Editorial (Preview): the title, who it is with, not bold.
+  const titleStyle = useNameTitleStyle();
 
   const peerQ = useQuery({
     queryKey: ["conversation-peer", id, userId],
@@ -96,7 +98,7 @@ export default function Thread() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={headerHeight}
     >
-      <Stack.Screen options={{ title: peerQ.data?.username ?? "" }} />
+      <Stack.Screen options={{ title: peerQ.data?.username ?? "", headerTitleStyle: titleStyle }} />
       <FlatList
         data={newestFirst}
         inverted

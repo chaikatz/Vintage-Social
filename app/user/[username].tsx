@@ -30,6 +30,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
+import { useNameTitleStyle } from "@/utils/nameFace";
 import type { PostRow } from "@/types/db";
 
 export default function UserProfile() {
@@ -40,6 +41,8 @@ export default function UserProfile() {
   const myId = session?.user?.id ?? "";
   const [view, setView] = useState<ProfileView>("posted");
   const sort = view === "taken" ? "taken" : "posted";
+  // Editorial (Preview): the title, the member's username, not bold.
+  const titleStyle = useNameTitleStyle();
 
   const profileQ = useQuery({
     queryKey: ["profile", username],
@@ -145,7 +148,7 @@ export default function UserProfile() {
   if (!profile) {
     return (
       <Screen padded={false}>
-        <Stack.Screen options={{ title: username ?? "" }} />
+        <Stack.Screen options={{ title: username ?? "", headerTitleStyle: titleStyle }} />
         {profileQ.isError ? (
           <LoadFailed what="this member" onRetry={() => profileQ.refetch()} />
         ) : profileQ.isFetched ? (
@@ -286,7 +289,7 @@ export default function UserProfile() {
 
   return (
     <Screen padded={false}>
-      <Stack.Screen options={{ title: profile.username, gestureEnabled: swipeFree }} />
+      <Stack.Screen options={{ title: profile.username, gestureEnabled: swipeFree, headerTitleStyle: titleStyle }} />
       {view === "map" && !locked ? (
         <PostMap posts={shown} onOpenPost={openPost} header={header} />
       ) : view === "places" && !locked ? (

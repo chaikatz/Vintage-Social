@@ -407,8 +407,10 @@ describe("the gallery", () => {
   it("lies on the feed's paper, under a bar on the same paper", () => {
     expect(gallery).toMatch(/const paper = useFeedBackground\(\);/);
     expect(gallery).toMatch(/<Screen padded=\{false\} style=\{paper\}>/);
-    // Its title, the author's username or the era, is the stack's own (tests/editorial-names.test.ts).
-    expect(gallery).toMatch(/<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \} \}\} \/>/);
+    // Its title, the author's username or the era, in the stack's serif; the username's not bold under Editorial (tests/editorial-names.test.ts).
+    expect(gallery).toMatch(
+      /<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/,
+    );
   });
 });
 

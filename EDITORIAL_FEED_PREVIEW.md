@@ -58,31 +58,47 @@ notices in Activity, the Comments screen, a post's own page and the members
 tagged in it, the card of a post on its way up, every list of members
 (Search and its recent searches, Followers and Following, Likes, the admin's
 Members), Tag people, the photograph's author in Send to, the admin's
-Applications, and a profile's name where it falls back to the username.
-Where a name is regular already (Requests, Blocked members, the members to
-send to, a read thread in the inbox, the author of a photograph sent in a
-message, the chips in Tag people, who was there in New post), nothing
-changes. Where a place marks a name for a state of its own, the state still
+Applications, a profile's name where it falls back to the username, and a
+bar's title where it is a username (below). Where a name is regular already
+(Requests, Blocked members, the members to send to, a read thread in the
+inbox, the author of a photograph sent in a message, the chips in Tag
+people, who was there in New post), nothing changes. Where a place marks a
+name for a state of its own, the state still
 wins: an unread thread's name in the inbox is bold, as under Original; the
 author of a photograph sent in your own dark bubble keeps the bubble's light
 ink; and a member tagged who has not yet accepted is faint and regular, with
 "(pending)" after the name. Under Original nothing changes.
 
-A bar's title is regular already, in the stack's own serif (the Profile
-tab's title too, which the app draws in the same serif), so every title is
-left as it is under both layouts. So is every sentence the app writes a
-username into (an empty Followers or Following list's, an empty Eras page's,
-a private or blocked profile's lines, a report's headline): each is set
-regular, so the name in it is too. Display names, what a member types into a
-field, and what members wrote (captions, comments, messages) are as they
-were.
+A bar titled with a username (a member's profile opened from anywhere, the
+gallery of their photographs, a message thread) is bold on the iPhone under
+Original: the stack sets every title in its serif at 17 pt, but lays that
+over the system's bold title face on iOS (weight 600), so the bar draws the
+serif's bold cut (on the web the same underlay is the stack's medium
+weight, 500). Under
+Editorial those titles are the same serif at the same size, regular. Every
+other bar's title (Settings, Messages, an era's gallery and the rest) is the
+stack's own under both layouts, and so is the Profile tab's, which the app
+draws itself in the same serif and was regular already. So is every sentence
+the app writes a username into (an empty Followers or Following list's, an
+empty Eras page's, a private or blocked profile's lines, a report's
+headline): each is set regular, so the name in it is too. Display names,
+what a member types into a field, and what members wrote (captions,
+comments, messages) are as they were. A system alert titled with a username
+is drawn by iOS in its own bold and cannot be styled.
 
 `src/utils/nameFace.ts` holds it: `useNameFace()` is `{ fontWeight: "400" }`
 under Editorial and nothing at all under Original, and is added to a name's
-style after the place's own and before any state's. The editorial card sets
-its names regular in its own sheet. `tests/editorial-names.test.ts` lists
-every place a username is drawn and every sentence the app writes one into,
-so none is dropped and none is added without it.
+style after the place's own and before any state's. `useNameTitleStyle()` is
+the title style of a bar titled with a username: the stack's own
+(`{ fontFamily: type.serif, fontSize: 17 }`, as `app/_layout.tsx` sets it)
+under Original, and the same with `fontWeight: "400"` under Editorial. It is
+handed to the bar under Original too, because a screen's options are merged
+into the ones it set before: a title left without one would keep
+Editorial's weight after Settings turns Editorial off. The editorial card
+sets its names regular in its own sheet. `tests/editorial-names.test.ts`
+lists every place a username is drawn, every bar titled with one and every
+sentence the app writes one into, so none is dropped and none is added
+without it.
 
 ## Where it lives
 
@@ -94,23 +110,25 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `src/components/feed/EditorialPostCard.tsx` | the editorial card (new), its usernames not bold |
 | `src/utils/feedLayout.ts` | the layout preference, kept on the phone (new) |
 | `src/utils/feedPaper.ts` | the paper preference, kept on the phone, and the paper a feed lies on (new) |
-| `src/utils/nameFace.ts` | the usernames' weight while Editorial is chosen: regular (new) |
+| `src/utils/nameFace.ts` | the usernames' weight while Editorial is chosen, regular, and the title style of a bar titled with one (new) |
 | `tests/editorial-feed.test.ts` | its guards (new) |
-| `tests/editorial-names.test.ts` | the usernames' guards: every place one is drawn, the states that still win, and who reads the face (new) |
+| `tests/editorial-names.test.ts` | the usernames' guards: every place one is drawn, every bar titled with one, the states that still win, and who reads the module (new) |
 | `EDITORIAL_FEED_PREVIEW.md` | this page (new) |
 | `app/(tabs)/index.tsx` | Home's seam: which card it draws, and the paper under it |
-| `app/gallery.tsx` | the gallery's seam: which card it draws, and the paper under it and its bar's |
+| `app/gallery.tsx` | the gallery's seam: which card it draws, and the paper under it and its bar's; and its title, when it is the author's username, not bold |
+| `app/user/[username].tsx` | a member's profile: its title, their username, not bold (nothing else on it) |
 | `app/(tabs)/_layout.tsx` | Home's wordmark bar and tab bar on the paper |
 | `app/settings.tsx` | the Feed layout and Paper choices |
-| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx` | the usernames each screen draws, not bold (in `app/messages/index.tsx`, before an unread thread's style, so its name is bold again; in `app/messages/[id].tsx`, before your own bubble's style; in `app/post/[id].tsx`, before a pending tag's) |
+| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx` | the usernames each screen draws, not bold (in `app/messages/index.tsx`, before an unread thread's style, so its name is bold again; in `app/messages/[id].tsx`, before your own bubble's style, and the thread's title too; in `app/post/[id].tsx`, before a pending tag's) |
 | `src/components/UserRow.tsx`, `src/components/TagPicker.tsx`, `src/components/PendingPostCard.tsx`, `src/components/ProfileHeader.tsx` | the same, in the parts those screens share (the profile header only where its name falls back to the username) |
 | `tests/video-playback.test.ts` | the Home and gallery playback guards accept either card |
 | `tests/galleryLanding.test.ts` | its gallery guard reads whichever card the gallery's seam draws |
-| `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face, weight, colour and spacing on Home, in the comments, in Activity and in the inbox (an unread thread's name bold, a read one's regular), and a profile's and a gallery's title (the stack's own), and that Original sets the names bold again and otherwise exactly as Editorial did |
+| `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face, weight, colour and spacing on Home, in the comments, in Activity and in the inbox (an unread thread's name bold, a read one's regular), and a profile's and a gallery's title (the stack's serif, ink and size, regular, beside a bar titled with other words), and that Original sets the names and those titles back to the stack's own weight and otherwise exactly as Editorial drew them |
 
 `src/components/PostCard.tsx` (drawn only under Original, so its names are
-left as they are), the bars' titles and the sentences with a username in
-them (regular already: `app/user/[username].tsx`, `app/follows.tsx`,
+left as they are), every other bar's title, and the sentences with a
+username in them (regular already: those on `app/user/[username].tsx`,
+whose title alone is touched, and `app/follows.tsx`,
 `app/admin/reports.tsx`, `src/components/EraList.tsx`,
 `src/components/EmptyState.tsx`, `src/components/eraBook.ts`), `PostMedia`,
 `usePostActions`, uploads, filters, the Memory Room, native modules and
@@ -127,7 +145,7 @@ From the repository root, on the branch to clean:
 
 ```bash
 git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts EDITORIAL_FEED_PREVIEW.md
-git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx src/components/UserRow.tsx src/components/TagPicker.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx tests/video-playback.test.ts tests/galleryLanding.test.ts e2e/launch-test.mjs
+git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx "app/user/[username].tsx" src/components/UserRow.tsx src/components/TagPicker.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx tests/video-playback.test.ts tests/galleryLanding.test.ts e2e/launch-test.mjs
 npx tsc --noEmit && npx vitest run
 git commit -m "Remove the Editorial feed preview"
 ```
@@ -141,8 +159,12 @@ shows exactly what to remove). In `app/gallery.tsx` those are the three
 imports (`EditorialPostCard`, `useFeedLayout`, `useFeedBackground`), the
 `FeedCard` and `paper` lines with the comment above them, `style={paper}` on
 the `Screen`, `headerStyle: paper …` in the `Stack.Screen` options, and
-`<FeedCard`, which goes back to `<PostCard`. In every other file the names'
-face touches, they are the import from `@/utils/nameFace`, the
+`<FeedCard`, which goes back to `<PostCard`; and, as in `app/messages/[id].tsx`
+and `app/user/[username].tsx`, the import from `@/utils/nameFace`, the
+`const titleStyle = useNameTitleStyle(…);` line with the comment above it,
+and `, headerTitleStyle: titleStyle` in each `Stack.Screen`'s options. In
+every file the names' face touches, they are the import from
+`@/utils/nameFace` (`useNameFace`), the
 `const face = useNameFace();` line with the comment above it, and each place
 it is used: `[style, face]` goes back to `style` (in `app/messages/index.tsx`,
 `[styles.username, face, unread && styles.unreadText]`, in

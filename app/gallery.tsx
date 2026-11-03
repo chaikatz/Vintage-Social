@@ -33,6 +33,7 @@ import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
 import { useFeedLayout } from "@/utils/feedLayout";
 import { useFeedBackground } from "@/utils/feedPaper";
+import { useNameTitleStyle } from "@/utils/nameFace";
 import type { PostWithAuthor } from "@/types/db";
 
 /**
@@ -280,11 +281,13 @@ export default function Gallery() {
   // card, on the paper chosen with it, under a bar on that paper too.
   const FeedCard = useFeedLayout() === "editorial" ? EditorialPostCard : PostCard;
   const paper = useFeedBackground();
+  // Editorial (Preview): the title, when it is the author's username, not bold; an era's keeps the stack's own.
+  const titleStyle = useNameTitleStyle(!shown.era);
 
   return (
     <Screen padded={false} style={paper}>
       {/* An era's gallery is titled with the era; every card still names its author. */}
-      <Stack.Screen options={{ title: shown.era ?? authorQ.data?.username ?? "", headerStyle: paper as { backgroundColor: string } }} />
+      <Stack.Screen options={{ title: shown.era ?? authorQ.data?.username ?? "", headerStyle: paper as { backgroundColor: string }, headerTitleStyle: titleStyle }} />
       <FlatList
         ref={list}
         data={posts}
