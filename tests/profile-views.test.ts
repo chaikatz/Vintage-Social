@@ -445,9 +445,13 @@ describe("the Eras view, read from the source", () => {
     expect(list).toMatch(/onLift\(\{ post, view: self\.current, width: size, height: height \?\? size, full: full === true \}, e\)/);
     expect(list).toMatch(/near=\{near\.has\(era\.key\)\}/);
     expect(list).toMatch(/setNear\(\(prev\) => chaptersNear\(prev, spans\.current, offset\.current, height\)\)/);
-    expect(list).toMatch(/onScroll=\{\(e\) => \{\s*offset\.current = e\.nativeEvent\.contentOffset\.y;\s*look\(\);/);
+    expect(list).toMatch(/const scrolled = \(e: NativeSyntheticEvent<NativeScrollEvent>\) => \{\s*offset\.current = e\.nativeEvent\.contentOffset\.y;\s*look\(\);\s*\};/);
+    // Read as it scrolls, and once more, final, as each scroll comes to rest: a phone sends no last onScroll of its own.
+    expect(list).toMatch(/onScroll=\{scrolled\}\s*onScrollEndDrag=\{scrolled\}\s*onMomentumScrollEnd=\{scrolled\}/);
+    expect(list.match(/offset\.current = /g)).toHaveLength(1);
     expect(list).toMatch(/scrollEventThrottle=\{100\}/);
-    expect(list).toMatch(/spans\.current\.set\(era\.key, \{ top: y, height: tall \}\);\s*look\(\);/);
+    expect(list).toMatch(/spans\.current\.set\(key, \{ top: y, height: tall \}\);\s*look\(\);/);
+    expect(list).toMatch(/const onLayout = \(e: LayoutChangeEvent\) => hands\.current\.laid\(key, e\);/);
   });
 
   it("gives a full lead the photograph over its small copy, and a film only its poster", () => {

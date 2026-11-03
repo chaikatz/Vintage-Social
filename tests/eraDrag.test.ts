@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  ARM,
   EDGE,
   EDGE_SPEED,
   LIFT_MS,
   LIFT_SCALE,
   STEP_MS,
+  armedSpeed,
   barInView,
   chapterUnder,
   dropLabel,
   dropTarget,
   edgeSpeed,
   eraUnderFinger,
+  reached,
   scrolledTo,
   type ChapterBox,
   type DragPage,
@@ -146,6 +149,78 @@ describe("edgeSpeed", () => {
   it("takes its edge and its speed as given", () => {
     expect(edgeSpeed(150, view, 100, 1000)).toBeCloseTo(-500);
     expect(edgeSpeed(650, view, 100, 1000)).toBeCloseTo(500);
+  });
+});
+
+describe("reached", () => {
+  it("keeps the farthest the finger has gone above and below where it lifted", () => {
+    const still = { up: 0, down: 0 };
+    expect(reached(still, 300, 300)).toEqual({ up: 0, down: 0 });
+    expect(reached(still, 300, 280)).toEqual({ up: 20, down: 0 });
+    expect(reached({ up: 20, down: 0 }, 300, 310)).toEqual({ up: 20, down: 10 });
+    // Back toward where it lifted, it has still been as far as it went.
+    expect(reached({ up: 20, down: 10 }, 300, 302)).toEqual({ up: 20, down: 10 });
+  });
+});
+
+describe("armedSpeed", () => {
+  // A view 700 tall, under a bar 100 tall: the top edge runs from 100 to 172, the foot from 628 to 700.
+  const view = { top: 100, bottom: 700 };
+  const still = { up: 0, down: 0 };
+
+  it("runs on at once at an edge the print lifted clear of, as edgeSpeed has it", () => {
+    // Lifted in the middle, carried to the foot or the top.
+    expect(armedSpeed(680, 400, { up: 0, down: 280 }, view)).toBe(edgeSpeed(680, view));
+    expect(armedSpeed(680, 400, { up: 0, down: 280 }, view)).toBeGreaterThan(0);
+    expect(armedSpeed(120, 400, { up: 280, down: 0 }, view)).toBe(edgeSpeed(120, view));
+    expect(armedSpeed(120, 400, { up: 280, down: 0 }, view)).toBeLessThan(0);
+    // Lifted just clear of an edge, it runs as soon as the finger is in it.
+    expect(armedSpeed(620, 628, { up: 8, down: 0 }, view)).toBe(0);
+    expect(armedSpeed(640, 628, { up: 0, down: 12 }, view)).toBeGreaterThan(0);
+    expect(armedSpeed(160, 172, { up: 12, down: 0 }, view)).toBeLessThan(0);
+  });
+
+  it("holds still where the print lifted in the top row under the bar, or the last row, however long it is held", () => {
+    expect(edgeSpeed(130, view)).toBeLessThan(0);
+    expect(armedSpeed(130, 130, still, view)).toBe(0);
+    expect(edgeSpeed(660, view)).toBeGreaterThan(0);
+    expect(armedSpeed(660, 660, still, view)).toBe(0);
+    // A finger settling, a little this way and that, short of ARM toward the edge.
+    expect(armedSpeed(126, 130, { up: 4, down: 6 }, view)).toBe(0);
+    expect(armedSpeed(130 - ARM + 1, 130, { up: ARM - 1, down: 6 }, view)).toBe(0);
+    expect(armedSpeed(664, 660, { up: 6, down: 4 }, view)).toBe(0);
+    expect(armedSpeed(660 + ARM - 1, 660, { up: 6, down: ARM - 1 }, view)).toBe(0);
+    // Deeper into the edge than where it lifted, but never on ARM toward it: a step back first.
+    expect(armedSpeed(120, 130, { up: 10, down: 20 }, view)).toBe(0);
+  });
+
+  it("runs on once the finger goes on ARM toward that edge", () => {
+    expect(armedSpeed(130 - ARM, 130, { up: ARM, down: 0 }, view)).toBe(edgeSpeed(130 - ARM, view));
+    expect(armedSpeed(130 - ARM, 130, { up: ARM, down: 0 }, view)).toBeLessThan(0);
+    expect(armedSpeed(660 + ARM, 660, { up: 0, down: ARM }, view)).toBe(edgeSpeed(660 + ARM, view));
+    // Having gone ARM on once, it runs wherever in that edge the finger is after.
+    expect(armedSpeed(150, 130, { up: ARM, down: 20 }, view)).toBe(edgeSpeed(150, view));
+  });
+
+  it("runs on once the finger has been clear of that edge since the lift, and back into it", () => {
+    // Lifted under the bar, carried down out of the top edge, and back up into it.
+    expect(armedSpeed(150, 130, { up: 0, down: 172 - 130 }, view)).toBe(edgeSpeed(150, view));
+    expect(armedSpeed(150, 130, { up: 0, down: 172 - 130 - 1 }, view)).toBe(0);
+    // Lifted in the last row, carried up out of the foot, and back down into it.
+    expect(armedSpeed(650, 660, { up: 660 - 628, down: 0 }, view)).toBe(edgeSpeed(650, view));
+    expect(armedSpeed(650, 660, { up: 660 - 628 - 1, down: 0 }, view)).toBe(0);
+  });
+
+  it("arms each edge for itself: one held still never holds the other", () => {
+    // Lifted under the bar and carried all the way to the foot, the foot runs at once.
+    expect(armedSpeed(690, 130, { up: 0, down: 560 }, view)).toBe(edgeSpeed(690, view));
+    // Lifted in the last row and carried to the top, the top runs at once.
+    expect(armedSpeed(110, 660, { up: 550, down: 0 }, view)).toBe(edgeSpeed(110, view));
+  });
+
+  it("is still between the edges, armed or not", () => {
+    expect(armedSpeed(400, 130, { up: 0, down: 270 }, view)).toBe(0);
+    expect(armedSpeed(400, 400, still, view)).toBe(0);
   });
 });
 
