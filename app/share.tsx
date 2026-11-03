@@ -16,6 +16,7 @@ import { mediaUrl } from "@/api/media";
 import { sharePostWith } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
+import { useNameFace } from "@/utils/nameFace";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 /**
@@ -35,6 +36,8 @@ export default function Share() {
   const [selected, setSelected] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  // Editorial (Preview): every username in the sheet in the names' face.
+  const face = useNameFace();
 
   const postQ = useQuery({
     queryKey: ["post", postId],
@@ -87,7 +90,7 @@ export default function Share() {
       <View style={styles.preview}>
         {thumb ? <Image source={thumb} style={styles.previewImage} contentFit="cover" /> : null}
         <View style={styles.previewText}>
-          <Text style={styles.previewAuthor}>{post?.author.username ?? ""}</Text>
+          <Text style={[styles.previewAuthor, face]}>{post?.author.username ?? ""}</Text>
           <Text style={styles.previewCaption} numberOfLines={2}>
             {post?.caption || "A photograph"}
           </Text>
@@ -141,7 +144,7 @@ export default function Share() {
             <Pressable style={styles.row} onPress={() => toggle(item.id)}>
               <Avatar path={item.avatar_url} username={item.username} size={40} />
               <View style={styles.rowText}>
-                <Text style={styles.username}>{item.username}</Text>
+                <Text style={[styles.username, face]}>{item.username}</Text>
                 {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
               </View>
               <View style={[styles.check, on && styles.checkOn]}>

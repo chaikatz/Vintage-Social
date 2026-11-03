@@ -423,6 +423,48 @@ check(
     ),
   lastLines[0]?.join(" / "),
 );
+// Usernames, all around the app, in the print's typewriter face while
+// Editorial is chosen (type.mono: "monospace" on the web), each at its own
+// size; what was written with them, and display names, keep their own face.
+const MONO = /monospace/;
+const allMono = (faces) => faces.length > 0 && faces.every((f) => MONO.test(f));
+const noneMono = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(f));
+/** Every username drawn on screen, as its face: words that are a username alone, in an element of their own. */
+const namesOnScreen = () =>
+  page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("div, span")) {
+      if (el.childElementCount > 0 || !/^[a-z][a-z0-9]*(?:[._][a-z0-9]+)+$/.test(el.textContent ?? "")) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height || r.left < 0 || r.right > innerWidth || r.bottom < 0 || r.top > innerHeight) continue;
+      out.push(`${el.textContent}: ${getComputedStyle(el).fontFamily}`);
+    }
+    return out;
+  });
+const facesOf = (names) => names.map((n) => n.slice(n.indexOf(": ") + 2));
+const titleFace = (name) => seen(page.getByRole("heading", { name, exact: true })).first().evaluate((el) => getComputedStyle(el).fontFamily);
+const onHome = await editorial.evaluateAll((els) => {
+  const face = (n) => (n ? getComputedStyle(n).fontFamily : "");
+  const leaf = (root, words) => [...root.querySelectorAll("*")].find((n) => n.childElementCount === 0 && n.textContent === words);
+  const seenFaces = { header: [], captions: [], comments: [], words: [] };
+  for (const el of els) {
+    const member = el.firstElementChild?.querySelector('[role="button"]');
+    const name = member?.getAttribute("aria-label") ?? "";
+    if (name) seenFaces.header.push(face(leaf(member, name)));
+    // A line led by a name in bold: the caption, a child of the card, or a comment, in a button of its own.
+    for (const line of el.querySelectorAll("div")) {
+      const lead = line.firstElementChild;
+      if (lead?.tagName !== "SPAN" || !line.textContent?.startsWith(`${lead.textContent} `)) continue;
+      (line.parentElement === el ? seenFaces.captions : seenFaces.comments).push(face(lead));
+      seenFaces.words.push(face(line));
+    }
+  }
+  return seenFaces;
+});
+check("Editorial: the member's name over each print is in the print's typewriter face", allMono(onHome.header), onHome.header[0]);
+check("Editorial: so is the name before each caption", allMono(onHome.captions), `${onHome.captions.length}: ${onHome.captions[0]}`);
+check("Editorial: and the name before each comment", allMono(onHome.comments), `${onHome.comments.length}: ${onHome.comments[0]}`);
+check("Editorial: the captions and comments themselves keep their own face", noneMono(onHome.words), onHome.words[0]);
 const offWhite = await papersOf(editorial, wordmark(), tabBar());
 const strips = await editorial.evaluateAll((els) => els.filter((el) => getComputedStyle(el).borderBottomWidth !== "0px").length);
 check(
@@ -443,6 +485,20 @@ for (let i = 0; i < (await editorial.count()); i++) {
 }
 check("Like still works on the editorial card", editorialLike === "", editorialLike);
 
+// The comments on a print, and the Activity tab: every name in the list in the same face.
+await editorial.first().getByLabel("Comments", { exact: true }).click();
+await wait(2500);
+const inComments = await namesOnScreen();
+check("Editorial: every name in the comments is in the typewriter face", /Add a comment/.test(
+  (await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "",
+) && allMono(facesOf(inComments)), inComments.slice(0, 3).join(" | "));
+await shot("12e-editorial-comments");
+await back(2200);
+await tab("activity");
+const inActivity = await namesOnScreen();
+check("Editorial: every name in Activity is in the typewriter face", allMono(facesOf(inActivity)), inActivity.slice(0, 3).join(" | "));
+await shot("12f-editorial-activity");
+
 await choose("White");
 const white = await papersOf(editorial, wordmark(), tabBar());
 check("White: the prints, the screen and both bars are all white", white.length === 1 && white[0] === WHITE, white.join(" | "));
@@ -453,6 +509,10 @@ const author = editorial.nth(1).locator('[role="button"]').first();
 const member = (await author.getAttribute("aria-label")) ?? "";
 await author.click();
 await wait(2600);
+// Their profile is titled with their username, in the typewriter face, at the bar's own size.
+const profileTitle = await titleFace(member);
+check("Editorial: a profile's title, its username, is in the typewriter face", MONO.test(profileTitle), `${member}: ${profileTitle}`);
+await shot("12g-editorial-profile");
 const squares = await seen(page.locator("img")).evaluateAll((els) =>
   els
     .map((e) => e.getBoundingClientRect())
@@ -469,6 +529,8 @@ check(
   /\/gallery\?/.test(page.url()) && shownInGallery > 0 && galleryPaper.length === 1 && galleryPaper[0] === WHITE,
   `${member}: ${galleryPaper.join(" | ")}`,
 );
+const galleryTitle = shownInGallery ? await titleFace(member) : "";
+check("Editorial: the gallery's title, its author's username, is in the typewriter face", MONO.test(galleryTitle), galleryTitle);
 await shot("12d-editorial-gallery");
 
 check("The paper is not offered once Original is chosen again", (await choose("Original")) === 0);
@@ -483,8 +545,16 @@ check(
 const originalCard = seen(page.getByLabel(/^Posted /)).first().locator("xpath=..");
 const original = [await screenUnder(originalCard), await paperOf(wordmark()), await paperOf(tabBar())];
 check("Original lies on the app’s own paper, whatever paper was chosen", original.every((c) => c === OFF_WHITE), original.join(" | "));
+// And every username is back in its own face: on Home, in Activity, and in a profile's title.
+const homeAgain = await namesOnScreen();
+check("Original: no name on Home is in the typewriter face", noneMono(facesOf(homeAgain)), homeAgain.slice(0, 3).join(" | "));
+await tab("activity");
+const activityAgain = await namesOnScreen();
+check("Original: no name in Activity is in the typewriter face", noneMono(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
 
 await go("/user/tomas.lindqvist", 2800);
+const tomasTitle = await titleFace("tomas.lindqvist");
+check("Original: a profile's title is back in the bar's serif", !MONO.test(tomasTitle) && /serif/.test(tomasTitle), tomasTitle);
 const tomas = await text();
 check("Profile shows MEMBER and number", /MEMBER · NO\. \d{5}/.test(tomas));
 await shot("13-profile-founding");

@@ -9,6 +9,7 @@ import { colors, radii, spacing, type } from "@/theme";
 import { decideFollowRequest, fetchPendingRequests } from "@/api/profiles";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
+import { useNameFace } from "@/utils/nameFace";
 
 /**
  * Who has asked to follow you, while your account is private. Each one is a
@@ -20,6 +21,8 @@ export default function Requests() {
   const queryClient = useQueryClient();
   const { session, refreshProfile } = useSession();
   const userId = session?.user?.id ?? "";
+  // Editorial (Preview): each member's username in the names' face.
+  const face = useNameFace();
 
   const requests = useQuery({
     queryKey: ["follow-requests", userId],
@@ -61,7 +64,7 @@ export default function Requests() {
             >
               <Avatar path={item.avatar_url} username={item.username} size={44} />
               <View style={styles.personText}>
-                <Text style={styles.username}>{item.username}</Text>
+                <Text style={[styles.username, face]}>{item.username}</Text>
                 {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
               </View>
             </Pressable>

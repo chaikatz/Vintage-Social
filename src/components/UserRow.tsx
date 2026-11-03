@@ -1,6 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/theme";
+import { useNameFace } from "@/utils/nameFace";
 import { Avatar } from "./Avatar";
 
 interface Props {
@@ -13,11 +14,13 @@ interface Props {
 }
 
 export function UserRow({ username, avatarPath, title, subtitle, onPress, right }: Props) {
+  // Editorial (Preview): the username in the names' face.
+  const face = useNameFace();
   return (
     <Pressable style={styles.row} onPress={onPress}>
       <Avatar path={avatarPath} username={username} size={44} />
       <View style={styles.text}>
-        <Text style={styles.username}>{username}</Text>
+        <Text style={[styles.username, face]}>{username}</Text>
         {title ? <Text style={styles.title}>{title}</Text> : null}
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>

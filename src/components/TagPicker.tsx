@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
 import { fetchFollowing, searchProfiles } from "@/api/profiles";
+import { useNameFace } from "@/utils/nameFace";
 import { Avatar } from "./Avatar";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
@@ -34,6 +35,8 @@ export const MAX_TAGS = 10;
 export function TagPicker({ visible, myId, selected, onChange, onClose }: Props) {
   const [q, setQ] = useState("");
   const searching = q.trim().length >= 2;
+  // Editorial (Preview): every username in the sheet in the names' face.
+  const face = useNameFace();
 
   const following = useQuery({
     queryKey: ["following-list", myId],
@@ -86,7 +89,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
           <View style={styles.chips}>
             {selected.map((p) => (
               <Pressable key={p.id} style={styles.chip} onPress={() => toggle(p)}>
-                <Text style={styles.chipText}>{p.username}</Text>
+                <Text style={[styles.chipText, face]}>{p.username}</Text>
                 <Feather name="x" size={12} color={colors.inkSoft} />
               </Pressable>
             ))}
@@ -115,7 +118,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
               <Pressable style={styles.row} onPress={() => toggle(item)}>
                 <Avatar path={item.avatar_url} username={item.username} size={36} />
                 <View style={styles.rowText}>
-                  <Text style={styles.username}>{item.username}</Text>
+                  <Text style={[styles.username, face]}>{item.username}</Text>
                   {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
                 </View>
                 <View style={[styles.mark, on && styles.markOn]}>

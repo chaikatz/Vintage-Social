@@ -24,6 +24,7 @@ import { addComment, deleteOwnComment, fetchComments, fetchPost } from "@/api/po
 import { removeComment } from "@/api/moderation";
 import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
+import { useNameFace } from "@/utils/nameFace";
 import { MAX_COMMENT_LENGTH } from "@/utils/validation";
 import type { CommentWithAuthor } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
@@ -46,6 +47,8 @@ export default function Comments() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
+  // Editorial (Preview): who wrote each line, in the names' face.
+  const face = useNameFace();
 
   const postQ = useQuery({
     queryKey: ["post", postId],
@@ -147,7 +150,7 @@ export default function Comments() {
               </Pressable>
               <View style={styles.body}>
                 <Text style={styles.text}>
-                  <Text style={styles.author}>{post.author.username}</Text> {post.caption}
+                  <Text style={[styles.author, face]}>{post.author.username}</Text> {post.caption}
                 </Text>
                 <Text style={styles.age}>{postAge(post.created_at)}</Text>
               </View>
@@ -166,7 +169,7 @@ export default function Comments() {
             </Pressable>
             <View style={styles.body}>
               <Text style={styles.text}>
-                <Text style={styles.author}>{item.author.username}</Text> {item.body}
+                <Text style={[styles.author, face]}>{item.author.username}</Text> {item.body}
               </Text>
               <Text style={styles.age}>{postAge(item.created_at)}</Text>
             </View>

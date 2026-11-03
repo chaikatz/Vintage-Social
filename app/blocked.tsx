@@ -8,12 +8,15 @@ import { EmptyState } from "@/components/EmptyState";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchBlockedProfiles, unblockMember } from "@/api/blocks";
 import { useSession } from "@/providers/SessionProvider";
+import { useNameFace } from "@/utils/nameFace";
 
 /** The members you have blocked, and the way back. */
 export default function Blocked() {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
+  // Editorial (Preview): each member's username in the names' face.
+  const face = useNameFace();
 
   const blocked = useQuery({
     queryKey: ["blocked", userId],
@@ -49,7 +52,7 @@ export default function Blocked() {
           <View style={styles.row}>
             <Avatar path={item.avatar_url} username={item.username} size={40} />
             <View style={styles.rowText}>
-              <Text style={styles.username}>{item.username}</Text>
+              <Text style={[styles.username, face]}>{item.username}</Text>
               {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
             </View>
             <Pressable

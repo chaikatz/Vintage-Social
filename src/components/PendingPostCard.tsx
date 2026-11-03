@@ -3,6 +3,7 @@ import { AccessibilityInfo, Animated, Easing, Platform, Pressable, StyleSheet, T
 import { colors, spacing, type } from "@/theme";
 import { showAlert } from "@/utils/alert";
 import { useReducedMotion } from "@/utils/useReducedMotion";
+import { useNameFace } from "@/utils/nameFace";
 import { discardPost, holdPost, retryPost, type PendingPost } from "@/uploads";
 import { overallProgress, stateLine } from "@/uploads/words";
 import { Avatar } from "./Avatar";
@@ -100,6 +101,8 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
   };
 
   const tagged = draft.tagIds.length;
+  // Editorial (Preview): the member's username in the names' face.
+  const face = useNameFace();
 
   return (
     <View style={styles.card}>
@@ -112,7 +115,7 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
           <Avatar path={draft.author.avatar_url} username={draft.author.username} size={34} />
         </Pressable>
         <View style={styles.headerText}>
-          <Text style={styles.username} numberOfLines={1}>
+          <Text style={[styles.username, face]} numberOfLines={1}>
             {draft.author.username}
           </Text>
           <Byline post={{ taken_at: draft.takenAt, created_at: createdAt, location: draft.location }} />
@@ -169,7 +172,7 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
 
       {draft.caption.trim() ? (
         <Text style={styles.caption}>
-          <Text style={styles.captionAuthor}>{draft.author.username}</Text> {draft.caption.trim()}
+          <Text style={[styles.captionAuthor, face]}>{draft.author.username}</Text> {draft.caption.trim()}
         </Text>
       ) : null}
       {tagged > 0 ? (

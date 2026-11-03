@@ -10,6 +10,7 @@ import { fetchConversations } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
 import { inboxPreview } from "@/utils/messageText";
+import { useNameFace } from "@/utils/nameFace";
 import type { ConversationWithPeer } from "@/types/db";
 
 /**
@@ -64,6 +65,8 @@ function ConversationRow({
   const last = conversation.last_message;
   const unread = conversation.unread_count > 0;
   const preview = inboxPreview(last);
+  // Editorial (Preview): who it is with, in the names' face.
+  const face = useNameFace();
 
   return (
     <Pressable style={styles.row} onPress={onPress}>
@@ -73,7 +76,7 @@ function ConversationRow({
         size={46}
       />
       <View style={styles.rowText}>
-        <Text style={[styles.username, unread && styles.unreadText]}>
+        <Text style={[styles.username, unread && styles.unreadText, face]}>
           {conversation.peer.username}
         </Text>
         <Text style={[styles.preview, unread && styles.unreadText]} numberOfLines={1}>

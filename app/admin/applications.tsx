@@ -10,12 +10,15 @@ import { decideApplication, fetchApplications } from "@/api/moderation";
 import { postAge } from "@/utils/time";
 import type { ApplicationRow, ApplicationStatus } from "@/types/db";
 import { showAlert } from "@/utils/alert";
+import { useNameFace } from "@/utils/nameFace";
 
 const TABS: ApplicationStatus[] = ["pending", "waitlisted", "approved", "rejected"];
 
 export default function AdminApplications() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ApplicationStatus>("pending");
+  // Editorial (Preview): the username each applicant asked for, in the names' face.
+  const face = useNameFace();
 
   const apps = useQuery({
     queryKey: ["admin-apps", tab],
@@ -64,7 +67,7 @@ export default function AdminApplications() {
             <View style={styles.cardHeader}>
               <Avatar path={item.avatar_url} username={item.desired_username} size={44} />
               <View style={styles.cardHeaderText}>
-                <Text style={styles.username}>{item.desired_username}</Text>
+                <Text style={[styles.username, face]}>{item.desired_username}</Text>
                 <Text style={styles.meta}>
                   {item.full_name}
                   {item.city ? ` · ${item.city}` : ""} · {postAge(item.created_at)}

@@ -406,7 +406,8 @@ describe("the gallery", () => {
   it("lies on the feed's paper, under a bar on the same paper", () => {
     expect(gallery).toMatch(/const paper = useFeedBackground\(\);/);
     expect(gallery).toMatch(/<Screen padded=\{false\} style=\{paper\}>/);
-    expect(gallery).toMatch(/<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \} \}\} \/>/);
+    // Its title, when it is the author's username, in the names' face (tests/editorial-names.test.ts).
+    expect(gallery).toMatch(/<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/);
   });
 });
 

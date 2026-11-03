@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
 import { membershipLine } from "@/utils/membership";
+import { useNameFace } from "@/utils/nameFace";
 import { Avatar } from "./Avatar";
 import type { ProfileRow } from "@/types/db";
 
@@ -15,6 +16,8 @@ interface Props {
 }
 
 export function ProfileHeader({ profile, action, onPressStat }: Props) {
+  // Editorial (Preview): where the name falls back to the username, the names' face.
+  const face = useNameFace();
   return (
     <View style={styles.wrap}>
       <View style={styles.topRow}>
@@ -34,7 +37,7 @@ export function ProfileHeader({ profile, action, onPressStat }: Props) {
         </View>
       </View>
       <View style={styles.nameRow}>
-        <Text style={styles.name}>{profile.full_name ?? profile.username}</Text>
+        <Text style={[styles.name, profile.full_name == null ? face : undefined]}>{profile.full_name ?? profile.username}</Text>
         {profile.is_private ? (
           <View style={styles.privateChip}>
             <Feather name="lock" size={9} color={colors.inkFaint} />

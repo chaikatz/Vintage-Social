@@ -13,6 +13,7 @@ import { decideTag, fetchMyTagStatus } from "@/api/tags";
 import { mediaUrl } from "@/api/media";
 import { postAge } from "@/utils/time";
 import { useSession } from "@/providers/SessionProvider";
+import { useNameFace } from "@/utils/nameFace";
 import type { ActivityWithRefs } from "@/types/db";
 
 function line(item: ActivityWithRefs): string {
@@ -39,6 +40,8 @@ export default function Activity() {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
+  // Editorial (Preview): who did it, in the names' face.
+  const face = useNameFace();
 
   const activity = useQuery({
     queryKey: ["activity", userId],
@@ -107,7 +110,9 @@ export default function Activity() {
               <View style={styles.text}>
                 <Text style={styles.line}>
                   {!isModeration && item.actor ? (
-                    <Text style={styles.actor}>{item.actor.username} </Text>
+                    <Text style={styles.actor}>
+                      <Text style={face}>{item.actor.username}</Text>{" "}
+                    </Text>
                   ) : (
                     <Text style={styles.actor}>VINTAGE </Text>
                   )}

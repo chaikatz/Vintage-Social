@@ -30,6 +30,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
+import { useNameFace, useNameTitleStyle } from "@/utils/nameFace";
 import type { PostRow } from "@/types/db";
 
 export default function UserProfile() {
@@ -40,6 +41,9 @@ export default function UserProfile() {
   const myId = session?.user?.id ?? "";
   const [view, setView] = useState<ProfileView>("posted");
   const sort = view === "taken" ? "taken" : "posted";
+  // Editorial (Preview): the member's username, in the title and in what the page says, in the names' face.
+  const face = useNameFace();
+  const titleStyle = useNameTitleStyle();
 
   const profileQ = useQuery({
     queryKey: ["profile", username],
@@ -145,7 +149,7 @@ export default function UserProfile() {
   if (!profile) {
     return (
       <Screen padded={false}>
-        <Stack.Screen options={{ title: username ?? "" }} />
+        <Stack.Screen options={{ title: username ?? "", headerTitleStyle: titleStyle }} />
         {profileQ.isError ? (
           <LoadFailed what="this member" onRetry={() => profileQ.refetch()} />
         ) : profileQ.isFetched ? (
@@ -241,7 +245,9 @@ export default function UserProfile() {
       {blocked ? (
         <View style={styles.locked}>
           <Feather name="slash" size={18} color={colors.inkFaint} />
-          <Text style={styles.lockedTitle}>You blocked {profile.username}</Text>
+          <Text style={styles.lockedTitle}>
+            You blocked <Text style={face}>{profile.username}</Text>
+          </Text>
           <Text style={styles.lockedBody}>Neither of you sees the other’s photographs. Unblock to change that.</Text>
         </View>
       ) : locked ? (
@@ -249,9 +255,18 @@ export default function UserProfile() {
           <Feather name="lock" size={18} color={colors.inkFaint} />
           <Text style={styles.lockedTitle}>This account is private</Text>
           <Text style={styles.lockedBody}>
-            {status === "pending"
-              ? `${profile.username} has your request. You'll see their photographs once they accept.`
-              : `Ask to follow ${profile.username} to see their photographs.`}
+            {status === "pending" ? (
+              <>
+                <Text style={face}>{profile.username}</Text>
+                {" has your request. You'll see their photographs once they accept."}
+              </>
+            ) : (
+              <>
+                {"Ask to follow "}
+                <Text style={face}>{profile.username}</Text>
+                {" to see their photographs."}
+              </>
+            )}
           </Text>
         </View>
       ) : (postsQ.data ?? []).length > 1 || view !== "posted" ? (
@@ -286,7 +301,7 @@ export default function UserProfile() {
 
   return (
     <Screen padded={false}>
-      <Stack.Screen options={{ title: profile.username, gestureEnabled: swipeFree }} />
+      <Stack.Screen options={{ title: profile.username, gestureEnabled: swipeFree, headerTitleStyle: titleStyle }} />
       {view === "map" && !locked ? (
         <PostMap posts={shown} onOpenPost={openPost} header={header} />
       ) : view === "places" && !locked ? (

@@ -297,7 +297,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     minHeight: TARGET,
   },
-  username: { flexShrink: 1, fontSize: 14, fontWeight: "600", color: colors.ink },
+  // The member's username in the face the print sets its credit in, as every username is under Editorial.
+  username: { flexShrink: 1, fontFamily: type.mono, fontSize: 14, fontWeight: "600", color: colors.ink },
   // The print alone keeps the print's margins, a share of the width, and
   // the same paper over the picture as under it, before the hairline. The
   // paper itself lets a touch through to the member's row under it.
@@ -374,7 +375,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: EDGE,
     paddingTop: spacing.xs,
   },
-  author: { fontWeight: "600" },
+  author: { fontFamily: type.mono, fontWeight: "600" },
   // The label's typewriter face, a shade fainter than the date, in small letters.
   posted: {
     ...line(PRINT.byline),

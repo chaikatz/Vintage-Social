@@ -28,6 +28,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { PHOTOGRAPH_UNAVAILABLE, photographUnavailable } from "@/utils/messageText";
+import { useNameFace, useNameTitleStyle } from "@/utils/nameFace";
 import { postAge } from "@/utils/time";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
@@ -50,6 +51,8 @@ export default function Thread() {
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
   const focused = useIsFocused();
+  // Editorial (Preview): the title is who it is with, in the names' face.
+  const titleStyle = useNameTitleStyle();
 
   const peerQ = useQuery({
     queryKey: ["conversation-peer", id, userId],
@@ -95,7 +98,7 @@ export default function Thread() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={headerHeight}
     >
-      <Stack.Screen options={{ title: peerQ.data?.username ?? "" }} />
+      <Stack.Screen options={{ title: peerQ.data?.username ?? "", headerTitleStyle: titleStyle }} />
       <FlatList
         data={newestFirst}
         inverted
@@ -152,6 +155,8 @@ function Bubble({
   const thumb = shared
     ? mediaUrl("thumbnails", shared.thumb_path) ?? mediaUrl("media", shared.media_path)
     : null;
+  // Editorial (Preview): whose photograph it is, in the names' face.
+  const face = useNameFace();
 
   return (
     <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
@@ -159,7 +164,7 @@ function Bubble({
         {shared ? (
           <Pressable style={styles.shared} onPress={() => onOpenPost(shared.id)}>
             {thumb ? <Image source={thumb} style={styles.sharedImage} contentFit="cover" /> : null}
-            <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
+            <Text style={[styles.sharedCaption, mine && styles.textMine, face]} numberOfLines={1}>
               {shared.author.username}
             </Text>
           </Pressable>

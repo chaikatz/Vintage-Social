@@ -20,6 +20,7 @@ import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
+import { useNameFace } from "@/utils/nameFace";
 
 /**
  * One photograph on its own.
@@ -39,6 +40,8 @@ export default function PostDetail() {
   const userId = session?.user?.id ?? "";
   // Comments or a profile pushed on top of this screen pause its video.
   const focused = useIsFocused();
+  // Editorial (Preview): every username on the page in the names' face.
+  const face = useNameFace();
 
   // Who was there, as far as the viewer is allowed to know: accepted tags,
   // plus your own pending one if it is you in the picture.
@@ -121,7 +124,7 @@ export default function PostDetail() {
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
         </Pressable>
         <Pressable style={styles.headerText} onPress={openProfile}>
-          <Text style={styles.username} numberOfLines={1}>
+          <Text style={[styles.username, face]} numberOfLines={1}>
             {post.author.username}
           </Text>
           <Byline post={post} />
@@ -141,7 +144,7 @@ export default function PostDetail() {
                 style={[styles.withName, t.status === "pending" && styles.withPending]}
                 onPress={() => router.push(`/user/${t.member.username}`)}
               >
-                {t.member.username}
+                <Text style={face}>{t.member.username}</Text>
                 {t.status === "pending" ? " (pending)" : ""}
                 {i < shownTags.length - 1 ? ", " : ""}
               </Text>
@@ -189,7 +192,7 @@ export default function PostDetail() {
 
       {post.caption ? (
         <Text style={styles.caption}>
-          <Text style={styles.captionAuthor}>{post.author.username}</Text> {post.caption}
+          <Text style={[styles.captionAuthor, face]}>{post.author.username}</Text> {post.caption}
         </Text>
       ) : null}
 
@@ -205,7 +208,7 @@ export default function PostDetail() {
       {preview.map((c) => (
         <Pressable key={c.id} onPress={() => onOpenComments(post)}>
           <Text style={styles.comment} numberOfLines={2}>
-            <Text style={styles.captionAuthor}>{c.author.username}</Text> {c.body}
+            <Text style={[styles.captionAuthor, face]}>{c.author.username}</Text> {c.body}
           </Text>
         </Pressable>
       ))}
