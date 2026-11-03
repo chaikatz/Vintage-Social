@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     minHeight: TARGET,
   },
   // The member's username set as the print sets its credit, as every username is under Editorial (src/utils/nameFace.ts): the
-  // typewriter face, bold, tracked 0.08 em (0.08 × 14 ≈ 1.1 pt) in the print's grey, at the original card's size.
+  // typewriter face, bold, tracked 0.08 em (0.08 × 14 ≈ 1.1 pt) in the words' own ink, at the original card's size.
   username: { flexShrink: 1, fontFamily: type.mono, fontSize: 14, fontWeight: "700", letterSpacing: 1.1, color: NAME_INK },
   // The print alone keeps the print's margins, a share of the width, and
   // the same paper over the picture as under it, before the hairline. The

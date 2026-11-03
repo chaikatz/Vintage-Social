@@ -6,10 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * Editorial (Preview): members' usernames set as the print sets its credit.
  *
  * While the feed is Editorial every username the app draws as a name is set
- * as the print's credit line is: type.mono, tracked 0.08 em, in the grey the
- * credit reads in on the print, and bold, as the member chose; each at its
- * own size; where a place marks a name for a state
- * of its own, the state still wins. Under Original nothing changes at all.
+ * in the print credit's face and tracking (type.mono, 0.08 em), and, as the
+ * member chose, bold and in the words' own ink; each at its own size; where
+ * a place marks a name for a state of its own, the state still wins, but
+ * for an unread thread, which its dot and preview mark instead. Under Original nothing changes at all.
  * First the module that says so, then, read from the source, every place
  * that draws a username, so that none is dropped and none is added without
  * it, and every state that still wins over it. Last, which files may read
@@ -30,8 +30,8 @@ vi.mock("react", async (original) => ({
 
 const { NAME_INK, aroundName, nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = await import("@/utils/nameFace");
 const { setFeedLayout, __resetFeedLayoutForTest } = await import("@/utils/feedLayout");
-const { colors, light, type } = await import("@/theme");
-/** A name under Editorial: the print's face, tracking and grey, in bold. */
+const { colors, dark, type } = await import("@/theme");
+/** A name under Editorial: the print's face and tracking, bold, in the words' ink. */
 const EDITORIAL = { fontFamily: type.mono, fontWeight: "700", letterSpacing: 1.1, color: NAME_INK };
 const { PRINT_WIDTH, exportLayout } = await import("@/utils/exportLayout");
 const { erasEmpty } = await import("@/components/eraBook");
@@ -84,6 +84,10 @@ describe("the names' face", () => {
     expect(credit()).not.toMatch(/fontWeight/);
     expect(NAME_INK).toBe(colors.ink);
     expect(nameFace("editorial")!.color).toBe(colors.ink);
+    // The theme's own dynamic ink, not its light value alone: cream on the dark print's brown, never near-black on it.
+    expect(code("src/utils/nameFace.ts")).toMatch(/export const NAME_INK: ColorValue = colors\.ink;/);
+    expect(code("src/theme/index.ts")).toMatch(/\bink: dyn\(light\.ink, dark\.ink\)/);
+    expect(dark.ink).toBe("#F6ECDF");
     expect(nameFace("editorial")!.color).not.toBe(colors.inkFaint);
     expect(nameFace("editorial")!.fontWeight).toBe("700");
   });
@@ -118,7 +122,7 @@ describe("the names' face", () => {
 
   it("is read from the one layout preference, and nowhere else", () => {
     const source = readFileSync(path.join(root, "src/utils/nameFace.ts"), "utf8");
-    // react-native only for the grey's dark-appearance pair, as the theme's own colours are made.
+    // react-native only for the ink's type; the ink itself is the theme's.
     expect(source.match(/from "[^"]+"/g)).toEqual(['from "react-native"', 'from "@/theme"', 'from "@/utils/feedLayout"']);
     expect(code("src/utils/nameFace.ts")).toMatch(/return nameFace\(useFeedLayout\(\)\);/);
   });
@@ -267,7 +271,7 @@ const READERS: Record<string, string> = {
   "src/components/ProfileHeader.tsx": "useNameFace",
   "src/components/TagPicker.tsx": "useNameFace",
   "src/components/UserRow.tsx": "useNameFace",
-  // The print card sets its names in its own sheet, in the names' grey.
+  // The print card sets its names in its own sheet, in the names' ink.
   "src/components/feed/EditorialPostCard.tsx": "NAME_INK",
 };
 
@@ -279,7 +283,7 @@ describe("every username the app draws", () => {
   }
 
   it("takes the face from the hook, read once at the top of what draws it", () => {
-    // The print card alone sets its names in its own sheet, and reads only their grey.
+    // The print card alone sets its names in its own sheet, and reads only their ink.
     for (const file of Object.keys(READERS).filter((f) => f !== "src/components/feed/EditorialPostCard.tsx")) {
       const source = code(file);
       const faces = source.match(/\bface\b/g)?.length ?? 0;
@@ -531,7 +535,7 @@ describe("a state a place marks a name for", () => {
     expect(rule(file, "textMine")).toEqual({ color: colors.onShutter });
     const face = { fontFamily: type.mono, fontWeight: "700", letterSpacing: 1.1 };
     expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 11, marginTop: 4, ...face, color: colors.onShutter });
-    // In their bubble, on the raised paper, the names' own grey.
+    // In their bubble, on the raised paper, the names' own ink.
     expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 11, marginTop: 4, ...face, color: NAME_INK });
     // Under Original exactly as before the trial.
     expect(drawn(file, array, "original", true)).toEqual({ fontSize: 11, marginTop: 4, color: colors.onShutter });
@@ -550,7 +554,7 @@ describe("a state a place marks a name for", () => {
     expect(pending).toEqual({ fontWeight: "400", color: colors.inkFaint });
     // The name draws over the words around it.
     const name = (layout: "original" | "editorial", state: boolean) => ({ ...drawn(file, array, layout, state), ...drawn(file, own, layout, state) });
-    // Under Editorial: a pending name faint and regular, as the state sets it, still in the face and its tracking; an accepted one in the names' bold grey.
+    // Under Editorial: a pending name faint and regular, as the state sets it, still in the face and its tracking; an accepted one in the names' bold ink.
     expect(name("editorial", true)).toEqual({ fontFamily: type.mono, letterSpacing: 1.1, color: pending.color, fontWeight: pending.fontWeight });
     expect(name("editorial", false)).toEqual(EDITORIAL);
     // Under Original exactly as before the trial: an accepted name dark and bold, a pending one faint and regular.

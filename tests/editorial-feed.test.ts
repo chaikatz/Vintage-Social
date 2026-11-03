@@ -515,7 +515,7 @@ describe("the editorial card", () => {
     // The original card's size for the picture, and its weight and size for the name.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    // The original card's size for the name, set as the print sets its credit: regular, tracked, faint (see tests/editorial-names.test.ts).
+    // The original card's size for the name, in the print's face and tracking, bold and in the words' ink (see tests/editorial-names.test.ts).
     expect(style("username")).toMatch(/fontSize: 14, fontWeight: "700", letterSpacing: 1\.1, color: NAME_INK/);
     expect(sheet!.username).toEqual({ flexShrink: 1, fontSize: 14, ...nameFace("editorial") });
     // Only the name: the place and the date are on the label.

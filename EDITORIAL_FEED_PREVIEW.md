@@ -92,8 +92,9 @@ Display names, what a member types into a field, and what members wrote
 dialogs and menus, whose face the app cannot set, and the avatar's initial.
 
 `src/utils/nameFace.ts` holds it: `useNameFace()` is added to a name's style
-after the place's own and before any state's (the credit's face, weight,
-tracking and ink under Editorial, nothing at all under Original), and
+after the place's own and before any state's, except an unread thread's,
+which it follows (the print's face and tracking, bold, in the words' ink
+under Editorial; nothing at all under Original), and
 `useNameTitleStyle()` is a bar title's style, the stack's own 17 pt title set
 as the credit. The editorial card sets the same values in its own sheet. `aroundName()` cuts a sentence the app writes with a
 username in it at the name, where its writer puts the name (it hands the
@@ -124,7 +125,7 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `app/gallery.tsx` | the gallery's seam: which card it draws, the paper under it and its bar's, and its bar's title in the names' face when it is the author's username |
 | `app/(tabs)/_layout.tsx` | Home's wordmark bar and tab bar on the paper, and the Profile tab's title, its username, in the names' face |
 | `app/settings.tsx` | the Feed layout and Paper choices |
-| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/user/[username].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/follows.tsx`, `app/admin/applications.tsx`, `app/admin/reports.tsx` | the usernames each screen draws, and the bar's title where it is one, in the names' face (in `app/follows.tsx`, the name in the empty list's sentence; in `app/messages/index.tsx` and `app/messages/[id].tsx`, with an unread thread's and your own bubble's style after it) |
+| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/user/[username].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/follows.tsx`, `app/admin/applications.tsx`, `app/admin/reports.tsx` | the usernames each screen draws, and the bar's title where it is one, in the names' face (in `app/follows.tsx`, the name in the empty list's sentence; in `app/messages/index.tsx`, after an unread thread's style; in `app/messages/[id].tsx`, before your own bubble's style) |
 | `src/components/UserRow.tsx`, `src/components/TagPicker.tsx`, `src/components/PendingPostCard.tsx`, `src/components/ProfileHeader.tsx`, `src/components/EraList.tsx` | the same, in the parts those screens share (the profile header only where its name falls back to the username; the Eras page only in its empty sentence on a member's page) |
 | `src/components/EmptyState.tsx` | its `body` takes a sentence with a name in the names' face, not only a string; drawn as before |
 | `tests/video-playback.test.ts` | the Home and gallery playback guards accept either card |
@@ -169,7 +170,7 @@ every other file the names' face touches, they are the import from
 `@/utils/nameFace`, the `const face = useNameFace();` or
 `const titleStyle = useNameTitleStyle();` line with the comment above it, and
 each place it is used: `[style, face]` goes back to `style` (in
-`app/messages/index.tsx`, `[styles.username, face, unread && styles.unreadText]`
+`app/messages/index.tsx`, `[styles.username, unread && styles.unreadText, face]`
 and in `app/messages/[id].tsx`, `[styles.sharedCaption, face, mine && styles.textMine]`
 lose only `face`; in `app/(tabs)/_layout.tsx` and
 `src/components/ProfileHeader.tsx` the array with its `? face : undefined`

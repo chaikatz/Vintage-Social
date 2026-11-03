@@ -43,7 +43,8 @@ export const NAME_INK: ColorValue = colors.ink;
 /**
  * The face, weight, tracking and ink a name takes. A place puts it after
  * its own style, so it overrides the weight and ink the place sets, and
- * before a state's style, so the state still wins.
+ * before a state's style, so the state still wins: all but an unread
+ * thread's, which it follows (see above).
  */
 type NameFace = { fontFamily: string; fontWeight: "700"; letterSpacing: number; color: ColorValue };
 
