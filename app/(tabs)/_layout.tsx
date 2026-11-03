@@ -13,7 +13,6 @@ import { useSession } from "@/providers/SessionProvider";
 import { emitHomeAgain } from "@/utils/homeRefresh";
 import { usePushRegistration } from "@/utils/push";
 import { useFeedBackground } from "@/utils/feedPaper";
-import { useNameFace } from "@/utils/nameFace";
 
 /**
  * Home / Search / Post / Activity / Profile — nothing else.
@@ -150,8 +149,6 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
   const insets = useSafeAreaInsets();
   // Editorial (Preview): Home's bar is on the feed's paper; the other tabs keep the app's.
   const paper = useFeedBackground();
-  // Editorial (Preview): the profile's title is the member's username, in the names' face.
-  const face = useNameFace();
 
   const title = tab === "profile" ? username ?? "Profile" : TITLES[tab] ?? null;
 
@@ -168,7 +165,7 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
       {title === null ? (
         <Text style={styles.wordmark}>VINTAGE</Text>
       ) : (
-        <Text style={[styles.headerTitle, tab === "profile" && username ? face : undefined]}>{title}</Text>
+        <Text style={styles.headerTitle}>{title}</Text>
       )}
       {tab === "index" ? (
         <Pressable

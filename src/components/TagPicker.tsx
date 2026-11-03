@@ -35,7 +35,7 @@ export const MAX_TAGS = 10;
 export function TagPicker({ visible, myId, selected, onChange, onClose }: Props) {
   const [q, setQ] = useState("");
   const searching = q.trim().length >= 2;
-  // Editorial (Preview): every username in the sheet in the names' face.
+  // Editorial (Preview): every username in the sheet, not bold.
   const face = useNameFace();
 
   const following = useQuery({

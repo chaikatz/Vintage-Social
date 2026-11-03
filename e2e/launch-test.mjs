@@ -397,14 +397,11 @@ check(
 );
 const gapBetween = lines.length > 1 ? lines[1].head - lines[0].foot : null;
 check("One post follows the next about as closely as on Instagram", gapBetween != null && gapBetween >= 18 && gapBetween <= 30, String(gapBetween));
-// The caption after the member's name, set apart in a face of its own, as a comment is written.
+// The caption after the member's name, the name a span of its own, as a comment is written.
 const captioned = await editorial.first().evaluate(
   (el, name) =>
     [...el.querySelectorAll("div, span")].some(
-      (n) =>
-        n.textContent?.startsWith(`${name} `) &&
-        n.firstElementChild?.textContent === name &&
-        getComputedStyle(n.firstElementChild).fontFamily !== getComputedStyle(n).fontFamily,
+      (n) => n.textContent?.startsWith(`${name} `) && n.firstElementChild?.tagName === "SPAN" && n.firstElementChild.textContent === name,
     ),
   head.name,
 );
@@ -423,42 +420,43 @@ check(
     ),
   lastLines[0]?.join(" / "),
 );
-// Usernames, all around the app, set as the print sets its credit while
-// Editorial is chosen: the typewriter face (type.mono: "monospace" on the
-// web), tracked 0.08 em as the credit is, and bold in the words' own ink,
-// as the member chose, each at its own size; what was written with them, and display names, keep their own face.
-// Each is read as "face|weight|colour|tracking".
+// Usernames, all around the app, while Editorial is chosen: in the app's
+// own face, size, colour and spacing, exactly as under Original, but not
+// bold. A state that means something still wins: an unread thread's name
+// is bold. What was written with them, and display names, are as they
+// were. Each is read as "face|weight|colour|tracking|size".
 const MONO = /monospace/;
-const allMono = (faces) => faces.length > 0 && faces.every((f) => MONO.test(f));
-const noneMono = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(f));
-/** A name's ink (colors.ink, the light print's), the words' own, and the credit's 0.08 em at a name's 14 pt and at a title's 17 pt. */
+/** The words' ink (colors.ink, the light paper's): every name read here is in it, under either layout. */
 const INK = "rgb(43, 38, 32)";
-const TRACKED = 1.1;
-const TITLE_TRACKED = 1.36;
 const drawnAs = (f) => {
-  const [face, weight, color, spacing] = (f ?? "").split("|");
-  return { face, weight, color, spacing };
+  const [face, weight, color, spacing, size] = (f ?? "").split("|");
+  return { face, weight, color, spacing, size };
 };
-/** About so many pixels apart; "normal" is no tracking at all. */
-const trackedAt = (spacing, px) => Math.abs(parseFloat(spacing) - px) < 0.05;
-/** Set as the names are: the print's face, bold, in the words' ink, tracked as the credit is. */
-const asCredit = (f, px = TRACKED) => {
+/** In the app's own face, not the typewriter's, in the words' ink, untracked, at this weight. */
+const setAs = (f, weight) => {
   const s = drawnAs(f);
-  return MONO.test(s.face) && s.weight === "700" && s.color === INK && trackedAt(s.spacing, px);
+  return !MONO.test(s.face) && s.weight === weight && s.color === INK && s.spacing === "normal";
 };
-const allCredit = (faces, px) => faces.length > 0 && faces.every((f) => asCredit(f, px));
-/** Neither the print's face nor its tracking. */
-const noneCredit = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(drawnAs(f).face) && drawnAs(f).spacing === "normal");
-/** Every username drawn on screen, as it is drawn: words that are a username alone, in an element of their own. */
+const allSetAs = (faces, weight) => faces.length > 0 && faces.every((f) => setAs(f, weight));
+/** All but the weight: the face, the colour, the tracking and the size. */
+const allButWeight = (f) => {
+  const { face, color, spacing, size } = drawnAs(f);
+  return [face, color, spacing, size].join("|");
+};
+/** The same faces, colours, tracking and sizes in both readings, whatever their weights. */
+const sameButWeight = (a, b) =>
+  a.length > 0 && b.length > 0 && JSON.stringify([...new Set(a.map(allButWeight))].sort()) === JSON.stringify([...new Set(b.map(allButWeight))].sort());
+/** Every username drawn on screen, as it is drawn: words that are a username alone (a space after it aside), in an element of their own. */
 const namesOnScreen = () =>
   page.evaluate(() => {
     const out = [];
     for (const el of document.querySelectorAll("div, span")) {
-      if (el.childElementCount > 0 || !/^[a-z][a-z0-9]*(?:[._][a-z0-9]+)+$/.test(el.textContent ?? "")) continue;
+      const words = (el.textContent ?? "").trim();
+      if (el.childElementCount > 0 || !/^[a-z][a-z0-9]*(?:[._][a-z0-9]+)+$/.test(words)) continue;
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height || r.left < 0 || r.right > innerWidth || r.bottom < 0 || r.top > innerHeight) continue;
       const s = getComputedStyle(el);
-      out.push(`${el.textContent}: ${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}`);
+      out.push(`${words}: ${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}|${s.fontSize}`);
     }
     return out;
   });
@@ -469,9 +467,13 @@ const titleDrawn = (name) =>
     .first()
     .evaluate((el) => {
       const s = getComputedStyle(el);
-      return `${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}`;
+      return `${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}|${s.fontSize}`;
     });
-const titleFace = async (name) => drawnAs(await titleDrawn(name)).face;
+/** The stack's own title: its serif, not the typewriter's, in the bar's ink, untracked, and not bold. */
+const stackTitle = (f) => {
+  const s = drawnAs(f);
+  return !MONO.test(s.face) && /serif/.test(s.face) && s.color === INK && s.spacing === "normal" && Number(s.weight) < 600;
+};
 /**
  * On each card, its names as drawn: the first, over the picture; the one
  * leading the caption, a line of the card's own; and the one leading each
@@ -482,9 +484,9 @@ const namesOnCards = (cards) =>
     const NAME = /^[a-z][a-z0-9]*(?:[._][a-z0-9]+)+$/;
     const drawn = (n) => {
       const s = getComputedStyle(n);
-      return `${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}`;
+      return `${s.fontFamily}|${s.fontWeight}|${s.color}|${s.letterSpacing}|${s.fontSize}`;
     };
-    const found = { header: [], captions: [], comments: [], words: [] };
+    const found = { header: [], captions: [], comments: [], words: [], pairs: [] };
     for (const el of els) {
       const head = [...el.querySelectorAll("*")].find((n) => n.childElementCount === 0 && NAME.test(n.textContent ?? ""));
       if (head) found.header.push(drawn(head));
@@ -493,30 +495,29 @@ const namesOnCards = (cards) =>
         if (lead?.tagName !== "SPAN" || !line.textContent?.startsWith(`${lead.textContent} `)) continue;
         (line.parentElement === el ? found.captions : found.comments).push(drawn(lead));
         found.words.push(drawn(line));
+        found.pairs.push([drawn(lead), drawn(line)]);
       }
     }
     return found;
   });
 const onHome = await namesOnCards(editorial);
-check("Editorial: the member's name over each print is in the print's typewriter face", allMono(onHome.header), onHome.header[0]);
-check("Editorial: so is the name before each caption", allMono(onHome.captions), `${onHome.captions.length}: ${onHome.captions[0]}`);
-check("Editorial: and the name before each comment", allMono(onHome.comments), `${onHome.comments.length}: ${onHome.comments[0]}`);
-check("Editorial: the captions and comments themselves keep their own face", noneMono(onHome.words), onHome.words[0]);
-const bold = (faces) => faces.length > 0 && faces.every((f) => drawnAs(f).weight === "700");
+const firstOf = (found) => [found.header[0], found.captions[0], found.comments[0]].join(" / ");
 check(
-  "Editorial: the names are bold, as the member chose",
-  bold(onHome.header) && bold(onHome.captions) && bold(onHome.comments),
-  [onHome.header[0], onHome.captions[0], onHome.comments[0]].join(" / "),
+  "Editorial: the member's name over each print is in the app's own face and ink, untracked, and not bold",
+  allSetAs(onHome.header, "400"),
+  `${onHome.header.length}: ${onHome.header[0]}`,
 );
+check("Editorial: so is the name before each caption", allSetAs(onHome.captions, "400"), `${onHome.captions.length}: ${onHome.captions[0]}`);
+check("Editorial: and the name before each comment", allSetAs(onHome.comments, "400"), `${onHome.comments.length}: ${onHome.comments[0]}`);
 check(
-  `Editorial: the name over each print, before each caption and before each comment take the names' ink (${INK}) and its tracking (~${TRACKED}px)`,
-  allCredit(onHome.header) && allCredit(onHome.captions) && allCredit(onHome.comments),
-  [onHome.header[0], onHome.captions[0], onHome.comments[0]].join(" / "),
-);
-check(
-  "Editorial: the captions and comments themselves keep their own ink, untracked",
-  onHome.words.length > 0 && onHome.words.every((f) => drawnAs(f).color === INK && drawnAs(f).spacing === "normal"),
+  "Editorial: the captions and comments themselves are as they were: their own face and ink, regular and untracked",
+  allSetAs(onHome.words, "400"),
   onHome.words[0],
+);
+check(
+  "Editorial: a name before a caption or a comment is in the very face, ink and size of the words it leads",
+  onHome.pairs.length > 0 && onHome.pairs.every(([name, words]) => name === words),
+  onHome.pairs[0]?.join(" / "),
 );
 const offWhite = await papersOf(editorial, wordmark(), tabBar());
 const strips = await editorial.evaluateAll((els) => els.filter((el) => getComputedStyle(el).borderBottomWidth !== "0px").length);
@@ -538,40 +539,40 @@ for (let i = 0; i < (await editorial.count()); i++) {
 }
 check("Like still works on the editorial card", editorialLike === "", editorialLike);
 
-// The comments on a print, and the Activity tab: every name in the list in the same face.
+// The comments on a print, and the Activity tab: every name in the list in its own face, not bold.
 await editorial.first().getByLabel("Comments", { exact: true }).click();
 await wait(2500);
 const inComments = await namesOnScreen();
-check("Editorial: every name in the comments is in the typewriter face", /Add a comment/.test(
-  (await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "",
-) && allMono(facesOf(inComments)), inComments.slice(0, 3).join(" | "));
-check("Editorial: and in the names' ink and tracking", allCredit(facesOf(inComments)), inComments.slice(0, 3).join(" | "));
+check(
+  "Editorial: every name in the comments is in the app's own face and ink, untracked, and not bold",
+  /Add a comment/.test((await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "") && allSetAs(facesOf(inComments), "400"),
+  `${inComments.length}: ${inComments.slice(0, 3).join(" | ")}`,
+);
 await shot("12e-editorial-comments");
 await back(2200);
 await tab("activity");
-const inActivity = await namesOnScreen();
-check("Editorial: every name in Activity is in the typewriter face", allMono(facesOf(inActivity)), inActivity.slice(0, 3).join(" | "));
 // An unread notice is marked by its row's paper alone, so its name is set as every name is.
-check("Editorial: and in the names' ink and tracking, read or not", allCredit(facesOf(inActivity)), inActivity.slice(0, 3).join(" | "));
+const inActivity = await namesOnScreen();
+check(
+  "Editorial: every name in Activity is in the app's own face and ink, untracked, and not bold, read or not",
+  allSetAs(facesOf(inActivity), "400"),
+  `${inActivity.length}: ${inActivity.slice(0, 3).join(" | ")}`,
+);
 await shot("12f-editorial-activity");
 
-// The inbox: every name is dark and bold under Editorial, read or not, so
-// an unread one is no lighter than a read one, and its dot and its bold
-// preview mark it. In
-// the demo only Tomas has written since it was read.
+// The inbox: a read thread's name is regular, as it always was, and an
+// unread one's is bold, as it always was, its state coming after the face.
+// In the demo only Tomas has written since it was read.
 await go("/messages", 2600);
-const inInbox = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), drawnAs(n.slice(n.indexOf(": ") + 2))]));
+const inInbox = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), n.slice(n.indexOf(": ") + 2)]));
 const unreadName = inInbox["tomas.lindqvist"];
-const readNames = Object.entries(inInbox).filter(([name]) => name !== "tomas.lindqvist").map(([, s]) => s);
+const readNames = Object.entries(inInbox).filter(([name]) => name !== "tomas.lindqvist").map(([, f]) => f);
+check("Editorial: an unread thread's name is bold, as under Original, in its own face and ink", unreadName != null && setAs(unreadName, "600"), unreadName);
+check("Editorial: a read thread's name is in its own face and ink, regular", allSetAs(readNames, "400"), `${readNames.length}: ${readNames[0]}`);
 check(
-  "Editorial: an unread thread's name is dark and bold, as every name is, never lighter than a read one",
-  unreadName != null && asCredit(`${unreadName.face}|${unreadName.weight}|${unreadName.color}|${unreadName.spacing}`),
-  JSON.stringify(unreadName),
-);
-check(
-  "Editorial: a read thread's name is set as the credit",
-  readNames.length > 0 && readNames.every((s) => asCredit(`${s.face}|${s.weight}|${s.color}|${s.spacing}`)),
-  JSON.stringify(readNames[0]),
+  "Editorial: an unread thread's name differs from a read one's only in its weight",
+  unreadName != null && readNames.length > 0 && readNames.every((f) => allButWeight(f) === allButWeight(unreadName)),
+  `${unreadName} / ${readNames[0]}`,
 );
 await go("/", 2400);
 
@@ -585,16 +586,11 @@ const author = editorial.nth(1).locator('[role="button"]').first();
 const member = (await author.getAttribute("aria-label")) ?? "";
 await author.click();
 await wait(2600);
-// Their profile is titled with their username, in the typewriter face, at the bar's own size.
-const profileTitle = await titleFace(member);
-check("Editorial: a profile's title, its username, is in the typewriter face", MONO.test(profileTitle), `${member}: ${profileTitle}`);
-// In the names' ink, and its 0.08 em at the title's 17 pt (the web's bar is drawn by the stack; on iOS the system's bar takes no tracking).
-const profileTitleDrawn = await titleDrawn(member);
-check(
-  `Editorial: and in the names' ink and its tracking at the bar's size (~${TITLE_TRACKED}px)`,
-  asCredit(profileTitleDrawn, TITLE_TRACKED),
-  profileTitleDrawn,
-);
+// Their profile is titled with their username, as the stack titles every
+// bar: its serif, in the bar's ink, untracked, and not bold. It is compared
+// with a profile's title under Original below.
+const profileTitle = await titleDrawn(member);
+check("Editorial: a profile's title, its username, is the stack's own title: its serif, not bold", stackTitle(profileTitle), `${member}: ${profileTitle}`);
 await shot("12g-editorial-profile");
 const squares = await seen(page.locator("img")).evaluateAll((els) =>
   els
@@ -613,55 +609,12 @@ check(
   `${member}: ${galleryPaper.join(" | ")}`,
 );
 const galleryTitle = shownInGallery ? await titleDrawn(member) : "";
-check("Editorial: the gallery's title, its author's username, is set as the credit", asCredit(galleryTitle, TITLE_TRACKED), galleryTitle);
+check(
+  "Editorial: the gallery's title, its author's username, is the stack's own title too, drawn as the profile's is",
+  stackTitle(galleryTitle) && galleryTitle === profileTitle,
+  galleryTitle,
+);
 await shot("12d-editorial-gallery");
-
-// An empty list's sentence, written with the member's username in it: the
-// name alone set as the credit, in the typewriter face, the names' ink and
-// its tracking, the rest of the sentence in its own face, ink and spacing,
-// and the name at the sentence's own size and weight. Nobody follows the
-// founding account; an applicant follows nobody yet.
-/** The words of a sentence drawn whole on screen, and the name within it: their faces, sizes, weights, colours and tracking. */
-const sentence = (words, name) =>
-  page.evaluate(
-    ([words, name]) => {
-      const lines = [...document.querySelectorAll("div")].filter((el) => el.textContent === words && el.getBoundingClientRect().height > 0);
-      const line = lines[lines.length - 1];
-      const span = line && [...line.querySelectorAll("span")].find((s) => s.textContent === name);
-      if (!line || !span) return null;
-      const [l, n] = [getComputedStyle(line), getComputedStyle(span)];
-      return {
-        line: l.fontFamily,
-        name: n.fontFamily,
-        sizes: [l.fontSize, n.fontSize],
-        weights: [l.fontWeight, n.fontWeight],
-        colours: [l.color, n.color],
-        spacings: [l.letterSpacing, n.letterSpacing],
-      };
-    },
-    [words, name],
-  );
-const same = ([a, b]) => a === b;
-const nameAlone = (s) =>
-  s != null &&
-  MONO.test(s.name) &&
-  !MONO.test(s.line) &&
-  same(s.sizes) &&
-  s.weights[1] === "700" &&
-  s.colours[1] === INK &&
-  s.colours[0] !== INK &&
-  trackedAt(s.spacings[1], TRACKED) &&
-  s.spacings[0] === "normal";
-await go("/user/vintage", 2800);
-await byLabel("0 followers").first().click();
-await wait(2400);
-const nobody = await sentence("Nobody follows vintage yet.", "vintage");
-check("Editorial: an empty Followers list's sentence sets the username alone in the typewriter face", nameAlone(nobody), JSON.stringify(nobody));
-await shot("12h-editorial-followers-empty");
-await go("/follows?" + new URLSearchParams({ userId: "demo-user-ruby", kind: "following", username: "ruby.calloway" }).toString(), 2600);
-const noone = await sentence("ruby.calloway isn't following anyone yet.", "ruby.calloway");
-check("Editorial: and so does an empty Following list's", nameAlone(noone), JSON.stringify(noone));
-await go("/", 2400);
 
 check("The paper is not offered once Original is chosen again", (await choose("Original")) === 0);
 check(
@@ -675,45 +628,49 @@ check(
 const originalCard = seen(page.getByLabel(/^Posted /)).first().locator("xpath=..");
 const original = [await screenUnder(originalCard), await paperOf(wordmark()), await paperOf(tabBar())];
 check("Original lies on the app’s own paper, whatever paper was chosen", original.every((c) => c === OFF_WHITE), original.join(" | "));
-// And every username is back in its own face: on Home, in Activity, and in a profile's title.
+// And every username bold again where it was bold, and otherwise exactly
+// as Editorial drew it: on Home, in Activity, in the inbox and in a
+// profile's title.
 const homeAgain = await namesOnScreen();
-check("Original: no name on Home is in the typewriter face", noneMono(facesOf(homeAgain)), homeAgain.slice(0, 3).join(" | "));
-check("Original: nor in its tracking", noneCredit(facesOf(homeAgain)), homeAgain.slice(0, 3).join(" | "));
-// The name over each picture, before each caption and before each comment: dark, bold and untracked, as they always were.
-const onHomeAgain = await namesOnCards(seen(page.getByLabel(/^Posted /)).locator("xpath=.."));
-const asBefore = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(f) && drawnAs(f).color === INK && drawnAs(f).weight === "600" && drawnAs(f).spacing === "normal");
 check(
-  "Original: the name over each picture, before each caption and before each comment is dark, bold and untracked again",
-  asBefore(onHomeAgain.header) && asBefore(onHomeAgain.captions) && asBefore(onHomeAgain.comments),
-  [onHomeAgain.header.length, onHomeAgain.captions.length, onHomeAgain.comments.length].join("/") + ": " + [onHomeAgain.header[0], onHomeAgain.captions[0], onHomeAgain.comments[0]].join(" / "),
+  "Original: every name on Home is in the app's own face, untracked",
+  homeAgain.length > 0 && facesOf(homeAgain).every((f) => !MONO.test(drawnAs(f).face) && drawnAs(f).spacing === "normal"),
+  homeAgain.slice(0, 3).join(" | "),
+);
+// The name over each picture, before each caption and before each comment: dark and bold, as they always were.
+const onHomeAgain = await namesOnCards(seen(page.getByLabel(/^Posted /)).locator("xpath=.."));
+check(
+  "Original: the name over each picture, before each caption and before each comment is dark and bold again",
+  allSetAs(onHomeAgain.header, "600") && allSetAs(onHomeAgain.captions, "600") && allSetAs(onHomeAgain.comments, "600"),
+  [onHomeAgain.header.length, onHomeAgain.captions.length, onHomeAgain.comments.length].join("/") + ": " + firstOf(onHomeAgain),
+);
+check(
+  "Original: those names are in the face, ink, tracking and size Editorial drew them in: only the weight differs",
+  sameButWeight(onHome.header, onHomeAgain.header) && sameButWeight(onHome.captions, onHomeAgain.captions) && sameButWeight(onHome.comments, onHomeAgain.comments),
+  `${firstOf(onHome)} | ${firstOf(onHomeAgain)}`,
 );
 await tab("activity");
 const activityAgain = await namesOnScreen();
-check("Original: no name in Activity is in the typewriter face", noneMono(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
-check("Original: nor in its tracking", noneCredit(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
-await go("/user/vintage", 2800);
-await byLabel("0 followers").first().click();
-await wait(2400);
-const nobodyAgain = await sentence("Nobody follows vintage yet.", "vintage");
+check("Original: every name in Activity is bold again, in its own face and ink", allSetAs(facesOf(activityAgain), "600"), activityAgain.slice(0, 3).join(" | "));
 check(
-  "Original: an empty list's sentence is all in its own face, ink and spacing again",
-  nobodyAgain != null &&
-    !MONO.test(nobodyAgain.name) &&
-    nobodyAgain.name === nobodyAgain.line &&
-    same(nobodyAgain.sizes) &&
-    same(nobodyAgain.colours) &&
-    same(nobodyAgain.spacings),
-  JSON.stringify(nobodyAgain),
+  "Original: in the face, ink, tracking and size Editorial drew them in: only the weight differs",
+  sameButWeight(facesOf(inActivity), facesOf(activityAgain)),
+  `${facesOf(inActivity)[0]} | ${facesOf(activityAgain)[0]}`,
+);
+await go("/messages", 2600);
+const inboxAgain = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), n.slice(n.indexOf(": ") + 2)]));
+check(
+  "Original: the inbox's names are drawn exactly as under Editorial, an unread one bold and a read one regular",
+  Object.keys(inboxAgain).length > 0 && JSON.stringify(inboxAgain) === JSON.stringify(inInbox),
+  `${inboxAgain["tomas.lindqvist"]} / ${Object.keys(inboxAgain).length}`,
 );
 
 await go("/user/tomas.lindqvist", 2800);
 const tomasTitleDrawn = await titleDrawn("tomas.lindqvist");
-const tomasTitle = drawnAs(tomasTitleDrawn).face;
-check("Original: a profile's title is back in the bar's serif", !MONO.test(tomasTitle) && /serif/.test(tomasTitle), tomasTitle);
 check(
-  "Original: and in the bar's own ink, untracked",
-  drawnAs(tomasTitleDrawn).color === INK && drawnAs(tomasTitleDrawn).spacing === "normal",
-  tomasTitleDrawn,
+  "Original: a profile's title is the stack's own, drawn exactly as under Editorial",
+  stackTitle(tomasTitleDrawn) && tomasTitleDrawn === profileTitle,
+  `${tomasTitleDrawn} / ${profileTitle}`,
 );
 const tomas = await text();
 check("Profile shows MEMBER and number", /MEMBER · NO\. \d{5}/.test(tomas));

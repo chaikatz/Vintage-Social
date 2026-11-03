@@ -9,7 +9,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchReports, removePost, resolveReport, type ReportWithRefs } from "@/api/moderation";
 import { postAge } from "@/utils/time";
-import { useNameFace } from "@/utils/nameFace";
 import type { ReportStatus } from "@/types/db";
 
 const TABS: ReportStatus[] = ["open", "resolved", "dismissed"];
@@ -18,8 +17,6 @@ export default function AdminReports() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ReportStatus>("open");
-  // Editorial (Preview): who reported it, in the names' face.
-  const face = useNameFace();
 
   const reports = useQuery({
     queryKey: ["admin-reports", tab],
@@ -65,8 +62,7 @@ export default function AdminReports() {
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Text style={styles.headline}>
-              {item.target_type} · reported by{" "}
-              {item.reporter ? <Text style={face}>{item.reporter.username}</Text> : "unknown"} ·{" "}
+              {item.target_type} · reported by {item.reporter?.username ?? "unknown"} ·{" "}
               {postAge(item.created_at)}
             </Text>
             <Text style={styles.reason}>{item.reason}</Text>

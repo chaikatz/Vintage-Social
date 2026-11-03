@@ -8,7 +8,6 @@ import { PRINT_WIDTH, exportLabelText, exportLayout, type TextBox } from "@/util
 import { paperStyle, useFeedPaper } from "@/utils/feedPaper";
 import { postedAgo, postedAgoSpoken } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
-import { NAME_INK } from "@/utils/nameFace";
 import { Avatar } from "../Avatar";
 import { INLINE_COMMENTS, PostCard } from "../PostCard";
 import { PostMedia } from "../PostMedia";
@@ -298,9 +297,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     minHeight: TARGET,
   },
-  // The member's username set as the print sets its credit, as every username is under Editorial (src/utils/nameFace.ts): the
-  // typewriter face, bold, tracked 0.08 em (0.08 × 14 ≈ 1.1 pt) in the words' own ink, at the original card's size.
-  username: { flexShrink: 1, fontFamily: type.mono, fontSize: 14, fontWeight: "700", letterSpacing: 1.1, color: NAME_INK },
+  // The member's username as the original card sets it, but not bold, as every username is under Editorial (src/utils/nameFace.ts).
+  username: { flexShrink: 1, fontSize: 14, fontWeight: "400", color: colors.ink },
   // The print alone keeps the print's margins, a share of the width, and
   // the same paper over the picture as under it, before the hairline. The
   // paper itself lets a touch through to the member's row under it.
@@ -377,8 +375,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: EDGE,
     paddingTop: spacing.xs,
   },
-  // Who wrote it, set as the name over the print is, at the words' own size.
-  author: { fontFamily: type.mono, fontWeight: "700", letterSpacing: 1.1, color: NAME_INK },
+  // Who wrote it, in the words' own face, size and ink, and not bold, as the name over the print is.
+  author: { fontWeight: "400" },
   // The label's typewriter face, a shade fainter than the date, in small letters.
   posted: {
     ...line(PRINT.byline),

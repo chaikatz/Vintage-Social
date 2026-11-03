@@ -40,7 +40,7 @@ export default function PostDetail() {
   const userId = session?.user?.id ?? "";
   // Comments or a profile pushed on top of this screen pause its video.
   const focused = useIsFocused();
-  // Editorial (Preview): every username on the page in the names' face.
+  // Editorial (Preview): every username on the page, not bold.
   const face = useNameFace();
 
   // Who was there, as far as the viewer is allowed to know: accepted tags,
@@ -141,10 +141,10 @@ export default function PostDetail() {
             {shownTags.map((t, i) => (
               <Text
                 key={t.user_id}
-                style={[styles.withName, t.status === "pending" && styles.withPending]}
+                style={[styles.withName, face, t.status === "pending" && styles.withPending]}
                 onPress={() => router.push(`/user/${t.member.username}`)}
               >
-                <Text style={[face, t.status === "pending" && styles.withPending]}>{t.member.username}</Text>
+                {t.member.username}
                 {t.status === "pending" ? " (pending)" : ""}
                 {i < shownTags.length - 1 ? ", " : ""}
               </Text>

@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function UserRow({ username, avatarPath, title, subtitle, onPress, right }: Props) {
-  // Editorial (Preview): the username in the names' face.
+  // Editorial (Preview): the username, not bold.
   const face = useNameFace();
   return (
     <Pressable style={styles.row} onPress={onPress}>

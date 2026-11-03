@@ -28,7 +28,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { PHOTOGRAPH_UNAVAILABLE, photographUnavailable } from "@/utils/messageText";
-import { useNameFace, useNameTitleStyle } from "@/utils/nameFace";
+import { useNameFace } from "@/utils/nameFace";
 import { postAge } from "@/utils/time";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
@@ -51,8 +51,6 @@ export default function Thread() {
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
   const focused = useIsFocused();
-  // Editorial (Preview): the title is who it is with, in the names' face.
-  const titleStyle = useNameTitleStyle();
 
   const peerQ = useQuery({
     queryKey: ["conversation-peer", id, userId],
@@ -98,7 +96,7 @@ export default function Thread() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={headerHeight}
     >
-      <Stack.Screen options={{ title: peerQ.data?.username ?? "", headerTitleStyle: titleStyle }} />
+      <Stack.Screen options={{ title: peerQ.data?.username ?? "" }} />
       <FlatList
         data={newestFirst}
         inverted
@@ -155,7 +153,7 @@ function Bubble({
   const thumb = shared
     ? mediaUrl("thumbnails", shared.thumb_path) ?? mediaUrl("media", shared.media_path)
     : null;
-  // Editorial (Preview): whose photograph it is, in the names' face. In your own dark bubble its light ink still wins, after it.
+  // Editorial (Preview): whose photograph it is, not bold. Your own dark bubble's light ink comes after it.
   const face = useNameFace();
 
   return (

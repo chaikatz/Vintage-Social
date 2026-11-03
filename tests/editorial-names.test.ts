@@ -3,17 +3,18 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Editorial (Preview): members' usernames set as the print sets its credit.
+ * Editorial (Preview): members' usernames, not bold.
  *
- * While the feed is Editorial every username the app draws as a name is set
- * in the print credit's face and tracking (type.mono, 0.08 em), and, as the
- * member chose, bold and in the words' own ink; each at its own size; where
- * a place marks a name for a state of its own, the state still wins, but
- * for an unread thread, which its dot and preview mark instead. Under Original nothing changes at all.
- * First the module that says so, then, read from the source, every place
- * that draws a username, so that none is dropped and none is added without
- * it, and every state that still wins over it. Last, which files may read
- * the module, so the trial still comes out cleanly.
+ * While the feed is Editorial every username the app draws as a name is
+ * drawn as it is under Original, in the app's own face, size, colour and
+ * spacing, but regular where it is bold there. Where a place marks a name
+ * for a state of its own, the state still wins: an unread thread's name is
+ * bold again. A bar's title is regular already and is left as it is. Under
+ * Original nothing changes at all.
+ * First the module that says so, then the bars, then, read from the source,
+ * every place that draws a username, so that none is dropped and none is
+ * added without it, and every state that still wins over it. Last, which
+ * files may read the module, so the trial still comes out cleanly.
  */
 
 vi.mock("react-native", () => ({
@@ -28,14 +29,12 @@ vi.mock("react", async (original) => ({
   useSyncExternalStore: (_subscribe: unknown, get: () => unknown) => get(),
 }));
 
-const { NAME_INK, aroundName, nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = await import("@/utils/nameFace");
+const nameFaceModule = await import("@/utils/nameFace");
+const { nameFace, useNameFace } = nameFaceModule;
 const { setFeedLayout, __resetFeedLayoutForTest } = await import("@/utils/feedLayout");
-const { colors, dark, type } = await import("@/theme");
-/** A name under Editorial: the print's face and tracking, bold, in the words' ink. */
-const EDITORIAL = { fontFamily: type.mono, fontWeight: "700", letterSpacing: 1.1, color: NAME_INK };
-const { PRINT_WIDTH, exportLayout } = await import("@/utils/exportLayout");
-const { erasEmpty } = await import("@/components/eraBook");
-const { eraSummary } = await import("@/utils/memories");
+const { colors, type } = await import("@/theme");
+/** A name under Editorial: regular, and nothing else of its own. */
+const EDITORIAL = { fontWeight: "400" };
 
 const root = path.resolve(import.meta.dirname, "..");
 
@@ -63,53 +62,22 @@ const sources = () =>
 
 afterEach(() => __resetFeedLayoutForTest());
 
-/** The print's credit line as ExportCard sets it: its style, from its box to the end of the array. */
-const credit = () => code("src/components/ExportCard.tsx").match(/rect\(L\.credit\),[\s\S]*?\]/)?.[0] ?? "";
-
 describe("the names' face", () => {
-  it("is the print's credit under Editorial, and nothing at all under Original", () => {
+  it("is regular under Editorial, and nothing at all under Original", () => {
     expect(nameFace("editorial")).toEqual(EDITORIAL);
-    // On the phone: Courier New Bold, 1.1 pt apart, in the words' near-black ink (their cream in the dark appearance).
-    expect(nameFace("editorial")).toEqual({ fontFamily: "Courier New", fontWeight: "700", letterSpacing: 1.1, color: "#2B2620" });
     // Nothing, not an empty style: a style array is exactly what it was.
     expect(nameFace("original")).toBeUndefined();
     // The same object each time, so nothing redraws for it alone.
     expect(nameFace("editorial")).toBe(nameFace("editorial"));
   });
 
-  it("is the print's face, bold and in the words' own ink, as the member chose over the credit's faint and regular", () => {
-    expect(credit()).toMatch(/fontFamily: type\.mono,/);
-    // The print's credit is faint and regular; a name in the app is the words' ink, and bold.
-    expect(credit()).toMatch(/color: c\.inkFaint,/);
-    expect(credit()).not.toMatch(/fontWeight/);
-    expect(NAME_INK).toBe(colors.ink);
-    expect(nameFace("editorial")!.color).toBe(colors.ink);
-    // The theme's own dynamic ink, not its light value alone: cream on the dark print's brown, never near-black on it.
-    expect(code("src/utils/nameFace.ts")).toMatch(/export const NAME_INK: ColorValue = colors\.ink;/);
-    expect(code("src/theme/index.ts")).toMatch(/\bink: dyn\(light\.ink, dark\.ink\)/);
-    expect(dark.ink).toBe("#F6ECDF");
-    expect(nameFace("editorial")!.color).not.toBe(colors.inkFaint);
-    expect(nameFace("editorial")!.fontWeight).toBe("700");
-  });
-
-  it("is tracked as the print tracks its credit, 0.08 em, at a name's usual size", () => {
-    expect(credit()).toMatch(/letterSpacing: L\.credit\.spacing,/);
-    expect(code("src/utils/exportLayout.ts")).toMatch(/spacing: r2\(creditSize \* 0\.08\),/);
-    const L = exportLayout(1, "print", PRINT_WIDTH);
-    expect(L.credit.spacing / L.credit.size).toBeCloseTo(0.08, 2);
-    // In points: the credit's 0.08 em at 14 pt, and within a tenth of a point of it at the 13 and 15 pt most names are set at.
-    const { letterSpacing } = nameFace("editorial")!;
-    expect(letterSpacing).toBeCloseTo(0.08 * 14, 1);
-    for (const size of [13, 14, 15]) expect(Math.abs(letterSpacing - 0.08 * size), `${size} pt`).toBeLessThanOrEqual(0.1);
-    // And within a quarter of a point at the few set smaller or larger (a sent photograph's 11 pt, a chip's 12, a sentence's 16).
-    for (const size of [11, 12, 16]) expect(Math.abs(letterSpacing - 0.08 * size), `${size} pt`).toBeLessThanOrEqual(0.25);
-  });
-
-  it("sets the face, weight, tracking and ink, and never a size: each name keeps its own", () => {
-    expect(Object.keys(nameFace("editorial")!)).toEqual(["fontFamily", "fontWeight", "letterSpacing", "color"]);
-    expect(nameFace("editorial")!.fontWeight).toBe("700");
-    expect(nameFace("editorial")).not.toHaveProperty("fontSize");
-    expect(nameFace("editorial")).not.toHaveProperty("lineHeight");
+  it("is the weight alone: a name keeps the app's own face, size, colour and spacing", () => {
+    expect(Object.keys(nameFace("editorial")!)).toEqual(["fontWeight"]);
+    for (const own of ["fontFamily", "fontSize", "lineHeight", "letterSpacing", "color", "textTransform"]) {
+      expect(nameFace("editorial"), own).not.toHaveProperty(own);
+    }
+    // Nor does the module set any of them anywhere, or name the typewriter face.
+    expect(code("src/utils/nameFace.ts")).not.toMatch(/fontFamily|letterSpacing|color|type\.mono|Courier|@\/theme/);
   });
 
   it("follows the layout chosen in Settings, the moment it changes", () => {
@@ -122,125 +90,66 @@ describe("the names' face", () => {
 
   it("is read from the one layout preference, and nowhere else", () => {
     const source = readFileSync(path.join(root, "src/utils/nameFace.ts"), "utf8");
-    // react-native only for the ink's type; the ink itself is the theme's.
-    expect(source.match(/from "[^"]+"/g)).toEqual(['from "react-native"', 'from "@/theme"', 'from "@/utils/feedLayout"']);
+    expect(source.match(/from "[^"]+"/g)).toEqual(['from "@/utils/feedLayout"']);
     expect(code("src/utils/nameFace.ts")).toMatch(/return nameFace\(useFeedLayout\(\)\);/);
   });
-});
 
-/** A photograph of a member's own, as the Eras view reads one. */
-const print = (id: string, taken: string | null, location: string | null = null) => ({
-  id,
-  taken_at: taken,
-  created_at: "2026-09-01T12:00:00",
-  location,
-  media_type: "photo",
-  caption: "",
-});
-
-/** A member's page with no eras, for each reason it can have none: no photographs, none dated, none sharing an era. */
-const NO_ERAS = {
-  none: eraSummary([]),
-  undated: eraSummary([print("a", null)]),
-  scattered: eraSummary([print("a", "2021-07-10T12:00:00", "Bar Pitti")]),
-};
-
-describe("a sentence the app writes with a username in it", () => {
-  it("is cut where its writer puts the name, so the name alone takes the face", () => {
-    for (const [kind, summary] of Object.entries(NO_ERAS)) {
-      const words = aroundName((name) => erasEmpty(summary, name)?.body ?? "");
-      // The name once, between the words before it and the words after it.
-      expect(words, kind).toHaveLength(2);
-      // Drawn back together, the sentence is word for word the one written for the member.
-      expect(words.join("tomas.lindqvist"), kind).toBe(erasEmpty(summary, "tomas.lindqvist")?.body);
-      expect(erasEmpty(summary, "tomas.lindqvist")?.kind, kind).toBe(kind);
-    }
-  });
-
-  it("is never cut where the same letters fall in the words around the name", () => {
-    // A member called "yet": the sentence ends in "yet." too, and that one is not the name.
-    const words = aroundName((name) => erasEmpty(NO_ERAS.none, name)?.body ?? "");
-    expect(words).toEqual(["", " hasn’t posted a photograph yet."]);
-    expect(words.join("yet")).toBe(erasEmpty(NO_ERAS.none, "yet")?.body);
-  });
-
-  it("is the sentence itself where it has no name in it", () => {
-    expect(aroundName(() => "Eras gather the photographs you post.")).toEqual(["Eras gather the photographs you post."]);
+  it("is all the module gives: no title style, no ink, nothing to cut a sentence with", () => {
+    expect(Object.keys(nameFaceModule).sort()).toEqual(["nameFace", "useNameFace"]);
   });
 });
 
 describe("a bar titled with a username", () => {
-  it("keeps the stack's own title size, and sets the name as the print's credit: face, weight, tracking and ink", () => {
-    // The stack's title, as app/_layout.tsx sets it for every screen; its colour is the bar's tint.
+  it("is the stack's own title under either layout: the serif at 17 pt, never bold, in the bar's tint", () => {
     expect(code("app/_layout.tsx")).toMatch(/headerTitleStyle: \{ fontFamily: type\.serif, fontSize: 17 \},/);
     expect(code("app/_layout.tsx")).toMatch(/headerTintColor: colors\.ink as unknown as string,/);
-    expect(nameTitleStyle("original")).toEqual({ fontFamily: type.serif, fontSize: 17 });
-    expect(nameTitleStyle("editorial")).toEqual({
-      fontFamily: type.mono,
-      fontSize: 17,
-      fontWeight: "700",
-      letterSpacing: 1.36,
-      color: NAME_INK,
-    });
-    // The credit's 0.08 em at the title's 17 pt, and the names' own ink.
-    expect(nameTitleStyle("editorial").letterSpacing).toBeCloseTo(0.08 * 17, 5);
-    expect(nameTitleStyle("editorial").color).toBe(nameFace("editorial")!.color);
-    // The stack's size kept; the face, its weight, its tracking and its ink added.
-    expect(Object.keys(nameTitleStyle("editorial"))).toEqual([...Object.keys(nameTitleStyle("original")), "fontWeight", "letterSpacing", "color"]);
+    expect(code("app/_layout.tsx")).not.toMatch(/nameFace|fontWeight/);
   });
 
-  it("is given its ink as the title's own colour, which the stack takes over the bar's tint", () => {
-    // Under Original the title has no colour of its own and is the bar's tint, as before.
-    expect(nameTitleStyle("original")).not.toHaveProperty("color");
-    // The stack draws a title in its style's colour when it has one, else in the tint: on iOS as the native title's colour.
-    const stack = readFileSync(path.join(root, "node_modules/@react-navigation/native-stack/src/views/useHeaderConfigProps.tsx"), "utf8");
-    expect(stack).toMatch(/const titleColor =\s*'color' in headerTitleStyleFlattened\s*\? headerTitleStyleFlattened\.color/);
-    expect(stack).toMatch(/\n {4}titleColor,\n/);
+  it("is given no title style of a screen's own, so the stack's stands", () => {
+    const titled: string[] = [];
+    for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
+      for (const [, options] of code(file).matchAll(/<Stack\.Screen options=\{\{(.*?)\}\} \/>/g)) {
+        if (!/\btitle: [^,]*username/.test(options)) continue;
+        titled.push(file);
+        expect(options, file).not.toMatch(/headerTitleStyle/);
+      }
+    }
+    // The scan finds what it is meant to: a member's profile (while it loads and once it has), their gallery, a message thread.
+    expect(titled.sort()).toEqual(["app/gallery.tsx", "app/messages/[id].tsx", "app/user/[username].tsx", "app/user/[username].tsx"]);
+    // No screen sets a title style of its own at all.
+    expect(sources().filter((f) => f !== "app/_layout.tsx" && /headerTitleStyle/.test(code(f)))).toEqual([]);
   });
 
-  it("follows the layout, and keeps the serif where the title is not a name", () => {
-    expect(useNameTitleStyle()).toEqual({ fontFamily: type.serif, fontSize: 17 });
-    setFeedLayout("editorial");
-    expect(useNameTitleStyle()).toEqual({ fontFamily: type.mono, fontSize: 17, fontWeight: "700", letterSpacing: 1.36, color: NAME_INK });
-    expect(useNameTitleStyle(false)).toEqual({ fontFamily: type.serif, fontSize: 17 });
-    setFeedLayout("original");
-    expect(useNameTitleStyle()).toEqual({ fontFamily: type.serif, fontSize: 17 });
-  });
-
-  it("leaves the stack's own title style as it was", () => {
-    expect(code("app/_layout.tsx")).not.toMatch(/nameFace|type\.mono/);
+  it("on the Profile tab, which the app draws itself, is the serif at the stack's size, regular, as it always was", () => {
+    const tabs = code("app/(tabs)/_layout.tsx");
+    expect(tabs).toMatch(/<Text style=\{styles\.headerTitle\}>\{title\}<\/Text>/);
+    expect(tabs).toMatch(/\n {2}headerTitle: \{ fontFamily: type\.serif, fontSize: 17, color: colors\.ink \},/);
+    expect(tabs).not.toMatch(/nameFace|\bface\b/);
   });
 });
 
 /** Every place a username is drawn under Editorial, and how it takes the face. */
 const SITES: [file: string, what: string, pattern: RegExp][] = [
-  ["app/(tabs)/_layout.tsx", "the profile tab's title, the member's username", /<Text style=\{\[styles\.headerTitle, tab === "profile" && username \? face : undefined\]\}>\{title\}<\/Text>/],
-  ["app/(tabs)/activity.tsx", "who did it, without the space after it", /<Text style=\{styles\.actor\}>\s*<Text style=\{face\}>\{item\.actor\.username\}<\/Text>\{" "\}\s*<\/Text>/],
+  ["app/(tabs)/activity.tsx", "who did it", /<Text style=\{\[styles\.actor, face\]\}>\{item\.actor\.username\} <\/Text>/],
   ["app/admin/applications.tsx", "the username asked for", /<Text style=\{\[styles\.username, face\]\}>\{item\.desired_username\}<\/Text>/],
-  ["app/admin/reports.tsx", "who reported it", /reported by\{" "\}\s*\{item\.reporter \? <Text style=\{face\}>\{item\.reporter\.username\}<\/Text> : "unknown"\} ·\{" "\}/],
   ["app/blocked.tsx", "each member blocked", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
   ["app/comments.tsx", "the caption's author", /<Text style=\{\[styles\.author, face\]\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/],
   ["app/comments.tsx", "each comment's author", /<Text style=\{\[styles\.author, face\]\}>\{item\.author\.username\}<\/Text> \{item\.body\}/],
-  ["app/follows.tsx", "Nobody follows … yet.", /Nobody follows <Text style=\{face\}>\{username\}<\/Text> yet\./],
-  ["app/follows.tsx", "… isn't following anyone yet.", /<Text style=\{face\}>\{username\}<\/Text>\s*\{" isn't following anyone yet\."\}/],
-  ["app/compose.tsx", "who was there",/<Text style=\{\[styles\.tagNames, face\]\} numberOfLines=\{1\}>\s*\{tags\.map\(\(t\) => t\.username\)\.join\(", "\)\}/],
-  ["app/gallery.tsx", "its title, when it is the author's username", /const titleStyle = useNameTitleStyle\(!shown\.era\);[\s\S]*?<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/],
-  ["app/messages/index.tsx", "who each thread is with, its unread emphasis before the face (Original keeps it)", /<Text style=\{\[styles\.username, unread && styles\.unreadText, face\]\}>\s*\{conversation\.peer\.username\}/],
-  ["app/messages/[id].tsx", "the thread's title", /<Stack\.Screen options=\{\{ title: peerQ\.data\?\.username \?\? "", headerTitleStyle: titleStyle \}\} \/>/],
+  ["app/compose.tsx", "who was there", /<Text style=\{\[styles\.tagNames, face\]\} numberOfLines=\{1\}>\s*\{tags\.map\(\(t\) => t\.username\)\.join\(", "\)\}/],
+  ["app/messages/index.tsx", "who each thread is with, an unread thread's style after the face", /<Text style=\{\[styles\.username, face, unread && styles\.unreadText\]\}>\s*\{conversation\.peer\.username\}/],
   ["app/messages/[id].tsx", "whose photograph was sent, your own bubble's ink after it", /<Text style=\{\[styles\.sharedCaption, face, mine && styles\.textMine\]\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/],
   ["app/post/[id].tsx", "the author", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/],
-  ["app/post/[id].tsx", "who was there, without \" (pending)\" or the commas", /<Text style=\{\[face, t\.status === "pending" && styles\.withPending\]\}>\{t\.member\.username\}<\/Text>\s*\{t\.status === "pending" \? " \(pending\)" : ""\}/],
+  [
+    "app/post/[id].tsx",
+    "who was there, a pending tag's style after the face",
+    /style=\{\[styles\.withName, face, t\.status === "pending" && styles\.withPending\]\}\s*onPress=\{\(\) => router\.push\(`\/user\/\$\{t\.member\.username\}`\)\}\s*>\s*\{t\.member\.username\}\s*\{t\.status === "pending" \? " \(pending\)" : ""\}/,
+  ],
   ["app/post/[id].tsx", "the caption's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/],
   ["app/post/[id].tsx", "each comment's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{c\.author\.username\}<\/Text> \{c\.body\}/],
   ["app/requests.tsx", "each member asking", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
   ["app/share.tsx", "the photograph's author", /<Text style=\{\[styles\.previewAuthor, face\]\}>\{post\?\.author\.username \?\? ""\}<\/Text>/],
   ["app/share.tsx", "each member to send it to", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
-  ["app/user/[username].tsx", "the title while the profile loads", /<Stack\.Screen options=\{\{ title: username \?\? "", headerTitleStyle: titleStyle \}\} \/>/],
-  ["app/user/[username].tsx", "the title", /<Stack\.Screen options=\{\{ title: profile\.username, gestureEnabled: swipeFree, headerTitleStyle: titleStyle \}\} \/>/],
-  ["app/user/[username].tsx", "You blocked …", /<Text style=\{styles\.lockedTitle\}>\s*You blocked <Text style=\{face\}>\{profile\.username\}<\/Text>\s*<\/Text>/],
-  ["app/user/[username].tsx", "… has your request", /<Text style=\{face\}>\{profile\.username\}<\/Text>\s*\{" has your request\. You'll see their photographs once they accept\."\}/],
-  ["app/user/[username].tsx", "Ask to follow …", /\{"Ask to follow "\}\s*<Text style=\{face\}>\{profile\.username\}<\/Text>\s*\{" to see their photographs\."\}/],
-  ["src/components/EraList.tsx", "a member's empty Eras view, the name in its sentence", /const emptyBody =\s*empty && member\s*\? aroundName\(\(name\) => erasEmpty\(summary, name\)\?\.body \?\? ""\)\.map\(\(words, i\) => \(\s*<React\.Fragment key=\{i\}>\s*\{i > 0 \? <Text style=\{face\}>\{member\}<\/Text> : null\}\s*\{words\}\s*<\/React\.Fragment>\s*\)\)\s*: empty\?\.body;[\s\S]*?<EmptyState title=\{empty\.title\} body=\{emptyBody\} \/>/],
   ["src/components/UserRow.tsx", "every list of members: Search, Recent, Followers, Likes and the admin's Members", /<Text style=\{\[styles\.username, face\]\}>\{username\}<\/Text>/],
   ["src/components/PendingPostCard.tsx", "the author", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{draft\.author\.username\}/],
   ["src/components/PendingPostCard.tsx", "the caption's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{draft\.author\.username\}<\/Text> \{draft\.caption\.trim\(\)\}/],
@@ -249,31 +158,23 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ["src/components/TagPicker.tsx", "each member to choose", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
 ];
 
-/** The files that read the module, and what each reads from it. */
-const READERS: Record<string, string> = {
-  "app/(tabs)/_layout.tsx": "useNameFace",
-  "app/(tabs)/activity.tsx": "useNameFace",
-  "app/admin/applications.tsx": "useNameFace",
-  "app/admin/reports.tsx": "useNameFace",
-  "app/blocked.tsx": "useNameFace",
-  "app/comments.tsx": "useNameFace",
-  "app/compose.tsx": "useNameFace",
-  "app/follows.tsx": "useNameFace",
-  "app/gallery.tsx": "useNameTitleStyle",
-  "app/messages/[id].tsx": "useNameFace, useNameTitleStyle",
-  "app/messages/index.tsx": "useNameFace",
-  "app/post/[id].tsx": "useNameFace",
-  "app/requests.tsx": "useNameFace",
-  "app/share.tsx": "useNameFace",
-  "app/user/[username].tsx": "useNameFace, useNameTitleStyle",
-  "src/components/EraList.tsx": "aroundName, useNameFace",
-  "src/components/PendingPostCard.tsx": "useNameFace",
-  "src/components/ProfileHeader.tsx": "useNameFace",
-  "src/components/TagPicker.tsx": "useNameFace",
-  "src/components/UserRow.tsx": "useNameFace",
-  // The print card sets its names in its own sheet, in the names' ink.
-  "src/components/feed/EditorialPostCard.tsx": "NAME_INK",
-};
+/** The files that read the module: each reads the hook, and nothing else. */
+const READERS = [
+  "app/(tabs)/activity.tsx",
+  "app/admin/applications.tsx",
+  "app/blocked.tsx",
+  "app/comments.tsx",
+  "app/compose.tsx",
+  "app/messages/[id].tsx",
+  "app/messages/index.tsx",
+  "app/post/[id].tsx",
+  "app/requests.tsx",
+  "app/share.tsx",
+  "src/components/PendingPostCard.tsx",
+  "src/components/ProfileHeader.tsx",
+  "src/components/TagPicker.tsx",
+  "src/components/UserRow.tsx",
+];
 
 describe("every username the app draws", () => {
   for (const [file, what, pattern] of SITES) {
@@ -282,25 +183,28 @@ describe("every username the app draws", () => {
     });
   }
 
-  it("takes the face from the hook, read once at the top of what draws it", () => {
-    // The print card alone sets its names in its own sheet, and reads only their ink.
-    for (const file of Object.keys(READERS).filter((f) => f !== "src/components/feed/EditorialPostCard.tsx")) {
+  it("takes the face from the hook, read once at the top of what draws it, and then used", () => {
+    for (const file of READERS) {
       const source = code(file);
-      const faces = source.match(/\bface\b/g)?.length ?? 0;
-      const titles = source.match(/\btitleStyle\b/g)?.length ?? 0;
-      if (faces > 0) expect(source, file).toMatch(/const face = useNameFace\(\);/);
-      if (titles > 0) expect(source, file).toMatch(/const titleStyle = useNameTitleStyle\((!shown\.era)?\);/);
+      expect(source.match(/const face = useNameFace\(\);/g), file).toHaveLength(1);
       // Read and then used: never read and left.
-      expect(faces + titles, file).toBeGreaterThan(1);
+      expect(source.match(/\bface\b/g)?.length ?? 0, file).toBeGreaterThan(1);
     }
   });
 
-  it("on the editorial card is always in the face, set in its sheet, since it is drawn only under Editorial", () => {
+  it("on the editorial card is the original card's name, not bold, set in its sheet, since it is drawn only under Editorial", () => {
     const card = code("src/components/feed/EditorialPostCard.tsx");
-    // The print's credit, as the names' face sets it (its values, here as written; tests/editorial-feed.test.ts compares the sheet itself).
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.mono, fontSize: 14, fontWeight: "700", letterSpacing: 1\.1, color: NAME_INK \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.mono, fontWeight: "700", letterSpacing: 1\.1, color: NAME_INK \},/);
-    expect(nameFace("editorial")).toEqual(EDITORIAL);
+    const original = code("src/components/PostCard.tsx");
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "400", color: colors\.ink \},/);
+    expect(card).toMatch(/\n {2}author: \{ fontWeight: "400" \},/);
+    // The original card's own, but for the weight.
+    expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
+    expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
+    // Its own face, size and ink: neither the typewriter face nor tracking on a name, and the module not read.
+    expect(card).not.toMatch(/nameFace|NAME_INK/);
+    for (const name of ["username", "author"]) {
+      expect(card.match(new RegExp(`\\n {2}${name}: \\{ [^\\n]* \\},`))?.[0], name).not.toMatch(/fontFamily|letterSpacing|type\.mono/);
+    }
     expect(card).toMatch(/<Text style=\{styles\.username\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/);
     expect(card).toMatch(/<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/);
     expect(card).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
@@ -311,7 +215,7 @@ describe("every username the app draws", () => {
   it("is none of them left out: a Text that draws a username has the face, or a reason not to", () => {
     // Where a username is drawn without the hook, and why.
     const without: Record<string, RegExp> = {
-      // Always Editorial: its sheet sets the face (above).
+      // Always Editorial: its sheet sets the name regular (above).
       "src/components/feed/EditorialPostCard.tsx": /^\{(post|c)\.author\.username\}$/,
       // Drawn only under Original: Home and the gallery draw the editorial card under Editorial.
       "src/components/PostCard.tsx": /^\{(post|c)\.author\.username\}$/,
@@ -321,8 +225,8 @@ describe("every username the app draws", () => {
     const drawn: string[] = [];
     for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
       const source = code(file);
-      // A Text whose words start with a username (or the member whose Eras page it is): its opening tag, then the expression.
-      for (const m of source.matchAll(/<Text\b((?:[^>]|=>)*?)>\s*(\{(?:[^{}]*\b(?:desired_)?username\b[^{}]*|member)\})/g)) {
+      // A Text whose words start with a username: its opening tag, then the expression.
+      for (const m of source.matchAll(/<Text\b((?:=>|[^>])*?)>\s*(\{[^{}]*\b(?:desired_)?username\b[^{}]*\})/g)) {
         const [, props, child] = m;
         const site = `${file}: ${child}`;
         drawn.push(site);
@@ -332,56 +236,43 @@ describe("every username the app draws", () => {
       }
     }
     // The scan finds what it is meant to: the Texts above with the face, and the seven without.
-    expect(drawn.length).toBeGreaterThanOrEqual(35);
-    // Among them the names in an empty list's or an empty Eras page's sentence.
-    expect(drawn.filter((site) => /^(app\/follows|src\/components\/EraList)\.tsx: \{(username|member)\}$/.test(site))).toHaveLength(3);
+    expect(drawn.length).toBeGreaterThanOrEqual(SITES.length + 7);
   });
 
-  it("is only ever a username: display names, captions, comments and messages keep their own face", () => {
+  it("is only ever a username: display names, captions, comments and messages keep their own weight", () => {
     let faced = 0;
-    for (const file of Object.keys(READERS)) {
+    for (const file of READERS) {
       const source = code(file);
-      for (const m of source.matchAll(/<Text\b((?:[^>]|=>)*?)>/g)) {
+      for (const m of source.matchAll(/<Text\b((?:=>|[^>])*?)>/g)) {
         const [tag, props] = m;
         if (!/\bface\b/.test(props)) continue;
         faced += 1;
-        // What the Text holds, up to the next tag: a username, and nothing after it but its closing tag.
-        const words = source.slice(m.index + tag.length).split("<")[0].trim();
+        // What the Text holds, up to its closing tag.
+        const words = source.slice(m.index + tag.length).split("</Text>")[0].trim();
         const site = `${file}: ${words}`;
-        if (file === "app/(tabs)/_layout.tsx") {
-          // The bar's title, given the face only when it is the profile tab's username.
-          expect(words, site).toBe("{title}");
-          expect(props, site).toMatch(/tab === "profile" && username \? face : undefined/);
-        } else if (file === "src/components/ProfileHeader.tsx") {
+        if (file === "src/components/ProfileHeader.tsx") {
           // A display name, given the face only when it falls back to the username.
           expect(words, site).toBe("{profile.full_name ?? profile.username}");
           expect(props, site).toMatch(/profile\.full_name == null \? face : undefined/);
-        } else if (file === "src/components/EraList.tsx") {
-          // The member whose Eras page it is, which a member's page gives as their username (below).
-          expect(words, site).toBe("{member}");
+        } else if (file === "app/post/[id].tsx" && /withName/.test(props)) {
+          // A member tagged: their username, then "(pending)" while they have not accepted, then the comma before the next.
+          expect(words.split(/\s*\n\s*/), site).toEqual([
+            "{t.member.username}",
+            '{t.status === "pending" ? " (pending)" : ""}',
+            '{i < shownTags.length - 1 ? ", " : ""}',
+          ]);
         } else {
+          // A username alone; the space after who did it in Activity aside.
           expect(words, site).toMatch(/^\{[^{}]*\b(?:desired_)?username\b[^{}]*\}$/);
           expect(words, site).not.toMatch(/full_name|caption|\.body|bio|preview/);
         }
       }
     }
-    expect(faced).toBe(SITES.filter(([, , p]) => /face/.test(p.source)).length);
+    expect(faced).toBe(SITES.length);
   });
 
-  it("titles a bar with a username only in the names' face", () => {
-    const titled: string[] = [];
-    for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
-      for (const [, options] of code(file).matchAll(/<Stack\.Screen options=\{\{(.*?)\}\} \/>/g)) {
-        if (!/\btitle: [^,]*username/.test(options)) continue;
-        titled.push(file);
-        expect(options, file).toMatch(/headerTitleStyle: titleStyle/);
-      }
-    }
-    expect(titled.sort()).toEqual(["app/gallery.tsx", "app/messages/[id].tsx", "app/user/[username].tsx", "app/user/[username].tsx"]);
-  });
-
-  it("is never written into a sentence the app draws as plain text, where the name could not have a face of its own", () => {
-    // A template that writes a username into words, and why each may.
+  it("in a sentence is drawn as the sentence is, regular already, so the sentence is left as it was", () => {
+    // A template that writes a username into words, and why each needs nothing.
     const written: Record<string, RegExp[]> = {
       // Dialogs, prompts and action sheets: the system draws them, in its own face.
       "app/admin/members.tsx": [
@@ -390,13 +281,20 @@ describe("every username the app draws", () => {
         /^`Suspend \$\{member\.username\}\?`$/,
         /^`Reinstate \$\{member\.username\}\?`$/,
       ],
-      "app/user/[username].tsx": [/^`Block \$\{profile\.username\}\?`$/],
       "src/hooks/usePostActions.ts": [/^`Block \$\{post\.author\.username\}`$/, /^`Block \$\{post\.author\.username\}\?`$/],
       // Spoken by VoiceOver, never drawn.
       "app/(tabs)/search.tsx": [/^`Forget \$\{item\.username\}`$/],
       // The public web page, written on the server: the preference is kept on the phone.
       "src/share/publicPage.ts": [/^`A photograph from \$\{p\.username\}’s archive · VINTAGE`$/],
-      // Drawn by EraList, cut at the name (aroundName) so the name alone takes the face: above.
+      // A private profile's line, in its regular caption (below), and the Block dialog.
+      "app/user/[username].tsx": [
+        /^`Block \$\{profile\.username\}\?`$/,
+        /^`\$\{profile\.username\} has your request\. You'll see their photographs once they accept\.`$/,
+        /^`Ask to follow \$\{profile\.username\} to see their photographs\.`$/,
+      ],
+      // An empty Followers or Following list's sentence, in EmptyState's regular body (below).
+      "app/follows.tsx": [/^`Nobody follows \$\{username\} yet\.`$/, /^`\$\{username\} isn't following anyone yet\.`$/],
+      // A member's empty Eras page, in EmptyState's regular body too.
       "src/components/eraBook.ts": [
         /^`\$\{member\} hasn’t posted a photograph yet\.`$/,
         /, and none of \$\{member\}’s carries that date\.`$/,
@@ -416,34 +314,25 @@ describe("every username the app draws", () => {
     }
     // The scan finds what it is meant to: each sentence allowed above, once, and no other.
     expect(found).toHaveLength(Object.values(written).flat().length);
-  });
-
-  it("in an empty page's sentence is drawn by EmptyState as every sentence is, with no face of its own", () => {
-    const empty = code("src/components/EmptyState.tsx");
-    // A sentence, or a sentence with a username in its face: the one prop widened, and drawn as before.
-    expect(empty).toMatch(/\n {2}body\?: React\.ReactNode;\n/);
-    expect(empty).toMatch(/\{body \? <Text style=\{styles\.body\}>\{body\}<\/Text> : null\}/);
-    expect(empty).toMatch(/body: \{ \.\.\.type\.caption, textAlign: "center", marginTop: spacing\.sm, color: colors\.inkSoft \},/);
-    expect(empty).not.toMatch(/nameFace|type\.mono|\bface\b/);
-  });
-
-  it("is the member an Eras page is given: their username, on their page only", () => {
-    const given: string[] = [];
-    for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
-      for (const [element] of code(file).matchAll(/<EraList\b[\s\S]*?\/>/g)) {
-        const member = element.match(/\bmember=\{([^{}]*)\}/)?.[1];
-        if (member) given.push(`${file}: ${member}`);
-      }
-    }
-    expect(given).toEqual(["app/user/[username].tsx: profile.username"]);
-    // The Followers and Following lists are given the username of the member whose lists they are.
-    for (const file of ["app/user/[username].tsx", "app/(tabs)/profile.tsx"]) {
-      expect(code(file), file).toMatch(/pathname: "\/follows",\s*params: \{ userId[^{}]*, kind, username: profile\.username \}/);
-    }
+    // The sentences the app draws itself are set regular, so a name in one is never bold under either layout.
+    const regular = (file: string, name: string) => {
+      const rule = code(file).match(new RegExp(`\\n {2}${name}: \\{ ([^\\n]*) \\},`))?.[1];
+      expect(rule, `${file}: ${name}`).toBeDefined();
+      expect(rule, `${file}: ${name}`).not.toMatch(/fontWeight/);
+    };
+    regular("src/components/EmptyState.tsx", "body");
+    regular("app/user/[username].tsx", "lockedTitle");
+    regular("app/user/[username].tsx", "lockedBody");
+    regular("app/admin/reports.tsx", "headline");
+    for (const base of [type.caption, type.body, type.title]) expect(base).not.toHaveProperty("fontWeight");
+    // And drawn as they always were: the sentence a string, and the name in it no Text of its own.
+    expect(code("src/components/EmptyState.tsx")).toMatch(/\n {2}body\?: string;\n/);
+    expect(code("app/user/[username].tsx")).toMatch(/<Text style=\{styles\.lockedTitle\}>You blocked \{profile\.username\}<\/Text>/);
+    expect(code("app/admin/reports.tsx")).toMatch(/\{item\.target_type\} · reported by \{item\.reporter\?\.username \?\? "unknown"\} ·\{" "\}/);
   });
 });
 
-/** A word of a one-line rule, as the value it stands for here (each colour as the light print's). */
+/** A word of a one-line rule, as the value it stands for here (each colour as the light paper's). */
 function valueOf(words: string): unknown {
   if (/^colors\.\w+$/.test(words)) return colors[words.slice("colors.".length) as keyof typeof colors];
   if (/^type\.\w+$/.test(words)) return type[words.slice("type.".length) as keyof typeof type];
@@ -468,13 +357,16 @@ function rule(file: string, name: string): Record<string, unknown> {
  * A Text's style array as written at a site, drawn under a layout with its
  * state on or off, flattened as React Native flattens it: each style over
  * the ones before it, and a state's style only while the state holds.
+ * "before" is the array as claude/product-polish writes it: without the face.
  */
-function drawn(file: string, array: string, layout: "original" | "editorial", state: boolean): Record<string, unknown> {
+function drawn(file: string, array: string, layout: "original" | "editorial" | "before", state: boolean): Record<string, unknown> {
   const parts = array.replace(/^\[|\]$/g, "").split(/,\s*/);
+  const face = layout === "before" ? undefined : nameFace(layout);
   return Object.assign(
     {},
     ...parts.map((part) => {
-      if (part === "face") return nameFace(layout);
+      if (part === "face") return face;
+      if (/^.+ \? face : undefined$/.test(part)) return state ? face : undefined;
       const plain = part.match(/^styles\.(\w+)$/);
       if (plain) return rule(file, plain[1]);
       const when = part.match(/^.+ && styles\.(\w+)$/);
@@ -484,59 +376,92 @@ function drawn(file: string, array: string, layout: "original" | "editorial", st
   );
 }
 
-describe("a state a place marks a name for", () => {
-  /** Every style array that holds the face, in every file that reads it. */
-  const arrays = () =>
-    Object.keys(READERS).flatMap((file) =>
-      [...code(file).matchAll(/style=\{(\[[^\]]*\bface\b[^\]]*\])\}/g)].map((m) => [file, m[1]] as const),
-    );
+/** Every style array that holds the face, in every file that reads it. */
+const arrays = () =>
+  READERS.flatMap((file) => [...code(file).matchAll(/style=\{(\[[^\]]*\bface\b[^\]]*\])\}/g)].map((m) => [file, m[1]] as const));
 
-  it("comes after the face wherever a name is given both, so the state still wins over the names' ink and weight", () => {
+describe("a name under each layout", () => {
+  it("is found in every style array that holds the face, one for each place above", () => {
+    expect(arrays()).toHaveLength(SITES.length);
+  });
+
+  it("under Original is exactly as it was before the trial, state or not", () => {
+    for (const [file, array] of arrays()) {
+      for (const state of [false, true]) {
+        expect(drawn(file, array, "original", state), `${file}: ${array} (${state})`).toEqual(drawn(file, array, "before", state));
+      }
+    }
+  });
+
+  it("under Editorial is as under Original but for its weight, which is regular unless a state after the face sets one", () => {
+    let unbolded = 0;
+    for (const [file, array] of arrays()) {
+      for (const state of [false, true]) {
+        const site = `${file}: ${array} (${state})`;
+        const { fontWeight: was, ...before } = drawn(file, array, "original", state);
+        const { fontWeight: now, ...after } = drawn(file, array, "editorial", state);
+        // The face, the size, the colour and the spacing: as they were.
+        expect(after, site).toEqual(before);
+        // The weight: a state's where a state that sets one holds and comes after the face, and regular everywhere else.
+        const parts = array.slice(1, -1).split(/,\s*/);
+        const afterFace = parts.slice(parts.findIndex((p) => /\bface\b/.test(p)) + 1);
+        const stated = afterFace
+          .map((p) => p.match(/^.+ && styles\.(\w+)$/)?.[1])
+          .filter((name): name is string => name != null)
+          .map((name) => rule(file, name).fontWeight)
+          .find((weight) => weight != null);
+        const faced = !/\? face : undefined/.test(array) || state;
+        if (!faced) expect(now, site).toBe(was);
+        else if (state && stated != null) expect(now, site).toBe(stated);
+        else expect(now, site).toBe("400");
+        if (faced && (was === "600" || was === "700") && now === "400") unbolded += 1;
+      }
+    }
+    // It does something: the names bold under Original that Editorial sets regular.
+    expect(unbolded).toBeGreaterThanOrEqual(15);
+  });
+
+  it("comes after the place's own style and before any state's, so the state still wins", () => {
     const found = arrays();
-    // Each array listed above among the places a username is drawn.
-    expect(found).toHaveLength(21);
-    // The one state the face is meant to override: an unread thread, which its dot and preview mark under Editorial.
-    const UNREAD = "app/messages/index.tsx: [styles.username, unread && styles.unreadText, face]";
     for (const [file, array] of found) {
-      if (`${file}: ${array}` === UNREAD) continue;
       const parts = array.slice(1, -1).split(/,\s*/);
       const at = parts.findIndex((part) => /\bface\b/.test(part));
       // Before the face only the place's own style, never one that depends on a state.
       for (const before of parts.slice(0, at)) expect(before, `${file}: ${array}`).toMatch(/^styles\.\w+$/);
     }
-    // The three that a state marks: two with the state after the face, so it wins; the unread thread with it before.
+    // The three a state marks, each with the state after the face.
     const marked = found.filter(([, array]) => /&& styles\./.test(array)).map(([file, array]) => `${file}: ${array}`);
     expect(marked).toEqual([
       "app/messages/[id].tsx: [styles.sharedCaption, face, mine && styles.textMine]",
-      UNREAD,
-      'app/post/[id].tsx: [face, t.status === "pending" && styles.withPending]',
+      "app/messages/index.tsx: [styles.username, face, unread && styles.unreadText]",
+      'app/post/[id].tsx: [styles.withName, face, t.status === "pending" && styles.withPending]',
     ]);
   });
+});
 
-  it("an unread thread: marked by its dot and bold preview under Editorial, where every name is dark and bold; by its name under Original", () => {
+describe("a state a place marks a name for", () => {
+  it("an unread thread: its name bold again under Editorial, as under Original; a read one regular under both", () => {
     const file = "app/messages/index.tsx";
     const array = code(file).match(/<Text style=\{(\[[^\]]*\])\}>\s*\{conversation\.peer\.username\}/)![1];
     expect(rule(file, "unreadText")).toEqual({ color: colors.ink, fontWeight: "600" });
-    // The preview under it is marked by the same style.
+    // The preview under it is marked by the same style, and its dot.
     expect(code(file)).toMatch(/<Text style=\{\[styles\.preview, unread && styles\.unreadText\]\} numberOfLines=\{1\}>\s*\{preview\}/);
-    // Under Editorial the face comes last, so a name is dark and bold whether the thread is read or not: never a read name heavier than an unread one.
-    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 15, ...EDITORIAL });
-    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 15, ...EDITORIAL });
     expect(code(file)).toMatch(/\{unread \? <View style=\{styles\.dot\} \/> : null\}/);
+    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "600" });
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "400" });
     // Under Original exactly as before the trial.
     expect(drawn(file, array, "original", true)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "600" });
     expect(drawn(file, array, "original", false)).toEqual({ fontSize: 15, color: colors.ink });
   });
 
-  it("a photograph sent in your own bubble: its author's name in the bubble's light ink on its dark paper, still in the face", () => {
+  it("a photograph sent in your own bubble: its author's name in the bubble's light ink on its dark paper", () => {
     const file = "app/messages/[id].tsx";
     const array = code(file).match(/<Text style=\{(\[[^\]]*\])\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/)![1];
     expect(rule(file, "bubbleMine")).toEqual({ backgroundColor: colors.shutter, borderColor: colors.shutter });
     expect(rule(file, "textMine")).toEqual({ color: colors.onShutter });
-    const face = { fontFamily: type.mono, fontWeight: "700", letterSpacing: 1.1 };
-    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 11, marginTop: 4, ...face, color: colors.onShutter });
-    // In their bubble, on the raised paper, the names' own ink.
-    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 11, marginTop: 4, ...face, color: NAME_INK });
+    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 11, color: colors.onShutter, marginTop: 4, fontWeight: "400" });
+    // In their bubble, on the raised paper, its own faint ink.
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 11, color: colors.inkFaint, marginTop: 4, fontWeight: "400" });
     // Under Original exactly as before the trial.
     expect(drawn(file, array, "original", true)).toEqual({ fontSize: 11, marginTop: 4, color: colors.onShutter });
     expect(drawn(file, array, "original", false)).toEqual({ fontSize: 11, marginTop: 4, color: colors.inkFaint });
@@ -544,52 +469,66 @@ describe("a state a place marks a name for", () => {
 
   it("a member tagged who has not yet accepted: faint and regular, as the state sets it, with \"(pending)\" after", () => {
     const file = "app/post/[id].tsx";
-    const source = code(file);
-    // The state is on the words around the name, and again on the name after the face, so it wins over the face.
-    const array = source.match(/style=\{(\[styles\.withName, [^\]]*\])\}/)![1];
-    expect(array).toBe('[styles.withName, t.status === "pending" && styles.withPending]');
-    const own = '[face, t.status === "pending" && styles.withPending]';
-    expect(source).toMatch(/<Text style=\{\[face, t\.status === "pending" && styles\.withPending\]\}>\{t\.member\.username\}<\/Text>\s*\{t\.status === "pending" \? " \(pending\)" : ""\}/);
+    const array = code(file).match(/style=\{(\[styles\.withName, [^\]]*\])\}/)![1];
     const pending = rule(file, "withPending");
     expect(pending).toEqual({ fontWeight: "400", color: colors.inkFaint });
-    // The name draws over the words around it.
-    const name = (layout: "original" | "editorial", state: boolean) => ({ ...drawn(file, array, layout, state), ...drawn(file, own, layout, state) });
-    // Under Editorial: a pending name faint and regular, as the state sets it, still in the face and its tracking; an accepted one in the names' bold ink.
-    expect(name("editorial", true)).toEqual({ fontFamily: type.mono, letterSpacing: 1.1, color: pending.color, fontWeight: pending.fontWeight });
-    expect(name("editorial", false)).toEqual(EDITORIAL);
+    // Under Editorial: a pending name faint and regular, as the state sets it; an accepted one in its own dark ink, regular.
+    expect(drawn(file, array, "editorial", true)).toEqual(pending);
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontWeight: "400", color: colors.ink });
     // Under Original exactly as before the trial: an accepted name dark and bold, a pending one faint and regular.
-    expect(name("original", false)).toEqual({ fontWeight: "600", color: colors.ink });
-    expect(name("original", true)).toEqual(pending);
+    expect(drawn(file, array, "original", false)).toEqual({ fontWeight: "600", color: colors.ink });
+    expect(drawn(file, array, "original", true)).toEqual(pending);
   });
 });
 
 describe("the trial still comes out cleanly", () => {
-  it("is read by exactly these files, and by nothing else", () => {
+  it("is read by exactly these files, each reading the hook alone", () => {
     const readers = sources().filter((rel) => /from "@\/utils\/nameFace"/.test(code(rel)));
-    expect(readers.sort()).toEqual(Object.keys(READERS).sort());
-    for (const [file, names] of Object.entries(READERS)) {
-      expect(code(file), file).toMatch(new RegExp(`import \\{ ${names} \\} from "@/utils/nameFace";`));
+    expect(readers.sort()).toEqual([...READERS].sort());
+    for (const file of READERS) {
+      expect(code(file), file).toMatch(/import \{ useNameFace \} from "@\/utils\/nameFace";/);
+    }
+  });
+
+  it("leaves the places where a name was already regular in a sentence, or a title, as they were", () => {
+    for (const file of [
+      "app/follows.tsx",
+      "app/user/[username].tsx",
+      "app/admin/reports.tsx",
+      "src/components/EraList.tsx",
+      "src/components/EmptyState.tsx",
+    ]) {
+      expect(readFileSync(path.join(root, file), "utf8"), file).not.toMatch(/Editorial|nameFace|useNameTitleStyle|aroundName/);
+      expect(code(file), file).not.toMatch(/\bface\b/);
     }
   });
 
   it("is listed, with every file it touches, where the page says how to take the trial out", () => {
     const page = readFileSync(path.join(root, "EDITORIAL_FEED_PREVIEW.md"), "utf8");
-    // EmptyState reads nothing of it, but takes the sentence with the name in it for it.
-    const touched = [...Object.keys(READERS), "src/components/EmptyState.tsx"];
-    // The editorial card is the trial's own file, removed whole rather than checked out.
-    const restored = touched.filter((f) => f !== "src/components/feed/EditorialPostCard.tsx");
-    for (const file of ["src/utils/nameFace.ts", "tests/editorial-names.test.ts", ...touched]) {
+    for (const file of ["src/utils/nameFace.ts", "tests/editorial-names.test.ts", ...READERS]) {
       expect(page, file).toContain(file);
     }
     const out = page.slice(page.indexOf("## Taking it out of a branch that has it"));
     expect(out).toMatch(/git rm [^\n]*src\/utils\/nameFace\.ts/);
     expect(out).toMatch(/git rm [^\n]*tests\/editorial-names\.test\.ts/);
-    // Every file it touches goes back to claude/product-polish's own; the editorial card is removed whole.
-    const checkout = out.match(/git checkout claude\/product-polish -- [^\n]*/)?.[0] ?? "";
-    for (const file of restored) {
-      expect(checkout, file).toContain(/[([]/.test(file) ? `"${file}"` : ` ${file}`);
-    }
     expect(out).toMatch(/git rm [^\n]*src\/components\/feed\/EditorialPostCard\.tsx/);
+    // Exactly the files it touches go back to claude/product-polish's own: no more, no fewer.
+    const checkout = out.match(/git checkout claude\/product-polish -- ([^\n]*)/)?.[1] ?? "";
+    const named = checkout.split(/\s+/).map((f) => f.replace(/^"|"$/g, ""));
+    expect(named.sort()).toEqual(
+      [
+        ...READERS,
+        "app/(tabs)/index.tsx",
+        "app/gallery.tsx",
+        "app/(tabs)/_layout.tsx",
+        "app/settings.tsx",
+        "tests/video-playback.test.ts",
+        "tests/galleryLanding.test.ts",
+        "e2e/launch-test.mjs",
+      ].sort(),
+    );
+    // A path with brackets or parentheses is quoted, so the shell takes it as it is.
+    for (const file of named) if (/[([]/.test(file)) expect(checkout, file).toContain(`"${file}"`);
     expect(out).toContain("-e nameFace");
   });
 });

@@ -40,7 +40,7 @@ export default function Activity() {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
-  // Editorial (Preview): who did it, in the names' face.
+  // Editorial (Preview): who did it, not bold.
   const face = useNameFace();
 
   const activity = useQuery({
@@ -110,9 +110,7 @@ export default function Activity() {
               <View style={styles.text}>
                 <Text style={styles.line}>
                   {!isModeration && item.actor ? (
-                    <Text style={styles.actor}>
-                      <Text style={face}>{item.actor.username}</Text>{" "}
-                    </Text>
+                    <Text style={[styles.actor, face]}>{item.actor.username} </Text>
                   ) : (
                     <Text style={styles.actor}>VINTAGE </Text>
                   )}

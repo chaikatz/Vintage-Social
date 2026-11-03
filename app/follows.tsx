@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, StyleSheet, View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -10,7 +10,6 @@ import { Bone } from "@/components/Skeleton";
 import { spacing } from "@/theme";
 import { fetchFollowers, fetchFollowing, follow, unfollow } from "@/api/profiles";
 import { useSession } from "@/providers/SessionProvider";
-import { useNameFace } from "@/utils/nameFace";
 import type { FollowStatus, ProfileRow } from "@/types/db";
 
 /**
@@ -32,8 +31,6 @@ export default function Follows() {
     username?: string;
   }>();
   const followers = kind === "followers";
-  // Editorial (Preview): the member's username in the empty list's sentence, in the names' face.
-  const face = useNameFace();
 
   const list = useQuery({
     queryKey: ["follows", userId, kind],
@@ -83,18 +80,13 @@ export default function Follows() {
             <EmptyState
               title={followers ? "No followers yet" : "Not following anyone"}
               body={
-                followers ? (
-                  username ? (
-                    <>
-                      Nobody follows <Text style={face}>{username}</Text> yet.
-                    </>
-                  ) : undefined
-                ) : username ? (
-                  <>
-                    <Text style={face}>{username}</Text>
-                    {" isn't following anyone yet."}
-                  </>
-                ) : undefined
+                followers
+                  ? username
+                    ? `Nobody follows ${username} yet.`
+                    : undefined
+                  : username
+                    ? `${username} isn't following anyone yet.`
+                    : undefined
               }
             />
           ) : (

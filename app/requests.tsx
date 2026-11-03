@@ -21,7 +21,7 @@ export default function Requests() {
   const queryClient = useQueryClient();
   const { session, refreshProfile } = useSession();
   const userId = session?.user?.id ?? "";
-  // Editorial (Preview): each member's username in the names' face.
+  // Editorial (Preview): each member's username, not bold.
   const face = useNameFace();
 
   const requests = useQuery({

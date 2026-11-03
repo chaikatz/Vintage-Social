@@ -407,8 +407,8 @@ describe("the gallery", () => {
   it("lies on the feed's paper, under a bar on the same paper", () => {
     expect(gallery).toMatch(/const paper = useFeedBackground\(\);/);
     expect(gallery).toMatch(/<Screen padded=\{false\} style=\{paper\}>/);
-    // Its title, when it is the author's username, in the names' face (tests/editorial-names.test.ts).
-    expect(gallery).toMatch(/<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/);
+    // Its title, the author's username or the era, is the stack's own (tests/editorial-names.test.ts).
+    expect(gallery).toMatch(/<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \} \}\} \/>/);
   });
 });
 
@@ -512,12 +512,15 @@ describe("the editorial card", () => {
     expect(member).toMatch(/accessibilityRole="button"\s*accessibilityLabel=\{post\.author\.username\}/);
     expect(member).toMatch(/<Avatar path=\{post\.author\.avatar_url\} username=\{post\.author\.username\} size=\{AVATAR\} \/>/);
     expect(member).toMatch(/\{post\.author\.username\}\s*<\/Text>/);
-    // The original card's size for the picture, and its weight and size for the name.
+    // The original card's size for the picture.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    // The original card's size for the name, in the print's face and tracking, bold and in the words' ink (see tests/editorial-names.test.ts).
-    expect(style("username")).toMatch(/fontSize: 14, fontWeight: "700", letterSpacing: 1\.1, color: NAME_INK/);
-    expect(sheet!.username).toEqual({ flexShrink: 1, fontSize: 14, ...nameFace("editorial") });
+    // The original card's face, size and ink for the name, not bold, as every name is under Editorial (see tests/editorial-names.test.ts).
+    expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "400", color: colors\.ink \},/);
+    expect(sheet!.username).toEqual({ flexShrink: 1, fontSize: 14, color: colors.ink, ...nameFace("editorial") });
+    expect(sheet!.username).not.toHaveProperty("fontFamily");
+    expect(sheet!.username).not.toHaveProperty("letterSpacing");
     // Only the name: the place and the date are on the label.
     expect(header).not.toMatch(/label\.|Byline|taken_at|location/);
     // The "…" ends the row, after the name.
@@ -561,11 +564,11 @@ describe("the editorial card", () => {
       /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}\s*<\/Text>\s*\) : null\}/,
     );
     expect(body).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
-    expect(style("author")).toMatch(/fontWeight: "700"/);
-    // Who wrote it, set exactly as every name is under Editorial: the print's credit, at the words' own size.
+    // Who wrote it, in the words' own face, size and ink, not bold: exactly the face every name takes under Editorial.
+    expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
+    expect(card).toMatch(/\n {2}author: \{ fontWeight: "400" \},/);
     expect(sheet!.author).toEqual(nameFace("editorial"));
-    expect(sheet!.author).toEqual({ fontFamily: "Courier New", fontWeight: "700", letterSpacing: 1.1, color: "#2B2620" });
-    expect(sheet!.author).not.toHaveProperty("fontSize");
+    expect(sheet!.author).toEqual({ fontWeight: "400" });
   });
 
   it("keeps the print's margins for the print alone: the picture inset by the print's share of the width", () => {
