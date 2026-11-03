@@ -519,7 +519,7 @@ describe("the editorial card", () => {
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
     // The original card's face, size and ink for the name, not bold, as every name is under Editorial (see tests/editorial-names.test.ts).
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "400", color: colors\.ink \},/);
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "500", color: colors\.ink \},/);
     expect(sheet!.username).toEqual({ flexShrink: 1, fontSize: 14, color: colors.ink, ...nameFace("editorial") });
     expect(sheet!.username).not.toHaveProperty("fontFamily");
     expect(sheet!.username).not.toHaveProperty("letterSpacing");
@@ -568,9 +568,9 @@ describe("the editorial card", () => {
     expect(body).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
     // Who wrote it, in the words' own face, size and ink, not bold: exactly the face every name takes under Editorial.
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontWeight: "400" \},/);
+    expect(card).toMatch(/\n {2}author: \{ fontWeight: "500" \},/);
     expect(sheet!.author).toEqual(nameFace("editorial"));
-    expect(sheet!.author).toEqual({ fontWeight: "400" });
+    expect(sheet!.author).toEqual({ fontWeight: "500" });
   });
 
   it("keeps the print's margins for the print alone: the picture inset by the print's share of the width", () => {

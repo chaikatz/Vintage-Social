@@ -508,20 +508,21 @@ const namesOnCards = (cards) =>
 const onHome = await namesOnCards(editorial);
 const firstOf = (found) => [found.header[0], found.captions[0], found.comments[0]].join(" / ");
 check(
-  "Editorial: the member's name over each print is in the app's own face and ink, untracked, and not bold",
-  allSetAs(onHome.header, "400"),
+  "Editorial: the member's name over each print is in the app's own face and ink, untracked, half bold",
+  allSetAs(onHome.header, "500"),
   `${onHome.header.length}: ${onHome.header[0]}`,
 );
-check("Editorial: so is the name before each caption", allSetAs(onHome.captions, "400"), `${onHome.captions.length}: ${onHome.captions[0]}`);
-check("Editorial: and the name before each comment", allSetAs(onHome.comments, "400"), `${onHome.comments.length}: ${onHome.comments[0]}`);
+check("Editorial: so is the name before each caption", allSetAs(onHome.captions, "500"), `${onHome.captions.length}: ${onHome.captions[0]}`);
+check("Editorial: and the name before each comment", allSetAs(onHome.comments, "500"), `${onHome.comments.length}: ${onHome.comments[0]}`);
 check(
   "Editorial: the captions and comments themselves are as they were: their own face and ink, regular and untracked",
   allSetAs(onHome.words, "400"),
   onHome.words[0],
 );
 check(
-  "Editorial: a name before a caption or a comment is in the very face, ink and size of the words it leads",
-  onHome.pairs.length > 0 && onHome.pairs.every(([name, words]) => name === words),
+  "Editorial: a name before a caption or a comment is in the face, ink and size of the words it leads, a step heavier",
+  onHome.pairs.length > 0 &&
+    onHome.pairs.every(([name, words]) => allButWeight(name) === allButWeight(words) && drawnAs(name).weight === "500" && drawnAs(words).weight === "400"),
   onHome.pairs[0]?.join(" / "),
 );
 const offWhite = await papersOf(editorial, wordmark(), tabBar());
@@ -544,13 +545,13 @@ for (let i = 0; i < (await editorial.count()); i++) {
 }
 check("Like still works on the editorial card", editorialLike === "", editorialLike);
 
-// The comments on a print, and the Activity tab: every name in the list in its own face, not bold.
+// The comments on a print, and the Activity tab: every name in the list in its own face, half bold.
 await editorial.first().getByLabel("Comments", { exact: true }).click();
 await wait(2500);
 const inComments = await namesOnScreen();
 check(
-  "Editorial: every name in the comments is in the app's own face and ink, untracked, and not bold",
-  /Add a comment/.test((await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "") && allSetAs(facesOf(inComments), "400"),
+  "Editorial: every name in the comments is in the app's own face and ink, untracked, half bold",
+  /Add a comment/.test((await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "") && allSetAs(facesOf(inComments), "500"),
   `${inComments.length}: ${inComments.slice(0, 3).join(" | ")}`,
 );
 await shot("12e-editorial-comments");
@@ -559,21 +560,21 @@ await tab("activity");
 // An unread notice is marked by its row's paper alone, so its name is set as every name is.
 const inActivity = await namesOnScreen();
 check(
-  "Editorial: every name in Activity is in the app's own face and ink, untracked, and not bold, read or not",
-  allSetAs(facesOf(inActivity), "400"),
+  "Editorial: every name in Activity is in the app's own face and ink, untracked, half bold, read or not",
+  allSetAs(facesOf(inActivity), "500"),
   `${inActivity.length}: ${inActivity.slice(0, 3).join(" | ")}`,
 );
 await shot("12f-editorial-activity");
 
-// The inbox: a read thread's name is regular, as it always was, and an
-// unread one's is bold, as it always was, its state coming after the face.
+// The inbox: a read thread's name is half bold, as every name is, and an
+// unread one's is semibold, as it always was, its state coming after the face.
 // In the demo only Tomas has written since it was read.
 await go("/messages", 2600);
 const inInbox = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), n.slice(n.indexOf(": ") + 2)]));
 const unreadName = inInbox["tomas.lindqvist"];
 const readNames = Object.entries(inInbox).filter(([name]) => name !== "tomas.lindqvist").map(([, f]) => f);
 check("Editorial: an unread thread's name is bold, as under Original, in its own face and ink", unreadName != null && setAs(unreadName, "600"), unreadName);
-check("Editorial: a read thread's name is in its own face and ink, regular", allSetAs(readNames, "400"), `${readNames.length}: ${readNames[0]}`);
+check("Editorial: a read thread's name is in its own face and ink, half bold", allSetAs(readNames, "500"), `${readNames.length}: ${readNames[0]}`);
 check(
   "Editorial: an unread thread's name differs from a read one's only in its weight",
   unreadName != null && readNames.length > 0 && readNames.every((f) => allButWeight(f) === allButWeight(unreadName)),
@@ -677,8 +678,12 @@ check(
 await go("/messages", 2600);
 const inboxAgain = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), n.slice(n.indexOf(": ") + 2)]));
 check(
-  "Original: the inbox's names are drawn exactly as under Editorial, an unread one bold and a read one regular",
-  Object.keys(inboxAgain).length > 0 && JSON.stringify(inboxAgain) === JSON.stringify(inInbox),
+  "Original: the inbox's names are as they always were, an unread one semibold as under Editorial and a read one regular, not half bold",
+  Object.keys(inboxAgain).length > 0 &&
+    inboxAgain["tomas.lindqvist"] === inInbox["tomas.lindqvist"] &&
+    Object.entries(inboxAgain)
+      .filter(([name]) => name !== "tomas.lindqvist")
+      .every(([name, f]) => setAs(f, "400") && allButWeight(f) === allButWeight(inInbox[name])),
   `${inboxAgain["tomas.lindqvist"]} / ${Object.keys(inboxAgain).length}`,
 );
 const wordsTitleAgain = await titleDrawn("Messages");

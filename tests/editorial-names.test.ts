@@ -7,9 +7,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  *
  * While the feed is Editorial every username the app draws as a name is
  * drawn as it is under Original, in the app's own face, size, colour and
- * spacing, but regular where it is bold there. Where a place marks a name
- * for a state of its own, the state still wins: an unread thread's name is
- * bold again. A bar titled with a username, bold on the phone because the
+ * spacing, but half bold (medium, 500): a step above the words around it
+ * and a step below Original's semibold. Where a place marks a name for a
+ * state of its own, the state still wins: an unread thread's name is
+ * semibold, a step above the rest. A bar titled with a username, bold on the phone because the
  * stack lays its title over the system's bold, is the same serif, regular.
  * Under Original nothing changes at all.
  * First the module that says so, then the bars, then, read from the source,
@@ -34,8 +35,8 @@ const nameFaceModule = await import("@/utils/nameFace");
 const { nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = nameFaceModule;
 const { setFeedLayout, __resetFeedLayoutForTest } = await import("@/utils/feedLayout");
 const { colors, type } = await import("@/theme");
-/** A name under Editorial: regular, and nothing else of its own. */
-const EDITORIAL = { fontWeight: "400" };
+/** A name under Editorial: medium, and nothing else of its own. */
+const EDITORIAL = { fontWeight: "500" };
 
 const root = path.resolve(import.meta.dirname, "..");
 
@@ -64,7 +65,7 @@ const sources = () =>
 afterEach(() => __resetFeedLayoutForTest());
 
 describe("the names' face", () => {
-  it("is regular under Editorial, and nothing at all under Original", () => {
+  it("is medium (half bold) under Editorial, and nothing at all under Original", () => {
     expect(nameFace("editorial")).toEqual(EDITORIAL);
     // Nothing, not an empty style: a style array is exactly what it was.
     expect(nameFace("original")).toBeUndefined();
@@ -145,8 +146,9 @@ describe("a bar titled with a username", () => {
   it("under Editorial is the same serif at the same size, regular", () => {
     expect(nameTitleStyle("editorial")).toEqual({ ...stackTitleStyle(), fontWeight: "400" });
     expect(Object.keys(nameTitleStyle("editorial"))).toEqual([...Object.keys(stackTitleStyle()), "fontWeight"]);
-    // The weight the names take, and nothing else of the face's.
-    expect(nameTitleStyle("editorial").fontWeight).toBe(nameFace("editorial")!.fontWeight);
+    // Regular, not the names' medium: the serif has no medium cut, and the phone would match 500 to its bold.
+    expect(nameFace("editorial")!.fontWeight).toBe("500");
+    expect(nameTitleStyle("editorial").fontWeight).toBe("400");
     // The same object each time, so nothing redraws for it alone.
     expect(nameTitleStyle("editorial")).toBe(nameTitleStyle("editorial"));
     expect(nameTitleStyle("original")).toBe(nameTitleStyle("original"));
@@ -263,8 +265,8 @@ describe("every username the app draws", () => {
   it("on the editorial card is the original card's name, not bold, set in its sheet, since it is drawn only under Editorial", () => {
     const card = code("src/components/feed/EditorialPostCard.tsx");
     const original = code("src/components/PostCard.tsx");
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "400", color: colors\.ink \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontWeight: "400" \},/);
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "500", color: colors\.ink \},/);
+    expect(card).toMatch(/\n {2}author: \{ fontWeight: "500" \},/);
     // The original card's own, but for the weight.
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
@@ -283,7 +285,7 @@ describe("every username the app draws", () => {
   it("is none of them left out: a Text that draws a username has the face, or a reason not to", () => {
     // Where a username is drawn without the hook, and why.
     const without: Record<string, RegExp> = {
-      // Always Editorial: its sheet sets the name regular (above).
+      // Always Editorial: its sheet sets the name medium (above).
       "src/components/feed/EditorialPostCard.tsx": /^\{(post|c)\.author\.username\}$/,
       // Drawn only under Original: Home and the gallery draw the editorial card under Editorial.
       "src/components/PostCard.tsx": /^\{(post|c)\.author\.username\}$/,
@@ -461,7 +463,7 @@ describe("a name under each layout", () => {
     }
   });
 
-  it("under Editorial is as under Original but for its weight, which is regular unless a state after the face sets one", () => {
+  it("under Editorial is as under Original but for its weight, which is medium unless a state after the face sets one", () => {
     let unbolded = 0;
     for (const [file, array] of arrays()) {
       for (const state of [false, true]) {
@@ -470,7 +472,7 @@ describe("a name under each layout", () => {
         const { fontWeight: now, ...after } = drawn(file, array, "editorial", state);
         // The face, the size, the colour and the spacing: as they were.
         expect(after, site).toEqual(before);
-        // The weight: a state's where a state that sets one holds and comes after the face, and regular everywhere else.
+        // The weight: a state's where a state that sets one holds and comes after the face, and medium everywhere else.
         const parts = array.slice(1, -1).split(/,\s*/);
         const afterFace = parts.slice(parts.findIndex((p) => /\bface\b/.test(p)) + 1);
         const stated = afterFace
@@ -481,11 +483,11 @@ describe("a name under each layout", () => {
         const faced = !/\? face : undefined/.test(array) || state;
         if (!faced) expect(now, site).toBe(was);
         else if (state && stated != null) expect(now, site).toBe(stated);
-        else expect(now, site).toBe("400");
-        if (faced && (was === "600" || was === "700") && now === "400") unbolded += 1;
+        else expect(now, site).toBe("500");
+        if (faced && (was === "600" || was === "700") && now === "500") unbolded += 1;
       }
     }
-    // It does something: the names bold under Original that Editorial sets regular.
+    // It does something: the names semibold under Original that Editorial sets at half that.
     expect(unbolded).toBeGreaterThanOrEqual(15);
   });
 
@@ -508,7 +510,7 @@ describe("a name under each layout", () => {
 });
 
 describe("a state a place marks a name for", () => {
-  it("an unread thread: its name bold again under Editorial, as under Original; a read one regular under both", () => {
+  it("an unread thread: its name semibold under Editorial, as under Original, a step above a read one's medium", () => {
     const file = "app/messages/index.tsx";
     const array = code(file).match(/<Text style=\{(\[[^\]]*\])\}>\s*\{conversation\.peer\.username\}/)![1];
     expect(rule(file, "unreadText")).toEqual({ color: colors.ink, fontWeight: "600" });
@@ -516,7 +518,7 @@ describe("a state a place marks a name for", () => {
     expect(code(file)).toMatch(/<Text style=\{\[styles\.preview, unread && styles\.unreadText\]\} numberOfLines=\{1\}>\s*\{preview\}/);
     expect(code(file)).toMatch(/\{unread \? <View style=\{styles\.dot\} \/> : null\}/);
     expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "600" });
-    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "400" });
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "500" });
     // Under Original exactly as before the trial.
     expect(drawn(file, array, "original", true)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "600" });
     expect(drawn(file, array, "original", false)).toEqual({ fontSize: 15, color: colors.ink });
@@ -527,9 +529,9 @@ describe("a state a place marks a name for", () => {
     const array = code(file).match(/<Text style=\{(\[[^\]]*\])\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/)![1];
     expect(rule(file, "bubbleMine")).toEqual({ backgroundColor: colors.shutter, borderColor: colors.shutter });
     expect(rule(file, "textMine")).toEqual({ color: colors.onShutter });
-    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 11, color: colors.onShutter, marginTop: 4, fontWeight: "400" });
+    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 11, color: colors.onShutter, marginTop: 4, fontWeight: "500" });
     // In their bubble, on the raised paper, its own faint ink.
-    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 11, color: colors.inkFaint, marginTop: 4, fontWeight: "400" });
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 11, color: colors.inkFaint, marginTop: 4, fontWeight: "500" });
     // Under Original exactly as before the trial.
     expect(drawn(file, array, "original", true)).toEqual({ fontSize: 11, marginTop: 4, color: colors.onShutter });
     expect(drawn(file, array, "original", false)).toEqual({ fontSize: 11, marginTop: 4, color: colors.inkFaint });
@@ -540,9 +542,9 @@ describe("a state a place marks a name for", () => {
     const array = code(file).match(/style=\{(\[styles\.withName, [^\]]*\])\}/)![1];
     const pending = rule(file, "withPending");
     expect(pending).toEqual({ fontWeight: "400", color: colors.inkFaint });
-    // Under Editorial: a pending name faint and regular, as the state sets it; an accepted one in its own dark ink, regular.
+    // Under Editorial: a pending name faint and regular, as the state sets it; an accepted one in its own dark ink, medium.
     expect(drawn(file, array, "editorial", true)).toEqual(pending);
-    expect(drawn(file, array, "editorial", false)).toEqual({ fontWeight: "400", color: colors.ink });
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontWeight: "500", color: colors.ink });
     // Under Original exactly as before the trial: an accepted name dark and bold, a pending one faint and regular.
     expect(drawn(file, array, "original", false)).toEqual({ fontWeight: "600", color: colors.ink });
     expect(drawn(file, array, "original", true)).toEqual(pending);
