@@ -370,6 +370,30 @@ describe("what a save lets go of, with eras the member made", () => {
     expect(renameEra(kept, "Milan 2020", "Milano", many)).toEqual(edits({ [K]: "Away", [K2]: "Empty", "Milan 2020": "Milano" }, { deleted: K }));
     expect(renameEra(kept, "Milan 2020", "Milano", many.slice(1)).titles).toEqual({ "Milan 2020": "Milano" });
   });
+
+  it("is nothing over a read cut short, however short a delete has made the list since", () => {
+    // A thousand came back, and there are more. Past them, an era of the
+    // member's own, and a name for an era of theirs. One of the thousand
+    // is deleted, and the list is 999 until it is read again.
+    const many = Array.from({ length: ROWS_PER_READ }, (_, i) =>
+      i < 2 ? post(`l${i}`, "2021-05-10T12:00:00", "Lisbon") : post(`m${i}`, "2020-07-10T12:00:00", "Milan"),
+    );
+    const left = many.filter((p) => p.id !== "m5");
+    const past = edits({ [K]: "Old days", "Summer 2019": "Heat" }, { p1002: K, p1003: K });
+    const plus = (titles: Record<string, string>, moves: Record<string, string>) =>
+      edits({ ...past.titles, ...titles }, { ...past.moves, ...moves });
+
+    expect(renameEra(past, "Milan 2020", "Milano", left, false)).toEqual(plus({ "Milan 2020": "Milano" }, {}));
+    expect(addToEra(past, left, "Lisbon 2021", ["m7", "m8"], false)).toEqual(plus({}, { m7: "Lisbon 2021", m8: "Lisbon 2021" }));
+    expect(moveToEra(past, left, "m7", "Lisbon 2021", false)).toEqual(plus({}, { m7: "Lisbon 2021" }));
+    expect(createEra(past, left, "Saturdays", ["m9"], keyed(K2), false).edits).toEqual(plus({ [K2]: "Saturdays" }, { m9: K2 }));
+    expect(takeOut(plus({}, { m7: "Lisbon 2021" }), left, "m7", false)).toEqual(past);
+    expect(deleteEra(plus({ [K2]: "Saturdays" }, { m9: K2 }), left, K2, false)).toEqual(past);
+
+    // Read whole, the same change lets go of all that is not among the rows.
+    expect(renameEra(past, "Milan 2020", "Milano", left, true)).toEqual(edits({ "Milan 2020": "Milano" }));
+    expect(addToEra(past, left, "Lisbon 2021", ["m7"], true)).toEqual(edits({}, { m7: "Lisbon 2021" }));
+  });
 });
 
 describe("an arrangement read from the server, with an era the member made", () => {

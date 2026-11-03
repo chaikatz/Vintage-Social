@@ -74,8 +74,9 @@ export const ERA_TITLE_MAX = 60;
  * The most of a member's photographs one read brings back. fetchUserPosts
  * asks for all of them, and PostgREST stops at its max_rows, which
  * Supabase sets to 1000 and this project leaves as it is
- * (supabase/config.toml), without saying that it has. A list this long
- * may not be all of them, so nothing is let go on its account (pruned).
+ * (supabase/config.toml), without saying that it has. A read this long
+ * may not be all of them, so nothing is let go on its account (pruned),
+ * however short the list is made after it.
  */
 export const ROWS_PER_READ = 1000;
 
@@ -456,16 +457,22 @@ export function takeOutChoice<T extends Gatherable>(posts: T[], edits: EraEdits,
  * eras they made that no photograph is moved into now, and the moves of
  * photographs since deleted, or into such an era. Done with each change
  * saved, so the row, which everyone who may see the member's photographs
- * may read, keeps nothing of what they deleted. Only when `posts` is
- * known to be all of them: what is missing from a list that may have
- * been cut short (ROWS_PER_READ) is not known to be gone. An automatic
- * era left with one photograph keeps its name for when it has more.
+ * may read, keeps nothing of what they deleted. An automatic era left
+ * with one photograph keeps its name for when it has more.
+ *
+ * Only when `posts` is known to be all of them: `whole`, which only the
+ * read that brought them can say (eraEditor asks it), and fewer than
+ * ROWS_PER_READ. A list's length alone cannot say it: a read cut short
+ * at a thousand is a list of 999 once one of them is deleted, until the
+ * next read lands. What is missing from a list that may have been cut
+ * short is not known to be gone, and a name the member gave an era they
+ * made could never be read back.
  *
  * A build from before eras could be made lets go of an era the member
  * made, as of any name whose era it cannot find, when it saves a change.
  */
-function pruned(edits: EraEdits, posts: Gatherable[]): EraEdits {
-  if (posts.length >= ROWS_PER_READ) return edits;
+function pruned(edits: EraEdits, posts: Gatherable[], whole: boolean): EraEdits {
+  if (!whole || posts.length >= ROWS_PER_READ) return edits;
   const { automatic, made } = reading(posts, edits);
   const ids = new Set(posts.map((p) => p.id));
   const keys = new Set(automatic.map((era) => era.title));
@@ -482,9 +489,14 @@ function pruned(edits: EraEdits, posts: Gatherable[]): EraEdits {
  * automatic name itself), its automatic name back. An era the member made
  * has no other name, so it keeps the one it has when given nothing, and
  * only one that is there is renamed. Given the member's photographs, what
- * no longer applies is let go on the way (pruned).
+ * no longer applies is let go on the way (pruned), when they are `whole`.
+ *
+ * `whole`, here and in each change below: whether `posts` is all of the
+ * member's photographs, as the read that brought them says (eraEditor
+ * passes it). Left out, only the list's length is asked, and a list as
+ * long as ROWS_PER_READ is never taken for all of them.
  */
-export function renameEra(edits: EraEdits, key: string, title: string | null, posts?: Gatherable[]): EraEdits {
+export function renameEra(edits: EraEdits, key: string, title: string | null, posts?: Gatherable[], whole = true): EraEdits {
   const name = title == null ? "" : cleanEraTitle(title);
   const titles = { ...edits.titles };
   if (isMadeEra(key)) {
@@ -494,7 +506,7 @@ export function renameEra(edits: EraEdits, key: string, title: string | null, po
   else titles[key] = name;
   if (titles[key] === edits.titles[key]) return edits;
   const next = { ...edits, titles };
-  return posts ? pruned(next, posts) : next;
+  return posts ? pruned(next, posts, whole) : next;
 }
 
 /**
@@ -506,7 +518,13 @@ export function renameEra(edits: EraEdits, key: string, title: string | null, po
  * moves the arrangement itself comes back. What no longer applies is let
  * go on the way (pruned), so the row does not keep the deleted.
  */
-export function addToEra(edits: EraEdits, posts: Gatherable[], key: string, photoIds: readonly string[]): EraEdits {
+export function addToEra(
+  edits: EraEdits,
+  posts: Gatherable[],
+  key: string,
+  photoIds: readonly string[],
+  whole = true,
+): EraEdits {
   const laid = lay(posts, edits);
   if (!destinations(laid, edits).some((d) => d.key === key)) return edits;
   const ids = new Set(posts.map((p) => p.id));
@@ -518,12 +536,12 @@ export function addToEra(edits: EraEdits, posts: Gatherable[], key: string, phot
     else moves[id] = key;
     changed ||= moves[id] !== edits.moves[id];
   }
-  return changed ? pruned({ ...edits, moves }, posts) : edits;
+  return changed ? pruned({ ...edits, moves }, posts, whole) : edits;
 }
 
 /** A photograph moved into the era of `key`: addToEra, for one. */
-export function moveToEra(edits: EraEdits, posts: Gatherable[], id: string, key: string): EraEdits {
-  return addToEra(edits, posts, key, [id]);
+export function moveToEra(edits: EraEdits, posts: Gatherable[], id: string, key: string, whole = true): EraEdits {
+  return addToEra(edits, posts, key, [id], whole);
 }
 
 /**
@@ -540,6 +558,7 @@ export function createEra(
   name: string,
   photoIds: readonly string[],
   makeId?: () => string,
+  whole = true,
 ): { edits: EraEdits; key: string | null } {
   const title = cleanEraTitle(name);
   const ids = new Set(posts.map((p) => p.id));
@@ -551,7 +570,7 @@ export function createEra(
   if (!isMadeEra(key) || taken) return { edits, key: null };
   const moves = { ...edits.moves };
   for (const id of taking) moves[id] = key;
-  return { edits: pruned({ ...edits, titles: { ...edits.titles, [key]: title }, moves }, posts), key };
+  return { edits: pruned({ ...edits, titles: { ...edits.titles, [key]: title }, moves }, posts, whole), key };
 }
 
 /**
@@ -561,11 +580,11 @@ export function createEra(
  * photograph. One no move put where it is has nothing to be taken out
  * of, and the arrangement comes back as it was.
  */
-export function takeOut(edits: EraEdits, posts: Gatherable[], id: string): EraEdits {
+export function takeOut(edits: EraEdits, posts: Gatherable[], id: string, whole = true): EraEdits {
   if (!lay(posts, edits).moved.has(id)) return edits;
   const moves = { ...edits.moves };
   delete moves[id];
-  return pruned({ ...edits, moves }, posts);
+  return pruned({ ...edits, moves }, posts, whole);
 }
 
 /**
@@ -575,7 +594,7 @@ export function takeOut(edits: EraEdits, posts: Gatherable[], id: string): EraEd
  * something to delete. Nothing to delete, and the arrangement comes back
  * as it was.
  */
-export function deleteEra(edits: EraEdits, posts: Gatherable[], key: string): EraEdits {
+export function deleteEra(edits: EraEdits, posts: Gatherable[], key: string, whole = true): EraEdits {
   if (!isMadeEra(key)) return edits;
   const moves = Object.fromEntries(Object.entries(edits.moves).filter(([, into]) => into !== key));
   const titles = { ...edits.titles };
@@ -583,7 +602,7 @@ export function deleteEra(edits: EraEdits, posts: Gatherable[], key: string): Er
   if (Object.keys(titles).length === Object.keys(edits.titles).length && Object.keys(moves).length === Object.keys(edits.moves).length) {
     return edits;
   }
-  return pruned({ ...edits, titles, moves }, posts);
+  return pruned({ ...edits, titles, moves }, posts, whole);
 }
 
 /** Whether two arrangements say the same. The zone they are read in is not something the member said. */

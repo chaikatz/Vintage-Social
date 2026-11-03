@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NEW_ERA, NEW_ERA_TITLE, NOT_IN_AN_ERA, NO_EDITS, createEra, moveToEra, type EraEdits } from "@/utils/eraEdits";
 import {
   CREATE,
@@ -9,7 +9,10 @@ import {
   canCreate,
   chosenCount,
   deletedNote,
+  eraMoveStage,
   eraSheetView,
+  gatherLines,
+  keyboardLift,
   madeNote,
   movedNote,
   takeOutMeta,
@@ -17,9 +20,12 @@ import {
   takenOutNote,
 } from "@/components/eraSheet";
 import type { PostRow } from "@/types/db";
+import type { AlertButton } from "@/utils/alert";
 
-// The alerts as the browser has them (src/utils/alert.ts); nothing else here reaches React Native.
-vi.mock("react-native", () => ({ Platform: { OS: "web" }, Alert: { alert: vi.fn(), prompt: vi.fn() } }));
+// The alerts as the browser has them (src/utils/alert.ts), and as Android has them where a
+// test says so; nothing else here reaches React Native.
+const rn = vi.hoisted(() => ({ Platform: { OS: "web" }, Alert: { alert: vi.fn(), prompt: vi.fn() } }));
+vi.mock("react-native", () => rn);
 
 /**
  * The sheet a member arranges their eras in, as it reads the arrangement:
@@ -27,7 +33,8 @@ vi.mock("react-native", () => ({ Platform: { OS: "web" }, Alert: { alert: vi.fn(
  * out of an era a move put it in), what ADD offers an era, what a new era
  * offers, when Create can be pressed, and the words said once a change is
  * made. And the browser's stand-in for a menu of several, which is how the
- * demo reaches "Add to an era…" among a post's options.
+ * demo reaches "Add to an era…" among a post's options, and the same menu
+ * as Android's dialog, which holds three buttons at most, can show it.
  */
 
 const post = (id: string, taken: string | null, location: string | null = null) =>
@@ -124,6 +131,80 @@ describe("a new era", () => {
     const made = createEra(NO_EDITS, rows, "Saturdays", ["l1"], () => K).edits;
     const view = eraSheetView(rows, made, { kind: "add", key: K });
     expect(view?.kind === "add" && view.title).toBe("Saturdays");
+  });
+
+  it("is drawn as lines: each group's heading, then its photographs four to a row, every one once", () => {
+    const many = Array.from({ length: 9 }, (_, i) => post(`m${i}`, `2020-07-${String(10 + i).padStart(2, "0")}T12:00:00`, "Milan"));
+    const all = [...rows, ...many];
+    const view = eraSheetView(all, NO_EDITS, { kind: "new", chosen: [] });
+    if (view?.kind !== "new") throw new Error("no sheet");
+    const lines = gatherLines(view.groups, 4);
+    expect(lines.map((l) => (l.kind === "head" ? `# ${l.group.title}` : `${l.first ? "first " : ""}${l.posts.map((p) => p.id).join(" ")}`))).toEqual([
+      `# ${NOT_IN_AN_ERA}`,
+      "first alone",
+      "# Kyoto 2024",
+      "first k2 k1",
+      "# Lisbon 2023",
+      "first l2 l1",
+      "# Milan 2020",
+      "first m8 m7 m6 m5",
+      "m4 m3 m2 m1",
+      "m0",
+    ]);
+    // Every photograph offered is on one row, in the group's order, and every line has a key of its own.
+    const onRows = lines.flatMap((l) => (l.kind === "row" ? l.posts.map((p) => p.id) : []));
+    expect(onRows).toEqual(view.groups.flatMap((g) => g.posts.map((p) => p.id)));
+    expect(new Set(lines.map((l) => l.key)).size).toBe(lines.length);
+    expect(gatherLines([], 4)).toEqual([]);
+  });
+
+  it("lifts its foot over the keyboard by as far as the keyboard comes up from the foot of the screen", () => {
+    // An iPhone 15: a screen 852 high, a sheet 59 below its top, a keyboard 336 high.
+    // The whole of the keyboard, never the 277 measured from the sheet's own top.
+    expect(keyboardLift(852 - 336, 852)).toBe(336);
+    expect(keyboardLift(852 - 291.5, 852)).toBe(292);
+    // Gone below the screen, or giving no place for itself: nothing.
+    expect(keyboardLift(852, 852)).toBe(0);
+    expect(keyboardLift(900, 852)).toBe(0);
+    expect(keyboardLift(0, 852)).toBe(0);
+    expect(keyboardLift(Number.NaN, 852)).toBe(0);
+    expect(keyboardLift(500, 0)).toBe(0);
+  });
+});
+
+describe("Add to an era…, as its reads stand", () => {
+  const stage = (reads: Partial<Parameters<typeof eraMoveStage>[0]>) =>
+    eraMoveStage({ answered: true, reading: false, failed: false, found: true, arrangeable: true, ...reads });
+
+  it("is the sheet once both are read, the photograph among the member's, and the eras can be changed", () => {
+    expect(stage({})).toBe("sheet");
+    // Read again in the background over a list that has it: the sheet all the while.
+    expect(stage({ reading: true })).toBe("sheet");
+    // An older list that has it, its new read failed: still theirs.
+    expect(stage({ failed: true })).toBe("sheet");
+  });
+
+  it("is still reading until both have answered, the photograph not among a list cached, or offline", () => {
+    expect(stage({ answered: false })).toBe("reading");
+    expect(stage({ answered: false, found: false })).toBe("reading");
+    // A list cached from before the photograph was posted, read again as the screen opens.
+    expect(stage({ found: false, reading: true })).toBe("reading");
+    // Waiting for the phone to be back online counts as reading.
+    expect(stage({ found: false, reading: true, failed: true })).toBe("reading");
+  });
+
+  it("says the read failed, never that the photograph is not theirs, when it did", () => {
+    expect(stage({ found: false, failed: true })).toBe("readFailed");
+    expect(stage({ found: false, failed: true, arrangeable: false })).toBe("readFailed");
+  });
+
+  it("says the photograph is not theirs only once a read has answered without it", () => {
+    expect(stage({ found: false })).toBe("notYours");
+    expect(stage({ found: false, arrangeable: false })).toBe("notYours");
+  });
+
+  it("says the eras cannot be changed just now where the arrangement cannot be saved", () => {
+    expect(stage({ arrangeable: false })).toBe("cannotArrange");
   });
 });
 
@@ -223,5 +304,59 @@ describe("a menu of several, in the browser", () => {
     vi.unstubAllGlobals();
     expect(asked).toBe("Delete this photograph?\n\nIt’s removed for good.\n\nOK → Delete");
     expect(pressed).toEqual(["Delete"]);
+  });
+});
+
+describe("a menu of several, on Android", () => {
+  type Shown = AlertButton;
+  afterEach(() => {
+    rn.Platform.OS = "web";
+    rn.Alert.alert.mockReset();
+  });
+  /** What Android's dialog was given each time, and what each button and a dismissal did. */
+  async function menu(os: string, buttons: Shown[]) {
+    const { showAlert } = await import("@/utils/alert");
+    rn.Platform.OS = os;
+    showAlert("Your post", undefined, buttons);
+    return rn.Alert.alert.mock.calls as [string, string | undefined, Shown[], { cancelable?: boolean; onDismiss?: () => void } | undefined][];
+  }
+  const pressed: string[] = [];
+  const button = (text: string, style?: Shown["style"]): Shown => ({ text, style, onPress: () => void pressed.push(text) });
+  const own = () => [button("Edit caption"), button("Add to an era…"), button("Delete post", "destructive"), button("Cancel", "cancel")];
+
+  it("shows the three actions, Delete apart on the left, and closes on Back or a tap beside it, as Cancel", async () => {
+    pressed.length = 0;
+    const calls = await menu("android", own());
+    expect(calls).toHaveLength(1);
+    const [title, message, shown, options] = calls[0];
+    expect([title, message]).toEqual(["Your post", undefined]);
+    // Android puts the first on the left, apart, and the last on the right, where a confirm sits.
+    expect(shown.map((b) => b.text)).toEqual(["Delete post", "Edit caption", "Add to an era…"]);
+    expect(options?.cancelable).toBe(true);
+    options?.onDismiss?.();
+    shown[2].onPress?.();
+    expect(pressed).toEqual(["Cancel", "Add to an era…"]);
+  });
+
+  it("never gives Android more than three, the last of them leading to the rest", async () => {
+    pressed.length = 0;
+    const five = ["One", "Two", "Three", "Four", "Five"].map((t) => button(t));
+    const calls = await menu("android", [...five, button("Cancel", "cancel")]);
+    expect(calls[0][2].map((b) => b.text)).toEqual(["One", "Two", "More…"]);
+    calls[0][2][2].onPress?.();
+    expect(calls).toHaveLength(2);
+    expect(calls[1][2].map((b) => b.text)).toEqual(["Three", "Four", "Five"]);
+    expect(calls[1][3]?.cancelable).toBe(true);
+    calls[1][3]?.onDismiss?.();
+    calls[1][2][1].onPress?.();
+    expect(pressed).toEqual(["Cancel", "Four"]);
+  });
+
+  it("leaves a dialog of three or fewer as it was, and iOS's of any number", async () => {
+    const confirm = [button("Delete", "destructive"), button("Cancel", "cancel")];
+    expect(await menu("android", confirm)).toEqual([["Your post", undefined, confirm]]);
+    rn.Alert.alert.mockReset();
+    const four = own();
+    expect(await menu("ios", four)).toEqual([["Your post", undefined, four]]);
   });
 });

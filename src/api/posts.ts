@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import type { CommentWithAuthor, PostRow, PostWithAuthor, ProfileRow } from "@/types/db";
+import { ROWS_PER_READ } from "@/utils/eraEdits";
 import { withTimeout } from "@/utils/retry";
 
 export const FEED_PAGE_SIZE = 12;
@@ -59,13 +60,34 @@ export async function fetchFeedPage(userId: string, page: number): Promise<PostW
 }
 
 /**
+ * Whose photographs came back cut short at their last read: as many as
+ * PostgREST's max_rows (ROWS_PER_READ), where it stops without saying
+ * so, and there may be more. Kept as each read lands, for Eras, which
+ * lets nothing go over a list that may not be all of them (eraEditor,
+ * pruned). Asked of the read, never of the list: a delete takes a
+ * photograph off the list at once, so a read cut short at a thousand is
+ * a list of 999 until the next read lands, or for as long as it fails.
+ */
+const cutShort = new Set<string>();
+
+/** Whether the last read of a member's photographs may have stopped before their last. */
+export function userPostsCutShort(authorId: string): boolean {
+  return cutShort.has(authorId);
+}
+
+function noteRead(authorId: string, rows: PostRow[]): PostRow[] {
+  if (rows.length >= ROWS_PER_READ) cutShort.add(authorId);
+  else cutShort.delete(authorId);
+  return rows;
+}
+
+/**
  * A member's own photographs, all of them up to PostgREST's max_rows
- * (1000), where it stops without saying so. A list that long may not be
- * all of them: Eras lets nothing go on its account (ROWS_PER_READ,
- * src/utils/eraEdits.ts).
+ * (1000), where it stops without saying so. Whether this read stopped
+ * there is kept (userPostsCutShort).
  */
 export async function fetchUserPosts(authorId: string): Promise<PostRow[]> {
-  if (isDemoMode()) return demo.demoFetchUserPosts(authorId);
+  if (isDemoMode()) return noteRead(authorId, demo.demoFetchUserPosts(authorId));
 
   const { data, error } = await supabase
     .from("posts")
@@ -74,7 +96,7 @@ export async function fetchUserPosts(authorId: string): Promise<PostRow[]> {
     .is("removed_at", null)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as PostRow[];
+  return noteRead(authorId, (data ?? []) as PostRow[]);
 }
 
 export async function fetchPost(postId: string): Promise<PostWithAuthor | null> {

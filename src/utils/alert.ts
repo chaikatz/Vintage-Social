@@ -4,7 +4,8 @@ import { Alert, Platform } from "react-native";
  * Cross-platform dialogs. React Native's Alert is a silent no-op in the
  * browser, so on web these fall back to the native window dialogs — plain,
  * but every confirmation keeps working during browser review. Native
- * behavior is untouched.
+ * behavior is untouched, but for a menu of more buttons than Android's
+ * dialog holds (androidMenu).
  */
 
 export interface AlertButton {
@@ -13,7 +14,14 @@ export interface AlertButton {
   onPress?: () => void;
 }
 
+/** The most buttons Android's dialog holds. It drops any past them without a word. */
+const ANDROID_MOST = 3;
+
 export function showAlert(title: string, message?: string, buttons?: AlertButton[]): void {
+  if (Platform.OS === "android" && buttons && buttons.length > ANDROID_MOST) {
+    androidMenu(title, message, buttons);
+    return;
+  }
   if (Platform.OS !== "web") {
     Alert.alert(title, message, buttons);
     return;
@@ -44,6 +52,30 @@ export function showAlert(title: string, message?: string, buttons?: AlertButton
   const confirmed = window.confirm(`${text}\n\nOK → ${action.text}`);
   if (confirmed) action.onPress?.();
   else cancel?.onPress?.();
+}
+
+/**
+ * A menu of more than Android's dialog holds (your post's "…": edit, add
+ * to an era, delete, cancel). Left to Android, the last is dropped, and
+ * that is Cancel; and its dialog cannot be closed any other way by
+ * default, so the member could not leave without choosing one. So the
+ * actions are shown alone, and the menu is cancelled as Android cancels a
+ * dialog: with Back, or a tap beside it. A destructive one goes first,
+ * which Android sets apart on the left, so the button on the right, where
+ * a dialog's confirm sits, is never the one that deletes. More actions
+ * than the dialog holds, and the last place opens the rest, so none is
+ * ever lost.
+ */
+function androidMenu(title: string, message: string | undefined, buttons: AlertButton[]): void {
+  const cancel = buttons.find((b) => b.style === "cancel");
+  const actions = buttons.filter((b) => b.style !== "cancel");
+  const ordered = [...actions.filter((b) => b.style === "destructive"), ...actions.filter((b) => b.style !== "destructive")];
+  const rest = [...ordered.slice(ANDROID_MOST - 1), ...(cancel ? [cancel] : [])];
+  const shown =
+    ordered.length <= ANDROID_MOST
+      ? ordered
+      : [...ordered.slice(0, ANDROID_MOST - 1), { text: "More…", onPress: () => androidMenu(title, message, rest) }];
+  Alert.alert(title, message, shown, { cancelable: true, onDismiss: cancel?.onPress });
 }
 
 export function showPrompt(

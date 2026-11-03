@@ -64,9 +64,9 @@ describe("who may arrange Eras", () => {
 
   it("tells the member, in our words, when a change does not save", () => {
     expect(hook).toMatch(/showAlert\(ERA_SAVE_FAILED\.title, errorMessage\(err, ERA_SAVE_FAILED\.body\)\)/);
-    // Each over the member's photographs, so what no longer applies is let go as it saves.
-    expect(hook).toMatch(/rename: \(key, title\) => void arrange\(\(e\) => renameEra\(e, key, title, posts\)\)/);
-    expect(hook).toMatch(/move: \(post, key\) => changes\(\(e\) => moveToEra\(e, posts, post\.id, key\)\),/);
+    // Each over the member's photographs, so what no longer applies is let go as it saves, when they are all of them.
+    expect(hook).toMatch(/rename: \(key, title\) => \{\s*const all = whole\(\);\s*void arrange\(\(e\) => renameEra\(e, key, title, posts, all\)\);\s*\},/);
+    expect(hook).toMatch(/move: \(post, key\) => \{\s*const all = whole\(\);\s*return changes\(\(e\) => moveToEra\(e, posts, post\.id, key, all\)\);\s*\},/);
     expect(hook).toMatch(/void arrange\(change\);\s*return true;/);
   });
 
@@ -75,9 +75,9 @@ describe("who may arrange Eras", () => {
     expect(hook).toMatch(/create: \(name: string, photoIds: string\[\]\) => string \| null;/);
     expect(hook).toMatch(/takeOut: \(post: PostRow\) => boolean;/);
     expect(hook).toMatch(/deleteEra: \(key: string\) => boolean;/);
-    expect(hook).toMatch(/add: \(key, photoIds\) => changes\(\(e\) => addToEra\(e, posts, key, photoIds\)\),/);
-    expect(hook).toMatch(/takeOut: \(post\) => changes\(\(e\) => takeOut\(e, posts, post\.id\)\),/);
-    expect(hook).toMatch(/deleteEra: \(key\) => changes\(\(e\) => deleteEra\(e, posts, key\)\),/);
+    expect(hook).toMatch(/add: \(key, photoIds\) => \{\s*const all = whole\(\);\s*return changes\(\(e\) => addToEra\(e, posts, key, photoIds, all\)\);/);
+    expect(hook).toMatch(/takeOut: \(post\) => \{\s*const all = whole\(\);\s*return changes\(\(e\) => takeOut\(e, posts, post\.id, all\)\);/);
+    expect(hook).toMatch(/deleteEra: \(key\) => \{\s*const all = whole\(\);\s*return changes\(\(e\) => deleteEra\(e, posts, key, all\)\);/);
     // Every change but a rename goes through `changes`, which arranges only a real one.
     expect(hook.match(/void arrange\(/g)).toHaveLength(2);
     expect(hook.match(/\bchanges\(\(e\) =>/g)).toHaveLength(5);
@@ -86,11 +86,27 @@ describe("who may arrange Eras", () => {
   it("draws a new era's key once, from the phone's secure source, outside the change that may be made again", () => {
     expect(hook).toMatch(/import \{ newEraKey \} from "@\/utils\/newEraKey";/);
     expect(hook).toMatch(/makeKey: \(\) => string = newEraKey,/);
-    expect(hook).toMatch(/const key = makeKey\(\);\s*return changes\(\(e\) => createEra\(e, posts, name, photoIds, \(\) => key\)\.edits\) \? key : null;/);
+    expect(hook).toMatch(
+      /const key = makeKey\(\);\s*const all = whole\(\);\s*return changes\(\(e\) => createEra\(e, posts, name, photoIds, \(\) => key, all\)\.edits\) \? key : null;/,
+    );
     expect(hook.match(/makeKey\(\)/g)).toHaveLength(1);
     const keys = code("src/utils/newEraKey.ts");
     expect(keys).toMatch(/import \{ getRandomBytes \} from "expo-crypto";/);
     expect(keys).toMatch(/const key = eraKeyFrom\(getRandomBytes\(ERA_KEY_BYTES\)\);/);
+  });
+
+  it("lets go of what no longer applies only over all of the member's photographs, as their read says, asked once per change", () => {
+    expect(hook).toMatch(/import \{ userPostsCutShort \} from "@\/api\/posts";/);
+    expect(hook).toMatch(
+      /const whole = \(\) =>\s*!userPostsCutShort\(userId\) && queryClient\.getQueryState\(\["user-posts", userId\]\)\?\.isInvalidated !== true;/,
+    );
+    // Asked as the change is made, never inside it, which may be made again later.
+    expect(hook.match(/const all = whole\(\);/g)).toHaveLength(6);
+    expect(hook.match(/whole\(\)/g)).toHaveLength(6);
+    const posts = code("src/api/posts.ts");
+    expect(posts).toMatch(/if \(isDemoMode\(\)\) return noteRead\(authorId, demo\.demoFetchUserPosts\(authorId\)\);/);
+    expect(posts).toMatch(/return noteRead\(authorId, \(data \?\? \[\]\) as PostRow\[\]\);/);
+    expect(posts).toMatch(/if \(rows\.length >= ROWS_PER_READ\) cutShort\.add\(authorId\);\s*else cutShort\.delete\(authorId\);/);
   });
 
   it("says whether a move was made, so the page announces only a real one", () => {
@@ -356,7 +372,7 @@ describe("ADD and NEW ERA", () => {
 
   it("chooses photographs as checkboxes, says which are chosen, and on the web too", () => {
     expect(gather).toMatch(/accessibilityRole="checkbox"\s+accessibilityLabel=\{printLabel\(post\)\}\s+accessibilityState=\{\{ checked: on \}\}\s+aria-checked=\{on\}/);
-    expect(gather).toMatch(/onPress=\{\(\) => toggle\(post\.id\)\}/);
+    expect(gather).toMatch(/onPress=\{\(\) => onToggle\(post\.id\)\}/);
     expect(gather).toMatch(/<Text style=\{styles\.groupTitle\} accessibilityRole="header"/);
   });
 
@@ -371,13 +387,53 @@ describe("ADD and NEW ERA", () => {
 
   it("makes one change for the lot, from what is still offered", () => {
     expect(gather).toMatch(/const confirm = \(\) => \{\s*if \(!ready\) return;\s*if \(making\) onCreate\(name, picked\);\s*else onAdd\(picked\);\s*\};/);
-    expect(gather).toMatch(/const picked = chosen\.filter\(\(id\) => offered\.has\(id\)\);/);
+    expect(gather).toMatch(/const picked = useMemo\(\(\) => chosen\.filter\(\(id\) => offered\.has\(id\)\), \[chosen, offered\]\);/);
     expect(gather.match(/\bonAdd\(/g)).toHaveLength(1);
     expect(gather.match(/\bonCreate\(/g)).toHaveLength(1);
   });
 
+  it("keeps its foot above the iPhone's keyboard, listened for before the name field can bring it up", () => {
+    // KeyboardAvoidingView measures a sheet from the sheet's own top, and left the foot under the keyboard.
+    expect(gather).not.toMatch(/KeyboardAvoidingView/);
+    const hook = gather.slice(gather.indexOf("function useKeyboardLift(): number {"));
+    expect(hook).toMatch(/useLayoutEffect\(\(\) => \{\s*if \(Platform\.OS !== "ios"\) return;/);
+    expect(hook).toMatch(
+      /Keyboard\.addListener\("keyboardWillShow", \(e\) =>\s*move\(e, keyboardLift\(e\.endCoordinates\.screenY, Dimensions\.get\("window"\)\.height\)\),\s*\);/,
+    );
+    expect(hook).toMatch(/Keyboard\.addListener\("keyboardWillHide", \(e\) => move\(e, 0\)\);/);
+    expect(hook).toMatch(/return \(\) => \{\s*shown\.remove\(\);\s*hidden\.remove\(\);\s*\};\s*\}, \[\]\);/);
+    expect(hook).not.toMatch(/useEffect\(/);
+    // The whole sheet rises by it, and the foot sits just above the keyboard, the home indicator under it.
+    expect(gather).toMatch(/const lift = useKeyboardLift\(\);/);
+    expect(gather).toMatch(/\) : null;\s*return \(\s*<View style=\{\[styles\.root, \{ paddingBottom: lift \}\]\}>/);
+    expect(gather).toMatch(/<View style=\{\[styles\.foot, \{ paddingBottom: lift > 0 \? spacing\.md : Math\.max\(insets\.bottom, spacing\.md\) \}\]\}>/);
+    expect(sheetLogic).toMatch(/if \(!\(screenY > 0\) \|\| !\(windowHeight > 0\)\) return 0;\s*return Math\.max\(0, Math\.round\(windowHeight - screenY\)\);/);
+  });
+
+  it("draws only the lines near the screen, and a square again only when it is chosen or let go", () => {
+    // A list of headings and rows of four, made once for what is offered, drawing a screenful and those about it.
+    expect(gather).toMatch(/const lines = useMemo\(\(\) => gatherLines\(view\.groups, ACROSS\), \[view\.groups\]\);/);
+    expect(gather).toMatch(
+      /<FlatList\s+style=\{styles\.root\}\s+data=\{lines\}\s+keyExtractor=\{lineKey\}\s+renderItem=\{renderLine\}\s+ListHeaderComponent=\{naming\}/,
+    );
+    expect(gather).toMatch(/initialNumToRender=\{FIRST_LINES\}\s+windowSize=\{SCREENS_DRAWN\}/);
+    expect(gather).not.toMatch(/<ScrollView\b|\.map\(\(group\)/);
+    // Each square drawn again only when what it is given changes: whether it is chosen, its size, and a tap that never does.
+    expect(gather).toMatch(/const GatherTile = React\.memo\(function GatherTile\(/);
+    expect(gather).toMatch(/const GatherHead = React\.memo\(function GatherHead\(/);
+    expect(gather).toMatch(/<GatherTile key=\{post\.id\} post=\{post\} on=\{pickedSet\.has\(post\.id\)\} cell=\{cell\} onToggle=\{toggle\} \/>/);
+    expect(gather).toMatch(/const pickedSet = useMemo\(\(\) => new Set\(picked\), \[picked\]\);/);
+    expect(gather).toMatch(/const toggle = useCallback\(\s*\(id: string\) => setChosen\([\s\S]*?\),\s*\[\],\s*\);/);
+    expect(gather).toMatch(/const renderLine = useCallback\([\s\S]*?\[pickedSet, cell, toggle\],\s*\);/);
+    const tile = gather.slice(gather.indexOf("const GatherTile = React.memo("), gather.indexOf("function useKeyboardLift"));
+    expect(tile).toMatch(/<PhotoTile post=\{post\} size=\{cell\} onPress=\{noop\} \/>/);
+    expect(tile).not.toMatch(/onClose|picked\b/);
+    expect(gather).not.toMatch(/picked\.includes|chosen\.includes/);
+  });
+
   it("asks a new era's name in a field of its own, so it is asked the same way on every phone", () => {
-    expect(gather).toMatch(/\{making \? \(\s*<View style=\{styles\.naming\}>[\s\S]*?<TextInput\s+value=\{name\}\s+onChangeText=\{setName\}\s+maxLength=\{ERA_TITLE_MAX\}/);
+    expect(gather).toMatch(/const naming = making \? \(\s*<View style=\{styles\.naming\}>[\s\S]*?<TextInput\s+value=\{name\}\s+onChangeText=\{setName\}\s+maxLength=\{ERA_TITLE_MAX\}/);
+    expect(gather).toMatch(/ListHeaderComponent=\{naming\}/);
     expect(gather).toMatch(/accessibilityLabel="The new era’s name"/);
     expect(gather).not.toMatch(/Alert\.prompt|window\.prompt|canNameEras/);
   });
@@ -425,8 +481,26 @@ describe("Add to an era…, from a photograph's options", () => {
   });
 
   it("says plainly when the photograph is not yours any more, or the eras cannot be changed", () => {
-    expect(route).toMatch(/if \(!post \|\| !editor \|\| !view\) \{/);
-    expect(route).toMatch(/accessibilityRole="button" accessibilityLabel="Close"/);
+    expect(route).toMatch(/if \(stage !== "sheet" \|\| !post \|\| !editor \|\| !view\) \{/);
+    expect(route).toMatch(/\{stage === "notYours" \? "This photograph isn’t among yours any more\." : "Your eras can’t be arranged just now\. Try again in a moment\."\}/);
+  });
+
+  it("reads your photographs afresh, and never calls one not yours while a read is out, or after one failed", () => {
+    expect(route).toMatch(/queryFn: \(\) => fetchUserPosts\(userId\),\s*enabled: Boolean\(userId\),\s*refetchOnMount: "always",/);
+    expect(route).toMatch(
+      /const stage = eraMoveStage\(\{\s*answered: posts\.isFetched && eraEdits\.isFetched,\s*reading: posts\.fetchStatus !== "idle",\s*failed: posts\.isError \|\| !posts\.data,\s*found: post != null,\s*arrangeable: editor != null && view != null,\s*\}\);/,
+    );
+    // A failed read says so, with another try.
+    expect(route).toMatch(/stage === "readFailed" \? \(\s*<LoadFailed what="your photographs" onRetry=\{\(\) => void posts\.refetch\(\)\} \/>/);
+  });
+
+  it("offers Close whatever it shows, reading too", () => {
+    const waiting = route.slice(route.indexOf('if (stage !== "sheet"'), route.indexOf("return (\n    <View style={[styles.root, top]}>"));
+    expect(waiting).toMatch(/stage === "reading" \? \(\s*<ActivityIndicator/);
+    expect(waiting).toMatch(/\)\}\s*<Pressable onPress=\{close\} hitSlop=\{12\} accessibilityRole="button" accessibilityLabel="Close"/);
+    expect(route.match(/<ActivityIndicator\b/g)).toHaveLength(1);
+    expect(route.match(/return \(/g)).toHaveLength(2);
+    expect(route).toMatch(/onClose=\{close\}/);
   });
 });
 
