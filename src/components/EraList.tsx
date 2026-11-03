@@ -13,6 +13,8 @@ import {
   useWindowDimensions,
   type GestureResponderEvent,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -234,6 +236,14 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   const offset = useRef(0);
   const [near, setNear] = useState<ReadonlySet<string>>(() => new Set());
   const look = () => setNear((prev) => chaptersNear(prev, spans.current, offset.current, height));
+  // As the page scrolls, no oftener than scrollEventThrottle outside
+  // arranging, and once more as each scroll comes to rest, where a phone
+  // says nothing more of its own: a print lifted after it starts from
+  // where the page is, never from a place it had already passed.
+  const scrolled = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    offset.current = e.nativeEvent.contentOffset.y;
+    look();
+  };
 
   // EDIT lays every print out and DONE puts them away again, so each
   // chapter above the reader grows or shrinks by rows. The place at the
@@ -613,10 +623,9 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
         style={styles.root}
         contentContainerStyle={{ paddingBottom: Math.max(spacing.xxl * 2, insets.bottom + spacing.xxl) }}
         refreshControl={onRefresh ? <RefreshControl refreshing={refreshing ?? false} onRefresh={onRefresh} tintColor={colors.inkFaint} /> : undefined}
-        onScroll={(e) => {
-          offset.current = e.nativeEvent.contentOffset.y;
-          look();
-        }}
+        onScroll={scrolled}
+        onScrollEndDrag={scrolled}
+        onMomentumScrollEnd={scrolled}
         onContentSizeChange={(_width, tall) => (contentTall.current = tall)}
         scrollEventThrottle={100}
         scrollEnabled={!dragging}

@@ -478,6 +478,12 @@ describe("dragging a print to another era", () => {
     expect(lift).toMatch(/const \{ post, full, width: w, height: h \} = held;/);
   });
 
+  it("lifts from where the page is: its scroll is read once more, final, as each scroll comes to rest", () => {
+    expect(lift).toMatch(/offset: offset\.current,\s*liftedAt: offset\.current,/);
+    // A phone sends no last onScroll as a scroll ends, and outside arranging they come no oftener than the throttle.
+    expect(list).toMatch(/onScroll=\{scrolled\}\s*onScrollEndDrag=\{scrolled\}\s*onMomentumScrollEnd=\{scrolled\}/);
+  });
+
   it("finds the era under the finger and runs the page on near its edges by the tested arithmetic, with the page's own scroll", () => {
     expect(list).toMatch(/const to = dropTarget\(d\.from, eraUnderFinger\(pageOf\(d\), d\.finger\.y - d\.view\.y\)\);/);
     // At an edge the print lifted near, only once the finger has meant it to: the farthest it has gone either way is kept on every move.
