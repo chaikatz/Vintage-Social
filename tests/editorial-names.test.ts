@@ -25,9 +25,11 @@ vi.mock("react", async (original) => ({
   useSyncExternalStore: (_subscribe: unknown, get: () => unknown) => get(),
 }));
 
-const { nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = await import("@/utils/nameFace");
+const { aroundName, nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = await import("@/utils/nameFace");
 const { setFeedLayout, __resetFeedLayoutForTest } = await import("@/utils/feedLayout");
 const { type } = await import("@/theme");
+const { erasEmpty } = await import("@/components/eraBook");
+const { eraSummary } = await import("@/utils/memories");
 
 const root = path.resolve(import.meta.dirname, "..");
 
@@ -89,6 +91,47 @@ describe("the names' face", () => {
   });
 });
 
+/** A photograph of a member's own, as the Eras view reads one. */
+const print = (id: string, taken: string | null, location: string | null = null) => ({
+  id,
+  taken_at: taken,
+  created_at: "2026-09-01T12:00:00",
+  location,
+  media_type: "photo",
+  caption: "",
+});
+
+/** A member's page with no eras, for each reason it can have none: no photographs, none dated, none sharing an era. */
+const NO_ERAS = {
+  none: eraSummary([]),
+  undated: eraSummary([print("a", null)]),
+  scattered: eraSummary([print("a", "2021-07-10T12:00:00", "Bar Pitti")]),
+};
+
+describe("a sentence the app writes with a username in it", () => {
+  it("is cut where its writer puts the name, so the name alone takes the face", () => {
+    for (const [kind, summary] of Object.entries(NO_ERAS)) {
+      const words = aroundName((name) => erasEmpty(summary, name)?.body ?? "");
+      // The name once, between the words before it and the words after it.
+      expect(words, kind).toHaveLength(2);
+      // Drawn back together, the sentence is word for word the one written for the member.
+      expect(words.join("tomas.lindqvist"), kind).toBe(erasEmpty(summary, "tomas.lindqvist")?.body);
+      expect(erasEmpty(summary, "tomas.lindqvist")?.kind, kind).toBe(kind);
+    }
+  });
+
+  it("is never cut where the same letters fall in the words around the name", () => {
+    // A member called "yet": the sentence ends in "yet." too, and that one is not the name.
+    const words = aroundName((name) => erasEmpty(NO_ERAS.none, name)?.body ?? "");
+    expect(words).toEqual(["", " hasn’t posted a photograph yet."]);
+    expect(words.join("yet")).toBe(erasEmpty(NO_ERAS.none, "yet")?.body);
+  });
+
+  it("is the sentence itself where it has no name in it", () => {
+    expect(aroundName(() => "Eras gather the photographs you post.")).toEqual(["Eras gather the photographs you post."]);
+  });
+});
+
 describe("a bar titled with a username", () => {
   it("keeps the stack's own title size and colour, and changes the face alone", () => {
     // The stack's title, as app/_layout.tsx sets it for every screen; its colour is the bar's tint.
@@ -121,7 +164,9 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ["app/blocked.tsx", "each member blocked", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
   ["app/comments.tsx", "the caption's author", /<Text style=\{\[styles\.author, face\]\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/],
   ["app/comments.tsx", "each comment's author", /<Text style=\{\[styles\.author, face\]\}>\{item\.author\.username\}<\/Text> \{item\.body\}/],
-  ["app/compose.tsx", "who was there", /<Text style=\{\[styles\.tagNames, face\]\} numberOfLines=\{1\}>\s*\{tags\.map\(\(t\) => t\.username\)\.join\(", "\)\}/],
+  ["app/follows.tsx", "Nobody follows … yet.", /Nobody follows <Text style=\{face\}>\{username\}<\/Text> yet\./],
+  ["app/follows.tsx", "… isn't following anyone yet.", /<Text style=\{face\}>\{username\}<\/Text>\s*\{" isn't following anyone yet\."\}/],
+  ["app/compose.tsx", "who was there",/<Text style=\{\[styles\.tagNames, face\]\} numberOfLines=\{1\}>\s*\{tags\.map\(\(t\) => t\.username\)\.join\(", "\)\}/],
   ["app/gallery.tsx", "its title, when it is the author's username", /const titleStyle = useNameTitleStyle\(!shown\.era\);[\s\S]*?<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/],
   ["app/messages/index.tsx", "who each thread is with", /<Text style=\{\[styles\.username, unread && styles\.unreadText, face\]\}>\s*\{conversation\.peer\.username\}/],
   ["app/messages/[id].tsx", "the thread's title", /<Stack\.Screen options=\{\{ title: peerQ\.data\?\.username \?\? "", headerTitleStyle: titleStyle \}\} \/>/],
@@ -138,6 +183,7 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ["app/user/[username].tsx", "You blocked …", /<Text style=\{styles\.lockedTitle\}>\s*You blocked <Text style=\{face\}>\{profile\.username\}<\/Text>\s*<\/Text>/],
   ["app/user/[username].tsx", "… has your request", /<Text style=\{face\}>\{profile\.username\}<\/Text>\s*\{" has your request\. You'll see their photographs once they accept\."\}/],
   ["app/user/[username].tsx", "Ask to follow …", /\{"Ask to follow "\}\s*<Text style=\{face\}>\{profile\.username\}<\/Text>\s*\{" to see their photographs\."\}/],
+  ["src/components/EraList.tsx", "a member's empty Eras view, the name in its sentence", /const emptyBody =\s*empty && member\s*\? aroundName\(\(name\) => erasEmpty\(summary, name\)\?\.body \?\? ""\)\.map\(\(words, i\) => \(\s*<React\.Fragment key=\{i\}>\s*\{i > 0 \? <Text style=\{face\}>\{member\}<\/Text> : null\}\s*\{words\}\s*<\/React\.Fragment>\s*\)\)\s*: empty\?\.body;[\s\S]*?<EmptyState title=\{empty\.title\} body=\{emptyBody\} \/>/],
   ["src/components/UserRow.tsx", "every list of members: Search, Recent, Followers, Likes and the admin's Members", /<Text style=\{\[styles\.username, face\]\}>\{username\}<\/Text>/],
   ["src/components/PendingPostCard.tsx", "the author", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{draft\.author\.username\}/],
   ["src/components/PendingPostCard.tsx", "the caption's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{draft\.author\.username\}<\/Text> \{draft\.caption\.trim\(\)\}/],
@@ -155,6 +201,7 @@ const READERS: Record<string, string> = {
   "app/blocked.tsx": "useNameFace",
   "app/comments.tsx": "useNameFace",
   "app/compose.tsx": "useNameFace",
+  "app/follows.tsx": "useNameFace",
   "app/gallery.tsx": "useNameTitleStyle",
   "app/messages/[id].tsx": "useNameFace, useNameTitleStyle",
   "app/messages/index.tsx": "useNameFace",
@@ -162,6 +209,7 @@ const READERS: Record<string, string> = {
   "app/requests.tsx": "useNameFace",
   "app/share.tsx": "useNameFace",
   "app/user/[username].tsx": "useNameFace, useNameTitleStyle",
+  "src/components/EraList.tsx": "aroundName, useNameFace",
   "src/components/PendingPostCard.tsx": "useNameFace",
   "src/components/ProfileHeader.tsx": "useNameFace",
   "src/components/TagPicker.tsx": "useNameFace",
@@ -211,8 +259,8 @@ describe("every username the app draws", () => {
     const drawn: string[] = [];
     for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
       const source = code(file);
-      // A Text whose words start with a username: its opening tag, then the expression.
-      for (const m of source.matchAll(/<Text\b((?:[^>]|=>)*?)>\s*(\{[^{}]*\b(?:desired_)?username\b[^{}]*\})/g)) {
+      // A Text whose words start with a username (or the member whose Eras page it is): its opening tag, then the expression.
+      for (const m of source.matchAll(/<Text\b((?:[^>]|=>)*?)>\s*(\{(?:[^{}]*\b(?:desired_)?username\b[^{}]*|member)\})/g)) {
         const [, props, child] = m;
         const site = `${file}: ${child}`;
         drawn.push(site);
@@ -222,7 +270,9 @@ describe("every username the app draws", () => {
       }
     }
     // The scan finds what it is meant to: the Texts above with the face, and the seven without.
-    expect(drawn.length).toBeGreaterThanOrEqual(32);
+    expect(drawn.length).toBeGreaterThanOrEqual(35);
+    // Among them the names in an empty list's or an empty Eras page's sentence.
+    expect(drawn.filter((site) => /^(app\/follows|src\/components\/EraList)\.tsx: \{(username|member)\}$/.test(site))).toHaveLength(3);
   });
 
   it("is only ever a username: display names, captions, comments and messages keep their own face", () => {
@@ -244,6 +294,9 @@ describe("every username the app draws", () => {
           // A display name, given the face only when it falls back to the username.
           expect(words, site).toBe("{profile.full_name ?? profile.username}");
           expect(props, site).toMatch(/profile\.full_name == null \? face : undefined/);
+        } else if (file === "src/components/EraList.tsx") {
+          // The member whose Eras page it is, which a member's page gives as their username (below).
+          expect(words, site).toBe("{member}");
         } else {
           expect(words, site).toMatch(/^\{[^{}]*\b(?:desired_)?username\b[^{}]*\}$/);
           expect(words, site).not.toMatch(/full_name|caption|\.body|bio|preview/);
@@ -264,6 +317,68 @@ describe("every username the app draws", () => {
     }
     expect(titled.sort()).toEqual(["app/gallery.tsx", "app/messages/[id].tsx", "app/user/[username].tsx", "app/user/[username].tsx"]);
   });
+
+  it("is never written into a sentence the app draws as plain text, where the name could not have a face of its own", () => {
+    // A template that writes a username into words, and why each may.
+    const written: Record<string, RegExp[]> = {
+      // Dialogs, prompts and action sheets: the system draws them, in its own face.
+      "app/admin/members.tsx": [
+        /^`Invitations for \$\{member\.username\}`$/,
+        /^`Warn \$\{member\.username\}`$/,
+        /^`Suspend \$\{member\.username\}\?`$/,
+        /^`Reinstate \$\{member\.username\}\?`$/,
+      ],
+      "app/user/[username].tsx": [/^`Block \$\{profile\.username\}\?`$/],
+      "src/hooks/usePostActions.ts": [/^`Block \$\{post\.author\.username\}`$/, /^`Block \$\{post\.author\.username\}\?`$/],
+      // Spoken by VoiceOver, never drawn.
+      "app/(tabs)/search.tsx": [/^`Forget \$\{item\.username\}`$/],
+      // The public web page, written on the server: the preference is kept on the phone.
+      "src/share/publicPage.ts": [/^`A photograph from \$\{p\.username\}’s archive · VINTAGE`$/],
+      // Drawn by EraList, cut at the name (aroundName) so the name alone takes the face: above.
+      "src/components/eraBook.ts": [
+        /^`\$\{member\} hasn’t posted a photograph yet\.`$/,
+        /, and none of \$\{member\}’s carries that date\.`$/,
+        /^`\$\{ERA_RULE\} None of \$\{member\}’s photographs make one yet\.`$/,
+      ],
+    };
+    const found: string[] = [];
+    for (const file of sources()) {
+      for (const [template] of code(file).matchAll(/`[^`]*`/g)) {
+        if (!/\$\{\s*(?:(?:[\w$]+(?:\?\.|\.))*(?:desired_)?username|member)\s*\}/.test(template)) continue;
+        // A route to a profile: never drawn.
+        if (template.startsWith("`/user/")) continue;
+        const site = `${file}: ${template}`;
+        found.push(site);
+        expect(written[file]?.some((allowed) => allowed.test(template)), site).toBe(true);
+      }
+    }
+    // The scan finds what it is meant to: each sentence allowed above, once, and no other.
+    expect(found).toHaveLength(Object.values(written).flat().length);
+  });
+
+  it("in an empty page's sentence is drawn by EmptyState as every sentence is, with no face of its own", () => {
+    const empty = code("src/components/EmptyState.tsx");
+    // A sentence, or a sentence with a username in its face: the one prop widened, and drawn as before.
+    expect(empty).toMatch(/\n {2}body\?: React\.ReactNode;\n/);
+    expect(empty).toMatch(/\{body \? <Text style=\{styles\.body\}>\{body\}<\/Text> : null\}/);
+    expect(empty).toMatch(/body: \{ \.\.\.type\.caption, textAlign: "center", marginTop: spacing\.sm, color: colors\.inkSoft \},/);
+    expect(empty).not.toMatch(/nameFace|type\.mono|\bface\b/);
+  });
+
+  it("is the member an Eras page is given: their username, on their page only", () => {
+    const given: string[] = [];
+    for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
+      for (const [element] of code(file).matchAll(/<EraList\b[\s\S]*?\/>/g)) {
+        const member = element.match(/\bmember=\{([^{}]*)\}/)?.[1];
+        if (member) given.push(`${file}: ${member}`);
+      }
+    }
+    expect(given).toEqual(["app/user/[username].tsx: profile.username"]);
+    // The Followers and Following lists are given the username of the member whose lists they are.
+    for (const file of ["app/user/[username].tsx", "app/(tabs)/profile.tsx"]) {
+      expect(code(file), file).toMatch(/pathname: "\/follows",\s*params: \{ userId[^{}]*, kind, username: profile\.username \}/);
+    }
+  });
 });
 
 describe("the trial still comes out cleanly", () => {
@@ -277,15 +392,17 @@ describe("the trial still comes out cleanly", () => {
 
   it("is listed, with every file it touches, where the page says how to take the trial out", () => {
     const page = readFileSync(path.join(root, "EDITORIAL_FEED_PREVIEW.md"), "utf8");
-    for (const file of ["src/utils/nameFace.ts", "tests/editorial-names.test.ts", ...Object.keys(READERS)]) {
+    // EmptyState reads nothing of it, but takes the sentence with the name in it for it.
+    const touched = [...Object.keys(READERS), "src/components/EmptyState.tsx"];
+    for (const file of ["src/utils/nameFace.ts", "tests/editorial-names.test.ts", ...touched]) {
       expect(page, file).toContain(file);
     }
     const out = page.slice(page.indexOf("## Taking it out of a branch that has it"));
     expect(out).toMatch(/git rm [^\n]*src\/utils\/nameFace\.ts/);
     expect(out).toMatch(/git rm [^\n]*tests\/editorial-names\.test\.ts/);
-    // Every file that reads it goes back to claude/product-polish's own; the editorial card is removed whole.
+    // Every file it touches goes back to claude/product-polish's own; the editorial card is removed whole.
     const checkout = out.match(/git checkout claude\/product-polish -- [^\n]*/)?.[0] ?? "";
-    for (const file of Object.keys(READERS)) {
+    for (const file of touched) {
       expect(checkout, file).toContain(/[([]/.test(file) ? `"${file}"` : ` ${file}`);
     }
     expect(out).toMatch(/git rm [^\n]*src\/components\/feed\/EditorialPostCard\.tsx/);

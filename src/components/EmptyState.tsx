@@ -4,7 +4,8 @@ import { colors, spacing, type } from "@/theme";
 
 interface Props {
   title: string;
-  body?: string;
+  /** A sentence, or (Editorial (Preview)) a sentence with a member's username set in the names' face. */
+  body?: React.ReactNode;
 }
 
 export function EmptyState({ title, body }: Props) {

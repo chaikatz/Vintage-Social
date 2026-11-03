@@ -22,6 +22,7 @@ import { colors, spacing, type } from "@/theme";
 import { NO_EDITS, cleanEraTitle, editedEraSummary, type EditedEra, type EraEdits } from "@/utils/eraEdits";
 import { reducedMotion, useReducedMotion } from "@/utils/useReducedMotion";
 import { holdTabSwipe } from "@/utils/tabSwipe";
+import { aroundName, useNameFace } from "@/utils/nameFace";
 import type { EraEditor } from "@/hooks/useEraEdits";
 import { EmptyState } from "./EmptyState";
 import { PhotoTile } from "./PhotoGrid";
@@ -227,6 +228,17 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   const summary = useMemo(() => editedEraSummary(posts, arranged), [posts, arranged]);
   const empty = erasEmpty(summary, member);
   const footnote = erasFootnote(summary);
+  // Editorial (Preview): on a member's page, their username in the empty page's sentence, in the names' face.
+  const face = useNameFace();
+  const emptyBody =
+    empty && member
+      ? aroundName((name) => erasEmpty(summary, name)?.body ?? "").map((words, i) => (
+          <React.Fragment key={i}>
+            {i > 0 ? <Text style={face}>{member}</Text> : null}
+            {words}
+          </React.Fragment>
+        ))
+      : empty?.body;
 
   // Arranging, on your own page only, and only while there is an era to arrange.
   const [editing, setEditing] = useState(false);
@@ -731,7 +743,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
         {loading ? (
           <GridSkeleton />
         ) : empty ? (
-          <EmptyState title={empty.title} body={empty.body} />
+          <EmptyState title={empty.title} body={emptyBody} />
         ) : (
           <>
             {summary.eras.map((era, i) => (

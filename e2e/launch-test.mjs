@@ -533,6 +533,36 @@ const galleryTitle = shownInGallery ? await titleFace(member) : "";
 check("Editorial: the gallery's title, its author's username, is in the typewriter face", MONO.test(galleryTitle), galleryTitle);
 await shot("12d-editorial-gallery");
 
+// An empty list's sentence, written with the member's username in it: the
+// name alone in the typewriter face, the rest of the sentence in its own,
+// and the name at the sentence's own size, weight and colour. Nobody
+// follows the founding account; an applicant follows nobody yet.
+/** The words of a sentence drawn whole on screen, and the name within it: their faces, sizes, weights and colours. */
+const sentence = (words, name) =>
+  page.evaluate(
+    ([words, name]) => {
+      const lines = [...document.querySelectorAll("div")].filter((el) => el.textContent === words && el.getBoundingClientRect().height > 0);
+      const line = lines[lines.length - 1];
+      const span = line && [...line.querySelectorAll("span")].find((s) => s.textContent === name);
+      if (!line || !span) return null;
+      const [l, n] = [getComputedStyle(line), getComputedStyle(span)];
+      return { line: l.fontFamily, name: n.fontFamily, sizes: [l.fontSize, n.fontSize], weights: [l.fontWeight, n.fontWeight], colours: [l.color, n.color] };
+    },
+    [words, name],
+  );
+const same = ([a, b]) => a === b;
+const nameAlone = (s) => s != null && MONO.test(s.name) && !MONO.test(s.line) && same(s.sizes) && same(s.weights) && same(s.colours);
+await go("/user/vintage", 2800);
+await byLabel("0 followers").first().click();
+await wait(2400);
+const nobody = await sentence("Nobody follows vintage yet.", "vintage");
+check("Editorial: an empty Followers list's sentence sets the username alone in the typewriter face", nameAlone(nobody), JSON.stringify(nobody));
+await shot("12h-editorial-followers-empty");
+await go("/follows?" + new URLSearchParams({ userId: "demo-user-ruby", kind: "following", username: "ruby.calloway" }).toString(), 2600);
+const noone = await sentence("ruby.calloway isn't following anyone yet.", "ruby.calloway");
+check("Editorial: and so does an empty Following list's", nameAlone(noone), JSON.stringify(noone));
+await go("/", 2400);
+
 check("The paper is not offered once Original is chosen again", (await choose("Original")) === 0);
 check(
   "Original comes back as it was",
@@ -551,6 +581,15 @@ check("Original: no name on Home is in the typewriter face", noneMono(facesOf(ho
 await tab("activity");
 const activityAgain = await namesOnScreen();
 check("Original: no name in Activity is in the typewriter face", noneMono(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
+await go("/user/vintage", 2800);
+await byLabel("0 followers").first().click();
+await wait(2400);
+const nobodyAgain = await sentence("Nobody follows vintage yet.", "vintage");
+check(
+  "Original: an empty list's sentence is all in its own face again",
+  nobodyAgain != null && !MONO.test(nobodyAgain.name) && nobodyAgain.name === nobodyAgain.line && same(nobodyAgain.sizes),
+  JSON.stringify(nobodyAgain),
+);
 
 await go("/user/tomas.lindqvist", 2800);
 const tomasTitle = await titleFace("tomas.lindqvist");

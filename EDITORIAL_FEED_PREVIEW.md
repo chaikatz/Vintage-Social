@@ -59,22 +59,31 @@ their gallery, a message thread), every list of members (Search and its
 recent searches, Followers and Following, Likes, Requests, Blocked members,
 Send to, Tag people, the inbox), the notices in Activity, the Comments
 screen, a post's own page, the card of a post on its way up, a private or
-blocked profile's lines, and the admin's Applications, Reports and Members.
-Only the face changes: each name keeps its size, weight, colour, spacing and
-place. Under Original nothing changes.
+blocked profile's lines, the sentence an empty Followers or Following list
+says ("Nobody follows … yet.", "… isn't following anyone yet.") and the one
+a member's empty Eras page says ("… hasn’t posted a photograph yet." and the
+others), and the admin's Applications, Reports and Members. Where a name sits
+in a sentence, only the name takes the face; the words around it keep
+theirs. Only the face changes: each name keeps its size, weight, colour,
+spacing and place. Under Original nothing changes.
 
 Display names, what a member types into a field, and what members wrote
 (captions, comments, messages) keep their own face. So do the system's own
-dialogs and menus, whose face the app cannot set, the avatar's initial, and
-two sentences built as plain text by components the experiment leaves alone:
-the empty Followers and Following lists ("Nobody follows … yet.", from
-`EmptyState`) and the empty Eras view (from `erasEmpty`).
+dialogs and menus, whose face the app cannot set, and the avatar's initial.
 
 `src/utils/nameFace.ts` holds it: `useNameFace()` is added to a name's style
 (the typewriter face under Editorial, nothing at all under Original), and
 `useNameTitleStyle()` is a bar title's style, the stack's own 17 pt title with
-only the face changed. `tests/editorial-names.test.ts` lists every place a
-username is drawn, so none is dropped and none is added without it.
+only the face changed. `aroundName()` cuts a sentence the app writes with a
+username in it at the name, where its writer puts the name (it hands the
+writer a stand-in no text holds), so the name alone can be drawn in the face:
+the empty Eras page's sentences come from `erasEmpty` in
+`src/components/eraBook.ts`, which is left as it is, and `EraList` cuts them
+where it draws them. `EmptyState` takes such a sentence as its body (its
+`body` is widened from a string to anything drawable, and drawn as before).
+`tests/editorial-names.test.ts` lists every place a username is drawn, and
+every sentence the app writes one into, so none is dropped and none is added
+without it.
 
 ## Where it lives
 
@@ -94,16 +103,19 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `app/gallery.tsx` | the gallery's seam: which card it draws, the paper under it and its bar's, and its bar's title in the names' face when it is the author's username |
 | `app/(tabs)/_layout.tsx` | Home's wordmark bar and tab bar on the paper, and the Profile tab's title, its username, in the names' face |
 | `app/settings.tsx` | the Feed layout and Paper choices |
-| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/user/[username].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx`, `app/admin/reports.tsx` | the usernames each screen draws, and the bar's title where it is one, in the names' face |
-| `src/components/UserRow.tsx`, `src/components/TagPicker.tsx`, `src/components/PendingPostCard.tsx`, `src/components/ProfileHeader.tsx` | the same, in the parts those screens share (the profile header only where its name falls back to the username) |
+| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/user/[username].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/follows.tsx`, `app/admin/applications.tsx`, `app/admin/reports.tsx` | the usernames each screen draws, and the bar's title where it is one, in the names' face (in `app/follows.tsx`, the name in the empty list's sentence) |
+| `src/components/UserRow.tsx`, `src/components/TagPicker.tsx`, `src/components/PendingPostCard.tsx`, `src/components/ProfileHeader.tsx`, `src/components/EraList.tsx` | the same, in the parts those screens share (the profile header only where its name falls back to the username; the Eras page only in its empty sentence on a member's page) |
+| `src/components/EmptyState.tsx` | its `body` takes a sentence with a name in the names' face, not only a string; drawn as before |
 | `tests/video-playback.test.ts` | the Home and gallery playback guards accept either card |
 | `tests/galleryLanding.test.ts` | its gallery guard reads whichever card the gallery's seam draws |
-| `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face on Home, in the comments, in Activity and in a profile's and a gallery's title |
+| `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face on Home, in the comments, in Activity, in a profile's and a gallery's title, and in an empty Followers and Following list's sentence |
 
 `src/components/PostCard.tsx` (drawn only under Original, so its names are
-left as they are), `PostMedia`, `usePostActions`, uploads, filters, the Memory
-Room, native modules and Supabase are not touched. `PendingPostCard` is
-touched for the names' face alone.
+left as they are), `src/components/eraBook.ts` (its sentences are cut at the
+name where `EraList` draws them), `PostMedia`, `usePostActions`, uploads,
+filters, the Memory Room, native modules and Supabase are not touched.
+`PendingPostCard`, `EraList` and `EmptyState` are touched for the names' face
+alone.
 
 ## Keeping it out
 
@@ -116,7 +128,7 @@ From the repository root, on the branch to clean:
 
 ```bash
 git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts EDITORIAL_FEED_PREVIEW.md
-git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" "app/user/[username].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx app/admin/reports.tsx src/components/UserRow.tsx src/components/TagPicker.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx tests/video-playback.test.ts tests/galleryLanding.test.ts e2e/launch-test.mjs
+git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" "app/user/[username].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/follows.tsx app/admin/applications.tsx app/admin/reports.tsx src/components/UserRow.tsx src/components/TagPicker.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/components/EraList.tsx src/components/EmptyState.tsx tests/video-playback.test.ts tests/galleryLanding.test.ts e2e/launch-test.mjs
 npx tsc --noEmit && npx vitest run
 git commit -m "Remove the Editorial feed preview"
 ```
@@ -135,13 +147,23 @@ comments above them, `style={paper}` on the `Screen`,
 every other file the names' face touches, they are the import from
 `@/utils/nameFace`, the `const face = useNameFace();` or
 `const titleStyle = useNameTitleStyle();` line with the comment above it, and
-each place it is used: `[style, face]` goes back to `style`,
-`, headerTitleStyle: titleStyle` comes out of a `Stack.Screen`'s options, a
-`<Text style={face}>` around a username goes back to the bare username (in
-`app/admin/reports.tsx` to `{item.reporter?.username ?? "unknown"}`, in
-`app/(tabs)/activity.tsx` to `{item.actor.username} ` inside the bold `Text`,
-and in `app/user/[username].tsx` the two sentences go back to their template
-strings). Afterwards `git diff claude/product-polish -- app src tests e2e`
+each place it is used: `[style, face]` goes back to `style` (in
+`app/messages/index.tsx`, `[styles.username, unread && styles.unreadText, face]`
+loses only `face`; in `app/(tabs)/_layout.tsx` and
+`src/components/ProfileHeader.tsx` the array with its `? face : undefined`
+goes back to the plain style), `, headerTitleStyle: titleStyle` comes out of a
+`Stack.Screen`'s options, a `<Text style={face}>` around a username goes back
+to the bare username (in `app/admin/reports.tsx` to
+`{item.reporter?.username ?? "unknown"}`, in `app/(tabs)/activity.tsx` to
+`{item.actor.username} ` inside the bold `Text`, and in
+`app/user/[username].tsx` the two sentences go back to their template
+strings, as do the two empty-list sentences in `app/follows.tsx`, whose
+`Text` import goes with them). In `src/components/EraList.tsx` the
+`aroundName, useNameFace` import, the `face` and `emptyBody` lines with the
+comment above them go, and `body={emptyBody}` goes back to
+`body={empty.body}`. In `src/components/EmptyState.tsx`, `body` goes back to
+`body?: string` and the comment above it goes. Afterwards
+`git diff claude/product-polish -- app src tests e2e`
 should be empty, and
 `git grep -n -e EditorialPostCard -e feedLayout -e feedPaper -e useFeedBackground -e nameFace -e NameFace -e NameTitle -- app src tests e2e`
 should find nothing.

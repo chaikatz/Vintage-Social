@@ -6,10 +6,11 @@ import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
  *
  * While the feed is Editorial, every username the app draws as a name (a
  * bar's title, a row in a list, the bold name before a caption, a comment
- * or a notice, a chip, a sheet) is set in the face the print sets its
- * credit in (`@chai · MEMBER NO. 00001`, src/components/ExportCard.tsx):
- * type.mono. Only the face changes. Size, weight, colour, spacing and
- * layout stay as each place sets them, and under Original nothing changes.
+ * or a notice, a chip, a sheet, the sentence an empty page says about a
+ * member) is set in the face the print sets its credit in
+ * (`@chai · MEMBER NO. 00001`, src/components/ExportCard.tsx): type.mono.
+ * Only the face changes. Size, weight, colour, spacing and layout stay as
+ * each place sets them, and under Original nothing changes.
  *
  * Display names, what a member types, and what they wrote (captions,
  * comments, messages) keep their own face.
@@ -28,6 +29,20 @@ export function nameFace(layout: FeedLayout): { fontFamily: string } | undefined
 /** The name face for the layout in effect, redrawn the moment Settings changes it. */
 export function useNameFace(): { fontFamily: string } | undefined {
   return nameFace(useFeedLayout());
+}
+
+/** What stands in for the name while a sentence is cut at it: a character no text holds. */
+const STAND_IN = "\u0000";
+
+/**
+ * A sentence the app writes with a member's username in it (an empty
+ * page's), as the words around the name, so the name can be drawn in its
+ * face between each pair. `write` is the sentence's own writer, given a
+ * stand-in for the name, so the cut is where the writer puts the name, and
+ * never where the same letters happen to fall in the words around it.
+ */
+export function aroundName(write: (name: string) => string): string[] {
+  return write(STAND_IN).split(STAND_IN);
 }
 
 /**
