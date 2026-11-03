@@ -521,13 +521,19 @@ describe("the editorial card", () => {
     expect(style("member")).toMatch(/flex: 1,/);
   });
 
-  it("leaves as little paper between the member and the picture as the original card", () => {
+  it("leaves as much paper between the member's picture and the photograph as between the photograph and the hairline", () => {
     expect(sheet).toBeDefined();
-    // The row is a target's height, the picture centred in it, and the picture's top edge a step below.
-    const under = (44 - 34) / 2 + Number(sheet!.header.marginBottom);
-    const originalHeader = original.match(/\n {2}header: \{([\s\S]*?)\n {2}\},/)?.[1] ?? "";
-    expect(originalHeader).toMatch(/paddingVertical: spacing\.md,/);
-    expect(under).toBe(12);
+    const { header: row, print: sheetOfPrint, rule } = sheet!;
+    // The row is a target's height with the picture centred in it, and ends where the picture does.
+    expect((44 - 34) / 2 + Number(row.marginBottom)).toBe(0);
+    // Then the print's own paper over the photograph, the same share of the width as under it, before the hairline.
+    expect(style("print")).toMatch(/paddingTop: share\(GAP\),/);
+    expect(style("rule")).toMatch(/marginTop: share\(GAP\),/);
+    for (const width of [320, 390, 430]) {
+      expect(of(sheetOfPrint.paddingTop, width)).toBeCloseTo(of(rule.marginTop, width), 6);
+    }
+    // The member's targets reach into that paper, and the paper lets a touch through to them.
+    expect(style("print")).toMatch(/pointerEvents: "box-none",/);
   });
 
   it("has no counts: neither likes nor comments", () => {
@@ -579,16 +585,15 @@ describe("the editorial card", () => {
     expect(written.match(/padding(Horizontal|Left|Right): /g)).toHaveLength(6);
   });
 
-  it("puts the buttons just under the hairline, and the place and the date level with them", () => {
-    const { label, rule } = sheet!;
-    expect(card).toMatch(/const UNDER_RULE = 10;/);
-    expect(style("label")).toMatch(/marginTop: UNDER_RULE - INSET,/);
-    expect(style("label")).toMatch(/alignItems: "center",/);
-    // The heart's outline starts UNDER_RULE under the hairline: its target, 44 tall, reaches just up to it.
-    const outlineTop = Number(label.marginTop) + (44 - 21) / 2;
-    expect(outlineTop).toBe(10);
-    expect(Number(label.marginTop)).toBeLessThan(0);
-    expect(Number(label.marginTop)).toBeGreaterThan(-Number(rule.height) - 2);
+  it("sets the buttons and the place and the date where the print sets its label under the rule", () => {
+    expect(card).toMatch(/const LABEL_TOP = PRINT\.place\.y - PRINT\.rule\.y;/);
+    expect(style("label")).toMatch(/alignItems: "flex-start",/);
+    expect(style("label")).toMatch(/marginTop: LABEL_TOP,/);
+    // The outlines start level with the first line of the label; the targets reach up into the paper under the rule.
+    expect(style("actions")).toMatch(/marginTop: -INSET,/);
+    // The caption starts as far under the label's last line as under the buttons' outlines.
+    expect(style("dateline")).toMatch(/paddingBottom: INSET,/);
+    expect(card).not.toMatch(/UNDER_RULE|UNDER_WORDS/);
   });
 
   it("lies on the paper chosen, with nothing between one print and the next but that paper", () => {
@@ -601,15 +606,13 @@ describe("the editorial card", () => {
   });
 
   it("leaves about Instagram's gap between one post and the next, the same on any phone", () => {
-    const { card: paper, header: row } = sheet!;
+    const { card: paper } = sheet!;
     expect(card).toMatch(/const FOOT = 14;/);
     expect(card).toMatch(/const HEAD = 4;/);
     // From the foot of one post's last line to the next member's picture, in points, not a share of the width.
     const between = Number(paper.paddingBottom) + Number(paper.paddingTop) + (44 - 34) / 2;
     expect(between).toBeGreaterThanOrEqual(20);
     expect(between).toBeLessThanOrEqual(28);
-    // The member's row still sits as close over their picture as on the original card.
-    expect((44 - 34) / 2 + Number(row.marginBottom)).toBe(12);
   });
 
   it("draws the rule under the picture as the print does", () => {
@@ -632,8 +635,9 @@ describe("the editorial card", () => {
 
   it("takes only the print's own lengths as shares of the width; the rest is in points, as Instagram's", () => {
     const written = card.slice(card.indexOf("const styles = StyleSheet.create("));
-    expect(written.match(/\bshare\(/g)).toHaveLength(2);
-    expect(style("print")).toMatch(/share\(PRINT\.margin\)/);
+    expect(written.match(/\bshare\(/g)).toHaveLength(3);
+    expect(style("print")).toMatch(/paddingHorizontal: share\(PRINT\.margin\),/);
+    expect(style("print")).toMatch(/paddingTop: share\(GAP\),/);
     expect(style("rule")).toMatch(/marginTop: share\(GAP\),/);
     expect(card).not.toMatch(/\binner\(/);
   });

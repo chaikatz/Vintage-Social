@@ -330,8 +330,9 @@ check(
 );
 // Around the print, everything starts where Instagram's does: the member,
 // the heart, the caption and when it went up from one edge, the hairline
-// between the same edges, the buttons just under it, and the next post about
-// as close as Instagram's.
+// between the same edges, and the next post about as close as Instagram's.
+// The photograph is as far under the member's picture as the hairline is
+// under the photograph, and the buttons start where the print's label does.
 const lines = await editorial.evaluateAll((els) => {
   const inside = (n) => {
     const r = n.getBoundingClientRect();
@@ -351,11 +352,15 @@ const lines = await editorial.evaluateAll((els) => {
     );
     const h = heart?.getBoundingClientRect();
     const r = rule?.getBoundingClientRect();
+    const photo = [...el.querySelectorAll("img")].map((i) => i.getBoundingClientRect()).find((b) => b.width > 200);
+    const avatarBottom = member ? member.getBoundingClientRect().top + 5 + 34 : null;
     return {
       width: card.width,
       member: member ? member.getBoundingClientRect().left - card.left : null,
       heart: h ? (h.left + h.right) / 2 - card.left : null,
       underRule: h && r ? (h.top + h.bottom) / 2 - r.bottom : null,
+      overPhoto: photo && avatarBottom != null ? photo.top - avatarBottom : null,
+      underPhoto: photo && r ? r.top - photo.bottom : null,
       rule: r ? [r.left - card.left, card.right - r.right] : null,
       caption: caption ? inside(caption).left - card.left : null,
       posted: el.lastElementChild ? inside(el.lastElementChild).left - card.left : null,
@@ -381,8 +386,13 @@ check(
   JSON.stringify(lines[0]),
 );
 check(
-  "The buttons sit just under the hairline",
-  lines.length > 0 && lines.every((l) => l.underRule != null && l.underRule >= 16 && l.underRule <= 25),
+  "The photograph is as far under the member's picture as the hairline is under it",
+  lines.length > 0 && lines.every((l) => l.overPhoto != null && l.underPhoto != null && l.overPhoto > 15 && near(l.overPhoto, l.underPhoto)),
+  lines.map((l) => `${l.overPhoto?.toFixed(1)} / ${l.underPhoto?.toFixed(1)}`).join(", "),
+);
+check(
+  "The buttons start a little under the hairline, where the print's label does",
+  lines.length > 0 && lines.every((l) => l.underRule != null && l.underRule >= 21 && l.underRule <= 26),
   lines.map((l) => l.underRule?.toFixed(1)).join(", "),
 );
 const gapBetween = lines.length > 1 ? lines[1].head - lines[0].foot : null;

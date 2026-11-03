@@ -26,8 +26,7 @@ type Props = React.ComponentProps<typeof PostCard>;
  * on the paper inside the print's margins, the print's hairline under it
  * and the print's label under that. The label keeps its right-hand side as
  * it is struck, where and when, in the typewriter face; the wordmark's
- * place on the left goes to the three buttons, just under the hairline.
- * No counts and no number. Then the caption after the member's name, the
+ * place on the left goes to the three buttons. No counts and no number. Then the caption after the member's name, the
  * way a comment is written, the newest comments, and last of all when it
  * went up.
  *
@@ -259,8 +258,8 @@ const BETWEEN = PRINT.byline.y - (PRINT.place.y + PRINT.place.height);
  */
 const EDGE = 12;
 
-/** The buttons' outlines start this far under the hairline, as Instagram's start under the picture. */
-const UNDER_RULE = 10;
+/** Where the label's first line starts under the rule; the buttons' outlines start there too. */
+const LABEL_TOP = PRINT.place.y - PRINT.rule.y;
 
 /** The paper under one post's last line, and over the next one's row: together about Instagram's gap. */
 const FOOT = 14;
@@ -268,9 +267,6 @@ const HEAD = 4;
 
 /** How far a target reaches past its outline on each side. */
 const INSET = (TARGET - ICON) / 2;
-
-/** The caption starts this much inside the buttons' lower reach, as close under them as Instagram's words. */
-const UNDER_WORDS = 4;
 
 const styles = StyleSheet.create({
   // A sheet of the paper, a little of it above the member's row and a
@@ -280,13 +276,14 @@ const styles = StyleSheet.create({
     paddingTop: HEAD,
     paddingBottom: FOOT,
   },
-  // As near the picture as on the original card: the picture's top edge
-  // is as far under the member's picture as there.
+  // The row ends where the member's picture does (its targets reach a
+  // little past it, into the print's paper); the print then starts as far
+  // under it as the hairline is under the picture.
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: EDGE,
-    marginBottom: spacing.md - (TARGET - AVATAR) / 2,
+    marginBottom: -(TARGET - AVATAR) / 2,
   },
   // Their picture starts at the edge Instagram's does.
   member: {
@@ -297,9 +294,13 @@ const styles = StyleSheet.create({
     minHeight: TARGET,
   },
   username: { flexShrink: 1, fontSize: 14, fontWeight: "600", color: colors.ink },
-  // The print alone keeps the print's margins, a share of the width.
+  // The print alone keeps the print's margins, a share of the width, and
+  // the same paper over the picture as under it, before the hairline. The
+  // paper itself lets a touch through to the member's row under it.
   print: {
     paddingHorizontal: share(PRINT.margin),
+    paddingTop: share(GAP),
+    pointerEvents: "box-none",
   },
   // As far under the picture as on the print, and as wide as the words
   // under it, so the buttons and the label lie just beneath it.
@@ -309,23 +310,23 @@ const styles = StyleSheet.create({
     marginTop: share(GAP),
     backgroundColor: colors.borderStrong,
   },
-  // Just under the hairline: the buttons' outlines start UNDER_RULE below
-  // it, and their targets reach up to it. The place and the date sit level
-  // with them, centred on the buttons as Instagram's last one is. On a
-  // narrow screen, or with large text, the right-hand lines go under the
-  // buttons, still set against the right edge.
+  // As the print sets its label under the rule. On a narrow screen, or
+  // with large text, the right-hand lines go under the buttons, still set
+  // against the right edge.
   label: {
     flexDirection: "row",
     flexWrap: "wrap",
-    alignItems: "center",
+    alignItems: "flex-start",
     columnGap: spacing.md,
     paddingHorizontal: EDGE,
-    marginTop: UNDER_RULE - INSET,
-    marginBottom: -UNDER_WORDS,
+    marginTop: LABEL_TOP,
   },
-  // The heart's outline, not its target, starts at the edge.
+  // The outlines start level with the first line; their targets reach up
+  // into the paper under the rule, and the heart's outline, not its
+  // target, starts at the edge.
   actions: {
     flexDirection: "row",
+    marginTop: -INSET,
     marginLeft: -INSET,
   },
   button: {
@@ -334,10 +335,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // As much paper under the last line as the buttons' targets leave under
+  // their outlines, so the caption starts the same distance below either.
   dateline: {
     flexGrow: 1,
     flexShrink: 1,
     alignItems: "flex-end",
+    paddingBottom: INSET,
   },
   // Tracking follows the last letter too; the words, not that space, end at the margin.
   place: {
