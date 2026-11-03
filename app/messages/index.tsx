@@ -65,7 +65,8 @@ function ConversationRow({
   const last = conversation.last_message;
   const unread = conversation.unread_count > 0;
   const preview = inboxPreview(last);
-  // Editorial (Preview): who it is with, in the names' face. An unread thread's dark, bold name still wins, after it.
+  // Editorial (Preview): who it is with, in the names' face, which comes last. Every name is then dark and bold, so an
+  // unread thread is marked by its dot and its bold preview; under Original its dark, bold name marks it as before.
   const face = useNameFace();
 
   return (
@@ -76,7 +77,7 @@ function ConversationRow({
         size={46}
       />
       <View style={styles.rowText}>
-        <Text style={[styles.username, face, unread && styles.unreadText]}>
+        <Text style={[styles.username, unread && styles.unreadText, face]}>
           {conversation.peer.username}
         </Text>
         <Text style={[styles.preview, unread && styles.unreadText]} numberOfLines={1}>

@@ -425,15 +425,15 @@ check(
 );
 // Usernames, all around the app, set as the print sets its credit while
 // Editorial is chosen: the typewriter face (type.mono: "monospace" on the
-// web), bold, tracked 0.08 em and in the grey the credit reads in on the
-// print, each at its own size; what was written with them, and display names, keep their own face.
+// web), tracked 0.08 em as the credit is, and bold in the words' own ink,
+// as the member chose, each at its own size; what was written with them, and display names, keep their own face.
 // Each is read as "face|weight|colour|tracking".
 const MONO = /monospace/;
 const allMono = (faces) => faces.length > 0 && faces.every((f) => MONO.test(f));
 const noneMono = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(f));
-/** The grey the print's credit reads in (PRINT_GREY, the light print's), and its 0.08 em at a name's 14 pt and at a title's 17 pt. */
-const FAINT = "rgb(162, 158, 151)";
+/** A name's ink (colors.ink, the light print's), the words' own, and the credit's 0.08 em at a name's 14 pt and at a title's 17 pt. */
 const INK = "rgb(43, 38, 32)";
+const FAINT = INK;
 const TRACKED = 1.1;
 const TITLE_TRACKED = 1.36;
 const drawnAs = (f) => {
@@ -442,14 +442,14 @@ const drawnAs = (f) => {
 };
 /** About so many pixels apart; "normal" is no tracking at all. */
 const trackedAt = (spacing, px) => Math.abs(parseFloat(spacing) - px) < 0.05;
-/** Set as the print's credit, in bold: the face, bold, in the print's grey, tracked. */
+/** Set as the names are: the print's face, bold, in the words' ink, tracked as the credit is. */
 const asCredit = (f, px = TRACKED) => {
   const s = drawnAs(f);
   return MONO.test(s.face) && s.weight === "700" && s.color === FAINT && trackedAt(s.spacing, px);
 };
 const allCredit = (faces, px) => faces.length > 0 && faces.every((f) => asCredit(f, px));
-/** Neither the credit's ink nor its tracking. */
-const noneCredit = (faces) => faces.length > 0 && faces.every((f) => drawnAs(f).color !== FAINT && drawnAs(f).spacing === "normal");
+/** Neither the print's face nor its tracking. */
+const noneCredit = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(drawnAs(f).face) && drawnAs(f).spacing === "normal");
 /** Every username drawn on screen, as it is drawn: words that are a username alone, in an element of their own. */
 const namesOnScreen = () =>
   page.evaluate(() => {
@@ -510,7 +510,7 @@ check(
   [onHome.header[0], onHome.captions[0], onHome.comments[0]].join(" / "),
 );
 check(
-  `Editorial: the name over each print, before each caption and before each comment take the credit's ink (${FAINT}) and its tracking (~${TRACKED}px)`,
+  `Editorial: the name over each print, before each caption and before each comment take the names' ink (${FAINT}) and its tracking (~${TRACKED}px)`,
   allCredit(onHome.header) && allCredit(onHome.captions) && allCredit(onHome.comments),
   [onHome.header[0], onHome.captions[0], onHome.comments[0]].join(" / "),
 );
@@ -546,26 +546,28 @@ const inComments = await namesOnScreen();
 check("Editorial: every name in the comments is in the typewriter face", /Add a comment/.test(
   (await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "",
 ) && allMono(facesOf(inComments)), inComments.slice(0, 3).join(" | "));
-check("Editorial: and in the credit's ink and tracking", allCredit(facesOf(inComments)), inComments.slice(0, 3).join(" | "));
+check("Editorial: and in the names' ink and tracking", allCredit(facesOf(inComments)), inComments.slice(0, 3).join(" | "));
 await shot("12e-editorial-comments");
 await back(2200);
 await tab("activity");
 const inActivity = await namesOnScreen();
 check("Editorial: every name in Activity is in the typewriter face", allMono(facesOf(inActivity)), inActivity.slice(0, 3).join(" | "));
 // An unread notice is marked by its row's paper alone, so its name is set as every name is.
-check("Editorial: and in the credit's ink and tracking, read or not", allCredit(facesOf(inActivity)), inActivity.slice(0, 3).join(" | "));
+check("Editorial: and in the names' ink and tracking, read or not", allCredit(facesOf(inActivity)), inActivity.slice(0, 3).join(" | "));
 await shot("12f-editorial-activity");
 
 // The inbox: a thread with something unread keeps its dark, bold name, as
 // its preview is, in the names' face and tracking; a read one is set as
-// every name is. In the demo only Tomas has written since it was read.
+// every name is. Every name is dark and bold under Editorial, so an unread
+// one is no lighter than a read one: its dot and its preview mark it. In
+// the demo only Tomas has written since it was read.
 await go("/messages", 2600);
 const inInbox = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), drawnAs(n.slice(n.indexOf(": ") + 2))]));
 const unreadName = inInbox["tomas.lindqvist"];
 const readNames = Object.entries(inInbox).filter(([name]) => name !== "tomas.lindqvist").map(([, s]) => s);
 check(
-  "Editorial: an unread thread's name stays dark and bold, in the face and its tracking",
-  unreadName != null && MONO.test(unreadName.face) && unreadName.color === INK && unreadName.weight === "600" && trackedAt(unreadName.spacing, TRACKED),
+  "Editorial: an unread thread's name is dark and bold, as every name is, never lighter than a read one",
+  unreadName != null && asCredit(`${unreadName.face}|${unreadName.weight}|${unreadName.color}|${unreadName.spacing}`),
   JSON.stringify(unreadName),
 );
 check(
@@ -588,10 +590,10 @@ await wait(2600);
 // Their profile is titled with their username, in the typewriter face, at the bar's own size.
 const profileTitle = await titleFace(member);
 check("Editorial: a profile's title, its username, is in the typewriter face", MONO.test(profileTitle), `${member}: ${profileTitle}`);
-// In the credit's ink, and its 0.08 em at the title's 17 pt (the web's bar is drawn by the stack; on iOS the system's bar takes no tracking).
+// In the names' ink, and its 0.08 em at the title's 17 pt (the web's bar is drawn by the stack; on iOS the system's bar takes no tracking).
 const profileTitleDrawn = await titleDrawn(member);
 check(
-  `Editorial: and in the credit's ink and its tracking at the bar's size (~${TITLE_TRACKED}px)`,
+  `Editorial: and in the names' ink and its tracking at the bar's size (~${TITLE_TRACKED}px)`,
   asCredit(profileTitleDrawn, TITLE_TRACKED),
   profileTitleDrawn,
 );
@@ -617,7 +619,7 @@ check("Editorial: the gallery's title, its author's username, is set as the cred
 await shot("12d-editorial-gallery");
 
 // An empty list's sentence, written with the member's username in it: the
-// name alone set as the credit, in the typewriter face, the credit's ink and
+// name alone set as the credit, in the typewriter face, the names' ink and
 // its tracking, the rest of the sentence in its own face, ink and spacing,
 // and the name at the sentence's own size and weight. Nobody follows the
 // founding account; an applicant follows nobody yet.
@@ -678,7 +680,7 @@ check("Original lies on the app’s own paper, whatever paper was chosen", origi
 // And every username is back in its own face: on Home, in Activity, and in a profile's title.
 const homeAgain = await namesOnScreen();
 check("Original: no name on Home is in the typewriter face", noneMono(facesOf(homeAgain)), homeAgain.slice(0, 3).join(" | "));
-check("Original: nor in the credit's ink or tracking", noneCredit(facesOf(homeAgain)), homeAgain.slice(0, 3).join(" | "));
+check("Original: nor in the names' ink or tracking", noneCredit(facesOf(homeAgain)), homeAgain.slice(0, 3).join(" | "));
 // The name over each picture, before each caption and before each comment: dark, bold and untracked, as they always were.
 const onHomeAgain = await namesOnCards(seen(page.getByLabel(/^Posted /)).locator("xpath=.."));
 const asBefore = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(f) && drawnAs(f).color === INK && drawnAs(f).weight === "600" && drawnAs(f).spacing === "normal");
@@ -690,7 +692,7 @@ check(
 await tab("activity");
 const activityAgain = await namesOnScreen();
 check("Original: no name in Activity is in the typewriter face", noneMono(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
-check("Original: nor in the credit's ink or tracking", noneCredit(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
+check("Original: nor in the names' ink or tracking", noneCredit(facesOf(activityAgain)), activityAgain.slice(0, 3).join(" | "));
 await go("/user/vintage", 2800);
 await byLabel("0 followers").first().click();
 await wait(2400);

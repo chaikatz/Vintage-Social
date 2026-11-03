@@ -564,7 +564,7 @@ describe("the editorial card", () => {
     expect(style("author")).toMatch(/fontWeight: "700"/);
     // Who wrote it, set exactly as every name is under Editorial: the print's credit, at the words' own size.
     expect(sheet!.author).toEqual(nameFace("editorial"));
-    expect(sheet!.author).toEqual({ fontFamily: "Courier New", fontWeight: "700", letterSpacing: 1.1, color: "#A29E97" });
+    expect(sheet!.author).toEqual({ fontFamily: "Courier New", fontWeight: "700", letterSpacing: 1.1, color: "#2B2620" });
     expect(sheet!.author).not.toHaveProperty("fontSize");
   });
 

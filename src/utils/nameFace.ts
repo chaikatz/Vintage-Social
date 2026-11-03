@@ -1,5 +1,5 @@
-import { DynamicColorIOS, Platform, type ColorValue } from "react-native";
-import { type } from "@/theme";
+import type { ColorValue } from "react-native";
+import { colors, type } from "@/theme";
 import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
 
 /**
@@ -9,13 +9,15 @@ import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
  * bar's title, a row in a list, the name before a caption, a comment or a
  * notice, a chip, a sheet, the sentence an empty page says about a member)
  * is set the way the print sets its credit (`@chai · MEMBER NO. 00001`,
- * src/components/ExportCard.tsx): in type.mono, tracked 0.08 em, in the
- * grey the credit reads in on the print (PRINT_GREY), and bold, which the
- * member chose over the print's regular so the name holds its own beside
- * the words after it. Each name keeps its own size and its place. Where a place marks a name for a state of its own
- * (an unread thread, a photograph sent in your own dark bubble), the state's
- * colour and weight still win, and the name keeps the face and the
- * tracking. Under Original nothing changes: a name bold and dark there
+ * src/components/ExportCard.tsx): in type.mono, tracked 0.08 em, and, as
+ * the member chose over the print's faint, regular credit so a name holds
+ * its own beside the words after it, bold and in the ink the words are set
+ * in (colors.ink). Each name keeps its own size and its place. Where a
+ * place marks a name for a state of its own (a photograph sent in your own
+ * dark bubble, a tag not yet accepted), the state's colour and weight still
+ * win, and the name keeps the face and the tracking. An unread thread is
+ * the one state that no longer needs its name: every name is dark and bold
+ * now, so its dot and its bold preview mark it. Under Original nothing changes: a name bold and dark there
  * stays so.
  *
  * Display names, what a member types, and what they wrote (captions,
@@ -35,17 +37,8 @@ import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
  */
 const NAME_TRACKING = 1.1;
 
-/**
- * The grey the print's credit reads in. The print sets it in inkFaint, a
- * warm tan, but a credit 9 pt high, saved as a JPEG, comes out a neutral,
- * silvery grey: the fine strokes lose their colour to the paper around
- * them. A name at its own size in the app keeps every bit of a warm ink,
- * so it takes the grey the print shows instead, measured off a member's
- * print. In the dark appearance, the same grey a step lighter, as the
- * dark print's faint ink is.
- */
-export const PRINT_GREY = { light: "#A29E97", dark: "#ACA7A0" } as const;
-export const NAME_INK: ColorValue = Platform.OS === "ios" ? DynamicColorIOS(PRINT_GREY) : PRINT_GREY.light;
+/** A name's ink: the words' own, near-black on the light paper and cream on the dark. */
+export const NAME_INK: ColorValue = colors.ink;
 
 /**
  * The face, weight, tracking and ink a name takes. A place puts it after
@@ -86,7 +79,7 @@ export function aroundName(write: (name: string) => string): string[] {
  * bar's tint; a screen's own headerTitleStyle replaces that whole, so this
  * carries the same size and sets the name as every name is set: the
  * typewriter face, bold, tracked 0.08 em at 17 pt (0.08 × 17 = 1.36 pt),
- * in the print's grey. The ink is the title's own colour, which the stack
+ * in the names' ink. The ink is the title's own colour, which the stack
  * takes over the bar's tint (react-native-screens draws it as the title's
  * colour on iOS). The bar on iOS is the system's own, and react-native-screens
  * hands it a title's face, size, weight and colour but no tracking, so there

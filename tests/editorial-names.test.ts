@@ -28,7 +28,7 @@ vi.mock("react", async (original) => ({
   useSyncExternalStore: (_subscribe: unknown, get: () => unknown) => get(),
 }));
 
-const { NAME_INK, PRINT_GREY, aroundName, nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = await import("@/utils/nameFace");
+const { NAME_INK, aroundName, nameFace, nameTitleStyle, useNameFace, useNameTitleStyle } = await import("@/utils/nameFace");
 const { setFeedLayout, __resetFeedLayoutForTest } = await import("@/utils/feedLayout");
 const { colors, light, type } = await import("@/theme");
 /** A name under Editorial: the print's face, tracking and grey, in bold. */
@@ -69,28 +69,22 @@ const credit = () => code("src/components/ExportCard.tsx").match(/rect\(L\.credi
 describe("the names' face", () => {
   it("is the print's credit under Editorial, and nothing at all under Original", () => {
     expect(nameFace("editorial")).toEqual(EDITORIAL);
-    // On the phone: Courier New Bold, 1.1 pt apart, in the print's grey (a step lighter in the dark appearance).
-    expect(nameFace("editorial")).toEqual({ fontFamily: "Courier New", fontWeight: "700", letterSpacing: 1.1, color: "#A29E97" });
+    // On the phone: Courier New Bold, 1.1 pt apart, in the words' near-black ink (their cream in the dark appearance).
+    expect(nameFace("editorial")).toEqual({ fontFamily: "Courier New", fontWeight: "700", letterSpacing: 1.1, color: "#2B2620" });
     // Nothing, not an empty style: a style array is exactly what it was.
     expect(nameFace("original")).toBeUndefined();
     // The same object each time, so nothing redraws for it alone.
     expect(nameFace("editorial")).toBe(nameFace("editorial"));
   });
 
-  it("is the print's face, in the grey its credit reads in on the print, and bold", () => {
+  it("is the print's face, bold and in the words' own ink, as the member chose over the credit's faint and regular", () => {
     expect(credit()).toMatch(/fontFamily: type\.mono,/);
-    // The print sets its credit in the faint ink; 9 pt high and saved as a JPEG, it reads as a neutral grey, which a name takes.
+    // The print's credit is faint and regular; a name in the app is the words' ink, and bold.
     expect(credit()).toMatch(/color: c\.inkFaint,/);
-    expect(PRINT_GREY).toEqual({ light: "#A29E97", dark: "#ACA7A0" });
-    expect(NAME_INK).toBe(PRINT_GREY.light);
-    for (const grey of Object.values(PRINT_GREY)) {
-      const [r, g, b] = [1, 3, 5].map((i) => parseInt(grey.slice(i, i + 2), 16));
-      // Neutral: no channel more than a few steps from another, where the warm ink is 29 apart.
-      expect(Math.max(r, g, b) - Math.min(r, g, b), grey).toBeLessThanOrEqual(12);
-    }
-    expect(light.inkFaint).toBe("#9C927F");
-    // Bold, as the member chose, where the print's credit is regular.
     expect(credit()).not.toMatch(/fontWeight/);
+    expect(NAME_INK).toBe(colors.ink);
+    expect(nameFace("editorial")!.color).toBe(colors.ink);
+    expect(nameFace("editorial")!.color).not.toBe(colors.inkFaint);
     expect(nameFace("editorial")!.fontWeight).toBe("700");
   });
 
@@ -227,7 +221,7 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ["app/follows.tsx", "… isn't following anyone yet.", /<Text style=\{face\}>\{username\}<\/Text>\s*\{" isn't following anyone yet\."\}/],
   ["app/compose.tsx", "who was there",/<Text style=\{\[styles\.tagNames, face\]\} numberOfLines=\{1\}>\s*\{tags\.map\(\(t\) => t\.username\)\.join\(", "\)\}/],
   ["app/gallery.tsx", "its title, when it is the author's username", /const titleStyle = useNameTitleStyle\(!shown\.era\);[\s\S]*?<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/],
-  ["app/messages/index.tsx", "who each thread is with, an unread thread's emphasis after it", /<Text style=\{\[styles\.username, face, unread && styles\.unreadText\]\}>\s*\{conversation\.peer\.username\}/],
+  ["app/messages/index.tsx", "who each thread is with, its unread emphasis before the face (Original keeps it)", /<Text style=\{\[styles\.username, unread && styles\.unreadText, face\]\}>\s*\{conversation\.peer\.username\}/],
   ["app/messages/[id].tsx", "the thread's title", /<Stack\.Screen options=\{\{ title: peerQ\.data\?\.username \?\? "", headerTitleStyle: titleStyle \}\} \/>/],
   ["app/messages/[id].tsx", "whose photograph was sent, your own bubble's ink after it", /<Text style=\{\[styles\.sharedCaption, face, mine && styles\.textMine\]\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/],
   ["app/post/[id].tsx", "the author", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/],
@@ -497,30 +491,34 @@ describe("a state a place marks a name for", () => {
     const found = arrays();
     // Each array listed above among the places a username is drawn.
     expect(found).toHaveLength(21);
+    // The one state the face is meant to override: an unread thread, which its dot and preview mark under Editorial.
+    const UNREAD = "app/messages/index.tsx: [styles.username, unread && styles.unreadText, face]";
     for (const [file, array] of found) {
+      if (`${file}: ${array}` === UNREAD) continue;
       const parts = array.slice(1, -1).split(/,\s*/);
       const at = parts.findIndex((part) => /\bface\b/.test(part));
       // Before the face only the place's own style, never one that depends on a state.
       for (const before of parts.slice(0, at)) expect(before, `${file}: ${array}`).toMatch(/^styles\.\w+$/);
     }
-    // The three that a state marks, each with its state after the face.
+    // The three that a state marks: two with the state after the face, so it wins; the unread thread with it before.
     const marked = found.filter(([, array]) => /&& styles\./.test(array)).map(([file, array]) => `${file}: ${array}`);
     expect(marked).toEqual([
       "app/messages/[id].tsx: [styles.sharedCaption, face, mine && styles.textMine]",
-      "app/messages/index.tsx: [styles.username, face, unread && styles.unreadText]",
+      UNREAD,
       'app/post/[id].tsx: [face, t.status === "pending" && styles.withPending]',
     ]);
   });
 
-  it("an unread thread: its name dark and bold again, as its preview is, still in the face and its tracking", () => {
+  it("an unread thread: marked by its dot and bold preview under Editorial, where every name is dark and bold; by its name under Original", () => {
     const file = "app/messages/index.tsx";
     const array = code(file).match(/<Text style=\{(\[[^\]]*\])\}>\s*\{conversation\.peer\.username\}/)![1];
     expect(rule(file, "unreadText")).toEqual({ color: colors.ink, fontWeight: "600" });
     // The preview under it is marked by the same style.
     expect(code(file)).toMatch(/<Text style=\{\[styles\.preview, unread && styles\.unreadText\]\} numberOfLines=\{1\}>\s*\{preview\}/);
-    const face = { fontFamily: type.mono, letterSpacing: 1.1 };
-    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 15, ...face, color: colors.ink, fontWeight: "600" });
-    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 15, ...face, color: NAME_INK, fontWeight: "700" });
+    // Under Editorial the face comes last, so a name is dark and bold whether the thread is read or not: never a read name heavier than an unread one.
+    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 15, ...EDITORIAL });
+    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 15, ...EDITORIAL });
+    expect(code(file)).toMatch(/\{unread \? <View style=\{styles\.dot\} \/> : null\}/);
     // Under Original exactly as before the trial.
     expect(drawn(file, array, "original", true)).toEqual({ fontSize: 15, color: colors.ink, fontWeight: "600" });
     expect(drawn(file, array, "original", false)).toEqual({ fontSize: 15, color: colors.ink });
