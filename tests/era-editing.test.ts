@@ -108,7 +108,8 @@ describe("the Eras view outside arranging", () => {
   });
 
   it("opens the gallery from a print, as it always has", () => {
-    expect(list).toMatch(/onOpen=\{\(post\) => \(arranging \? setSheet\(\{ kind: "move", post \}\) : onOpenPost\(post, era\.key\)\)\}/);
+    expect(list).toMatch(/open: \(post, key\) => \(arranging \? setSheet\(\{ kind: "move", post \}\) : onOpenPost\(post, key\)\),/);
+    expect(list).toMatch(/const onOpen = useCallback\(\(post: PostRow\) => hands\.current\.open\(post, key\), \[hands, key\]\);/);
     expect(list.match(/onOpenPost\(/g)).toHaveLength(1);
   });
 
@@ -129,7 +130,7 @@ describe("the Eras view outside arranging", () => {
 
   it("draws nothing afresh on EDIT or DONE: the same view holds each print, and the page's children keep their places", () => {
     // Print has one shape: the tile is never handed back bare.
-    const print = list.match(/function Print\([\s\S]*?\n\}\n/)?.[0] ?? "";
+    const print = list.match(/const Print = memo\(function Print\([\s\S]*?\n\}\);\n/)?.[0] ?? "";
     expect(print).toMatch(/<PhotoTile\b/);
     expect(print).not.toMatch(/return children;/);
     expect(print.match(/return /g)).toHaveLength(1);
@@ -145,7 +146,8 @@ describe("the Eras view outside arranging", () => {
     expect(list).toMatch(/const anchor = useRef<ChapterPlace \| null>\(null\);/);
     expect(list).toMatch(/<ScrollView\s+ref=\{scroller\}/);
     expect(list).toMatch(/<View ref=\{pageRef\} style=\{\[styles\.chapter, first && styles\.chapterFirst\]\} onLayout=\{onLayout\}>/);
-    expect(list).toMatch(/if \(node\) pages\.current\.set\(era\.key, node\);\s*else pages\.current\.delete\(era\.key\);/);
+    expect(list).toMatch(/page: \(key, node\) => \{\s*if \(node\) pages\.current\.set\(key, node\);\s*else pages\.current\.delete\(key\);\s*\},/);
+    expect(list).toMatch(/const pageRef = useCallback\(\(node: View \| null\) => hands\.current\.page\(key, node\), \[hands, key\]\);/);
     // Once laid out again, that chapter is measured where it now lies and put back at the top, at once.
     expect(list).toMatch(/useLayoutEffect\(\(\) => \{\s*const place = anchor\.current;\s*anchor\.current = null;/);
     // As far into it as they were where it lays every photograph out (depthAfter), judged by what it lays out, not by a height.
@@ -330,14 +332,15 @@ describe("New era… and the way out, on Move to", () => {
 });
 
 describe("ADD and NEW ERA", () => {
-  const chapter = list.match(/function Chapter\([\s\S]*?\n\}\n/)?.[0] ?? "";
+  const chapter = list.match(/const Chapter = memo\(function Chapter\([\s\S]*?\n\}\);\n/)?.[0] ?? "";
 
   it("puts ADD beside RENAME on every era while arranging, named by its era, and opens it for that era", () => {
     expect(chapter).toMatch(
       /\{arranging \? \(\s*<Pressable\s+onPress=\{onAdd\}\s+hitSlop=\{12\}\s+style=\{\(\{ pressed \}\) => \[styles\.rename, pressed && styles\.pressed\]\}\s+accessibilityRole="button"\s+accessibilityLabel=\{`Add to \$\{era\.title\}`\}\s+accessibilityHint="Choose photographs of yours to add to this era\."\s*>\s*<Text style=\{styles\.renameText\}>Add<\/Text>/,
     );
     expect(chapter.indexOf("onPress={onRename}")).toBeLessThan(chapter.indexOf("onPress={onAdd}"));
-    expect(list).toMatch(/onAdd=\{\(\) => setSheet\(\{ kind: "add", key: era\.key \}\)\}/);
+    expect(list).toMatch(/add: \(key\) => setSheet\(\{ kind: "add", key \}\),/);
+    expect(chapter).toMatch(/const onAdd = \(\) => hands\.current\.add\(key\);/);
   });
 
   it("puts NEW ERA in the bar while arranging, beside DONE, inside the bar's own padding", () => {
@@ -351,7 +354,8 @@ describe("ADD and NEW ERA", () => {
 
   it("lets an era of the member's own be deleted where its name cannot be asked for", () => {
     expect(chapter).toMatch(/\{arranging && !canNameEras && era\.made \? \(\s*<Pressable\s+onPress=\{onDelete\}[\s\S]*?accessibilityRole="button"\s+accessibilityLabel=\{`Delete \$\{era\.title\}`\}/);
-    expect(list).toMatch(/onDelete=\{\(\) => confirmDeleteEra\(era\.title, \(\) => remove\(era\)\)\}/);
+    expect(list).toMatch(/confirmDelete: \(era\) => confirmDeleteEra\(era\.title, \(\) => remove\(era\)\),/);
+    expect(chapter).toMatch(/const onDelete = \(\) => hands\.current\.confirmDelete\(era\);/);
   });
 
   it("chooses photographs as checkboxes, says which are chosen, and on the web too", () => {
@@ -431,7 +435,8 @@ describe("Add to an era…, from a photograph's options", () => {
 });
 
 describe("dragging a print to another era", () => {
-  const print = list.match(/function Print\([\s\S]*?\n\}\n/)?.[0] ?? "";
+  const print = list.match(/const Print = memo\(function Print\([\s\S]*?\n\}\);\n/)?.[0] ?? "";
+  const chapter = list.match(/const Chapter = memo\(function Chapter\([\s\S]*?\n\}\);\n/)?.[0] ?? "";
   const lift = list.match(/const lift = \(held: Held, from: string, e: GestureResponderEvent\) => \{[\s\S]*?\n  \};/)?.[0] ?? "";
   const responder = list.match(/const responder = useMemo\([\s\S]*?\n  \);/)?.[0] ?? "";
 
@@ -550,6 +555,25 @@ describe("dragging a print to another era", () => {
     expect(list).toMatch(
       /if \(Platform\.OS !== "web" \|\| !arranging\) return;[\s\S]*?if \(!page\?\.contains\?\.\(e\.target\)\) return;\s*e\.preventDefault\(\);\s*e\.stopPropagation\(\);\s*\};\s*window\.addEventListener\("dragstart", keep, true\);\s*return \(\) => window\.removeEventListener\("dragstart", keep, true\);/,
     );
+  });
+
+  it("draws again only the chapters and prints a drag changes, never the whole page", () => {
+    // A chapter, and a print, are drawn again only when what they are given changes.
+    expect(list).toMatch(/const Chapter = memo\(function Chapter\(/);
+    expect(list).toMatch(/const Print = memo\(function Print\(/);
+    // The page gives a chapter nothing made afresh as it draws: what it does comes through a ref made once, kept current.
+    const tag = list.match(/<Chapter\b[\s\S]*?\/>/)?.[0] ?? "";
+    expect(tag).toMatch(/\bhands=\{hands\}/);
+    expect(tag).not.toMatch(/=>|\{\{|\[/);
+    expect(list).toMatch(/const hands = useRef\(chapterHands\);\s*hands\.current = chapterHands;/);
+    // A print lifted dims in its own chapter, and no other is drawn again for it.
+    expect(tag).toMatch(/lifted=\{lifted\?\.from === era\.key \? lifted\.post\.id : null\}/);
+    expect(list).toMatch(/setLifted\(\{ id, post, from, full,/);
+    // A print's hands are the same from one drawing of its chapter to the next.
+    expect(chapter).toMatch(/const onOpen = useCallback\(\(post: PostRow\) => hands\.current\.open\(post, key\), \[hands, key\]\);/);
+    expect(chapter).toMatch(/const onLift = useCallback\(\(held: Held, e: GestureResponderEvent\) => hands\.current\.lift\(held, key, e\), \[hands, key\]\);/);
+    expect(chapter).toMatch(/const onLetGo = useCallback\(\(\) => hands\.current\.letGo\(\), \[hands\]\);/);
+    expect(chapter).toMatch(/const print = \{ arranging, onOpen, onLift, onLetGo \};/);
   });
 
   it("says in the bar that a photograph can be held and dragged", () => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Animated,
@@ -122,6 +122,8 @@ interface Held {
 interface Lifted {
   id: number;
   post: PostRow;
+  /** The era it was lifted from, by key: only that chapter dims it. */
+  from: string;
   full: boolean;
   left: number;
   top: number;
@@ -133,6 +135,23 @@ interface Lifted {
 
 /** How far above the finger that slip sits. */
 const SLIP_ABOVE = 56;
+
+/**
+ * What a chapter's controls and prints do, for the era of a key. The page
+ * keeps the latest of them in a ref the chapters hold, so a chapter need
+ * not be drawn again for them to be current.
+ */
+interface ChapterHands {
+  toggle: (key: string) => void;
+  open: (post: PostRow, key: string) => void;
+  rename: (era: EditedEra<PostRow>) => void;
+  add: (key: string) => void;
+  confirmDelete: (era: EditedEra<PostRow>) => void;
+  lift: (held: Held, key: string, e: GestureResponderEvent) => void;
+  letGo: () => void;
+  page: (key: string, node: View | null) => void;
+  laid: (key: string, e: LayoutChangeEvent) => void;
+}
 
 interface Props {
   /** The member's own photographs. Never the ones they were tagged in: those are not theirs to gather. */
@@ -487,7 +506,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
       print.measureInWindow((px, py) => {
         if (drag.current !== d) return;
         const { post, full, width: w, height: h } = held;
-        setLifted({ id, post, full, left: px - x, top: py - y, width: w, height: h, slipTop: at.y - y - SLIP_ABOVE });
+        setLifted({ id, post, from, full, left: px - x, top: py - y, width: w, height: h, slipTop: at.y - y - SLIP_ABOVE });
       });
     });
     pan.setValue({ x: 0, y: 0 });
@@ -556,6 +575,31 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   // The responder is made once; it reaches the latest render's drag through `act`.
   const act = useRef({ take, follow, drop, cancel });
   act.current = { take, follow, drop, cancel };
+  // The chapters reach this render's hands the same way, through a ref
+  // that is theirs from the first. So a chapter, and each print in it, is
+  // drawn again only when what it shows changes (its era, how near it is,
+  // the print lifted from it, the frame), never for every turn a drag
+  // takes, and the print in hand never waits on the whole page.
+  const chapterHands: ChapterHands = {
+    toggle,
+    open: (post, key) => (arranging ? setSheet({ kind: "move", post }) : onOpenPost(post, key)),
+    rename,
+    add: (key) => setSheet({ kind: "add", key }),
+    confirmDelete: (era) => confirmDeleteEra(era.title, () => remove(era)),
+    lift,
+    letGo,
+    page: (key, node) => {
+      if (node) pages.current.set(key, node);
+      else pages.current.delete(key);
+    },
+    laid: (key, e) => {
+      const { y, height: tall } = e.nativeEvent.layout;
+      spans.current.set(key, { top: y, height: tall });
+      look();
+    },
+  };
+  const hands = useRef(chapterHands);
+  hands.current = chapterHands;
   const responder = useMemo(
     () =>
       PanResponder.create({
@@ -699,24 +743,9 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
                 expanded={open.has(era.key)}
                 near={near.has(era.key)}
                 arranging={arranging}
-                lifted={lifted?.post.id ?? null}
+                lifted={lifted?.from === era.key ? lifted.post.id : null}
                 target={over === era.key}
-                onToggle={() => toggle(era.key)}
-                onOpen={(post) => (arranging ? setSheet({ kind: "move", post }) : onOpenPost(post, era.key))}
-                onRename={() => rename(era)}
-                onAdd={() => setSheet({ kind: "add", key: era.key })}
-                onDelete={() => confirmDeleteEra(era.title, () => remove(era))}
-                onLift={(held, e) => lift(held, era.key, e)}
-                onLetGo={letGo}
-                pageRef={(node) => {
-                  if (node) pages.current.set(era.key, node);
-                  else pages.current.delete(era.key);
-                }}
-                onLayout={(e) => {
-                  const { y, height: tall } = e.nativeEvent.layout;
-                  spans.current.set(era.key, { top: y, height: tall });
-                  look();
-                }}
+                hands={hands}
               />
             ))}
             {footnote ? (
@@ -807,7 +836,14 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
   );
 }
 
-function Chapter({
+/**
+ * An era's chapter: its name, its prints, and while arranging, what can be
+ * done to it. Drawn again only when what it shows changes, and each print
+ * in it only when it dims or comes full: what they do is reached through
+ * the page's `hands` as it is done, and a print's are kept from one
+ * drawing to the next.
+ */
+const Chapter = memo(function Chapter({
   era,
   first,
   cell,
@@ -816,15 +852,7 @@ function Chapter({
   arranging,
   lifted,
   target,
-  onToggle,
-  onOpen,
-  onRename,
-  onAdd,
-  onDelete,
-  onLift,
-  onLetGo,
-  pageRef,
-  onLayout,
+  hands,
 }: {
   era: EditedEra<PostRow>;
   first: boolean;
@@ -834,25 +862,27 @@ function Chapter({
   near: boolean;
   /** Being arranged: every print laid out, each one moved by a tap or a drag, the name renamed, and photographs added. */
   arranging: boolean;
-  /** The photograph lifted to be dragged, by id, wherever it is. */
+  /** The photograph lifted from this era to be dragged, by id. */
   lifted: string | null;
   /** The era a lifted print would go to, let go now. */
   target: boolean;
-  onToggle: () => void;
-  onOpen: (post: PostRow) => void;
-  onRename: () => void;
-  /** ADD: photographs from anywhere else, gathered into this era. */
-  onAdd: () => void;
-  /** An era the member made, deleted, where its name cannot be asked for (and so Delete era with it). */
-  onDelete: () => void;
-  /** A print held while arranging, to be dragged, and the touch that held it. */
-  onLift: (held: Held, e: GestureResponderEvent) => void;
-  /** A held print let go. */
-  onLetGo: () => void;
-  /** The chapter's own view, so where it lies can be measured. */
-  pageRef: (node: View | null) => void;
-  onLayout: (e: LayoutChangeEvent) => void;
+  /** What its controls and prints do: the page's latest. */
+  hands: React.RefObject<ChapterHands>;
 }) {
+  const { key } = era;
+  const onToggle = () => hands.current.toggle(key);
+  const onRename = () => hands.current.rename(era);
+  // ADD: photographs from anywhere else, gathered into this era.
+  const onAdd = () => hands.current.add(key);
+  // An era the member made, deleted, where its name cannot be asked for (and so Delete era with it).
+  const onDelete = () => hands.current.confirmDelete(era);
+  // A print tapped, held to be dragged, and let go: the same from one drawing to the next, so a print is not drawn again for them.
+  const onOpen = useCallback((post: PostRow) => hands.current.open(post, key), [hands, key]);
+  const onLift = useCallback((held: Held, e: GestureResponderEvent) => hands.current.lift(held, key, e), [hands, key]);
+  const onLetGo = useCallback(() => hands.current.letGo(), [hands]);
+  // The chapter's own view, so where it lies can be measured.
+  const pageRef = useCallback((node: View | null) => hands.current.page(key, node), [hands, key]);
+  const onLayout = (e: LayoutChangeEvent) => hands.current.laid(key, e);
   const [lead] = era.posts;
   const leadSize = leadPrint(aspectRatio(lead.width, lead.height), cell);
   // Arranging, every photograph is out on the page, so any can be moved.
@@ -948,7 +978,7 @@ function Chapter({
       ) : null}
     </View>
   );
-}
+});
 
 /**
  * A print as it lies on the page; being arranged, it carries a small MOVE
@@ -958,7 +988,7 @@ function Chapter({
  * hears it in the print's own hint, and moves it from the sheet a tap
  * opens.
  */
-function Print({
+const Print = memo(function Print({
   post,
   size,
   height,
@@ -1003,7 +1033,7 @@ function Print({
       ) : null}
     </View>
   );
-}
+});
 
 /**
  * The view a ScrollView lays its children in, which a chapter's place on
