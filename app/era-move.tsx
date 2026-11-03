@@ -9,7 +9,8 @@ import { useSession } from "@/providers/SessionProvider";
 import { useEraEditor, useEraEdits } from "@/hooks/useEraEdits";
 import { NO_EDITS } from "@/utils/eraEdits";
 import { EraSheetBody } from "@/components/EraMoveSheet";
-import { eraSheetView, madeNote, movedNote, takenOutNote, type EraSheetState } from "@/components/eraSheet";
+import { LoadFailed } from "@/components/LoadFailed";
+import { eraMoveStage, eraSheetView, madeNote, movedNote, takenOutNote, type EraSheetState } from "@/components/eraSheet";
 
 /**
  * Add to an era, from the "…" on a photograph of your own, wherever it is
@@ -20,7 +21,10 @@ import { eraSheetView, madeNote, movedNote, takenOutNote, type EraSheetState } f
  * when you next look. One change, and it closes.
  *
  * Offered only once your arrangement has been read and can be saved
- * (usePostActions), and only on your own photographs.
+ * (usePostActions), and only on your own photographs. Your photographs
+ * are read afresh each time it opens, and it says the photograph is not
+ * yours only once a read has answered without it (eraMoveStage). Close is
+ * there whatever it shows.
  */
 export default function EraMove() {
   const router = useRouter();
@@ -33,6 +37,8 @@ export default function EraMove() {
     queryKey: ["user-posts", userId],
     queryFn: () => fetchUserPosts(userId),
     enabled: Boolean(userId),
+    // A list read before this photograph was posted would not have it.
+    refetchOnMount: "always",
   });
   const eraEdits = useEraEdits(userId);
   const editor = useEraEditor(userId, posts.data);
@@ -54,19 +60,25 @@ export default function EraMove() {
   };
 
   const top = { paddingTop: Platform.OS === "ios" ? 0 : insets.top };
-  if (!posts.isFetched || !eraEdits.isFetched) {
+  const stage = eraMoveStage({
+    answered: posts.isFetched && eraEdits.isFetched,
+    reading: posts.fetchStatus !== "idle",
+    failed: posts.isError || !posts.data,
+    found: post != null,
+    arrangeable: editor != null && view != null,
+  });
+  if (stage !== "sheet" || !post || !editor || !view) {
     return (
-      <View style={[styles.root, styles.centre, top]}>
-        <ActivityIndicator color={colors.inkFaint} />
-      </View>
-    );
-  }
-  if (!post || !editor || !view) {
-    return (
-      <View style={[styles.root, styles.centre, top]} testID="era-move-unavailable">
-        <Text style={styles.words}>
-          {!post ? "This photograph isn’t among yours any more." : "Your eras can’t be arranged just now. Try again in a moment."}
-        </Text>
+      <View style={[styles.root, styles.centre, top]} testID={stage === "reading" ? "era-move-reading" : "era-move-unavailable"}>
+        {stage === "reading" ? (
+          <ActivityIndicator color={colors.inkFaint} />
+        ) : stage === "readFailed" ? (
+          <LoadFailed what="your photographs" onRetry={() => void posts.refetch()} />
+        ) : (
+          <Text style={styles.words}>
+            {stage === "notYours" ? "This photograph isn’t among yours any more." : "Your eras can’t be arranged just now. Try again in a moment."}
+          </Text>
+        )}
         <Pressable onPress={close} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={styles.closeButton}>
           <Text style={styles.close}>Close</Text>
         </Pressable>

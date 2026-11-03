@@ -66,9 +66,78 @@ export function eraSheetView(posts: PostRow[], edits: EraEdits, sheet: EraSheetS
   return { kind: "new", groups: addChoices(posts, edits, null), chosen: sheet.chosen };
 }
 
+/**
+ * How far the keyboard comes up over the sheet, from where its top edge
+ * comes to rest (`screenY`, in the window) to the foot of the window. A
+ * sheet of ours reaches the foot of the screen, as a page sheet does on
+ * an iPhone, so this is how far its foot must rise. KeyboardAvoidingView
+ * measures the sheet from the sheet's own top, which is lower than the
+ * screen's, and left the foot that much under the keyboard. Nothing where
+ * the keyboard gives no place for itself, as with Prefer Cross-Fade
+ * Transitions (KeyboardAvoidingView does the same).
+ */
+export function keyboardLift(screenY: number, windowHeight: number): number {
+  if (!(screenY > 0) || !(windowHeight > 0)) return 0;
+  return Math.max(0, Math.round(windowHeight - screenY));
+}
+
+/** A line of the ADD and NEW ERA sheet: a group's heading, or a row of its photographs. */
+export type GatherLine<T extends { id: string } = PostRow> =
+  | { kind: "head"; key: string; group: AddGroup<T> }
+  | { kind: "row"; key: string; posts: T[]; first: boolean };
+
+/**
+ * The groups ADD and NEW ERA offer, as the lines of a list that draws
+ * only those near the screen: each group's heading, then its photographs
+ * `across` to a row, in the group's order. Every photograph is on exactly
+ * one row, so each line has a key of its own.
+ */
+export function gatherLines<T extends { id: string }>(groups: AddGroup<T>[], across: number): GatherLine<T>[] {
+  const lines: GatherLine<T>[] = [];
+  for (const group of groups) {
+    lines.push({ kind: "head", key: `head:${group.key ?? ""}`, group });
+    for (let i = 0; i < group.posts.length; i += across) {
+      lines.push({ kind: "row", key: `row:${group.posts[i].id}`, posts: group.posts.slice(i, i + across), first: i === 0 });
+    }
+  }
+  return lines;
+}
+
 /** Whether a new era can be made: a name left once it is cleaned (cleanEraTitle), and a photograph for it. */
 export function canCreate(name: string, chosen: readonly string[]): boolean {
   return cleanEraTitle(name) !== "" && chosen.length > 0;
+}
+
+/**
+ * What the Add to an era screen the feed opens shows, as its reads stand:
+ * still reading; the read of the member's photographs failed; the
+ * photograph is not among them; the eras cannot be changed just now; or
+ * the sheet.
+ */
+export type EraMoveStage = "reading" | "readFailed" | "notYours" | "cannotArrange" | "sheet";
+
+/**
+ * Only a read that has answered, and found nothing, says the photograph
+ * is not the member's any more. While one is on its way, or waits for
+ * the phone to be back online, it is still being read: the list cached
+ * may be from before the photograph was posted (on another phone, say).
+ * And a read that failed says so, rather than that.
+ */
+export function eraMoveStage(reads: {
+  /** Both reads have answered at least once: the photographs, and the arrangement. */
+  answered: boolean;
+  /** A read of the photographs is on its way, or waiting for the phone to be back online. */
+  reading: boolean;
+  /** The last read of the photographs failed, or none has brought any. */
+  failed: boolean;
+  /** The photograph is among those read. */
+  found: boolean;
+  /** The eras can be changed: the arrangement was read, and there is somewhere to keep a change. */
+  arrangeable: boolean;
+}): EraMoveStage {
+  if (!reads.answered || (!reads.found && reads.reading)) return "reading";
+  if (!reads.found) return reads.failed ? "readFailed" : "notYours";
+  return reads.arrangeable ? "sheet" : "cannotArrange";
 }
 
 // ---------------------------------------------------------------------------

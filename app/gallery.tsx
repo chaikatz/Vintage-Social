@@ -18,9 +18,16 @@ import { EmptyState } from "@/components/EmptyState";
 import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
-import { galleryRows } from "@/utils/profileViews";
+import { galleryEra, galleryRows } from "@/utils/profileViews";
 import { isWarm, warmWindow } from "@/utils/videoWindow";
-import { LANDING_STEP_MS, approachOffset, nextLanding, startLanding } from "@/utils/galleryLanding";
+import {
+  LANDING_STEP_MS,
+  approachOffset,
+  atListEnd,
+  nextLanding,
+  playingCard,
+  startLanding,
+} from "@/utils/galleryLanding";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
@@ -79,10 +86,22 @@ export default function Gallery() {
   const eraEdits = useEraEdits(authorId, Boolean(era));
   const waiting = Boolean(era) && !eraEdits.isFetched;
 
+  // The era it opened on, by its key: found once the rows and the
+  // arrangement are in, and kept from then on, so a photograph moved to
+  // another era from this gallery's "…" leaves it rather than taking the
+  // gallery with it. Found while drawing, so the list is drawn once, on
+  // the right rows.
+  const [pin, setPin] = useState<{ era: string; postId: string | undefined; key: string | null } | null>(null);
+  const found = pin && pin.era === era && pin.postId === postId ? pin : null;
+  if (era && !waiting && postsQ.data && !found) {
+    setPin({ era, postId, key: galleryEra(postsQ.data, era, postId, eraEdits.data?.edits)?.key ?? null });
+  }
+  const pinned = found?.key ?? null;
+
   // In the grid's order, or the era's alone (see galleryRows).
   const shown = useMemo(
-    () => galleryRows(postsQ.data ?? [], sort, era, postId, eraEdits.data?.edits),
-    [postsQ.data, sort, era, postId, eraEdits.data],
+    () => galleryRows(postsQ.data ?? [], sort, era, postId, eraEdits.data?.edits, pinned),
+    [postsQ.data, sort, era, postId, eraEdits.data, pinned],
   );
 
   // Every post here shares one author, so the join is a local attach rather
@@ -112,13 +131,26 @@ export default function Gallery() {
   // Heights of the cards as they report them: to send the list towards a
   // tapped card not drawn yet, and to tell that more have been drawn.
   const heights = useRef(new Map<string, number>());
-  // Where the list last said it is, and whether it could go no further.
-  const scrolled = useRef<{ offset: number; end: boolean } | null>(null);
+  // Where the list last said it is, and how tall it and its content last
+  // said they are: together, whether it can go any further.
+  const scrolled = useRef<number | null>(null);
+  const viewport = useRef(0);
+  const content = useRef(0);
   const settled = useRef(false);
   const [ready, setReady] = useState(false);
   // The last card reported on screen once the list was showing; the clips
   // that have a player are the ones around it.
   const [seenId, setSeenId] = useState<string | null>(null);
+  // Only the card on screen plays its video — see PostMedia for why. The
+  // tapped row is on screen first, so it starts as the active card.
+  const [visibleId, setVisibleId] = useState<string | null>(postId ?? null);
+  // The cards the list last reported on screen, in order. While it is
+  // hidden, being measured, that is not where the reader is, and it is
+  // only noted here: setting it would draw every card again at each step
+  // of the landing. It is read when the list shows (see playingCard).
+  const onScreen = useRef<string[]>([]);
+  // Whether the reader is still on the tapped card.
+  const onTapped = useRef(true);
 
   useEffect(() => {
     // A different photograph or order: land again.
@@ -126,6 +158,9 @@ export default function Gallery() {
     settled.current = false;
     setReady(false);
     setSeenId(null);
+    setVisibleId(postId ?? null);
+    onScreen.current = [];
+    onTapped.current = true;
   }, [postId, sort, era]);
 
   // Look where the tapped card is, put the list there, and look again
@@ -144,12 +179,16 @@ export default function Gallery() {
         answered = true;
         clearTimeout(timer);
         const at = scrolled.current;
-        // As far down as it goes, with every card below the tapped one drawn.
-        const end = Boolean(at?.end) && posts.slice(startIndex + 1).every((p) => heights.current.has(p.id));
+        // As far down as it goes now, with every card below the tapped one
+        // drawn. Read from the list as it is at this look: cards drawn
+        // below since it last moved let it go further, and say nothing.
+        const end =
+          atListEnd(at, viewport.current, content.current) &&
+          posts.slice(startIndex + 1).every((p) => heights.current.has(p.id));
         const next = nextLanding(landing, {
           index: startIndex,
           top,
-          scrolled: at?.offset ?? null,
+          scrolled: at,
           end,
           measured: heights.current.size,
           now: Date.now(),
@@ -161,8 +200,16 @@ export default function Gallery() {
           settled.current = true;
           if (step.offset != null) scrollTo(step.offset);
           // Shown one frame after the scroll lands, so the first thing seen is
-          // the tapped photograph and not the list on its way there.
-          requestAnimationFrame(() => setReady(true));
+          // the tapped photograph and not the list on its way there. The
+          // clip that plays is chosen then, from what the list last reported.
+          requestAnimationFrame(() => {
+            const id = playingCard(onScreen.current, postId, onTapped.current);
+            if (id) {
+              setVisibleId(id);
+              setSeenId(id);
+            }
+            setReady(true);
+          });
           return;
         }
         if (step.kind === "approach") {
@@ -192,31 +239,36 @@ export default function Gallery() {
   }, []);
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    scrolled.current = {
-      offset: contentOffset.y,
-      end: contentOffset.y + layoutMeasurement.height >= contentSize.height - 1,
-    };
+    scrolled.current = e.nativeEvent.contentOffset.y;
+  }, []);
+  const onListLayout = useCallback((e: LayoutChangeEvent) => {
+    viewport.current = e.nativeEvent.layout.height;
+  }, []);
+  const onContentSizeChange = useCallback((_width: number, height: number) => {
+    content.current = height;
   }, []);
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
 
-  // Only the card on screen plays its video — see PostMedia for why. The
-  // tapped row is on screen first, so it starts as the active card.
-  const [visibleId, setVisibleId] = useState<string | null>(postId ?? null);
-  // And only it and its neighbours have a player at all (see
-  // src/utils/videoWindow.ts). The window follows the card reported on
-  // screen once the list is showing: what is reported while it is still
-  // hidden at the top, being measured, is not where the reader is.
+  // Only the card on screen plays (visibleId, above), and only it and its
+  // neighbours have a player at all (see src/utils/videoWindow.ts). The
+  // window follows the card reported on screen once the list is showing:
+  // what is reported while it is still hidden, being measured, is noted
+  // and nothing more.
   const readyRef = useRef(ready);
   readyRef.current = ready;
+  const tappedId = useRef(postId);
+  tappedId.current = postId;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const first = viewableItems.find((v) => v.isViewable);
-    const id = (first?.item as { id: string } | undefined)?.id ?? null;
+    onScreen.current = viewableItems.filter((v) => v.isViewable).map((v) => (v.item as { id: string }).id);
+    if (!readyRef.current) return;
+    const id = playingCard(onScreen.current, tappedId.current, onTapped.current);
+    // Moved off the tapped card: from here on the first on screen plays.
+    if (id !== tappedId.current) onTapped.current = false;
     setVisibleId(id);
-    if (id && readyRef.current) setSeenId(id);
+    if (id) setSeenId(id);
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 120 }).current;
   const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
@@ -246,8 +298,14 @@ export default function Gallery() {
         // list draws its way down to the tapped card, out of sight. A clip
         // among them is its poster, at its own height, and makes no player.
         initialNumToRender={Math.min(startIndex + 3, MEASURE_LIMIT)}
+        // While it is hidden it draws twice as many cards at a time: no one
+        // is scrolling it, and the cards it walks past are frames, quick to
+        // draw.
+        maxToRenderPerBatch={ready ? undefined : WALK_BATCH}
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         onScroll={onScroll}
+        onLayout={onListLayout}
+        onContentSizeChange={onContentSizeChange}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         ListEmptyComponent={
@@ -274,6 +332,11 @@ export default function Gallery() {
               onMore={(p) => onMore(p, () => router.back())}
               active={ready && focused && item.id === visibleId}
               warm={isWarm(index, warm)}
+              // A card drawn only on the way down to the tapped one is its
+              // frame, the same height, until the gallery shows: nobody sees
+              // it, and its picture would only hold the tapped one back.
+              frameOnly={!ready && index >= MEASURE_LIMIT && item.id !== postId}
+              priority={item.id === postId ? "high" : "normal"}
               surface="gallery"
             />
           </View>
@@ -294,6 +357,8 @@ export default function Gallery() {
 const LIST_PADDING = 8;
 /** The most cards drawn at once to land; past this the list draws its way down to the tapped card. */
 const MEASURE_LIMIT = 80;
+/** The most cards the list draws at a time while it is hidden, twice its usual ten. */
+const WALK_BATCH = 20;
 
 /**
  * What the cards sit in: the list's content, scrolled as one. The phone
@@ -325,6 +390,8 @@ function ratioOf(post: PostWithAuthor | undefined): number {
 
 const styles = StyleSheet.create({
   list: { paddingVertical: LIST_PADDING },
-  hidden: { opacity: 0 },
+  // Out of reach as well as out of sight. The phone already ignores
+  // touches on a clear view; the browser does not, so it is said here.
+  hidden: { opacity: 0, pointerEvents: "none" },
   curtain: { position: "absolute", top: LIST_PADDING, left: 0, right: 0 },
 });

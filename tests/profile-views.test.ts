@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { PROFILE_VIEWS, galleryRows, opensGallery, revealOffset, type ProfileView } from "@/utils/profileViews";
+import { PROFILE_VIEWS, galleryEra, galleryRows, opensGallery, revealOffset, type ProfileView } from "@/utils/profileViews";
+import { NO_EDITS, createEra, moveToEra, renameEra, takeOut } from "@/utils/eraEdits";
 import { dark, light } from "@/theme";
 
 // The theme reads the platform for its faces and its dynamic colours; the toggle's inks are read from its plain strings.
@@ -115,6 +116,55 @@ describe("the gallery an era opens", () => {
 
   it("titles the gallery with the era's own title, not the address's", () => {
     expect(galleryRows(rows, "taken", "Somewhere else 1999", "s2").era).toBe("St. Barths 2023");
+  });
+
+  describe("once it has opened", () => {
+    // Two eras of Lisbon and Kyoto, and a photograph alone in Porto.
+    const trips = [
+      post("k1", "2024-03-02T12:00:00", "Kyoto", "2024-03-10T12:00:00"),
+      post("k2", "2024-03-04T12:00:00", "Kyoto", "2024-03-11T12:00:00"),
+      post("l1", "2023-06-02T12:00:00", "Lisbon", "2023-06-10T12:00:00"),
+      post("l2", "2023-06-04T12:00:00", "Lisbon", "2023-06-11T12:00:00"),
+      post("l3", "2023-06-06T12:00:00", "Lisbon", "2023-06-12T12:00:00"),
+      post("x1", "2022-01-06T12:00:00", "Porto", "2022-01-12T12:00:00"),
+    ];
+    const ids = (shown: { rows: { id: string }[] }) => shown.rows.map((p) => p.id);
+
+    it("is found by the photograph tapped, and kept by its key", () => {
+      expect(galleryEra(trips, "Lisbon 2023", "l2")?.key).toBe("Lisbon 2023");
+      expect(galleryEra(trips, undefined, "l2")).toBeNull();
+    });
+
+    it("stays with its era when the photograph tapped is moved to another", () => {
+      const pinned = galleryEra(trips, "Lisbon 2023", "l2")?.key ?? null;
+      const moved = moveToEra(NO_EDITS, trips, "l2", "Kyoto 2024");
+      const shown = galleryRows(trips, "taken", "Lisbon 2023", "l2", moved, pinned);
+      expect(shown.era).toBe("Lisbon 2023");
+      expect(ids(shown)).toEqual(["l3", "l1"]);
+      // Unkept, it followed the photograph to Kyoto.
+      expect(galleryRows(trips, "taken", "Lisbon 2023", "l2", moved).era).toBe("Kyoto 2024");
+    });
+
+    it("stays with an era the member made when the photograph tapped is taken out of it", () => {
+      const made = createEra(NO_EDITS, trips, "Two", ["l2", "x1"], () => "~twotwotwo2");
+      expect(made.key).toBe("~twotwotwo2");
+      const pinned = galleryEra(trips, made.key ?? "", "l2", made.edits)?.key ?? null;
+      expect(pinned).toBe("~twotwotwo2");
+      const out = takeOut(made.edits, trips, "l2");
+      const shown = galleryRows(trips, "taken", "~twotwotwo2", "l2", out, pinned);
+      expect(shown.era).toBe("Two");
+      expect(ids(shown)).toEqual(["x1"]);
+    });
+
+    it("keeps its new name when it is renamed", () => {
+      const renamed = renameEra(NO_EDITS, "Lisbon 2023", "Lisbon, slowly", trips);
+      expect(galleryRows(trips, "taken", "Lisbon 2023", "l2", renamed, "Lisbon 2023").era).toBe("Lisbon, slowly");
+    });
+
+    it("is found again as when it opened once its era is gone", () => {
+      expect(galleryRows(trips, "taken", "Lisbon 2023", "l2", NO_EDITS, "~gonegonego")).toEqual(galleryRows(trips, "taken", "Lisbon 2023", "l2"));
+      expect(galleryRows(trips, "taken", "Lisbon 2023", "l2", NO_EDITS, null)).toEqual(galleryRows(trips, "taken", "Lisbon 2023", "l2"));
+    });
   });
 
   it("is the grid's own order without one", () => {
@@ -395,9 +445,13 @@ describe("the Eras view, read from the source", () => {
     expect(list).toMatch(/onLift\(\{ post, view: self\.current, width: size, height: height \?\? size, full: full === true \}, e\)/);
     expect(list).toMatch(/near=\{near\.has\(era\.key\)\}/);
     expect(list).toMatch(/setNear\(\(prev\) => chaptersNear\(prev, spans\.current, offset\.current, height\)\)/);
-    expect(list).toMatch(/onScroll=\{\(e\) => \{\s*offset\.current = e\.nativeEvent\.contentOffset\.y;\s*look\(\);/);
+    expect(list).toMatch(/const scrolled = \(e: NativeSyntheticEvent<NativeScrollEvent>\) => \{\s*offset\.current = e\.nativeEvent\.contentOffset\.y;\s*look\(\);\s*\};/);
+    // Read as it scrolls, and once more, final, as each scroll comes to rest: a phone sends no last onScroll of its own.
+    expect(list).toMatch(/onScroll=\{scrolled\}\s*onScrollEndDrag=\{scrolled\}\s*onMomentumScrollEnd=\{scrolled\}/);
+    expect(list.match(/offset\.current = /g)).toHaveLength(1);
     expect(list).toMatch(/scrollEventThrottle=\{100\}/);
-    expect(list).toMatch(/spans\.current\.set\(era\.key, \{ top: y, height: tall \}\);\s*look\(\);/);
+    expect(list).toMatch(/spans\.current\.set\(key, \{ top: y, height: tall \}\);\s*look\(\);/);
+    expect(list).toMatch(/const onLayout = \(e: LayoutChangeEvent\) => hands\.current\.laid\(key, e\);/);
   });
 
   it("gives a full lead the photograph over its small copy, and a film only its poster", () => {
@@ -435,11 +489,21 @@ describe("the gallery, read from the source", () => {
 
   it("reads the era from its address and holds it through galleryRows", () => {
     expect(gallery).toMatch(/const \{ authorId, postId, sort, era \} = useLocalSearchParams/);
-    expect(gallery).toMatch(/galleryRows\(postsQ\.data \?\? \[\], sort, era, postId, eraEdits\.data\?\.edits\)/);
+    expect(gallery).toMatch(/galleryRows\(postsQ\.data \?\? \[\], sort, era, postId, eraEdits\.data\?\.edits, pinned\)/);
     // The author's arrangement, read only when an era opened it, and the rows held until it is in.
     expect(gallery).toMatch(/const eraEdits = useEraEdits\(authorId, Boolean\(era\)\);/);
     expect(gallery).toMatch(/const waiting = Boolean\(era\) && !eraEdits\.isFetched;/);
     expect(gallery).toMatch(/if \(!author \|\| waiting\) return \[\];/);
     expect(gallery).toMatch(/title: shown\.era \?\? authorQ\.data\?\.username \?\? ""/);
+  });
+
+  it("keeps to the era it opened on, by its key, once the rows and the arrangement are in", () => {
+    expect(gallery).toMatch(/const found = pin && pin\.era === era && pin\.postId === postId \? pin : null;/);
+    expect(gallery).toMatch(
+      /if \(era && !waiting && postsQ\.data && !found\) \{\s*setPin\(\{ era, postId, key: galleryEra\(postsQ\.data, era, postId, eraEdits\.data\?\.edits\)\?\.key \?\? null \}\);/,
+    );
+    expect(gallery).toMatch(/const pinned = found\?\.key \?\? null;/);
+    // Found once: nothing else sets it.
+    expect(gallery.match(/setPin\(/g)).toHaveLength(1);
   });
 });

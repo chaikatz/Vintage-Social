@@ -18,6 +18,11 @@
  * says it is gets checked too. Drawing the cards around it can push the
  * card down, so it is measured again, and the gallery shows only once the
  * card has stayed where it was put for a few looks in a row.
+ *
+ * The clocks that make it give up count only the time it is looking. A
+ * phone sent to the background, or a browser tab out of sight, stops the
+ * list drawing; that is a pause, not a list that has stopped, and the
+ * landing goes on where it was when the app comes back.
  */
 
 /** How often the gallery looks again while it lands, in ms. */
@@ -33,16 +38,29 @@ export const STILL_LOOKS = 3;
  */
 export const STALL_MS = 2000;
 
-/** However it is going, the gallery shows by this long after it began, in ms. */
+/**
+ * However it is going, the gallery shows by this long after the tapped
+ * card was first drawn, in ms. Not before: until then the list is drawing
+ * its way down to it, and a list still drawing more is getting there.
+ * One that has stopped drawing is what STALL_MS is for.
+ */
 export const GIVE_UP_MS = 15000;
+
+/**
+ * Two looks further apart than this, in ms, mean the app was away: in the
+ * background, or a tab out of sight. The gap counts as one ordinary look,
+ * so a pause never reads as a stall, and a phone too busy to look on time
+ * still gets there.
+ */
+export const AWAY_MS = 500;
 
 /** Rounding the browser does to a measure, in points. */
 const TOLERANCE = 1;
 
 /** What the landing has done so far. */
 export interface Landing {
-  /** When it began. */
-  began: number;
+  /** When the tapped card was first drawn, or null before it has been: the cap counts from then. */
+  drawnAt: number | null;
   /** Where the list was last put for the tapped card, or null before it has been. */
   placedAt: number | null;
   /** Looks in a row that have found the card where it was put. */
@@ -51,10 +69,12 @@ export interface Landing {
   measured: number;
   /** When more cards were last drawn, or the tapped card last moved. */
   changedAt: number;
+  /** When it last looked. */
+  lookedAt: number;
 }
 
 export function startLanding(now: number): Landing {
-  return { began: now, placedAt: null, still: 0, measured: 0, changedAt: now };
+  return { drawnAt: null, placedAt: null, still: 0, measured: 0, changedAt: now, lookedAt: now };
 }
 
 /** What to do next. */
@@ -81,8 +101,9 @@ export interface Look {
   /** Where the list last said it is; null before it has said. */
   scrolled: number | null;
   /**
-   * Whether the list can go no further with every card below the tapped
-   * one drawn: then the card is one of the last, and as high as it can be.
+   * Whether the list can go no further (atListEnd) with every card below
+   * the tapped one drawn: then the card is one of the last, and as high
+   * as it can be.
    */
   end: boolean;
   /** Cards that have reported a height so far. */
@@ -92,19 +113,23 @@ export interface Look {
 
 export function nextLanding(landing: Landing, look: Look): { step: LandingStep; landing: Landing } {
   if (look.index <= 0) return { step: { kind: "show", offset: 0 }, landing };
+  const was = afterAway(landing, look.now);
   const offset = look.top == null ? null : Math.max(0, look.top);
-  const moved = offset != null && (landing.placedAt == null || Math.abs(landing.placedAt - offset) > TOLERANCE);
-  const grew = look.measured > landing.measured;
+  const moved = offset != null && (was.placedAt == null || Math.abs(was.placedAt - offset) > TOLERANCE);
+  const grew = look.measured > was.measured;
   const next: Landing = {
-    ...landing,
-    measured: Math.max(landing.measured, look.measured),
-    changedAt: grew || moved ? look.now : landing.changedAt,
+    ...was,
+    drawnAt: was.drawnAt ?? (offset != null ? look.now : null),
+    measured: Math.max(was.measured, look.measured),
+    changedAt: grew || moved ? look.now : was.changedAt,
+    lookedAt: look.now,
   };
-  const late = look.now - next.changedAt >= STALL_MS || look.now - landing.began >= GIVE_UP_MS;
+  const late =
+    look.now - next.changedAt >= STALL_MS || (next.drawnAt != null && look.now - next.drawnAt >= GIVE_UP_MS);
   if (offset == null) {
     // Not drawn in all that time: where it was last seen, or else the top
     // of the list, never wherever the list was left on the way.
-    if (late) return { step: { kind: "show", offset: landing.placedAt ?? 0 }, landing: next };
+    if (late) return { step: { kind: "show", offset: next.placedAt ?? 0 }, landing: next };
     return { step: { kind: "approach" }, landing: next };
   }
   // Put there, but stopped short: what is drawn below it was too short.
@@ -117,6 +142,47 @@ export function nextLanding(landing: Landing, look: Look): { step: LandingStep; 
   const held = { ...next, still };
   if (still >= STILL_LOOKS || late) return { step: { kind: "show", offset: null }, landing: held };
   return { step: { kind: "hold" }, landing: held };
+}
+
+/**
+ * The landing with a pause taken out of its clocks: after a gap longer
+ * than AWAY_MS, they move on by all of it but one ordinary look.
+ */
+function afterAway(landing: Landing, now: number): Landing {
+  const gap = now - landing.lookedAt;
+  if (gap <= AWAY_MS) return landing;
+  const away = gap - LANDING_STEP_MS;
+  return {
+    ...landing,
+    changedAt: landing.changedAt + away,
+    drawnAt: landing.drawnAt == null ? null : landing.drawnAt + away,
+  };
+}
+
+/**
+ * Whether the list can go no further down: where it last said it is,
+ * against how long it is now and how much of it is on screen. Read at
+ * each look, not kept from when it last moved, because cards drawn below
+ * it since then make room to go on, and a list says nothing when it only
+ * grows. One that has not said where it is has not moved from its top,
+ * and one that fits on the screen never will: it is at its end from the
+ * start. Nothing laid out yet is not an end.
+ */
+export function atListEnd(scrolled: number | null, viewport: number, content: number): boolean {
+  if (viewport <= 0 || content <= 0) return false;
+  return (scrolled ?? 0) + viewport >= content - TOLERANCE;
+}
+
+/**
+ * The card whose clip plays once the gallery shows, from the cards the
+ * list reports on screen, in order: the tapped one while it is on screen
+ * and the reader has not moved off it, otherwise the first on screen, as
+ * everywhere else. Landed at the end, the tapped card is the last one,
+ * under a card that may show more of itself and so come first.
+ */
+export function playingCard(onScreen: readonly string[], tapped: string | undefined, onTapped: boolean): string | null {
+  if (onTapped && tapped != null && onScreen.includes(tapped)) return tapped;
+  return onScreen[0] ?? null;
 }
 
 /**
