@@ -607,21 +607,17 @@ const settle = async (locator, top, zone) => {
 };
 const foot = (await scrollerTop(printOf(stays))).bottom;
 const low = await settle(printOf(stays), foot - 70, [foot - 72, foot]);
-// A print of the strip under The foggy winter's lead, the first chapter, brought up under the bar as it holds to the top.
-let strip = null;
-for (const name of ["Saturday market", "The 19 tram", pair.from]) {
-  const b = await printOf(name).boundingBox();
-  if (!strip && b && b.width < 120) strip = printOf(name);
-}
-await bringTo(strip, 300);
+// The first chapter's lead, brought up under the bar as it holds to the top of the page's view.
 const barFoot = await seen(page.getByText("Arranging", { exact: true }))
   .first()
   .evaluate((el) => {
     let bar = el;
     while (bar && getComputedStyle(bar).position !== "sticky") bar = bar.parentElement;
-    return bar ? bar.getBoundingClientRect().bottom : Number.NaN;
+    let s = bar?.parentElement;
+    while (s && !(s.scrollHeight > s.clientHeight + 1 && /(auto|scroll|hidden)/.test(getComputedStyle(s).overflowY))) s = s.parentElement;
+    return bar && s ? s.getBoundingClientRect().top + bar.getBoundingClientRect().height : Number.NaN;
   });
-const high = await settle(strip, barFoot - 4, [barFoot, barFoot + 72]);
+const high = await settle(firstPrint, barFoot - 4, [barFoot, barFoot + 72]);
 check(
   "Lifted in the top or the last row, it waits for the finger before the page runs on, and let go, nothing moves",
   low.ok &&
