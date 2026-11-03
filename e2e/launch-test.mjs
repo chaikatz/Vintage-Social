@@ -409,19 +409,19 @@ const captioned = await editorial.first().evaluate(
   head.name,
 );
 check("The caption follows its member’s name, as a comment does", captioned);
-// Last on each print, when it went up, in the label's capitals.
-const foot = await editorial.evaluateAll((els) =>
+// Last on each print, when it went up, in the label's face, as it is said.
+const lastLines = await editorial.evaluateAll((els) =>
   els.map((el) => [el.lastElementChild?.getAttribute("aria-label") ?? "", el.lastElementChild?.innerText ?? ""]),
 );
 check(
   "Every print ends with when it went up",
-  foot.length > 0 &&
-    foot.every(
+  lastLines.length > 0 &&
+    lastLines.every(
       ([label, line]) =>
         /^Posted (just now|\d+ (minute|hour|day)s? ago|[A-Z][a-z]+ \d{1,2}(, \d{4})?)$/.test(label) &&
         /^(Just now|\d+[mhd] ago|[A-Z][a-z]{2} \d{1,2}(, \d{4})?)$/.test(line),
     ),
-  foot[0]?.join(" / "),
+  lastLines[0]?.join(" / "),
 );
 const offWhite = await papersOf(editorial, wordmark(), tabBar());
 const strips = await editorial.evaluateAll((els) => els.filter((el) => getComputedStyle(el).borderBottomWidth !== "0px").length);
