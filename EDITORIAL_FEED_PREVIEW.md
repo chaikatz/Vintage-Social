@@ -52,9 +52,10 @@ is on `claude/product-polish` too.
 
 While Editorial is chosen, every username the app draws as a name is set the
 way the print sets its credit (`@chai · MEMBER NO. 00001`): in the typewriter
-face `type.mono` (Courier New on the phone), regular, tracked 0.08 em and in
-the print's faint ink, `inkFaint` (`#9C927F` on the light paper, the dark
-print's own on the dark), everywhere in the app and not only in the feed:
+face `type.mono` (Courier New on the phone), tracked 0.08 em, in the grey the
+credit reads in on the print (`PRINT_GREY` in `src/utils/nameFace.ts`:
+`#A29E97` on the light paper, `#ACA7A0` on the dark), and bold, as the member
+chose over the print's regular, everywhere in the app and not only in the feed:
 the member's name over each print and before its caption and comments, the
 bar's title where it is a username (the Profile tab, a member's profile,
 their gallery, a message thread), every list of members (Search and its
@@ -66,17 +67,17 @@ says ("Nobody follows … yet.", "… isn't following anyone yet.") and the one
 a member's empty Eras page says ("… hasn’t posted a photograph yet." and the
 others), and the admin's Applications, Reports and Members. Where a name sits
 in a sentence, only the name is set so; the words around it keep their own
-face, ink and spacing. A name that was bold is set regular and a name that was
-near-black takes the faint ink, as the print sets its credit; each name keeps
-its own size and its place. The print tracks its credit 0.08 em of its size;
+face, ink and spacing. The print sets its credit in `inkFaint`, but 9 pt high
+and saved as a JPEG it reads as a neutral silver grey, so a name takes that
+grey rather than the warm ink. Each name keeps its own size and its place. The print tracks its credit 0.08 em of its size;
 React Native tracks in points, so a name takes 1.1 pt (0.08 × 14, within a
 tenth of a point at the 13 to 15 pt names are set at) and a bar's 17 pt title
 1.36 pt. Where a place marks a name for a state of its own, the state still
 wins and the name keeps the face and its tracking: an unread thread in the
 inbox stays dark and bold, as its preview does, and the author of a photograph
 sent in your own dark bubble stays in the bubble's light ink. A member tagged
-who has not yet accepted is faint and regular, as before, with "(pending)"
-after the name. Under Original nothing changes.
+who has not yet accepted is faint and regular, as the state sets it, with
+"(pending)" after the name. Under Original nothing changes.
 
 A bar's title takes its ink as the title's own colour, which the stack draws
 over the bar's tint. On the phone the bar of a pushed screen (a member's

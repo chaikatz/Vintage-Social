@@ -516,7 +516,7 @@ describe("the editorial card", () => {
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
     // The original card's size for the name, set as the print sets its credit: regular, tracked, faint (see tests/editorial-names.test.ts).
-    expect(style("username")).toMatch(/fontSize: 14, fontWeight: "400", letterSpacing: 1\.1, color: colors\.inkFaint/);
+    expect(style("username")).toMatch(/fontSize: 14, fontWeight: "700", letterSpacing: 1\.1, color: NAME_INK/);
     expect(sheet!.username).toEqual({ flexShrink: 1, fontSize: 14, ...nameFace("editorial") });
     // Only the name: the place and the date are on the label.
     expect(header).not.toMatch(/label\.|Byline|taken_at|location/);
@@ -561,10 +561,10 @@ describe("the editorial card", () => {
       /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}\s*<\/Text>\s*\) : null\}/,
     );
     expect(body).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
-    expect(style("author")).toMatch(/fontWeight: "400"/);
+    expect(style("author")).toMatch(/fontWeight: "700"/);
     // Who wrote it, set exactly as every name is under Editorial: the print's credit, at the words' own size.
     expect(sheet!.author).toEqual(nameFace("editorial"));
-    expect(sheet!.author).toEqual({ fontFamily: "Courier New", fontWeight: "400", letterSpacing: 1.1, color: light.inkFaint });
+    expect(sheet!.author).toEqual({ fontFamily: "Courier New", fontWeight: "700", letterSpacing: 1.1, color: "#A29E97" });
     expect(sheet!.author).not.toHaveProperty("fontSize");
   });
 

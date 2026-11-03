@@ -425,14 +425,14 @@ check(
 );
 // Usernames, all around the app, set as the print sets its credit while
 // Editorial is chosen: the typewriter face (type.mono: "monospace" on the
-// web), regular, tracked 0.08 em and in the faint ink, each at its own
-// size; what was written with them, and display names, keep their own face.
+// web), bold, tracked 0.08 em and in the grey the credit reads in on the
+// print, each at its own size; what was written with them, and display names, keep their own face.
 // Each is read as "face|weight|colour|tracking".
 const MONO = /monospace/;
 const allMono = (faces) => faces.length > 0 && faces.every((f) => MONO.test(f));
 const noneMono = (faces) => faces.length > 0 && faces.every((f) => !MONO.test(f));
-/** The print's credit ink (colors.inkFaint, the light print's), and its 0.08 em at a name's 14 pt and at a title's 17 pt. */
-const FAINT = "rgb(156, 146, 127)";
+/** The grey the print's credit reads in (PRINT_GREY, the light print's), and its 0.08 em at a name's 14 pt and at a title's 17 pt. */
+const FAINT = "rgb(162, 158, 151)";
 const INK = "rgb(43, 38, 32)";
 const TRACKED = 1.1;
 const TITLE_TRACKED = 1.36;
@@ -442,10 +442,10 @@ const drawnAs = (f) => {
 };
 /** About so many pixels apart; "normal" is no tracking at all. */
 const trackedAt = (spacing, px) => Math.abs(parseFloat(spacing) - px) < 0.05;
-/** Set as the print's credit: the face, regular, in the faint ink, tracked. */
+/** Set as the print's credit, in bold: the face, bold, in the print's grey, tracked. */
 const asCredit = (f, px = TRACKED) => {
   const s = drawnAs(f);
-  return MONO.test(s.face) && s.weight === "400" && s.color === FAINT && trackedAt(s.spacing, px);
+  return MONO.test(s.face) && s.weight === "700" && s.color === FAINT && trackedAt(s.spacing, px);
 };
 const allCredit = (faces, px) => faces.length > 0 && faces.every((f) => asCredit(f, px));
 /** Neither the credit's ink nor its tracking. */
@@ -503,10 +503,10 @@ check("Editorial: the member's name over each print is in the print's typewriter
 check("Editorial: so is the name before each caption", allMono(onHome.captions), `${onHome.captions.length}: ${onHome.captions[0]}`);
 check("Editorial: and the name before each comment", allMono(onHome.comments), `${onHome.comments.length}: ${onHome.comments[0]}`);
 check("Editorial: the captions and comments themselves keep their own face", noneMono(onHome.words), onHome.words[0]);
-const regular = (faces) => faces.length > 0 && faces.every((f) => drawnAs(f).weight === "400");
+const bold = (faces) => faces.length > 0 && faces.every((f) => drawnAs(f).weight === "700");
 check(
-  "Editorial: the names are regular, as the print sets its credit, not bold",
-  regular(onHome.header) && regular(onHome.captions) && regular(onHome.comments),
+  "Editorial: the names are bold, as the member chose",
+  bold(onHome.header) && bold(onHome.captions) && bold(onHome.comments),
   [onHome.header[0], onHome.captions[0], onHome.comments[0]].join(" / "),
 );
 check(
@@ -647,7 +647,7 @@ const nameAlone = (s) =>
   MONO.test(s.name) &&
   !MONO.test(s.line) &&
   same(s.sizes) &&
-  same(s.weights) &&
+  s.weights[1] === "700" &&
   s.colours[1] === FAINT &&
   s.colours[0] !== FAINT &&
   trackedAt(s.spacings[1], TRACKED) &&

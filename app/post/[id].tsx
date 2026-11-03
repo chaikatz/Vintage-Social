@@ -144,7 +144,7 @@ export default function PostDetail() {
                 style={[styles.withName, t.status === "pending" && styles.withPending]}
                 onPress={() => router.push(`/user/${t.member.username}`)}
               >
-                <Text style={face}>{t.member.username}</Text>
+                <Text style={[face, t.status === "pending" && styles.withPending]}>{t.member.username}</Text>
                 {t.status === "pending" ? " (pending)" : ""}
                 {i < shownTags.length - 1 ? ", " : ""}
               </Text>
