@@ -498,7 +498,8 @@ describe("the cards drawn only on the way down", () => {
   const media = code("src/components/PostMedia.tsx");
 
   it("are frames without pictures until the gallery shows, and the tapped photograph loads first", () => {
-    const cell = tags(gallery, "PostCard")[0] ?? "";
+    // The card the gallery draws: PostCard, or on the preview branch the one its seam picks.
+    const cell = tags(gallery, "PostCard")[0] ?? tags(gallery, "FeedCard")[0] ?? "";
     expect(cell).toMatch(/frameOnly=\{!ready && index >= MEASURE_LIMIT && item\.id !== postId\}/);
     expect(cell).toMatch(/priority=\{item\.id === postId \? "high" : "normal"\}/);
   });

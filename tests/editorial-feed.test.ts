@@ -393,6 +393,8 @@ describe("the gallery", () => {
       "onMore={(p) => onMore(p, () => router.back())}",
       "active={ready && focused && item.id === visibleId}",
       "warm={isWarm(index, warm)}",
+      "frameOnly={!ready && index >= MEASURE_LIMIT && item.id !== postId}",
+      'priority={item.id === postId ? "high" : "normal"}',
       'surface="gallery"',
     ]);
     // The row the landing measures (and, for the tapped one, looks for) holds the card.

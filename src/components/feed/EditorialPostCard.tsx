@@ -51,6 +51,8 @@ export function EditorialPostCard({
   comments,
   active = true,
   warm = true,
+  frameOnly = false,
+  priority = "normal",
   surface = "feed",
 }: Props) {
   const like = (next: boolean) => {
@@ -101,6 +103,8 @@ export function EditorialPostCard({
           active={active}
           recyclingKey={post.id}
           warm={warm}
+          frameOnly={frameOnly}
+          priority={priority}
           surface={surface}
           bare
         />
