@@ -319,7 +319,7 @@ export default function Settings() {
         <>
           <View style={[styles.settingText, styles.subSetting]}>
             <Text style={styles.prefLabel}>Paper</Text>
-            <Text style={styles.prefHint}>One paper for the whole feed. Dark stays brown.</Text>
+            <Text style={styles.prefHint}>One paper for the whole feed. Dark stays black.</Text>
           </View>
           <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel="Paper">
             {FEED_PAPERS.map(({ value, label }) => {

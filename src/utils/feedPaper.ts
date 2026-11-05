@@ -12,7 +12,7 @@ import { useFeedLayout } from "@/utils/feedLayout";
  * White is plain white. It is one or the other for the whole feed, never
  * both: the screen behind the prints, the bar at its top and every print
  * are the one paper. In the dark appearance both are the dark print's
- * brown, as the rest of the app is.
+ * black, as the rest of the app is.
  *
  * Kept as the layout is: one small file in Documents, read once, written
  * the moment it is changed, never sent anywhere, and left at sign-out.
@@ -62,7 +62,7 @@ export function useFeedPaper(): FeedPaper {
   return useSyncExternalStore(subscribe, getFeedPaper, getFeedPaper);
 }
 
-/** White on the light print; the dark print keeps its brown. */
+/** White on the light print; the dark print keeps its black. */
 const WHITE: ColorValue = Platform.OS === "ios" ? DynamicColorIOS({ light: "#FFFFFF", dark: dark.paper }) : "#FFFFFF";
 
 const PAPERS: Record<FeedPaper, { backgroundColor: ColorValue }> = {

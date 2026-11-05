@@ -42,7 +42,7 @@ and the tab bar too, for as long as Home is in front (the tab bar takes its
 style from the tab in front, so it follows Home cleanly and goes back to
 the app's paper on the other tabs). In the gallery it is the bar with the
 member's name. In the dark appearance both papers are the dark print's
-brown.
+black.
 
 A post still on its way up lies on the same paper: its card at the top of
 Home (`PendingPostCard`) has no paper of its own, a permanent change that

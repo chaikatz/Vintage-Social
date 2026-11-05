@@ -285,9 +285,10 @@ describe("the paper preference", () => {
     expect(paperStyle("white")).toEqual({ backgroundColor: "#FFFFFF" });
   });
 
-  it("keeps the dark print's brown under either, in the dark appearance", () => {
+  it("keeps the dark print's black under either, in the dark appearance", () => {
     expect(dynamic).toContainEqual({ light: "#FFFFFF", dark: dark.paper });
     expect(dynamic).toContainEqual({ light: light.paper, dark: dark.paper });
+    expect(dark.paper).toBe("#000000");
   });
 
   it("lays a screen on the chosen paper only while the feed is Editorial", () => {
