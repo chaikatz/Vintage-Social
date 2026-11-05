@@ -211,13 +211,18 @@ export function useDarkroom(params: RoomParams) {
     });
   }, [patch, waitingForYears]);
 
+  /**
+   * The year index. `background` is for reading the room does of its own
+   * accord (after the first print, or when the library changed): it waits
+   * in the gate's back line, behind the prints a chapter is dealing.
+   */
   const loadYears = useCallback(
-    async (force = false): Promise<YearCount[] | null> => {
+    async (force = false, background = false): Promise<YearCount[] | null> => {
       if (!visit) return null;
       yearsReading.current += 1;
       reconsiderRoll();
       try {
-        const years = await visit.years(force);
+        const years = await visit.years(force, background);
         if (live.current.years !== years) patch({ years });
         return years;
       } catch {
@@ -232,10 +237,10 @@ export function useDarkroom(params: RoomParams) {
   );
 
   const loadMonths = useCallback(
-    async (year: number) => {
+    async (year: number, background = false) => {
       if (!visit) return;
       try {
-        const counts = await visit.months(year);
+        const counts = await visit.months(year, background);
         patch({ months: { year, counts } });
       } catch {
         // Contents shows no month strip until it can.
@@ -244,9 +249,9 @@ export function useDarkroom(params: RoomParams) {
     [visit, patch],
   );
 
-  const askDay = useCallback(async () => {
+  const askDay = useCallback(async (background = false) => {
     if (!visit) throw new Error("No library");
-    const result = await visit.askDay();
+    const result = await visit.askDay(background);
     patch({ day: dayStateOf(result) });
     return result;
   }, [visit, patch]);
@@ -316,15 +321,19 @@ export function useDarkroom(params: RoomParams) {
 
   // --- showing -----------------------------------------------------------------
 
-  /** Reads that wait for the first print: the year index, the whole day, the open year's months. */
+  /**
+   * Reads that wait for the first print: the year index, the whole day,
+   * the open year's months. In the background, so the chapter on the
+   * stage deals its next prints ahead of them.
+   */
   const afterFirstPrint = useCallback(() => {
     if (afterFirst.current || !visit) return;
     afterFirst.current = true;
     setTimeout(() => {
       if (!mounted.current) return;
-      void loadYears();
+      void loadYears(false, true);
       if (!visit.knownDay()) {
-        askDay()
+        askDay(true)
           .then((result) => {
             if (!mounted.current) return;
             // A deck restored from disk without its reach learns it now, and
@@ -352,7 +361,7 @@ export function useDarkroom(params: RoomParams) {
           .catch(() => undefined);
       }
       const c = live.current.chapter;
-      if (c?.mode === "year" && c.year != null) void loadMonths(c.year);
+      if (c?.mode === "year" && c.year != null) void loadMonths(c.year, true);
     }, 0);
   }, [visit, loadYears, askDay, commit, loadMonths]);
 
@@ -748,7 +757,8 @@ export function useDarkroom(params: RoomParams) {
   /** The error page's TRY AGAIN: the year index rebuilt, and the way in tried again. */
   const retry = useCallback(() => {
     visit?.forgetAnswers();
-    void loadYears(true);
+    // Counted again behind the way in, which is what the member waits for.
+    void loadYears(true, true);
     const w = live.current.where;
     if (w) {
       void open({ mode: w.mode, year: w.year, month: w.month, fresh: true });
@@ -930,7 +940,7 @@ export function useDarkroom(params: RoomParams) {
         void open({ mode: c.mode, year: c.year, month: c.month, fresh: true, keep: print, startId: print?.id ?? null });
       }
       // Counted again now if Contents has shown them; otherwise when it next opens.
-      if (before.years != null) void loadYears(true);
+      if (before.years != null) void loadYears(true, true);
     },
     [visit, commit, settleAccess, open, openDefault, begin, loadYears],
   );

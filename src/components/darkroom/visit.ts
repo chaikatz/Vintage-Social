@@ -1,5 +1,6 @@
 import { stillInLibrary } from "@/darkroom/develop";
 import {
+  inBackground,
   monthIndex,
   onThisDay,
   Surprise,
@@ -33,6 +34,13 @@ import { appendNew, Dealer, type Reader } from "./dealer";
  * It makes the engine's readers with the room's history and shelf wired
  * in, and wraps them in dealers whose late batches find their chapter's
  * kept position (`orphan`).
+ *
+ * What the room reads of its own accord once the first print is up — the
+ * year index, the whole of On this day, the open year's months — is asked
+ * with `background`, in the gate's back line (`inBackground`), so the
+ * prints a chapter is dealing are never kept waiting behind it. A second
+ * ask for the year index or the day while one is being read waits for the
+ * same answer rather than reading it all again.
  */
 
 const YEARS_FRESH_MS = 10 * 60_000;
@@ -58,9 +66,16 @@ export class Visit {
   private readonly surprises = new Set<Dealer>();
   private oldestAsked: Promise<number | null> | null = null;
   private readonly monthsAsked = new Map<number, Promise<number[]>>();
+  private yearsAsked: Promise<YearCount[]> | null = null;
+  private dayAsked: Promise<DayResult> | null = null;
   private day: { day: string; result: DayResult } | null = null;
 
   constructor(readonly source: LibrarySource) {}
+
+  /** The library as one read asks it: in the member's line, or in the back line for what the room reads of its own accord. */
+  private lib(background: boolean): LibrarySource {
+    return background ? inBackground(this.source) : this.source;
+  }
 
   /**
    * When the oldest photograph was taken; null for an empty library.
@@ -81,10 +96,10 @@ export class Visit {
   }
 
   /** A year's twelve month counts. */
-  months(year: number): Promise<number[]> {
+  months(year: number, background = false): Promise<number[]> {
     let asked = this.monthsAsked.get(year);
     if (!asked) {
-      asked = monthIndex(this.source, year);
+      asked = monthIndex(this.lib(background), year);
       this.monthsAsked.set(year, asked);
       asked.catch(() => this.monthsAsked.delete(year));
     }
@@ -101,12 +116,32 @@ export class Visit {
    * the visit is given it, however it was come by: a roll begun cold
    * before another room counted the years has still not been told them.
    */
-  async years(force = false): Promise<YearCount[]> {
+  async years(force = false, background = false): Promise<YearCount[]> {
     const known = force ? null : this.freshYears();
-    const years = known ?? (await yearIndex(this.source, Date.now(), await this.oldest()));
-    if (!known) yearCache = { at: Date.now(), years };
+    const years = known ?? (await this.countYears(force, background));
     for (const d of this.surprises) d.setYears(years);
     return years;
+  }
+
+  /**
+   * The year index, counted once at a time: asked again while it is being
+   * counted, the same count is waited for. A recount (`force`) starts
+   * afresh, and only the newest count is kept as the fresh one.
+   */
+  private countYears(force: boolean, background: boolean): Promise<YearCount[]> {
+    if (!force && this.yearsAsked) return this.yearsAsked;
+    const asked: Promise<YearCount[]> = this.oldest()
+      .then((oldest) => yearIndex(this.lib(background), Date.now(), oldest))
+      .then((years) => {
+        if (this.yearsAsked === asked) yearCache = { at: Date.now(), years };
+        return years;
+      });
+    this.yearsAsked = asked;
+    const done = () => {
+      if (this.yearsAsked === asked) this.yearsAsked = null;
+    };
+    asked.then(done, done);
+    return asked;
   }
 
   /** Today's On this day, if it has been asked to the end today. */
@@ -119,13 +154,23 @@ export class Visit {
     this.day = { day: localDay(at), result };
   }
 
-  /** Today's On this day, asked to the end. */
-  async askDay(): Promise<DayResult> {
+  /** Today's On this day, asked to the end; asked again while it is being read, the same reading is waited for. */
+  askDay(background = false): Promise<DayResult> {
     const known = this.knownDay();
-    if (known) return known;
-    const result = await onThisDay(this.source, { now: Date.now(), oldest: await this.oldest() });
-    this.remember(result);
-    return result;
+    if (known) return Promise.resolve(known);
+    if (this.dayAsked) return this.dayAsked;
+    const asked: Promise<DayResult> = this.oldest()
+      .then((oldest) => onThisDay(this.lib(background), { now: Date.now(), oldest }))
+      .then((result) => {
+        if (this.dayAsked === asked) this.remember(result);
+        return result;
+      });
+    this.dayAsked = asked;
+    const done = () => {
+      if (this.dayAsked === asked) this.dayAsked = null;
+    };
+    asked.then(done, done);
+    return asked;
   }
 
   /**
@@ -218,7 +263,13 @@ export class Visit {
     yearCache = null;
     this.oldestAsked = null;
     this.monthsAsked.clear();
-    if (whole) this.day = null;
+    // A count or a day still being read answers its own callers, but is
+    // not kept, nor joined: the next ask reads the library as it is now.
+    this.yearsAsked = null;
+    if (whole) {
+      this.day = null;
+      this.dayAsked = null;
+    }
   }
 
   /** TRY AGAIN on the error page: everything asked again, the year index too. */
