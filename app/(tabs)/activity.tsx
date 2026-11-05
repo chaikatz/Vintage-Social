@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,
   },
-  unread: { backgroundColor: colors.paperSunken },
+  unread: { backgroundColor: colors.wash },
   moderationDot: {
     width: 40,
     height: 40,

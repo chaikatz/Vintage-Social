@@ -32,12 +32,13 @@ const result = await build({
 });
 const js = result.outputFiles[0].text;
 
-// The body's data-fill is filled in by the app per use (MarkStage), which is
-// the one place this string is changed before it is shown.
+// The body's data-fill and data-ink are filled in by the app per use
+// (MarkStage), which is the one place this string is changed before it is
+// shown.
 const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}canvas{display:block}</style>
-</head><body data-fill="__FILL__"><script>${js}</script></body></html>`;
+</head><body data-fill="__FILL__" data-ink="__INK__"><script>${js}</script></body></html>`;
 
 mkdirSync(`${root}src/brand`, { recursive: true });
 writeFileSync(

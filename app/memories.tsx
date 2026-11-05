@@ -239,7 +239,7 @@ export default function Memories() {
             />
             {opening === p.id ? (
               <View style={styles.opening}>
-                <ActivityIndicator color={colors.onShutter} />
+                <ActivityIndicator color={colors.onCamera} />
               </View>
             ) : null}
           </Pressable>

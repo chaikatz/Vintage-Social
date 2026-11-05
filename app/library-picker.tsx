@@ -105,7 +105,7 @@ export default function LibraryPicker() {
                   <Image source={p.uri} style={styles.cell} contentFit="cover" transition={60} />
                   {opening === p.id ? (
                     <View style={styles.opening}>
-                      <ActivityIndicator color={colors.onShutter} />
+                      <ActivityIndicator color={colors.onCamera} />
                     </View>
                   ) : null}
                 </Pressable>

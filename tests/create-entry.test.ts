@@ -125,7 +125,7 @@ describe("the page, at a glance", () => {
     }
     expect(room).toMatch(/title="Enter the Memory Room"\s+variant="card"/);
     expect(library).toMatch(/title="Choose a photograph"\s+variant=\{door \? "outline" : "solid"\}/);
-    // The room's bar is the invitation card's brown, ruled and lettered in gold; the library's is ruled in ink.
+    // The room's bar is the invitation card's stock, ruled and lettered in its ink (brown and gold on paper, white on black); the library's is ruled in ink.
     expect(style(gate, "card")).toMatch(/backgroundColor: colors\.card, borderWidth: 1, borderColor: colors\.goldSoft/);
     expect(style(gate, "outline")).toMatch(/borderWidth: 1, borderColor: colors\.ink/);
     expect(gate).toMatch(/labelCard: \{ color: colors\.gold \}/);

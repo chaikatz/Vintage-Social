@@ -2,10 +2,18 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The theme reads the platform for its faces and its dynamic colours; the room reads only its plain strings.
+// The theme reads the platform for its faces and its dynamic colours; the room reads only its plain strings,
+// and the appearance, to know which print's.
+const phone = vi.hoisted(() => ({ os: "ios", scheme: "light" as "light" | "dark" | null }));
 vi.mock("react-native", () => ({
-  Platform: { OS: "ios", select: (o: Record<string, unknown>) => o.ios ?? o.default },
+  Platform: {
+    get OS() {
+      return phone.os;
+    },
+    select: (o: Record<string, unknown>) => o.ios ?? o.default,
+  },
   DynamicColorIOS: (o: { dark: string }) => o.dark,
+  useColorScheme: () => phone.scheme,
 }));
 
 // What a visit reads besides the library: the phone's own stores, faked in memory.
@@ -35,18 +43,29 @@ import {
   groupTop,
   plateBox,
   ratioOf,
+  SIGNATURE_RULE,
+  SIGNATURE_SHARE,
+  signatureGap,
   stageFrame,
+  underPlate,
 } from "@/components/darkroom/geometry";
+import { exportLayout, PRINT_WIDTH } from "@/utils/exportLayout";
 import {
   actionNamed,
   captionWords,
   chapterAnnouncement,
   chapterName,
+  CONTENTS_BY_YEAR,
+  CONTENTS_HINT,
+  CONTENTS_INVITE,
+  CONTENTS_ORDER,
+  CONTENTS_WAYS_IN,
   dayFolio,
   deniedPage,
   emptyPage,
   endPage,
   firstVisitPage,
+  monthsOf,
   nextYearWord,
   photographs,
   placeholderWords,
@@ -77,9 +96,18 @@ import {
   type Chapter,
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, type Reader } from "@/components/darkroom/dealer";
-import { roles, room, toneColor } from "@/components/darkroom/room";
+import {
+  contrastRatio,
+  roles,
+  rooms,
+  signatureInks,
+  toneColor,
+  useScheme,
+  type Room,
+  type Scheme,
+} from "@/components/darkroom/room";
 import { Visit } from "@/components/darkroom/visit";
-import { dark } from "@/theme";
+import { dark, light } from "@/theme";
 import type { LibrarySource, Print } from "@/darkroom/types";
 
 const NOW = new Date(2026, 9, 22, 12, 0).getTime(); // 22 October 2026, noon
@@ -93,11 +121,88 @@ const day = (y: number, m: number, d: number, h = 12) => new Date(y, m, d, h).ge
 // ---------------------------------------------------------------------------
 
 describe("the room's page", () => {
-  it("is the deepest brown, with the plate's well a step up", () => {
-    expect(room.page).toBe(dark.paperSunken);
-    expect(room.well).toBe(dark.paper);
-    expect(room.gold).toBe(dark.accent);
-    expect(room.lineStrong).toBe(dark.borderStrong);
+  const prints: [Scheme, typeof light | typeof dark][] = [
+    ["light", light],
+    ["dark", dark],
+  ];
+
+  /** WCAG 2's contrast ratio, worked out here rather than trusted from the room. */
+  function ratio(a: string, b: string): number {
+    const lum = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      const [r, g, bl] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+    };
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  }
+
+  it("is the app's own page in either print, with the well a step off it and the sheet raised", () => {
+    expect(rooms.light.page).toBe(light.paper);
+    expect(rooms.dark.page).toBe(dark.paper);
+    expect(rooms.light.well).toBe(light.paperSunken);
+    expect(rooms.dark.well).toBe(dark.paperRaised);
+    for (const [scheme, p] of prints) {
+      expect(rooms[scheme].sheet, scheme).toBe(p.paperRaised);
+      expect(rooms[scheme].ink, scheme).toBe(p.ink);
+      expect(rooms[scheme].line, scheme).toBe(p.border);
+      expect(rooms[scheme].lineStrong, scheme).toBe(p.borderStrong);
+    }
+  });
+
+  it("sets every ink at AA or better on every ground it is set on, in both prints, Increase Contrast or not", () => {
+    for (const [scheme] of prints) {
+      const r: Room = rooms[scheme];
+      for (const contrast of [false, true]) {
+        for (const tone of ["ink", "soft", "faint"] as const) {
+          for (const ground of [r.page, r.well, r.sheet]) {
+            expect(ratio(toneColor(r, tone, contrast), ground), `${scheme} ${tone} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+        for (const ground of [r.page, r.sheet]) {
+          expect(ratio(toneColor(r, "accent", contrast), ground), `${scheme} accent on ${ground}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+    expect(contrastRatio("#000000", "#FFFFFF")).toBeCloseTo(21, 5);
+    expect(contrastRatio(light.inkFaint, light.paper)).toBeCloseTo(ratio(light.inkFaint, light.paper), 5);
+  });
+
+  it("takes each ink and the accent from the theme, a step stronger only where the theme's would not read", () => {
+    for (const [scheme, p] of prints) {
+      const r = rooms[scheme];
+      const grounds = [r.page, r.well, r.sheet];
+      const reads = (ink: string, on: string[]) => on.every((g) => ratio(ink, g) >= 4.5);
+      expect(r.soft, scheme).toBe(reads(p.inkSoft, grounds) ? p.inkSoft : p.ink);
+      expect(r.faint, scheme).toBe(reads(p.inkFaint, grounds) ? p.inkFaint : r.soft);
+      expect(r.accent, scheme).toBe(reads(p.accent, [r.page, r.sheet]) ? p.accent : p.ink);
+    }
+    // The light print's faint ink is too pale for the room's small capitals on paper: they are set soft there.
+    expect(ratio(light.inkFaint, light.paper)).toBeLessThan(4.5);
+    expect(rooms.light.faint).toBe(light.inkSoft);
+    // Its accent, burnt sienna, reads on paper: the room's marks are the theme's own.
+    expect(rooms.light.accent).toBe(light.accent);
+  });
+
+  it("follows the appearance on the iPhone, and keeps to the light print elsewhere, as the theme does", () => {
+    try {
+      phone.os = "ios";
+      phone.scheme = "dark";
+      expect(useScheme()).toBe("dark");
+      phone.scheme = "light";
+      expect(useScheme()).toBe("light");
+      phone.scheme = null;
+      expect(useScheme()).toBe("light");
+      phone.os = "web";
+      phone.scheme = "dark";
+      expect(useScheme()).toBe("light");
+    } finally {
+      phone.os = "ios";
+      phone.scheme = "light";
+    }
   });
 
   it("pairs every tracked role with its trailing space taken back", () => {
@@ -107,11 +212,53 @@ describe("the room's page", () => {
     }
   });
 
-  it("sets faint type soft under Increase Contrast, and nothing else changes ink", () => {
-    expect(toneColor("faint", false)).toBe(room.faint);
-    expect(toneColor("faint", true)).toBe(room.soft);
-    expect(toneColor("gold", true)).toBe(room.gold);
-    expect(toneColor("ink", true)).toBe(room.ink);
+  it("sets faint type soft under Increase Contrast in either print, and nothing else changes ink", () => {
+    for (const [scheme] of prints) {
+      const r = rooms[scheme];
+      expect(toneColor(r, "faint", false), scheme).toBe(r.faint);
+      expect(toneColor(r, "faint", true), scheme).toBe(r.soft);
+      expect(toneColor(r, "accent", true), scheme).toBe(r.accent);
+      expect(toneColor(r, "ink", true), scheme).toBe(r.ink);
+      expect(toneColor(r, "soft", true), scheme).toBe(r.soft);
+    }
+  });
+
+  it("keeps the signature line the strong line, and the firm line under Increase Contrast, while nothing is drawn", () => {
+    for (const [scheme] of prints) {
+      const r = rooms[scheme];
+      expect(signatureInks(r, false, false).line, scheme).toBe(r.lineStrong);
+      expect(signatureInks(r, true, false).line, scheme).toBe(r.lineFirm);
+    }
+  });
+
+  it("draws a download 3:1 or better off the line it runs along, in both prints, Increase Contrast or not", () => {
+    for (const [scheme] of prints) {
+      const r = rooms[scheme];
+      for (const contrast of [false, true]) {
+        const { line, drawn } = signatureInks(r, contrast, true);
+        const at = `${scheme}${contrast ? " under Increase Contrast" : ""}`;
+        expect(ratio(drawn, line), `${at}: ${drawn} along ${line}`).toBeGreaterThanOrEqual(3);
+        // What is drawn shows on the page too, and is always one of the room's own marks on one of its own lines.
+        expect(ratio(drawn, r.page), at).toBeGreaterThanOrEqual(3);
+        expect([r.accent, r.ink], at).toContain(drawn);
+        expect([r.lineStrong, r.lineFirm], at).toContain(line);
+        // The accent wherever it stands 3:1 off the line the print would draw; the ink only where it does not.
+        const own = contrast ? r.lineFirm : r.lineStrong;
+        if (ratio(r.accent, own) >= 3) expect({ line, drawn }, at).toEqual({ line: own, drawn: r.accent });
+        else if (ratio(r.ink, own) >= 3) expect({ line, drawn }, at).toEqual({ line: own, drawn: r.ink });
+      }
+    }
+  });
+
+  it("draws the light print's download in the ink under Increase Contrast, where the accent would sink into the firm line", () => {
+    // Burnt sienna along the firm line is 1.65:1: under Increase Contrast it is the ink, on the line Increase Contrast sets.
+    expect(ratio(light.accent, light.inkFaint)).toBeLessThan(3);
+    expect(signatureInks(rooms.light, true, true)).toEqual({ line: light.inkFaint, drawn: light.ink });
+    // So Increase Contrast raises how far a download has come on the light print, never lowers it.
+    const plain = signatureInks(rooms.light, false, true);
+    const firm = signatureInks(rooms.light, true, true);
+    expect(plain).toEqual({ line: light.borderStrong, drawn: light.accent });
+    expect(ratio(firm.drawn, firm.line)).toBeGreaterThan(ratio(plain.drawn, plain.line));
   });
 });
 
@@ -121,43 +268,66 @@ describe("geometry", () => {
     expect(stageFrame(667, { top: 20, bottom: 0 })).toEqual({ top: 64, height: 531 });
   });
 
-  it("measures the caption as 54 at the default size, capped by line", () => {
-    expect(captionHeight(1, 1)).toBe(54);
-    expect(captionHeight(1, 2)).toBe(74);
+  it("measures the caption from the signature line as 50 at the default size, capped by line", () => {
+    expect(captionHeight(1, 1)).toBe(50);
+    expect(captionHeight(1, 2)).toBe(70);
     // Line 1 stops at 1.5, line 2 at 2.0.
-    expect(captionHeight(3, 1)).toBe(14 + 21 + 6 + 40);
-    expect(captionHeight(3, 2)).toBe(14 + 21 + 6 + 80);
-    expect(captionHeight(Number.NaN, 1)).toBe(54);
+    expect(captionHeight(3, 1)).toBe(10 + 21 + 6 + 40);
+    expect(captionHeight(3, 2)).toBe(10 + 21 + 6 + 80);
+    expect(captionHeight(Number.NaN, 1)).toBe(50);
   });
 
-  it("fits the plate to its own shape on the reference phone", () => {
-    const at = (r: number) => plateBox(r, 393, 659, 54, 3);
+  it("leaves the print's own paper between the photograph and the signature line", () => {
+    // The exported print: its rule sits a sixteenth of its picture's width under the picture.
+    const print = exportLayout(1, "print", PRINT_WIDTH);
+    expect(SIGNATURE_SHARE).toBe((print.rule.y - (print.photo.y + print.photo.height)) / print.photo.width);
+    expect(SIGNATURE_SHARE).toBeCloseTo(1 / 16, 6);
+    // The line is the print's rule at the plate's size: 1 pt, as the print's 1.08 at 540 comes to.
+    expect(SIGNATURE_RULE).toBe(Math.max(1, Math.floor((print.rule.height / print.photo.width) * 361)));
+    // 361 pt on the reference phone: 22⅔ pt, on its third of a point.
+    expect(signatureGap(361, 3)).toBeCloseTo(22.67, 2);
+    // Under a plate narrower than its 240 pt label, the label's.
+    expect(underPlate(187, 50, 3)).toBe(15 + 1 + 50);
+    expect(underPlate(361, 50, 3)).toBeCloseTo(22.67 + 1 + 50, 2);
+  });
+
+  it("fits the plate to its own shape on the reference phone, with its label under it", () => {
+    const at = (r: number) => plateBox(r, 393, 659, 50, 3);
     expect(at(3 / 4).width).toBe(361);
     expect(at(3 / 4).height).toBeCloseTo(481.33, 1);
     expect(at(4 / 3).width).toBe(361);
     expect(Math.round(at(4 / 3).height)).toBe(271);
-    expect(Math.round(at(9 / 16).width)).toBe(322);
-    expect(at(9 / 16).height).toBeCloseTo(573, 0);
     expect(Math.round(at(3).height)).toBe(120);
+    // A tall print fills the stage less the room above and below, its paper, line and caption included.
+    for (const r of [9 / 16, 1 / 3]) {
+      const box = at(r);
+      expect(box.height + underPlate(box.width, 50, 3), String(r)).toBeCloseTo(659 - 12 - 20, 0);
+    }
+    expect(Math.round(at(9 / 16).width)).toBe(313);
+    expect(at(9 / 16).height).toBeCloseTo(556.33, 1);
+    expect(at(1 / 3).width).toBe(187);
   });
 
   it("keeps an SE's plate to 343 × 445", () => {
-    const box = plateBox(0.5, 375, 531, 54, 2);
+    const box = plateBox(0.5, 375, 531, 50, 2);
     expect(box.height).toBeLessThanOrEqual(445);
-    expect(plateBox(10, 375, 531, 54, 2).width).toBe(343);
+    expect(box.height + underPlate(box.width, 50, 2)).toBeLessThanOrEqual(531 - 12 - 20);
+    expect(plateBox(10, 375, 531, 50, 2).width).toBe(343);
   });
 
   it("rounds to the screen's own pixels", () => {
-    const box = plateBox(4 / 3, 393, 659, 54, 3);
+    const box = plateBox(4 / 3, 393, 659, 50, 3);
     expect(Math.abs(box.height * 3 - Math.round(box.height * 3))).toBeLessThan(1e-9);
+    const gap = signatureGap(box.width, 3);
+    expect(Math.abs(gap * 3 - Math.round(gap * 3))).toBeLessThan(1e-9);
   });
 
   it("hangs the group a little above centre, never under 8", () => {
-    expect(groupTop(659, 481, 54)).toBe((659 - 481 - 54) / 2 - 12);
-    expect(groupTop(659, 650, 54)).toBe(8);
+    expect(groupTop(659, 481, 74)).toBe((659 - 481 - 74) / 2 - 12);
+    expect(groupTop(659, 650, 74)).toBe(8);
   });
 
-  it("keeps a caption to the plate's edges, and at least 240 wide", () => {
+  it("keeps a caption and its line to the plate's edges, and at least 240 wide", () => {
     expect(captionWidth(361)).toBe(361);
     expect(captionWidth(120)).toBe(240);
   });
@@ -471,6 +641,17 @@ describe("the room's other words", () => {
     expect(dayFolio("none", NOW)).toBe("Nothing today");
     expect(photographs(1)).toBe("1 photograph");
     expect(photographs(1204)).toBe("1,204 photographs");
+  });
+
+  it("says under CONTENTS what is in it, and heads each part of the sheet as an index does", () => {
+    expect(CONTENTS_INVITE).toBe("Every way in is here: this day, a roll, any year.");
+    // VoiceOver hears the same from CONTENTS itself.
+    expect(CONTENTS_HINT).toBe("Choose a way in, a year or a month.");
+    expect([CONTENTS_WAYS_IN, CONTENTS_BY_YEAR, CONTENTS_ORDER]).toEqual(["Ways in", "By year", "Oldest first"]);
+    expect(monthsOf(2016)).toBe("The months of 2016");
+    // The year's heading is the chapter's own name for a year, as its title card says it.
+    expect(CONTENTS_BY_YEAR).toBe(chapterName("year", null));
+    expect(titleCardWords("year", 2016, 0, NOW)?.eyebrow).toBe(CONTENTS_BY_YEAR);
   });
 
   it("says the pruning once, in words", () => {
@@ -882,6 +1063,82 @@ describe("the room's own rules, in its source", () => {
       expect(src, f).not.toMatch(/\bcolors\.[a-zA-Z]/);
       expect(src, f).not.toMatch(/components\/(GateButton|Button|EmptyState|Bone|Screen)\b/);
     }
+  });
+
+  it("takes every colour from the print the app is showing, through the room's Look", () => {
+    for (const f of files) {
+      const src = read(f);
+      const name = path.basename(f);
+      // No colour of its own, and no print fixed in place.
+      expect(src, name).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+      if (name !== "room.ts") expect(src, name).not.toMatch(/\b(dark|light)\.[a-zA-Z]+/);
+      // The two prints are chosen in one place, by the appearance.
+      if (!["room.ts", "look.ts", "darkroom.tsx"].includes(name)) expect(src, name).not.toMatch(/\brooms(\.|\[)|import \{[^}]*\brooms\b/);
+    }
+    const screen = read(files.find((f) => f.endsWith("app/darkroom.tsx"))!);
+    expect(screen).toMatch(/const scheme = useScheme\(\);/);
+    expect(screen).toMatch(/room: rooms\[scheme\]/);
+    expect(screen).toMatch(/\[scheme, contrast, bold, reduceMotion, screenReader\]/);
+    expect(screen).toMatch(/style=\{\[styles\.root, \{ backgroundColor: look\.room\.page \}\]\}/);
+  });
+
+  it("makes CONTENTS plainly a control: an open book and the word in a ruled tab, a 44 pt press", () => {
+    const head = read(files.find((f) => f.endsWith("RunningHead.tsx"))!);
+    const control = head.slice(head.indexOf('testID="darkroom-contents"') - 700, head.indexOf("darkroom-contents-invite"));
+    expect(control).toMatch(/accessibilityLabel="Contents"/);
+    expect(control).toMatch(/accessibilityHint=\{held \? undefined : CONTENTS_HINT\}/);
+    expect(control).toMatch(/<Feather name="book-open" size=\{14\} color=\{room\.ink\} accessible=\{false\} \/>/);
+    expect(control).toMatch(/<RoomText kind="tab"[^>]*>\s*Contents\s*<\/RoomText>/);
+    expect(head).toMatch(/contents: \{ minHeight: 44, minWidth: 44,/);
+    expect(head).toMatch(/tab: \{[^}]*minHeight: 30,[^}]*borderWidth: 1,/);
+    // Ruled in the accent until Contents is first opened; then the firm line, the soft ink under Increase Contrast.
+    expect(head).toMatch(/const edge = invite \? room\.accent : contrast \? room\.soft : room\.lineFirm;/);
+    expect(head).toMatch(/style=\{\[styles\.tab, \{ borderColor: edge \}\]\}/);
+    expect(roles.tab.tone).toBe("ink");
+    expect(roles.tab.style.fontSize).toBeGreaterThan(roles.head.style.fontSize);
+  });
+
+  it("says under CONTENTS what is in it until Contents is first opened, and remembers that on the phone", () => {
+    const head = read(files.find((f) => f.endsWith("RunningHead.tsx"))!);
+    const invite = head.slice(head.indexOf("{contents && invite ? ("), head.indexOf("const styles"));
+    expect(invite).toMatch(/onPress=\{onContents\}/);
+    expect(invite).toMatch(/\{CONTENTS_INVITE\}/);
+    // For the eye: VoiceOver hears it from CONTENTS's hint.
+    expect(invite).toMatch(/accessible=\{false\}\s+accessibilityElementsHidden\s+importantForAccessibility="no-hide-descendants"/);
+    const screen = read(files.find((f) => f.endsWith("app/darkroom.tsx"))!);
+    expect(screen).toMatch(/const \[found, setFound\] = useState\(contentsFound\);/);
+    expect(screen).toMatch(/invite=\{!found\}/);
+    // Every way into the sheet goes through showContents, which marks it found once it opens.
+    expect(screen).toMatch(
+      /const showContents = \(months = false\) => \{\s*if \(develop\.busy\) return;\s*sheet\.show\(months\);\s*if \(!found\) \{\s*markContentsFound\(\);\s*setFound\(true\);/,
+    );
+    expect(screen.match(/sheet\.show\(/g)).toHaveLength(1);
+  });
+
+  it("reads the sheet as a guided index, and marks where you are", () => {
+    const sheet = read(files.find((f) => f.endsWith("Contents.tsx"))!);
+    expect(sheet).toMatch(/<Section title=\{CONTENTS_WAYS_IN\} first/);
+    expect(sheet).toMatch(/<Section title=\{CONTENTS_BY_YEAR\} aside=\{CONTENTS_ORDER\}/);
+    expect(sheet).toMatch(/\{monthsOf\(y\.year\)\}/);
+    // Each heading is a heading to VoiceOver.
+    const section = sheet.slice(sheet.indexOf("function Section("), sheet.indexOf("function Line("));
+    expect(section).toMatch(/accessibilityRole="header"/);
+    expect(sheet.match(/accessibilityRole="header"/g)?.length).toBeGreaterThanOrEqual(3);
+    // Where you are: the ribbon, the title in the accent, the folio soft, and selected to VoiceOver.
+    const line = sheet.slice(sheet.indexOf("function Line("), sheet.indexOf("function Month("));
+    expect(line).toMatch(/backgroundColor: current \? room\.accent : "transparent"/);
+    expect(line).toMatch(/tone=\{disabled \? "faint" : current \? "accent" : "ink"\}/);
+    expect(line).toMatch(/tone=\{current \? "soft" : undefined\}/);
+    expect(line).toMatch(/accessibilityState=\{\{ selected: current, disabled \}\}/);
+    expect(sheet).toMatch(/ribbon: \{ width: 3, height: 22,/);
+    const month = sheet.slice(sheet.indexOf("function Month("), sheet.indexOf("const styles"));
+    expect(month).toMatch(/tone=\{empty \? "faint" : inView \? "accent" : "soft"\}/);
+    expect(month).toMatch(/accessibilityState=\{\{ disabled: empty, selected: inView \}\}/);
+  });
+
+  it("leaves the status bar to the app, which follows the appearance as the room does", () => {
+    for (const f of files) expect(read(f), path.basename(f)).not.toMatch(/expo-status-bar|setStatusBarStyle|StatusBar\b/);
+    expect(read(path.resolve(__dirname, "../app/_layout.tsx"))).toMatch(/<StatusBar style="auto" \/>/);
   });
 
   it("raises no alert and gives no failure haptic", () => {

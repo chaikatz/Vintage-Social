@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.badge,
   },
   headerTitle: { fontFamily: type.serif, fontSize: 17, color: colors.ink },
   bar: {
