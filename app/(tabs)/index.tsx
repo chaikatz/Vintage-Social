@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FlatList, StyleSheet, View, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { focusManager, onlineManager, useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
 import { PendingPostCard } from "@/components/PendingPostCard";
@@ -17,6 +17,7 @@ import { notePostsInFeed, setOutboxProfileRefresher, usePendingPosts, type Pendi
 import { pendingNeedsTop } from "@/uploads/store";
 import { idsAround } from "@/media/cardWindow";
 import { commentsOrNone, likeCounted } from "@/media/stableCards";
+import { firstPageOnly, refreshOnReturn } from "@/media/feedPages";
 import type { PostWithAuthor } from "@/types/db";
 
 /**
@@ -67,7 +68,20 @@ export default function Home() {
     getNextPageParam: (lastPage, pages) =>
       lastPage.length < FEED_PAGE_SIZE ? undefined : pages.length,
     enabled: Boolean(userId),
+    // Coming back to the app, or back online, is decided below: left to
+    // the query, it read every page loaded again, one after another.
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
+
+  // A refresh starts the feed again from its newest page: one request,
+  // not one for every page the reader has loaded (src/media/feedPages.ts).
+  const queryClient = useQueryClient();
+  const feedRefetch = feed.refetch;
+  const refreshFromTop = useCallback(() => {
+    queryClient.setQueryData<InfiniteData<PostWithAuthor[], number>>(["feed", userId], (d) => firstPageOnly(d));
+    return feedRefetch();
+  }, [queryClient, userId, feedRefetch]);
 
   const posts = useMemo(() => flattenPages(feed.data?.pages), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
@@ -101,18 +115,54 @@ export default function Home() {
   // Home tapped while on Home: to the top, and one refetch — never a second
   // while the first is still out, however many times the icon is tapped.
   const listRef = useRef<FlatList<(typeof posts)[number]>>(null);
-  const refetchRef = useRef(feed.refetch);
-  refetchRef.current = feed.refetch;
+  const refetchRef = useRef(refreshFromTop);
+  refetchRef.current = refreshFromTop;
   const fetchingRef = useRef(false);
   fetchingRef.current = feed.isFetching;
-  useEffect(
-    () =>
-      onHomeAgain(() => {
-        listRef.current?.scrollToOffset({ offset: 0, animated: true });
-        if (!fetchingRef.current) void refetchRef.current();
-      }),
-    [],
-  );
+  // Where the reader is, for the refreshes that are not asked for.
+  const seenIndexRef = useRef(seenIndex);
+  seenIndexRef.current = seenIndex;
+  useEffect(() => {
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const off = onHomeAgain(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      if (fetchingRef.current) return;
+      // From further down, the pages below the first are let go once the
+      // list is back at the top, not under it while it is on its way.
+      clearTimeout(settle);
+      if (seenIndexRef.current <= 0) void refetchRef.current();
+      else
+        settle = setTimeout(() => {
+          if (!fetchingRef.current) void refetchRef.current();
+        }, HOME_AGAIN_SETTLE_MS);
+    });
+    return () => {
+      off();
+      clearTimeout(settle);
+    };
+  }, []);
+
+  // Back in the app, or back online: the newest page for a reader at the
+  // top whose feed has gone stale; a reader further down keeps their place.
+  useEffect(() => {
+    const back = (now: boolean) => {
+      if (!now || !userId || fetchingRef.current) return;
+      const state = queryClient.getQueryState(["feed", userId]);
+      const stale = refreshOnReturn({
+        seenIndex: seenIndexRef.current,
+        updatedAt: state?.dataUpdatedAt ?? 0,
+        now: Date.now(),
+        staleMs: FEED_STALE_MS,
+      });
+      if (stale) void refetchRef.current();
+    };
+    const offFocus = focusManager.subscribe((isFocused) => back(isFocused));
+    const offOnline = onlineManager.subscribe((isOnline) => back(isOnline));
+    return () => {
+      offFocus();
+      offOnline();
+    };
+  }, [queryClient, userId]);
 
   // A new post's card is the list's header, at the very top. Coming back
   // from compose keeps Home as it was (the tabs are not remounted), so a
@@ -196,7 +246,7 @@ export default function Home() {
         keyExtractor={(p) => p.id}
         contentContainerStyle={styles.list}
         refreshing={feed.isRefetching && !feed.isFetchingNextPage}
-        onRefresh={() => feed.refetch()}
+        onRefresh={() => void refreshFromTop()}
         onEndReached={() => {
           if (feed.hasNextPage && !feed.isFetchingNextPage) feed.fetchNextPage();
         }}
@@ -238,6 +288,11 @@ export default function Home() {
     </Screen>
   );
 }
+
+/** The query's own staleness (src/lib/queryClient.ts): a feed older than this is refreshed on return. */
+const FEED_STALE_MS = 30_000;
+/** How long a scroll back to the top is given before the pages below the first are let go. */
+const HOME_AGAIN_SETTLE_MS = 400;
 
 /** Screens of cards drawn around the reader: four either side, and the one in view. */
 const HOME_WINDOW = 9;
