@@ -25,6 +25,8 @@ interface Props {
 }
 
 export const GRID_GAP = 2;
+/** Screens of squares the grid draws: three either side of the one in view. */
+const GRID_SCREENS = 7;
 
 /** The classic three-column square grid. */
 export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
@@ -40,6 +42,11 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
       refreshing={refreshing ?? false}
       columnWrapperStyle={{ gap: GRID_GAP }}
       contentContainerStyle={{ gap: GRID_GAP, backgroundColor: colors.paper }}
+      // Three screens of squares either side of the reader, as an era's
+      // sheet draws: the list's default, ten either side, fetched every
+      // square of a profile of a few hundred photographs the moment it
+      // opened, and held them all.
+      windowSize={GRID_SCREENS}
       renderItem={({ item }) => <PhotoTile post={item} size={size} onPress={() => onOpenPost(item)} />}
     />
   );

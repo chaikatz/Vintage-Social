@@ -42,6 +42,13 @@ describe("Home's list", () => {
     expect(list).toMatch(/if \(feed\.hasNextPage && !feed\.isFetchingNextPage\) feed\.fetchNextPage\(\);/);
   });
 
+  it("is not the profile grid, which draws three screens of squares either side, not the default ten", () => {
+    const grid = code("src/components/PhotoGrid.tsx");
+    const gridList = grid.slice(grid.indexOf("<FlatList"), grid.indexOf("export function PhotoTile("));
+    expect(gridList).toMatch(/windowSize=\{GRID_SCREENS\}/);
+    expect(Number(grid.match(/const GRID_SCREENS = (\d+);/)?.[1])).toBe(7);
+  });
+
   it("fetches the first screen's photographs first", () => {
     expect(home).toMatch(/priority=\{index < FIRST_SCREEN \? "high" : "normal"\}/);
     expect(constant("FIRST_SCREEN")).toBe(2);
