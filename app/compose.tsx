@@ -479,7 +479,15 @@ export default function Compose() {
           {FILTERS.map((f) => {
             const selected = f.id === filterId;
             return (
-              <Pressable key={f.id} style={styles.swatchWrap} onPress={() => selectFilter(f.id)}>
+              <Pressable
+                key={f.id}
+                style={styles.swatchWrap}
+                onPress={() => selectFilter(f.id)}
+                accessibilityRole="button"
+                accessibilityLabel={f.name}
+                accessibilityHint="Develops the photograph in this film."
+                accessibilityState={{ selected }}
+              >
                 {/* The swatch is its own sunken well until the tray's copy
                     exists, then the film drawn on that copy, at its own
                     size so the crop is not stretched. */}
@@ -520,7 +528,14 @@ export default function Compose() {
 
         {/* Available on every filter — the preset only decides the default. */}
         <SectionLabel>Date stamp</SectionLabel>
-        <Pressable style={styles.stampRow} onPress={() => setStampOn(!stampOn)}>
+        {/* One switch to VoiceOver: the row is what it reads and what it turns, the Switch inside it is hidden by it. */}
+        <Pressable
+          style={styles.stampRow}
+          onPress={() => setStampOn(!stampOn)}
+          accessibilityRole="switch"
+          accessibilityLabel={`Date stamp, ${stampLabel}`}
+          accessibilityState={{ checked: stampOn }}
+        >
           <View style={styles.grow}>
             <Text style={[styles.stampValue, !stampOn && styles.stampValueOff]}>{stampLabel}</Text>
             <Text style={styles.stampHint}>
