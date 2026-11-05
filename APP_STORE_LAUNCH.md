@@ -316,7 +316,7 @@ them. Capture the real screen; do not stage any UI.
 | 4 | Your profile, Posted grid, header with MEMBER · NO. 00001 | `Your archive.` |
 | 5 | A post opened, with two or three comments and a tag | `Friends, quietly.` |
 | 6 | Compose, a photograph in the darkroom with the filter tray | `Give it the look of film.` |
-| 7 | Share outside → the print preview (paper, wordmark, byline) — Espresso appearance | `Share a print.` |
+| 7 | Share outside → the print preview (paper, wordmark, byline) — Dark appearance | `Share a print.` |
 | 8 | Invitations screen with your link and allowance | `Membership by invitation.` |
 
 If you want six, drop 4 and 6.

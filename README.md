@@ -107,7 +107,7 @@ src/
   hooks/                shared post actions (liking, the "…" menu)
   navigation/           the swipeable bottom tab bar
   providers/            session/membership context
-  theme/                design tokens (warm paper, hairline borders)
+  theme/                design tokens (warm paper, hairline borders; black for Dark)
   types/db.ts           database types (mirrors supabase/migrations)
   utils/                validation, time formatting, EXIF capture dates
 supabase/
@@ -645,7 +645,7 @@ this repo:
   choose the production build profile → *Push Notifications* → set up a key. Without it tokens are
   filed but Apple delivers nothing. `expo-notifications` is native, so this is a full EAS build.
 - **Sharing outside VINTAGE** — the send (paper plane) sheet now opens with "Share outside VINTAGE".
-  A photograph leaves as a *print*: paper (light or darkroom brown), a margin, and a label with the
+  A photograph leaves as a *print*: paper (light, or the dark print's black), a margin, and a label with the
   wordmark, place · date, and the member's name; a "Story" shape puts the same print on a 9:16 page.
   Stills are captured on the phone (`react-native-view-shot`) at 3× a 540-point card; films are
   branded natively by `modules/vintage-video` (`brand`) — the same paper and label painted around the
