@@ -6,10 +6,13 @@ import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { Bone } from "@/components/Skeleton";
 import { spacing } from "@/theme";
 import { fetchFollowers, fetchFollowing, follow, unfollow } from "@/api/profiles";
 import { useSession } from "@/providers/SessionProvider";
+import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import type { FollowStatus, ProfileRow } from "@/types/db";
 
 /**
@@ -64,6 +67,9 @@ export default function Follows() {
       refreshProfile().catch(() => undefined);
       queryClient.invalidateQueries({ queryKey: ["feed"] });
     },
+    // The button goes back to what it said; the member is told why.
+    onError: (err, { next }) =>
+      showAlert(next ? "Couldn’t follow" : "Couldn’t unfollow", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const stateFor = (p: ProfileRow): FollowStatus | null =>
@@ -72,63 +78,67 @@ export default function Follows() {
   return (
     <Screen padded={false}>
       <Stack.Screen options={{ title: followers ? "Followers" : "Following" }} />
-      <FlatList
-        data={list.data ?? []}
-        keyExtractor={(p) => p.id}
-        ListEmptyComponent={
-          list.isFetched ? (
-            <EmptyState
-              title={followers ? "No followers yet" : "Not following anyone"}
-              body={
-                followers
-                  ? username
-                    ? `Nobody follows ${username} yet.`
-                    : undefined
-                  : username
-                    ? `${username} isn't following anyone yet.`
-                    : undefined
-              }
-            />
-          ) : (
-            <View style={styles.skeleton}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <View key={i} style={styles.skeletonRow}>
-                  <Bone style={styles.skeletonAvatar} />
-                  <View style={styles.skeletonText}>
-                    <Bone style={styles.skeletonName} />
-                    <Bone style={styles.skeletonMeta} />
+      {list.isError && !list.data ? (
+        <LoadFailed what={followers ? "the followers" : "who they follow"} onRetry={() => list.refetch()} />
+      ) : (
+        <FlatList
+          data={list.data ?? []}
+          keyExtractor={(p) => p.id}
+          ListEmptyComponent={
+            list.isFetched ? (
+              <EmptyState
+                title={followers ? "No followers yet" : "Not following anyone"}
+                body={
+                  followers
+                    ? username
+                      ? `Nobody follows ${username} yet.`
+                      : undefined
+                    : username
+                      ? `${username} isn't following anyone yet.`
+                      : undefined
+                }
+              />
+            ) : (
+              <View style={styles.skeleton}>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <View key={i} style={styles.skeletonRow}>
+                    <Bone style={styles.skeletonAvatar} />
+                    <View style={styles.skeletonText}>
+                      <Bone style={styles.skeletonName} />
+                      <Bone style={styles.skeletonMeta} />
+                    </View>
                   </View>
-                </View>
-              ))}
-            </View>
-          )
-        }
-        renderItem={({ item }) => {
-          const status = stateFor(item);
-          const busy = toggle.isPending && toggle.variables?.target.id === item.id;
-          return (
-            <UserRow
-              username={item.username}
-              avatarPath={item.avatar_url}
-              title={item.full_name}
-              subtitle={item.city}
-              onPress={() => router.push(`/user/${item.username}`)}
-              right={
-                item.id === myId ? undefined : (
-                  <Button
-                    title={status === "accepted" ? "Following" : status === "pending" ? "Requested" : "Follow"}
-                    variant={status ? "secondary" : "primary"}
-                    small
-                    loading={busy}
-                    onPress={() => toggle.mutate({ target: item, next: status === null })}
-                    style={styles.button}
-                  />
-                )
-              }
-            />
-          );
-        }}
-      />
+                ))}
+              </View>
+            )
+          }
+          renderItem={({ item }) => {
+            const status = stateFor(item);
+            const busy = toggle.isPending && toggle.variables?.target.id === item.id;
+            return (
+              <UserRow
+                username={item.username}
+                avatarPath={item.avatar_url}
+                title={item.full_name}
+                subtitle={item.city}
+                onPress={() => router.push(`/user/${item.username}`)}
+                right={
+                  item.id === myId ? undefined : (
+                    <Button
+                      title={status === "accepted" ? "Following" : status === "pending" ? "Requested" : "Follow"}
+                      variant={status ? "secondary" : "primary"}
+                      small
+                      loading={busy}
+                      onPress={() => toggle.mutate({ target: item, next: status === null })}
+                      style={styles.button}
+                    />
+                  )
+                }
+              />
+            );
+          }}
+        />
+      )}
     </Screen>
   );
 }
