@@ -68,10 +68,10 @@ export default function Settings() {
     setAppearance(choice);
   };
 
-  // What the phone is allowed to say. Read once; each switch writes at once,
-  // one write at a time and the newest last (settingWriter). A refusal puts
-  // the switches back as the server has them.
+  // What the phone is allowed to say. Read once; each switch writes at once.
   const userId = session?.user?.id ?? "";
+  // One write at a time and the newest last (settingWriter); a refusal puts
+  // the switches back as the server has them.
   const userIdRef = useRef(userId);
   userIdRef.current = userId;
   const refreshRef = useRef(refreshProfile);
@@ -479,10 +479,10 @@ const styles = StyleSheet.create({
   linkHint: { ...type.caption, fontSize: 12, marginTop: 2 },
   deleteWrap: { marginTop: spacing.lg },
   deleteHint: { ...type.caption, fontSize: 12, textAlign: "center", marginTop: spacing.sm },
+  prefsFailed: { ...type.caption, fontSize: 12, marginTop: spacing.sm, color: colors.danger },
   prefRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.md },
   prefLabel: { fontSize: 14, color: colors.ink },
   prefHint: { ...type.caption, fontSize: 12, marginTop: 1 },
-  prefsFailed: { ...type.caption, fontSize: 12, marginTop: spacing.sm, color: colors.danger },
   choices: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   choice: {
     flex: 1,

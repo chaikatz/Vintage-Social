@@ -75,70 +75,75 @@ export default function Follows() {
   const stateFor = (p: ProfileRow): FollowStatus | null =>
     p.id in decided ? decided[p.id] : followingIds.has(p.id) ? "accepted" : null;
 
+  if (list.isError && !list.data) {
+    return (
+      <Screen padded={false}>
+        <Stack.Screen options={{ title: followers ? "Followers" : "Following" }} />
+        <LoadFailed what={followers ? "the followers" : "who they follow"} onRetry={() => list.refetch()} />
+      </Screen>
+    );
+  }
+
   return (
     <Screen padded={false}>
       <Stack.Screen options={{ title: followers ? "Followers" : "Following" }} />
-      {list.isError && !list.data ? (
-        <LoadFailed what={followers ? "the followers" : "who they follow"} onRetry={() => list.refetch()} />
-      ) : (
-        <FlatList
-          data={list.data ?? []}
-          keyExtractor={(p) => p.id}
-          ListEmptyComponent={
-            list.isFetched ? (
-              <EmptyState
-                title={followers ? "No followers yet" : "Not following anyone"}
-                body={
-                  followers
-                    ? username
-                      ? `Nobody follows ${username} yet.`
-                      : undefined
-                    : username
-                      ? `${username} isn't following anyone yet.`
-                      : undefined
-                }
-              />
-            ) : (
-              <View style={styles.skeleton}>
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <View key={i} style={styles.skeletonRow}>
-                    <Bone style={styles.skeletonAvatar} />
-                    <View style={styles.skeletonText}>
-                      <Bone style={styles.skeletonName} />
-                      <Bone style={styles.skeletonMeta} />
-                    </View>
+      <FlatList
+        data={list.data ?? []}
+        keyExtractor={(p) => p.id}
+        ListEmptyComponent={
+          list.isFetched ? (
+            <EmptyState
+              title={followers ? "No followers yet" : "Not following anyone"}
+              body={
+                followers
+                  ? username
+                    ? `Nobody follows ${username} yet.`
+                    : undefined
+                  : username
+                    ? `${username} isn't following anyone yet.`
+                    : undefined
+              }
+            />
+          ) : (
+            <View style={styles.skeleton}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <View key={i} style={styles.skeletonRow}>
+                  <Bone style={styles.skeletonAvatar} />
+                  <View style={styles.skeletonText}>
+                    <Bone style={styles.skeletonName} />
+                    <Bone style={styles.skeletonMeta} />
                   </View>
-                ))}
-              </View>
-            )
-          }
-          renderItem={({ item }) => {
-            const status = stateFor(item);
-            const busy = toggle.isPending && toggle.variables?.target.id === item.id;
-            return (
-              <UserRow
-                username={item.username}
-                avatarPath={item.avatar_url}
-                title={item.full_name}
-                subtitle={item.city}
-                onPress={() => router.push(`/user/${item.username}`)}
-                right={
-                  item.id === myId ? undefined : (
-                    <Button
-                      title={status === "accepted" ? "Following" : status === "pending" ? "Requested" : "Follow"}
-                      variant={status ? "secondary" : "primary"}
-                      small
-                      loading={busy}
-                      onPress={() => toggle.mutate({ target: item, next: status === null })}
-                      style={styles.button}
-                    />
-                  )
-                }
-              />
-            );
-          }}
-        />
-      )}
+                </View>
+              ))}
+            </View>
+          )
+        }
+        renderItem={({ item }) => {
+          const status = stateFor(item);
+          const busy = toggle.isPending && toggle.variables?.target.id === item.id;
+          return (
+            <UserRow
+              username={item.username}
+              avatarPath={item.avatar_url}
+              title={item.full_name}
+              subtitle={item.city}
+              onPress={() => router.push(`/user/${item.username}`)}
+              right={
+                item.id === myId ? undefined : (
+                  <Button
+                    title={status === "accepted" ? "Following" : status === "pending" ? "Requested" : "Follow"}
+                    variant={status ? "secondary" : "primary"}
+                    small
+                    loading={busy}
+                    onPress={() => toggle.mutate({ target: item, next: status === null })}
+                    style={styles.button}
+                  />
+                )
+              }
+            />
+          );
+        }}
+      />
     </Screen>
   );
 }

@@ -56,56 +56,60 @@ export default function Requests() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 
+  if (requests.isError && !requests.data) {
+    return (
+      <Screen padded={false}>
+        <LoadFailed what="your requests" onRetry={() => requests.refetch()} />
+      </Screen>
+    );
+  }
+
   return (
     <Screen padded={false}>
-      {requests.isError && !requests.data ? (
-        <LoadFailed what="your requests" onRetry={() => requests.refetch()} />
-      ) : (
-        <FlatList
-          data={requests.data ?? []}
-          keyExtractor={(p) => p.id}
-          ListEmptyComponent={
-            requests.isFetched ? (
-              <EmptyState
-                title="Nothing waiting"
-                body="When someone asks to follow you, they'll appear here."
-              />
-            ) : null
-          }
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <Pressable
-                style={styles.person}
-                onPress={() => router.push(`/user/${item.username}`)}
-                accessibilityRole="button"
-                accessibilityLabel={item.full_name ? `${item.username}, ${item.full_name}` : item.username}
-              >
-                <Avatar path={item.avatar_url} username={item.username} size={44} />
-                <View style={styles.personText}>
-                  <Text style={styles.username}>{item.username}</Text>
-                  {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
-                </View>
-              </Pressable>
-              <Pressable
-                style={styles.accept}
-                onPress={() => decide.mutate({ follower: item, accept: true })}
-                accessibilityRole="button"
-                accessibilityLabel={`Accept ${item.username}`}
-              >
-                <Text style={styles.acceptText}>Accept</Text>
-              </Pressable>
-              <Pressable
-                style={styles.decline}
-                onPress={() => decide.mutate({ follower: item, accept: false })}
-                accessibilityRole="button"
-                accessibilityLabel={`Decline ${item.username}`}
-              >
-                <Text style={styles.declineText}>Decline</Text>
-              </Pressable>
-            </View>
-          )}
-        />
-      )}
+      <FlatList
+        data={requests.data ?? []}
+        keyExtractor={(p) => p.id}
+        ListEmptyComponent={
+          requests.isFetched ? (
+            <EmptyState
+              title="Nothing waiting"
+              body="When someone asks to follow you, they'll appear here."
+            />
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <View style={styles.row}>
+            <Pressable
+              style={styles.person}
+              onPress={() => router.push(`/user/${item.username}`)}
+              accessibilityRole="button"
+              accessibilityLabel={item.full_name ? `${item.username}, ${item.full_name}` : item.username}
+            >
+              <Avatar path={item.avatar_url} username={item.username} size={44} />
+              <View style={styles.personText}>
+                <Text style={styles.username}>{item.username}</Text>
+                {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
+              </View>
+            </Pressable>
+            <Pressable
+              style={styles.accept}
+              onPress={() => decide.mutate({ follower: item, accept: true })}
+              accessibilityRole="button"
+              accessibilityLabel={`Accept ${item.username}`}
+            >
+              <Text style={styles.acceptText}>Accept</Text>
+            </Pressable>
+            <Pressable
+              style={styles.decline}
+              onPress={() => decide.mutate({ follower: item, accept: false })}
+              accessibilityRole="button"
+              accessibilityLabel={`Decline ${item.username}`}
+            >
+              <Text style={styles.declineText}>Decline</Text>
+            </Pressable>
+          </View>
+        )}
+      />
     </Screen>
   );
 }

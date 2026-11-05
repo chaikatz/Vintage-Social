@@ -31,44 +31,48 @@ export default function Blocked() {
     onError: (err) => showAlert("Couldn’t unblock", err instanceof Error ? err.message : String(err)),
   });
 
+  if (blocked.isError && !blocked.data) {
+    return (
+      <Screen padded={false}>
+        <LoadFailed what="the members you blocked" onRetry={() => blocked.refetch()} />
+      </Screen>
+    );
+  }
+
   return (
     <Screen padded={false}>
-      {blocked.isError && !blocked.data ? (
-        <LoadFailed what="the members you blocked" onRetry={() => blocked.refetch()} />
-      ) : (
-        <FlatList
-          data={blocked.data ?? []}
-          keyExtractor={(p) => p.id}
-          contentContainerStyle={styles.list}
-          ListHeaderComponent={
-            <Text style={styles.intro}>
-              A blocked member cannot see your photographs or profile, and you will not see theirs. Neither
-              of you is told.
-            </Text>
-          }
-          ListEmptyComponent={
-            blocked.isFetched ? <EmptyState title="Nobody blocked" body="You can block a member from their profile." /> : null
-          }
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <Avatar path={item.avatar_url} username={item.username} size={40} />
-              <View style={styles.rowText}>
-                <Text style={styles.username}>{item.username}</Text>
-                {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
-              </View>
-              <Pressable
-                style={styles.unblock}
-                onPress={() => unblock.mutate(item.id)}
-                disabled={unblock.isPending}
-                accessibilityRole="button"
-                accessibilityLabel={`Unblock ${item.username}`}
-              >
-                <Text style={styles.unblockText}>Unblock</Text>
-              </Pressable>
+      <FlatList
+        data={blocked.data ?? []}
+        keyExtractor={(p) => p.id}
+        contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          <Text style={styles.intro}>
+            A blocked member cannot see your photographs or profile, and you will not see theirs. Neither
+            of you is told.
+          </Text>
+        }
+        ListEmptyComponent={
+          blocked.isFetched ? <EmptyState title="Nobody blocked" body="You can block a member from their profile." /> : null
+        }
+        renderItem={({ item }) => (
+          <View style={styles.row}>
+            <Avatar path={item.avatar_url} username={item.username} size={40} />
+            <View style={styles.rowText}>
+              <Text style={styles.username}>{item.username}</Text>
+              {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
             </View>
-          )}
-        />
-      )}
+            <Pressable
+              style={styles.unblock}
+              onPress={() => unblock.mutate(item.id)}
+              disabled={unblock.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={`Unblock ${item.username}`}
+            >
+              <Text style={styles.unblockText}>Unblock</Text>
+            </Pressable>
+          </View>
+        )}
+      />
     </Screen>
   );
 }

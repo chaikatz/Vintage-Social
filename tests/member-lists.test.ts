@@ -68,7 +68,11 @@ describe("a member list that could not be read", () => {
   ] as const) {
     it(`${file} says so, with a way to try again, rather than calling it empty`, () => {
       const src = code(file);
-      expect(src).toMatch(new RegExp(`\\{${q}\\.isError && !${q}\\.data \\? \\(\\s*<LoadFailed [^>]*onRetry=\\{\\(\\) => ${q}\\.refetch\\(\\)\\} />`));
+      expect(src).toMatch(
+        new RegExp(
+          `if \\(${q}\\.isError && !${q}\\.data\\) \\{\\s*return \\(\\s*<Screen padded=\\{false\\}>[^]*?<LoadFailed [^>]*onRetry=\\{\\(\\) => ${q}\\.refetch\\(\\)\\} />\\s*</Screen>`,
+        ),
+      );
     });
   }
 });

@@ -36,9 +36,6 @@ export default function Share() {
   const [selected, setSelected] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  // Checked and set in the tap itself: the bar only goes quiet once React
-  // has rendered, and a second tap in that moment sent every letter twice.
-  const sending = useRef(false);
 
   const postQ = useQuery({
     queryKey: ["post", postId],
@@ -56,6 +53,10 @@ export default function Share() {
     () => (post ? mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path) : null),
     [post],
   );
+
+  // Checked and set in the tap itself: the bar only goes quiet once React
+  // has rendered, and a second tap in that moment sent every letter twice.
+  const sending = useRef(false);
 
   const toggle = (id: string) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
