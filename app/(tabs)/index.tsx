@@ -150,7 +150,7 @@ export default function Home() {
   const openProfile = useCallback((username: string) => router.push(`/user/${username}`), [router]);
   const more = useCallback((p: PostWithAuthor) => onMore(p), [onMore]);
   const renderItem = useCallback(
-    ({ item }: { item: (typeof posts)[number] }) => (
+    ({ item, index }: { item: (typeof posts)[number]; index: number }) => (
       <PostCard
         post={counted(item, likeCountFor(item))}
         likedByMe={isLiked(item)}
@@ -162,6 +162,9 @@ export default function Home() {
         comments={commentsOrNone(commentsFor(item))}
         onMore={more}
         active={focused && item.id === visibleId}
+        // The photographs on the first screen are fetched ahead of the
+        // ones drawn below it, waiting for the reader.
+        priority={index < FIRST_SCREEN ? "high" : "normal"}
       />
     ),
     [counted, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, more, openProfile, visibleId, focused],
@@ -197,7 +200,20 @@ export default function Home() {
         onEndReached={() => {
           if (feed.hasNextPage && !feed.isFetchingNextPage) feed.fetchNextPage();
         }}
-        onEndReachedThreshold={0.6}
+        // The next page is asked for two screens before the end, so it is
+        // usually there before the reader is.
+        onEndReachedThreshold={2}
+        // Cards are drawn four screens either side of the reader and let go
+        // past that, their photographs and players with them; the list's
+        // default is ten screens either side, every card of a first page
+        // and more, each holding a full-width photograph and any clip's
+        // player. Four screens ahead is still several cards: they are
+        // drawn, and their photographs fetched, before they are reached.
+        windowSize={HOME_WINDOW}
+        // The list keeps its first draw for good; four cards are more than
+        // the first screen, and the rest are drawn a few at a time.
+        initialNumToRender={HOME_FIRST_DRAW}
+        maxToRenderPerBatch={HOME_BATCH}
         ListHeaderComponent={header}
         ListEmptyComponent={
           feed.isLoading ? (
@@ -222,6 +238,15 @@ export default function Home() {
     </Screen>
   );
 }
+
+/** Screens of cards drawn around the reader: four either side, and the one in view. */
+const HOME_WINDOW = 9;
+/** Cards in the list's first draw, which it keeps for good. */
+const HOME_FIRST_DRAW = 4;
+/** Cards drawn at a time as the reader goes on. */
+const HOME_BATCH = 4;
+/** Cards whose photographs are fetched first: what the first screen shows. */
+const FIRST_SCREEN = 2;
 
 const styles = StyleSheet.create({
   list: { paddingVertical: 8 },
