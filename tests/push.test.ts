@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/supabase", () => ({ supabase: {} }));
 vi.mock("@/lib/env", () => ({ isDemoMode: () => true }));
 
-const { routeForNotification } = await import("@/utils/pushRoute");
+const { routeForNotification, tapFollower } = await import("@/utils/pushRoute");
 const { parsePrefs, DEFAULT_PREFS } = await import("@/api/notifications");
 
 describe("where a tapped notice lands", () => {
@@ -43,5 +43,79 @@ describe("what a member wants to hear about", () => {
     expect(prefs.posts).toBe(true);
     expect(prefs.memories).toBe(true);
     expect("user_id" in prefs).toBe(false);
+  });
+});
+
+describe("a tapped notice, followed", () => {
+  const notice = (id: string, data: Record<string, unknown>, action = "expo.modules.notifications.actions.DEFAULT") => ({
+    actionIdentifier: action,
+    notification: { request: { identifier: id, content: { data } } },
+  });
+
+  it("goes where it points once, though a cold start hears it twice", () => {
+    const navigate = vi.fn();
+    const clear = vi.fn();
+    const follow = tapFollower({ navigate, clear });
+    const tap = notice("n1", { kind: "like", postId: "p1" });
+    follow(tap); // the response the launch asked for
+    follow(tap); // the same tap, from the listener
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith("/post/p1");
+    // Cleared once followed, so it is not the last response any more.
+    expect(clear).toHaveBeenCalledTimes(1);
+    // Another notice is another tap.
+    follow(notice("n2", { kind: "message" }));
+    expect(navigate).toHaveBeenLastCalledWith("/messages");
+  });
+
+  it("waits for the navigator rather than losing a tap heard before it is up", () => {
+    const pending: (() => void)[] = [];
+    let ready = false;
+    const navigate = vi.fn(() => {
+      if (!ready) throw new Error("Attempted to navigate before mounting the Root Layout component.");
+    });
+    const follow = tapFollower({ navigate, clear: () => undefined, later: (run) => void pending.push(run) });
+    follow(notice("n1", { kind: "follow", username: "ansel" }));
+    expect(navigate).toHaveBeenCalledTimes(1);
+    pending.shift()!();
+    expect(navigate).toHaveBeenCalledTimes(2);
+    ready = true;
+    pending.shift()!();
+    expect(navigate).toHaveBeenCalledTimes(3);
+    expect(navigate).toHaveBeenLastCalledWith("/user/ansel");
+    expect(pending).toHaveLength(0);
+  });
+
+  it("gives up after its waits, and never throws to the listener", () => {
+    const pending: (() => void)[] = [];
+    const navigate = vi.fn(() => {
+      throw new Error("not ready");
+    });
+    const follow = tapFollower({ navigate, clear: () => undefined, later: (run) => void pending.push(run), waits: [1, 1] });
+    expect(() => follow(notice("n1", { kind: "message" }))).not.toThrow();
+    while (pending.length) pending.shift()!();
+    expect(navigate).toHaveBeenCalledTimes(3);
+  });
+
+  it("follows nothing for a notice with nowhere to go, or no notice at all", () => {
+    const navigate = vi.fn();
+    const clear = vi.fn(() => {
+      throw new Error("unavailable");
+    });
+    const follow = tapFollower({ navigate, clear });
+    follow(notice("n1", { kind: "unknown" }));
+    follow(null);
+    follow(undefined);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("is the one follower the app uses, for the launch's response and the listener alike", async () => {
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    const src = readFileSync(path.resolve(import.meta.dirname, "..", "src/utils/push.ts"), "utf8");
+    expect(src).toMatch(/const go = \(follow \?\?= tapFollower\(\{/);
+    expect(src).toMatch(/clear: \(\) => Notifications\.clearLastNotificationResponse\(\)/);
+    expect(src).toMatch(/addNotificationResponseReceivedListener\(go\)/);
+    expect(src).not.toMatch(/router\.push\(route as never\);\s*\};/);
   });
 });

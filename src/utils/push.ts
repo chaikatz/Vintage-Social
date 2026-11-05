@@ -7,7 +7,7 @@ import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { registerPushToken, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
-import { routeForNotification } from "./pushRoute";
+import { tapFollower } from "./pushRoute";
 
 /**
  * The phone's side of notifications.
@@ -98,6 +98,9 @@ export function usePushRegistration(userId: string | null | undefined, approved:
   }, [userId, approved]);
 }
 
+/** The app's one follower of taps (see useNotificationTaps). */
+let follow: ReturnType<typeof tapFollower> | null = null;
+
 /**
  * Follow a tapped notice to the thing it is about, and keep Activity
  * fresh while the app is open. Mount once, anywhere under the router.
@@ -108,16 +111,20 @@ export function useNotificationTaps(): void {
   useEffect(() => {
     if (Platform.OS === "web" || isDemoMode()) return;
 
-    const go = (response: Notifications.NotificationResponse | null | undefined) => {
-      const data = response?.notification.request.content.data as Record<string, unknown> | undefined;
-      const route = routeForNotification(data);
-      if (route) router.push(route as never);
-    };
+    // Each tap followed once, and waited for if the navigator is not up
+    // yet (pushRoute.ts). Kept for the life of the app, not of this
+    // effect, so a tap already followed is never followed again.
+    const go = (follow ??= tapFollower({
+      navigate: (route) => router.push(route as never),
+      clear: () => Notifications.clearLastNotificationResponse(),
+    }));
 
     // The tap that opened the app from cold, if there was one.
-    Notifications.getLastNotificationResponseAsync().then((last) => {
-      if (last) go(last);
-    });
+    Notifications.getLastNotificationResponseAsync()
+      .then((last) => {
+        if (last) go(last);
+      })
+      .catch(() => undefined);
     const tapped = Notifications.addNotificationResponseReceivedListener(go);
     // A notice arriving while the app is open: what it describes is new,
     // so Activity and the unread count go and look.
