@@ -143,6 +143,16 @@ describe("the Settings screen", () => {
     for (const s of switches) expect(s).toMatch(/accessibilityLabel=/);
   });
 
+  it("asks whether there is another admin before anything of the only admin's is deleted", () => {
+    const del = settings.slice(settings.indexOf("setDeleting(true);"), settings.indexOf("queryClient.clear();", settings.indexOf("setDeleting(true);")));
+    const check = del.indexOf("if (isAdmin && !(await anotherAdminExists(userId))) {");
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(del.indexOf("await deleteMyAccount(userId);"));
+    expect(del.slice(check, del.indexOf("await deleteMyAccount(userId);"))).toMatch(/setDeleting\(false\);[\s\S]*return;/);
+    const fn = settings.slice(settings.indexOf("async function anotherAdminExists"), settings.indexOf("export default function Settings"));
+    expect(fn).toMatch(/\.eq\("role", "admin"\)\s*\.neq\("id", myId\);\s*if \(error\) throw error;\s*return \(count \?\? 0\) > 0;/);
+  });
+
   it("says where to write when the phone has no mail account", () => {
     expect(settings).toMatch(/Linking\.openURL\(supportMailto\("VINTAGE support"\) \?\? ""\)\.catch\(/);
   });

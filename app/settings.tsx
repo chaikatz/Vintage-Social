@@ -31,10 +31,28 @@ import { deleteMyAccount } from "@/api/account";
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL, supportMailto } from "@/config/launch";
 import { createSettingWriter } from "@/components/settingWriter";
 
+/**
+ * Whether the club has an admin besides this one. The database refuses to
+ * delete the only admin's account, but only after the app has already
+ * removed every one of that member's files (deleteMyAccount removes the
+ * files first), so the only admin who tapped Delete kept the account and
+ * lost every photograph in it. Asked before anything is removed.
+ */
+async function anotherAdminExists(myId: string): Promise<boolean> {
+  if (isDemoMode()) return true;
+  const { count, error } = await supabase
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "admin")
+    .neq("id", myId);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
 export default function Settings() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { session, profile, refreshProfile, signOut } = useSession();
+  const { session, profile, isAdmin, refreshProfile, signOut } = useSession();
   const [deleting, setDeleting] = useState(false);
 
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
@@ -200,6 +218,14 @@ export default function Settings() {
                   if (!userId) return;
                   setDeleting(true);
                   try {
+                    if (isAdmin && !(await anotherAdminExists(userId))) {
+                      setDeleting(false);
+                      showAlert(
+                        "You are the only admin",
+                        "Make another member an admin before deleting this account, or the club has no one to let anyone in. Nothing has been deleted.",
+                      );
+                      return;
+                    }
                     await deleteMyAccount(userId);
                     queryClient.clear();
                     await signOut();
