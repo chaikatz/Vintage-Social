@@ -1,5 +1,6 @@
 import { Linking, Platform } from "react-native";
 import * as MediaLibrary from "expo-media-library";
+import { cancelDevelop, developImage, libraryModule } from "@/darkroom/nativeLibrary";
 import { prepareImage } from "@/media/nativeMedia";
 import { captureDateFromEpoch } from "./exif";
 import { sameNightWindow } from "./memories";
@@ -288,10 +289,49 @@ export function dayRows(days: readonly LibraryDay[], perRow: number): DayRow[] {
   return out;
 }
 
+/** How long a photograph may take to come down from iCloud before the picker says it could not open it. */
+export const OPEN_TIMEOUT_MS = 60_000;
+
+let renditions = 0;
+
+/**
+ * The photograph as the Memory Room develops one (`modules/vintage-library`):
+ * Photos renders its current version at the editor's size, upright and in
+ * sRGB, as a plain JPEG with nothing of the original carried over, and
+ * brings it down from iCloud when it must. Never the full original, never
+ * a Live Photo's video, and never a full-size render of an edited one,
+ * which is what reading the photograph's own file asked Photos for.
+ *
+ * `null` when there is no module (the browser, a dev client built before
+ * it) or Photos could not make it, so the file is read instead; `"gone"`
+ * when the photograph is no longer in the library, or did not come within
+ * `OPEN_TIMEOUT_MS`, when there is nothing more to try.
+ */
+async function rendition(photo: LibraryPhoto): Promise<{ uri: string; width: number; height: number } | "gone" | null> {
+  const mod = libraryModule();
+  if (!mod) return null;
+  renditions += 1;
+  const requestId = `open-${Date.now().toString(36)}-${renditions}`;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const late = new Promise<"late">((resolve) => {
+    timer = setTimeout(() => resolve("late"), OPEN_TIMEOUT_MS);
+  });
+  const result = await Promise.race([developImage(mod, photo.id, { maxSide: PICKED_MAX_SIDE, allowNetwork: true, requestId }), late]);
+  if (timer) clearTimeout(timer);
+  if (result === "late") {
+    cancelDevelop(mod, requestId);
+    return "gone";
+  }
+  if (result.status === "ok") return { uri: result.uri, width: result.width, height: result.height };
+  return result.status === "missing" ? "gone" : null;
+}
+
 /**
  * What the compose screen needs to open on a library photograph: a file
  * it can read, its size, and when it was taken. The `ph://` URI the
- * library hands out is not a file, so the real path is looked up here.
+ * library hands out is not a file, so a copy is made here: the Memory
+ * Room's rendition where the module is there (`rendition`), otherwise the
+ * photograph's own file, decoded.
  */
 export async function composeParamsFor(photo: LibraryPhoto): Promise<{
   uri: string;
@@ -301,6 +341,18 @@ export async function composeParamsFor(photo: LibraryPhoto): Promise<{
   duration: string;
   takenAt: string;
 } | null> {
+  const made = await rendition(photo).catch(() => null);
+  if (made === "gone") return null;
+  if (made) {
+    return {
+      uri: made.uri,
+      mediaType: "photo",
+      width: String(Math.round(made.width)),
+      height: String(Math.round(made.height)),
+      duration: "0",
+      takenAt: captureDateFromEpoch(photo.creationTime) ?? "",
+    };
+  }
   try {
     const info = await MediaLibrary.getAssetInfoAsync(photo.id);
     const original = info.localUri ?? info.uri;

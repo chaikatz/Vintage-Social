@@ -111,6 +111,11 @@ vi.mock("expo-media-library", () => ({
 
 vi.mock("expo-image-picker", () => ({}));
 vi.mock("@/media/nativeMedia", () => ({ prepareImage: async () => ({ uri: "", width: 0, height: 0 }) }));
+vi.mock("@/darkroom/nativeLibrary", () => ({
+  libraryModule: () => null,
+  developImage: async () => ({ status: "failed" }),
+  cancelDevelop: () => undefined,
+}));
 vi.mock("@/utils/captureDate", () => ({ captureDateForAsset: async () => null }));
 vi.mock("@/utils/alert", () => ({ showAlert: () => undefined }));
 

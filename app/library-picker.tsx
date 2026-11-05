@@ -102,7 +102,8 @@ export default function LibraryPicker() {
             <View style={{ flexDirection: "row", gap: GAP }}>
               {item.photos.map((p) => (
                 <Pressable key={p.id} onPress={() => choose(p)} style={{ width: size, height: size }}>
-                  <Image source={p.uri} style={styles.cell} contentFit="cover" transition={60} />
+                  {/* Read straight off the phone at the cell's size, and kept in memory only: nothing from the camera roll is written to the app's disk cache. */}
+                  <Image source={p.uri} style={styles.cell} contentFit="cover" transition={60} cachePolicy="memory" />
                   {opening === p.id ? (
                     <View style={styles.opening}>
                       <ActivityIndicator color={colors.onCamera} />
