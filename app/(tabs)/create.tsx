@@ -8,6 +8,7 @@ import { Screen } from "@/components/Screen";
 import { GateButton } from "@/components/gate/GateButton";
 import { todaysPrint } from "@/components/onThisDayPrint";
 import { colors, spacing, type } from "@/theme";
+import { showAlert } from "@/utils/alert";
 import { fetchUserPosts } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
 import { pickFromLibrary, takeForCompose, type PickedParams } from "@/utils/pickForCompose";
@@ -62,6 +63,11 @@ export default function Create() {
     try {
       const params = await get();
       if (params) router.push({ pathname: "/compose", params });
+    } catch {
+      // The picker or the camera can refuse outright (an iCloud original
+      // that would not come down, a clip that could not be exported). The
+      // tap used to end in silence, as if it had not been made.
+      showAlert("Couldn’t open that", "It couldn’t be read here. Try again in a moment, or choose another.");
     } finally {
       opening.current = false;
       setBusy(null);
