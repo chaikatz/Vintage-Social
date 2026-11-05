@@ -6,7 +6,6 @@ import { countLabel, monthDay, monthName } from "@/darkroom/labels";
 import type { DarkroomMode } from "@/darkroom/types";
 import type { Where } from "./chapter";
 import { useLook } from "./look";
-import { room } from "./room";
 import { RoomText, Rule } from "./Type";
 import { Word } from "./Word";
 import { dayFolio, LOOKING, photographs, type DayState } from "./words";
@@ -20,9 +19,10 @@ const OPEN_OFFSET = 96;
  * The Contents sheet, set like the front of a photobook: the three ways
  * in, each with its folio set right on the same baseline, then the years
  * the library holds, oldest first, the way an archive reads forward —
- * and under the year that is open, its twelve months. A short gold
- * ribbon hangs in the margin beside where you are. No dot leaders, no
- * decades, no thumbnails.
+ * and under the year that is open, its twelve months. A short ribbon in
+ * the accent hangs in the margin beside where you are. No dot leaders,
+ * no decades, no thumbnails. It lies on the raised paper of the print the
+ * app is showing.
  *
  * It is the one place the chapter changes. Every choice closes the sheet
  * first; whatever pushes a screen or opens a picker waits for the sheet
@@ -87,9 +87,11 @@ export function Contents({
     scroll.current?.scrollTo({ y: Math.max(0, e.nativeEvent.layout.y - OPEN_OFFSET), animated: false });
   };
 
+  const { room } = useLook();
   const openYear = where?.mode === "year" ? where.year : null;
   const nothingToday = day === "none";
   const cell = Math.floor((width - 48) / 6);
+  const rule = { backgroundColor: room.lineStrong };
 
   return (
     <Modal
@@ -99,7 +101,7 @@ export function Contents({
       onRequestClose={onClose}
       onDismiss={onDismiss}
     >
-      <View style={styles.root} onAccessibilityEscape={onClose} testID="darkroom-contents-sheet">
+      <View style={[styles.root, { backgroundColor: room.sheet }]} onAccessibilityEscape={onClose} testID="darkroom-contents-sheet">
         <View style={styles.head}>
           <RoomText kind="eyebrow" accessibilityRole="header" maxFontSizeMultiplier={2.4}>
             Contents
@@ -117,7 +119,7 @@ export function Contents({
             </RoomText>
           </Pressable>
         </View>
-        <View style={styles.headRule} />
+        <View style={[styles.headRule, rule]} />
 
         <ScrollView ref={scroll} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 32 }]}>
           <Line
@@ -160,7 +162,7 @@ export function Contents({
             <RoomText kind="eyebrow" maxFontSizeMultiplier={2.4}>
               By year
             </RoomText>
-            <View style={styles.sectionRule} />
+            <View style={[styles.sectionRule, rule]} />
           </View>
           {years == null ? (
             <RoomText kind="foot" maxFontSizeMultiplier={2.4} style={styles.looking}>
@@ -247,6 +249,7 @@ function Line({
   onPress: () => void;
   onPlaced?: (e: LayoutChangeEvent) => void;
 }) {
+  const { room } = useLook();
   return (
     <Pressable
       onPress={onPress}
@@ -258,7 +261,7 @@ function Line({
       accessibilityState={{ selected: current, disabled }}
       testID={`darkroom-contents-${title.toLowerCase().replace(/\s+/g, "-")}`}
     >
-      <View style={[styles.ribbon, { backgroundColor: current ? room.gold : "transparent" }]} accessible={false} />
+      <View style={[styles.ribbon, { backgroundColor: current ? room.accent : "transparent" }]} accessible={false} />
       <View style={stacked ? styles.lineStacked : styles.lineRow}>
         <RoomText kind={year ? "contentsYear" : "contentsLine"} tone={disabled ? "faint" : "ink"} maxFontSizeMultiplier={2.4} style={styles.title}>
           {title}
@@ -303,16 +306,16 @@ function Month({
       <RoomText kind="month" tone={empty ? "faint" : "soft"} maxFontSizeMultiplier={2.4}>
         {monthName(month).slice(0, 3)}
       </RoomText>
-      <Rule width={14} color={room.gold} style={[styles.monthRule, { opacity: inView ? (look.contrast ? 1 : 0.8) : 0 }]} />
+      <Rule width={14} color={look.room.accent} style={[styles.monthRule, { opacity: inView ? (look.contrast ? 1 : 0.8) : 0 }]} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: room.well },
+  root: { flex: 1 },
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 18, paddingHorizontal: 24, minHeight: 62 },
   done: { minHeight: 44, minWidth: 44, alignItems: "flex-end", justifyContent: "center" },
-  headRule: { height: 1, backgroundColor: room.lineStrong, marginHorizontal: 24 },
+  headRule: { height: 1, marginHorizontal: 24 },
   scroll: { paddingHorizontal: 24, paddingTop: 14 },
   line: { flexDirection: "row", alignItems: "center", minHeight: 52, marginLeft: -20 },
   ribbon: { width: 12, height: 1, marginRight: 8 },
@@ -322,7 +325,7 @@ const styles = StyleSheet.create({
   folioUnder: { marginTop: 4 },
   pruned: { marginTop: -6, marginBottom: 6 },
   section: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 32, marginBottom: 6 },
-  sectionRule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: room.lineStrong },
+  sectionRule: { flex: 1, height: StyleSheet.hairlineWidth },
   looking: { marginTop: 10 },
   months: { flexDirection: "row", flexWrap: "wrap", marginBottom: 8 },
   month: { height: 44, alignItems: "center", justifyContent: "center" },

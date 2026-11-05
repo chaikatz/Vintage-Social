@@ -12,7 +12,6 @@ import {
 } from "react-native";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { setStatusBarStyle } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { pickFromLibrary } from "@/utils/pickForCompose";
 import { useReducedMotion } from "@/utils/useReducedMotion";
@@ -29,7 +28,7 @@ import { haptics } from "@/components/darkroom/haptics";
 import { LookContext, motion, type Look } from "@/components/darkroom/look";
 import { Plate } from "@/components/darkroom/Plate";
 import { PrintPage } from "@/components/darkroom/PrintPage";
-import { room } from "@/components/darkroom/room";
+import { rooms, useScheme } from "@/components/darkroom/room";
 import { RunningHead } from "@/components/darkroom/RunningHead";
 import { Stage, type StageHandle } from "@/components/darkroom/Stage";
 import { TitleCard } from "@/components/darkroom/TitleCard";
@@ -69,8 +68,9 @@ import {
  * Swipe for the next, or tap the photograph: its right half turns on, its
  * left half back. DEVELOP takes the print into the ordinary editor
  * to post; SET ASIDE keeps it on this phone to come back to. Printed on
- * the dark page whatever the appearance, so the photographs are the only
- * light in the room.
+ * the app's own page, light or dark as the appearance is, and changing
+ * with it (`useScheme` in room.ts); the status bar is the app's own,
+ * which follows the appearance in the same way.
  *
  * This file puts the room together. The chapters and where the member is
  * are `useDarkroom`; develop is `useDevelop`; the pager is `Stage`, each
@@ -118,7 +118,11 @@ export default function Darkroom() {
   const contrast = useIncreaseContrast();
   const bold = useBoldText();
   const screenReader = useScreenReader();
-  const look = useMemo<Look>(() => ({ contrast, bold, reduceMotion, screenReader }), [contrast, bold, reduceMotion, screenReader]);
+  const scheme = useScheme();
+  const look = useMemo<Look>(
+    () => ({ room: rooms[scheme], contrast, bold, reduceMotion, screenReader }),
+    [scheme, contrast, bold, reduceMotion, screenReader],
+  );
   const focused = useIsFocused();
   const online = useOnline();
   const shelf = useSetAside();
@@ -167,18 +171,16 @@ export default function Darkroom() {
   const currentState = current ? stateOf(current.id) : IDLE;
   const words = stateWords(currentState, { setAside: current ? shelfIds.has(current.id) : false, shelfChapter, limited });
 
-  // --- focus, and the status bar ---------------------------------------------
+  // --- focus -------------------------------------------------------------------
 
   // Read through a ref, so a change of handler never reads as a blur.
   const onFocus = useRef(() => {});
   const onBlur = useRef(() => {});
   onFocus.current = () => {
-    setStatusBarStyle("light", true);
     darkroom.focus();
     develop.returned();
   };
   onBlur.current = () => {
-    setStatusBarStyle("auto", true);
     develop.left();
     darkroom.blur();
   };
@@ -495,7 +497,7 @@ export default function Darkroom() {
   return (
     <LookContext.Provider value={look}>
       <View
-        style={styles.root}
+        style={[styles.root, { backgroundColor: look.room.page }]}
         // Magic Tap is DEVELOP (§11.1) where React Native delivers it. On
         // the new architecture in 0.81 it never arrives: the view reads its
         // handler under another name (onAccessibilityMagicTap) than the one
@@ -606,6 +608,6 @@ export default function Darkroom() {
 const ZERO = new Animated.Value(0);
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: room.page },
+  root: { flex: 1 },
   stage: { flex: 1 },
 });

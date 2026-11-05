@@ -4,9 +4,10 @@ import { accessibilitySetting, useAccessibilitySetting } from "./useReducedMotio
 /**
  * The rest of what the Darkroom follows from iOS Settings › Accessibility,
  * besides Reduce Motion: Increase Contrast, Bold Text and VoiceOver. The
- * room is always printed on the dark page, whatever the appearance, so it
- * cannot leave these to the system colours the way the rest of the app
- * does; each one is read here and applied by the room itself.
+ * room sets its own type and rules from plain strings of the print the
+ * app is showing, light or dark, rather than the system's colours, so it
+ * cannot leave these to the system the way the rest of the app does; each
+ * one is read here and applied by the room itself, in either print.
  *
  * Each reads the current value when first wanted and follows its change
  * event until no screen wants it (see `useReducedMotion.ts`). Away from

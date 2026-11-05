@@ -27,7 +27,6 @@ import {
   ratioOf,
 } from "./geometry";
 import { useLook } from "./look";
-import { room } from "./room";
 import { RoomText } from "./Type";
 import { placeholderWords, type PlateTrouble } from "./words";
 
@@ -154,7 +153,10 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
   return (
     <View style={{ width, height: stageHeight }}>
       <View
-        style={[styles.plate, { top, left: (width - box.width) / 2, width: box.width, height: box.height }]}
+        style={[
+          styles.plate,
+          { top, left: (width - box.width) / 2, width: box.width, height: box.height, backgroundColor: look.room.well },
+        ]}
         testID={current ? "darkroom-plate" : undefined}
       >
         <Zoom box={box} current={current} onTap={props.onTap}>
@@ -163,7 +165,7 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
         {feedCrops(ratio) ? <Blades plate={box} ratio={ratio} closed={props.bladesClosed} /> : null}
         <View
           pointerEvents="none"
-          style={[StyleSheet.absoluteFill, styles.hairline, { borderColor: look.contrast ? room.lineStrong : room.line }]}
+          style={[StyleSheet.absoluteFill, styles.hairline, { borderColor: look.contrast ? look.room.lineStrong : look.room.line }]}
         />
       </View>
       <View style={[styles.caption, { top: top + box.height, left: (width - captionW) / 2 }]}>
@@ -316,7 +318,7 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
     const why: PlateTrouble = gone ? "missing" : (trouble ?? "missing");
     const words = placeholderWords(why, limited);
     return (
-      <View style={[styles.well, styles.placeholder]}>
+      <View style={[styles.well, { backgroundColor: look.room.well }, styles.placeholder]}>
         <RoomText kind="small" maxFontSizeMultiplier={1.5} style={styles.center}>
           {words.line1}
         </RoomText>
@@ -331,7 +333,7 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
   const ratio = ratioOf(print);
   const proofHeight = PROOF_WIDTH / ratio;
   return (
-    <View style={styles.well}>
+    <View style={[styles.well, { backgroundColor: look.room.well }]}>
       {images && source != null && proof && !drawn ? (
         <View style={styles.proofSlot} pointerEvents="none">
           <View style={{ width: PROOF_WIDTH, height: proofHeight, transform: [{ scale: box.width / PROOF_WIDTH }] }}>
@@ -373,9 +375,9 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
 }
 
 const styles = StyleSheet.create({
-  plate: { position: "absolute", overflow: "hidden", backgroundColor: room.well },
+  plate: { position: "absolute", overflow: "hidden" },
   hairline: { borderWidth: StyleSheet.hairlineWidth },
-  well: { flex: 1, backgroundColor: room.well, overflow: "hidden" },
+  well: { flex: 1, overflow: "hidden" },
   proofSlot: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   placeholder: { alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },
   placeholderLine: { marginTop: 6 },

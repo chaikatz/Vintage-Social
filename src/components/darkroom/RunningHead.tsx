@@ -1,7 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
-import { room } from "./room";
+import { useLook } from "./look";
 import { RoomText } from "./Type";
 import { CHAPTER_HINT, CONTENTS_HINT } from "./words";
 
@@ -32,6 +32,7 @@ export function RunningHead({
   onBack: () => void;
   onContents: () => void;
 }) {
+  const { room } = useLook();
   return (
     <View style={[styles.head, { paddingTop: top }]} pointerEvents="box-none">
       <View style={styles.side}>

@@ -2,10 +2,18 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The theme reads the platform for its faces and its dynamic colours; the room reads only its plain strings.
+// The theme reads the platform for its faces and its dynamic colours; the room reads only its plain strings,
+// and the appearance, to know which print's.
+const phone = vi.hoisted(() => ({ os: "ios", scheme: "light" as "light" | "dark" | null }));
 vi.mock("react-native", () => ({
-  Platform: { OS: "ios", select: (o: Record<string, unknown>) => o.ios ?? o.default },
+  Platform: {
+    get OS() {
+      return phone.os;
+    },
+    select: (o: Record<string, unknown>) => o.ios ?? o.default,
+  },
   DynamicColorIOS: (o: { dark: string }) => o.dark,
+  useColorScheme: () => phone.scheme,
 }));
 
 // What a visit reads besides the library: the phone's own stores, faked in memory.
@@ -77,9 +85,9 @@ import {
   type Chapter,
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, type Reader } from "@/components/darkroom/dealer";
-import { roles, room, toneColor } from "@/components/darkroom/room";
+import { contrastRatio, roles, rooms, toneColor, useScheme, type Room, type Scheme } from "@/components/darkroom/room";
 import { Visit } from "@/components/darkroom/visit";
-import { dark } from "@/theme";
+import { dark, light } from "@/theme";
 import type { LibrarySource, Print } from "@/darkroom/types";
 
 const NOW = new Date(2026, 9, 22, 12, 0).getTime(); // 22 October 2026, noon
@@ -93,11 +101,88 @@ const day = (y: number, m: number, d: number, h = 12) => new Date(y, m, d, h).ge
 // ---------------------------------------------------------------------------
 
 describe("the room's page", () => {
-  it("is the deepest brown, with the plate's well a step up", () => {
-    expect(room.page).toBe(dark.paperSunken);
-    expect(room.well).toBe(dark.paper);
-    expect(room.gold).toBe(dark.accent);
-    expect(room.lineStrong).toBe(dark.borderStrong);
+  const prints: [Scheme, typeof light | typeof dark][] = [
+    ["light", light],
+    ["dark", dark],
+  ];
+
+  /** WCAG 2's contrast ratio, worked out here rather than trusted from the room. */
+  function ratio(a: string, b: string): number {
+    const lum = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      const [r, g, bl] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+    };
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  }
+
+  it("is the app's own page in either print, with the well a step off it and the sheet raised", () => {
+    expect(rooms.light.page).toBe(light.paper);
+    expect(rooms.dark.page).toBe(dark.paper);
+    expect(rooms.light.well).toBe(light.paperSunken);
+    expect(rooms.dark.well).toBe(dark.paperRaised);
+    for (const [scheme, p] of prints) {
+      expect(rooms[scheme].sheet, scheme).toBe(p.paperRaised);
+      expect(rooms[scheme].ink, scheme).toBe(p.ink);
+      expect(rooms[scheme].line, scheme).toBe(p.border);
+      expect(rooms[scheme].lineStrong, scheme).toBe(p.borderStrong);
+    }
+  });
+
+  it("sets every ink at AA or better on every ground it is set on, in both prints, Increase Contrast or not", () => {
+    for (const [scheme] of prints) {
+      const r: Room = rooms[scheme];
+      for (const contrast of [false, true]) {
+        for (const tone of ["ink", "soft", "faint"] as const) {
+          for (const ground of [r.page, r.well, r.sheet]) {
+            expect(ratio(toneColor(r, tone, contrast), ground), `${scheme} ${tone} on ${ground}`).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+        for (const ground of [r.page, r.sheet]) {
+          expect(ratio(toneColor(r, "accent", contrast), ground), `${scheme} accent on ${ground}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+    expect(contrastRatio("#000000", "#FFFFFF")).toBeCloseTo(21, 5);
+    expect(contrastRatio(light.inkFaint, light.paper)).toBeCloseTo(ratio(light.inkFaint, light.paper), 5);
+  });
+
+  it("takes each ink and the accent from the theme, a step stronger only where the theme's would not read", () => {
+    for (const [scheme, p] of prints) {
+      const r = rooms[scheme];
+      const grounds = [r.page, r.well, r.sheet];
+      const reads = (ink: string, on: string[]) => on.every((g) => ratio(ink, g) >= 4.5);
+      expect(r.soft, scheme).toBe(reads(p.inkSoft, grounds) ? p.inkSoft : p.ink);
+      expect(r.faint, scheme).toBe(reads(p.inkFaint, grounds) ? p.inkFaint : r.soft);
+      expect(r.accent, scheme).toBe(reads(p.accent, [r.page, r.sheet]) ? p.accent : p.ink);
+    }
+    // The light print's faint ink is too pale for the room's small capitals on paper: they are set soft there.
+    expect(ratio(light.inkFaint, light.paper)).toBeLessThan(4.5);
+    expect(rooms.light.faint).toBe(light.inkSoft);
+    // Its accent, burnt sienna, reads on paper: the room's marks are the theme's own.
+    expect(rooms.light.accent).toBe(light.accent);
+  });
+
+  it("follows the appearance on the iPhone, and keeps to the light print elsewhere, as the theme does", () => {
+    try {
+      phone.os = "ios";
+      phone.scheme = "dark";
+      expect(useScheme()).toBe("dark");
+      phone.scheme = "light";
+      expect(useScheme()).toBe("light");
+      phone.scheme = null;
+      expect(useScheme()).toBe("light");
+      phone.os = "web";
+      phone.scheme = "dark";
+      expect(useScheme()).toBe("light");
+    } finally {
+      phone.os = "ios";
+      phone.scheme = "light";
+    }
   });
 
   it("pairs every tracked role with its trailing space taken back", () => {
@@ -107,11 +192,15 @@ describe("the room's page", () => {
     }
   });
 
-  it("sets faint type soft under Increase Contrast, and nothing else changes ink", () => {
-    expect(toneColor("faint", false)).toBe(room.faint);
-    expect(toneColor("faint", true)).toBe(room.soft);
-    expect(toneColor("gold", true)).toBe(room.gold);
-    expect(toneColor("ink", true)).toBe(room.ink);
+  it("sets faint type soft under Increase Contrast in either print, and nothing else changes ink", () => {
+    for (const [scheme] of prints) {
+      const r = rooms[scheme];
+      expect(toneColor(r, "faint", false), scheme).toBe(r.faint);
+      expect(toneColor(r, "faint", true), scheme).toBe(r.soft);
+      expect(toneColor(r, "accent", true), scheme).toBe(r.accent);
+      expect(toneColor(r, "ink", true), scheme).toBe(r.ink);
+      expect(toneColor(r, "soft", true), scheme).toBe(r.soft);
+    }
   });
 });
 
@@ -882,6 +971,28 @@ describe("the room's own rules, in its source", () => {
       expect(src, f).not.toMatch(/\bcolors\.[a-zA-Z]/);
       expect(src, f).not.toMatch(/components\/(GateButton|Button|EmptyState|Bone|Screen)\b/);
     }
+  });
+
+  it("takes every colour from the print the app is showing, through the room's Look", () => {
+    for (const f of files) {
+      const src = read(f);
+      const name = path.basename(f);
+      // No colour of its own, and no print fixed in place.
+      expect(src, name).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+      if (name !== "room.ts") expect(src, name).not.toMatch(/\b(dark|light)\.[a-zA-Z]+/);
+      // The two prints are chosen in one place, by the appearance.
+      if (!["room.ts", "look.ts", "darkroom.tsx"].includes(name)) expect(src, name).not.toMatch(/\brooms(\.|\[)|import \{[^}]*\brooms\b/);
+    }
+    const screen = read(files.find((f) => f.endsWith("app/darkroom.tsx"))!);
+    expect(screen).toMatch(/const scheme = useScheme\(\);/);
+    expect(screen).toMatch(/room: rooms\[scheme\]/);
+    expect(screen).toMatch(/\[scheme, contrast, bold, reduceMotion, screenReader\]/);
+    expect(screen).toMatch(/style=\{\[styles\.root, \{ backgroundColor: look\.room\.page \}\]\}/);
+  });
+
+  it("leaves the status bar to the app, which follows the appearance as the room does", () => {
+    for (const f of files) expect(read(f), path.basename(f)).not.toMatch(/expo-status-bar|setStatusBarStyle|StatusBar\b/);
+    expect(read(path.resolve(__dirname, "../app/_layout.tsx"))).toMatch(/<StatusBar style="auto" \/>/);
   });
 
   it("raises no alert and gives no failure haptic", () => {

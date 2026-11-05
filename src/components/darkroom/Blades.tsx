@@ -2,7 +2,6 @@ import React, { useEffect, useRef } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 import { bladeDepth } from "./geometry";
 import { useLook } from "./look";
-import { room } from "./room";
 
 /** In, as DEVELOP is tapped; out, a beat after the room is back in front. */
 const CLOSE_MS = 220;
@@ -41,11 +40,13 @@ export function Blades({ plate, ratio, closed }: { plate: { width: number; heigh
   const vertical = blade.axis === "vertical";
   const slide = (from: number) => shut.interpolate({ inputRange: [0, 1], outputRange: [from, 0] });
   const size = vertical ? { left: 0, right: 0, height: depth } : { top: 0, bottom: 0, width: depth };
+  const page = { backgroundColor: look.room.page };
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
       <Animated.View
         style={[
           styles.blade,
+          page,
           size,
           vertical ? { top: 0, transform: [{ translateY: slide(-depth) }] } : { left: 0, transform: [{ translateX: slide(-depth) }] },
         ]}
@@ -53,6 +54,7 @@ export function Blades({ plate, ratio, closed }: { plate: { width: number; heigh
       <Animated.View
         style={[
           styles.blade,
+          page,
           size,
           vertical ? { bottom: 0, transform: [{ translateY: slide(depth) }] } : { right: 0, transform: [{ translateX: slide(depth) }] },
         ]}
@@ -62,5 +64,5 @@ export function Blades({ plate, ratio, closed }: { plate: { width: number; heigh
 }
 
 const styles = StyleSheet.create({
-  blade: { position: "absolute", backgroundColor: room.page, opacity: BLADE_OPACITY },
+  blade: { position: "absolute", opacity: BLADE_OPACITY },
 });

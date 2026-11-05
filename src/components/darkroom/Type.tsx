@@ -1,12 +1,13 @@
 import React, { forwardRef } from "react";
 import { Animated, Text, type StyleProp, type TextProps, type TextStyle, type ViewStyle } from "react-native";
 import { useLook } from "./look";
-import { roles, room, RULE_OPACITY, toneColor, type Role, type Tone } from "./room";
+import { roles, RULE_OPACITY, toneColor, type Role, type Tone } from "./room";
 
 /**
  * The room's two marks: a line of type in one of its roles, and the short
- * rule signed beneath a word. Both answer Increase Contrast and Bold Text
- * from the room's `Look`, so no caller has to.
+ * rule signed beneath a word. Both take their ink from the print the app
+ * is showing and answer Increase Contrast and Bold Text, all from the
+ * room's `Look`, so no caller has to.
  */
 
 interface RoomTextProps extends Omit<TextProps, "style"> {
@@ -38,7 +39,7 @@ export const RoomText = forwardRef<Text, RoomTextProps>(function RoomText(props,
       style={[
         r.style,
         rest.numberOfLines != null && KEEP_TRACKING,
-        { color: toneColor(tone ?? r.tone, look.contrast) },
+        { color: toneColor(look.room, tone ?? r.tone, look.contrast) },
         look.bold && BOLD,
         style,
       ]}
@@ -47,13 +48,14 @@ export const RoomText = forwardRef<Text, RoomTextProps>(function RoomText(props,
 });
 
 /**
- * The short rule: 1 pt of ink, `width` long. Never read aloud. `scaleX`
- * draws it out from its centre, as DEVELOP's does while a print develops.
+ * The short rule: 1 pt of the print's ink, unless a colour is given,
+ * `width` long. Never read aloud. `scaleX` draws it out from its centre,
+ * as DEVELOP's does while a print develops.
  */
 export function Rule({
   width,
   scaleX,
-  color = room.ink,
+  color,
   style,
 }: {
   width: number;
@@ -68,7 +70,7 @@ export function Rule({
       importantForAccessibility="no"
       pointerEvents="none"
       style={[
-        { width, height: 1, backgroundColor: color, opacity: look.contrast ? 1 : RULE_OPACITY },
+        { width, height: 1, backgroundColor: color ?? look.room.ink, opacity: look.contrast ? 1 : RULE_OPACITY },
         scaleX ? { transform: [{ scaleX }] } : null,
         style,
       ]}

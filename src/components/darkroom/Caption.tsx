@@ -2,12 +2,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Pressable, StyleSheet, View, type LayoutChangeEvent } from "react-native";
 import { CAPTION_GAP, DATE_REACH, TOUCH_TARGET, WORD_REACH } from "./geometry";
 import { useLook } from "./look";
-import { room } from "./room";
 import { RoomText } from "./Type";
 
 /** Clear space between the date and the word at the right. */
 const GAP = 12;
-/** The gold dot of a print set aside, and its distance from the word. */
+/** The dot of a print set aside, in the accent, and its distance from the word. */
 const DOT = 5;
 const DOT_GAP = 6;
 const DOT_IN_MS = 140;
@@ -16,7 +15,7 @@ const BREATH_MS = 900;
 
 export interface CaptionWord {
   label: string;
-  /** Set aside: ink with the gold dot. Otherwise faint. */
+  /** Set aside: ink with the dot. Otherwise faint. */
   on: boolean;
   /** Visible, but not to be pressed just now. */
   inert: boolean;
@@ -25,7 +24,7 @@ export interface CaptionWord {
 
 /**
  * The caption hung under a plate, flush with its edges, the way an
- * archive labels a plate: the date in tracked gold capitals (a press on
+ * archive labels a plate: the date in tracked capitals, in the accent (a press on
  * it is the caption thread), the word at the right — SET ASIDE, or what
  * a develop state puts there — and under them, in the serif italic, how
  * long ago. Nothing is ever set on the photograph itself.
@@ -36,8 +35,8 @@ export interface CaptionWord {
  * unseen copy. Room is always kept for the dot, so setting a print aside
  * never moves a line.
  *
- * While a print comes down from iCloud the second line is a 1 pt gold
- * rule across the caption: growing with the download when it can be
+ * While a print comes down from iCloud the second line is a 1 pt rule in
+ * the accent, across the caption: growing with the download when it can be
  * measured, breathing when it cannot (still, under Reduce Motion).
  *
  * The date and the word are each a 44 pt press (§11.6), reaching over the
@@ -161,7 +160,7 @@ function CaptionRight({
       accessibilityHint={word.hint}
       testID={testID}
     >
-      <Animated.View accessible={false} style={[styles.dot, { transform: [{ scale: dot }] }]} />
+      <Animated.View accessible={false} style={[styles.dot, { backgroundColor: look.room.accent, transform: [{ scale: dot }] }]} />
       <RoomText
         kind="small"
         tone={word.on ? "ink" : "faint"}
@@ -176,6 +175,7 @@ function CaptionRight({
 
 /** The download's rule: drawn out from the left as it comes down, or breathing while it cannot say how far. */
 function ProgressRule({ fraction, width, still }: { fraction: Animated.Value | null; width: number; still: boolean }) {
+  const look = useLook();
   const breath = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (fraction || still) {
@@ -203,7 +203,7 @@ function ProgressRule({ fraction, width, still }: { fraction: Animated.Value | n
     : { opacity: breath };
   return (
     <View style={styles.progressSlot} accessible={false} pointerEvents="none">
-      <Animated.View style={[styles.progress, { width }, grow]} />
+      <Animated.View style={[styles.progress, { width, backgroundColor: look.room.accent }, grow]} />
     </View>
   );
 }
@@ -236,9 +236,9 @@ const styles = StyleSheet.create({
   },
   sameRow: { marginLeft: GAP },
   ownRow: { alignSelf: "flex-end", marginTop: 6 - WORD_REACH.top },
-  dot: { width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: room.gold, marginRight: DOT_GAP },
+  dot: { width: DOT, height: DOT, borderRadius: DOT / 2, marginRight: DOT_GAP },
   pressed: { opacity: 0.6 },
   line: { marginTop: 6 },
   progressSlot: { marginTop: 6, height: 20, justifyContent: "center", overflow: "hidden" },
-  progress: { height: 1, backgroundColor: room.gold },
+  progress: { height: 1 },
 });

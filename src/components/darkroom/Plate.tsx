@@ -7,7 +7,7 @@ import type { PageWord, PageWords } from "./words";
 /**
  * A page of words in the room — the first-visit page, the door when it is
  * shut, the empty states, the error and the end pages — set as the
- * colophon of a photobook: the chapter in gold, a line in the serif, a
+ * colophon of a photobook: the chapter in the accent, a line in the serif, a
  * quieter line in the italic, and the ways on stacked beneath, the first
  * of them ruled. Centred, never wider than a comfortable measure, and
  * scrollable so the largest type still fits rather than clipping.
@@ -29,7 +29,7 @@ export const Plate = forwardRef<Text, {
       testID={testID}
     >
       <Animated.View style={[styles.column, opacity ? { opacity } : null]}>
-        <RoomText kind="eyebrow" tone="gold" maxFontSizeMultiplier={2.4} style={styles.center}>
+        <RoomText kind="eyebrow" tone="accent" maxFontSizeMultiplier={2.4} style={styles.center}>
           {page.eyebrow}
         </RoomText>
         <RoomText
