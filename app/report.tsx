@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -27,9 +27,13 @@ export default function Report() {
   const [reason, setReason] = useState<string | null>(null);
   const [details, setDetails] = useState("");
   const [busy, setBusy] = useState(false);
+  // Checked and set in the tap itself, and kept once the report is in: a
+  // second tap before the button went quiet sent the report twice.
+  const sending = useRef(false);
 
   const submit = async () => {
-    if (!session?.user?.id || !reason) return;
+    if (!session?.user?.id || !reason || sending.current) return;
+    sending.current = true;
     setBusy(true);
     try {
       await submitReport({
@@ -45,6 +49,7 @@ export default function Report() {
         { text: "Done", onPress: () => router.back() },
       ]);
     } catch (err) {
+      sending.current = false;
       showAlert("Couldn’t send report", err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
@@ -62,6 +67,8 @@ export default function Report() {
           key={r}
           style={[styles.reason, reason === r && styles.reasonSelected]}
           onPress={() => setReason(r)}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: reason === r }}
         >
           <Text style={[styles.reasonText, reason === r && styles.reasonTextSelected]}>{r}</Text>
         </Pressable>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -35,6 +35,9 @@ export default function Share() {
   const [selected, setSelected] = useState<string[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  // Checked and set in the tap itself: the bar only goes quiet once React
+  // has rendered, and a second tap in that moment sent every letter twice.
+  const sending = useRef(false);
 
   const postQ = useQuery({
     queryKey: ["post", postId],
@@ -57,7 +60,8 @@ export default function Share() {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const send = async () => {
-    if (!postId || selected.length === 0) return;
+    if (!postId || selected.length === 0 || sending.current) return;
+    sending.current = true;
     setBusy(true);
     try {
       // One at a time, each taken off the list as it lands, so a failure
@@ -78,6 +82,7 @@ export default function Share() {
         [why, "The members still ticked have not had it; send again to reach them."].filter(Boolean).join("\n\n"),
       );
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
@@ -138,7 +143,13 @@ export default function Share() {
         renderItem={({ item }) => {
           const on = selected.includes(item.id);
           return (
-            <Pressable style={styles.row} onPress={() => toggle(item.id)}>
+            <Pressable
+              style={styles.row}
+              onPress={() => toggle(item.id)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={item.full_name ? `${item.username}, ${item.full_name}` : item.username}
+            >
               <Avatar path={item.avatar_url} username={item.username} size={40} />
               <View style={styles.rowText}>
                 <Text style={styles.username}>{item.username}</Text>
@@ -156,6 +167,8 @@ export default function Share() {
         style={[styles.sendBar, selected.length === 0 && styles.sendBarOff]}
         disabled={selected.length === 0 || busy}
         onPress={send}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: selected.length === 0 || busy, busy }}
       >
         <Text style={styles.sendText}>
           {selected.length === 0

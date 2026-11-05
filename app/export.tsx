@@ -49,6 +49,10 @@ export default function Export() {
   const [ready, setReady] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const cardRef = useRef<View>(null);
+  // Checked and set in the tap itself. The button only went quiet once a
+  // stage was on it, after the story's link had been made: a second tap
+  // before then opened a second share sheet and made a second capture.
+  const sharing = useRef(false);
 
   const postQ = useQuery({
     queryKey: ["post", postId],
@@ -145,6 +149,9 @@ export default function Export() {
       showAlert("Not here", "Exporting is for the phone.");
       return;
     }
+    if (sharing.current) return;
+    sharing.current = true;
+    setStage(filmAsFilm ? "Fetching the film…" : "Printing…");
     recordShareEvent(userId, "share_started", { postId: post.id, token, format, theme: paper });
     try {
       const linked = await prepareLink();
@@ -164,6 +171,8 @@ export default function Export() {
     } catch (err) {
       setStage(null);
       showAlert("Couldn’t export", err instanceof Error ? err.message : String(err));
+    } finally {
+      sharing.current = false;
     }
   };
 
