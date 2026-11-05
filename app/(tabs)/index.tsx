@@ -16,6 +16,7 @@ import { onHomeAgain } from "@/utils/homeRefresh";
 import { notePostsInFeed, setOutboxProfileRefresher, usePendingPosts, type PendingState } from "@/uploads";
 import { pendingNeedsTop } from "@/uploads/store";
 import { idsAround } from "@/media/cardWindow";
+import { commentsOrNone, likeCounted } from "@/media/stableCards";
 import type { PostWithAuthor } from "@/types/db";
 
 /**
@@ -141,22 +142,29 @@ export default function Home() {
     minimumViewTime: 120,
   }).current;
 
+  // Each card is handed the same objects while nothing about it has
+  // changed, so only the cards whose state did change are drawn again when
+  // the list is: the one that stopped playing and the one that started,
+  // not every card held (see src/media/stableCards.ts).
+  const [counted] = useState(likeCounted);
+  const openProfile = useCallback((username: string) => router.push(`/user/${username}`), [router]);
+  const more = useCallback((p: PostWithAuthor) => onMore(p), [onMore]);
   const renderItem = useCallback(
     ({ item }: { item: (typeof posts)[number] }) => (
       <PostCard
-        post={{ ...item, like_count: likeCountFor(item) }}
+        post={counted(item, likeCountFor(item))}
         likedByMe={isLiked(item)}
         onToggleLike={toggleLike}
         onOpenComments={onOpenComments}
-        onOpenProfile={(username) => router.push(`/user/${username}`)}
+        onOpenProfile={openProfile}
         onShare={onShare}
         onOpenLikes={onOpenLikes}
-        comments={commentsFor(item)}
-        onMore={(p) => onMore(p)}
+        comments={commentsOrNone(commentsFor(item))}
+        onMore={more}
         active={focused && item.id === visibleId}
       />
     ),
-    [likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onMore, router, visibleId, focused],
+    [counted, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, more, openProfile, visibleId, focused],
   );
 
   // Only one clip plays at a time. A pending one may when it is the

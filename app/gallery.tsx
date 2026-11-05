@@ -20,6 +20,7 @@ import { fetchProfileById } from "@/api/profiles";
 import { galleryEra, galleryRows } from "@/utils/profileViews";
 import { isWarm, videoFocus, warmWindow } from "@/utils/videoWindow";
 import { idsAround, pictureWindow } from "@/media/cardWindow";
+import { commentsOrNone, likeCounted } from "@/media/stableCards";
 import {
   LANDING_STEP_MS,
   approachOffset,
@@ -256,6 +257,12 @@ export default function Gallery() {
   );
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, actionIds);
+  // The same objects for a card while nothing about it has changed, so the
+  // list drawing again draws again only the cards that did change (see
+  // src/media/stableCards.ts).
+  const [counted] = useState(likeCounted);
+  const openProfile = useCallback((username: string) => router.push(`/user/${username}`), [router]);
+  const more = useCallback((p: PostWithAuthor) => onMore(p, () => router.back()), [onMore, router]);
 
   // Only the card on screen plays (visibleId, above), and only it and its
   // neighbours have a player at all (see src/utils/videoWindow.ts). The
@@ -324,15 +331,15 @@ export default function Gallery() {
         renderItem={({ item, index }) => (
           <View ref={item.id === postId ? tapped : undefined} onLayout={(e) => onCardLayout(item.id, e)}>
             <PostCard
-              post={{ ...item, like_count: likeCountFor(item) }}
+              post={counted(item, likeCountFor(item))}
               likedByMe={isLiked(item)}
               onToggleLike={toggleLike}
               onOpenComments={onOpenComments}
-              onOpenProfile={(username) => router.push(`/user/${username}`)}
+              onOpenProfile={openProfile}
               onShare={onShare}
-        onOpenLikes={onOpenLikes}
-              comments={commentsFor(item)}
-              onMore={(p) => onMore(p, () => router.back())}
+              onOpenLikes={onOpenLikes}
+              comments={commentsOrNone(commentsFor(item))}
+              onMore={more}
               active={ready && focused && item.id === visibleId}
               warm={isWarm(index, warm)}
               // A card away from the reader is its frame, the same height:

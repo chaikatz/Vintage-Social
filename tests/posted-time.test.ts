@@ -292,7 +292,7 @@ function code(file: string): string {
 
 describe("the feed card's posted time", () => {
   const card = code("src/components/PostCard.tsx");
-  const body = card.slice(card.indexOf("export function PostCard("), card.indexOf("export function PostedTime("));
+  const body = card.slice(card.indexOf("export const PostCard = React.memo(function PostCard("), card.indexOf("export function PostedTime("));
   const line = card.slice(card.indexOf("export function PostedTime("), card.indexOf("export function Byline("));
 
   it("is the last thing on the card, after the caption and the comments", () => {
@@ -301,7 +301,7 @@ describe("the feed card's posted time", () => {
     expect(posted).toBeGreaterThan(body.indexOf("{post.caption ? ("));
     expect(posted).toBeGreaterThan(body.indexOf("{preview.map("));
     expect(posted).toBeGreaterThan(body.indexOf("{hidden > 0 ? ("));
-    expect(body).toMatch(/<PostedTime at=\{post\.created_at\} \/>\s*<\/View>\s*\);\s*\}\s*$/);
+    expect(body).toMatch(/<PostedTime at=\{post\.created_at\} \/>\s*<\/View>\s*\);\s*\}\);\s*$/);
     expect(body.match(/<PostedTime\b/g)).toHaveLength(1);
   });
 
