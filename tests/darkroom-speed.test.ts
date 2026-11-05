@@ -9,6 +9,7 @@ vi.mock("@/darkroom/history", () => ({ developedRecently: () => false, localDay:
 vi.mock("@/darkroom/session", () => ({ keepChapter: () => undefined, recallChapter: () => null }));
 vi.mock("@/darkroom/setAside", () => ({ isSetAside: () => false, setAsidePrints: () => [] }));
 
+import { DISSOLVE, photographRequest, PLATE_STALL_MS, progressOf, SILENT_TRIES, stallCheck } from "@/components/darkroom/plateImage";
 import { Visit } from "@/components/darkroom/visit";
 import { gated, inBackground, onThisDay, Surprise, yearIndex } from "@/darkroom/discovery";
 import { MAX_IN_FLIGHT } from "@/darkroom/eligibility";
@@ -270,5 +271,147 @@ describe("the room asks for what it reads of its own accord in the back line", (
     expect(open).toMatch(/await askDay\(\)/);
     expect(open).toMatch(/await loadYears\(\)/);
     expect(read("src/components/darkroom/visit.ts")).toMatch(/background \? inBackground\(this\.source\) : this\.source/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A plate's photograph
+// ---------------------------------------------------------------------------
+
+/**
+ * expo-image on iOS loads a view again whenever any prop it was given
+ * changes (`OnViewDidUpdateProps` → `reload()`), cancelling what it was
+ * still loading. Counted here for one plate's life: made as the page beside
+ * the one in front, turned to, its photograph drawn, then turned past.
+ */
+function reloadsOverAPageTurn(props: (state: { current: boolean; drawnBefore: boolean }) => Record<string, unknown>): number {
+  const states = [
+    { current: false, drawnBefore: false },
+    { current: true, drawnBefore: false },
+    { current: true, drawnBefore: true },
+    { current: false, drawnBefore: true },
+  ];
+  let reloads = 0;
+  let last = JSON.stringify(props(states[0]));
+  for (const s of states.slice(1)) {
+    const next = JSON.stringify(props(s));
+    if (next !== last) reloads += 1;
+    last = next;
+  }
+  return reloads;
+}
+
+describe("a plate's photograph", () => {
+  const page = read("src/components/darkroom/PrintPage.tsx");
+  const full = page.slice(page.indexOf("function Full("), page.indexOf("const styles = StyleSheet.create"));
+  const photograph = page.slice(page.indexOf("function Photograph("), page.indexOf("function Full("));
+
+  it("asks for nothing that changes as the page is turned, so turning reloads and cancels nothing", () => {
+    // What the plate asked for before: its priority by whether it was in front, its dissolve until it had drawn.
+    const before = reloadsOverAPageTurn(({ current, drawnBefore }) => ({
+      cachePolicy: "memory",
+      priority: current ? "high" : "low",
+      transition: !drawnBefore ? DISSOLVE : 0,
+    }));
+    expect(before).toBe(3);
+    // Now: decided once, as the view is made, from whether the print had been drawn then.
+    const after = reloadsOverAPageTurn(() => ({ ...photographRequest(true, false) }));
+    expect(after).toBe(0);
+    // The request has nothing in it about the page being in front.
+    expect(photographRequest.length).toBe(2);
+    expect(full).toMatch(/const \[request\] = useState\(\(\) => photographRequest\(dissolve, look\.reduceMotion\)\)/);
+    for (const prop of ["cachePolicy", "priority", "allowDownscaling", "transition"]) {
+      expect(full).toMatch(new RegExp(`${prop}=\\{request\\.${prop}\\}`));
+    }
+    expect(page).not.toMatch(/priority=\{current/);
+    expect(page).not.toMatch(/transition=\{dissolve/);
+  });
+
+  it("is kept in memory only, dissolves only when it was not drawn this visit, and never under Reduce Motion", () => {
+    expect(photographRequest(true, false)).toEqual({ cachePolicy: "memory", priority: "normal", allowDownscaling: false, transition: DISSOLVE });
+    expect(photographRequest(false, false).transition).toBe(0);
+    expect(photographRequest(true, true).transition).toBe(0);
+  });
+
+  it("leaves a slightly larger rendition to the GPU rather than redrawing it on the main thread", () => {
+    for (const d of [true, false]) for (const r of [true, false]) expect(photographRequest(d, r).allowDownscaling).toBe(false);
+  });
+
+  it("reads iCloud's progress as Photos sends it for a ph:// address, and bytes elsewhere", () => {
+    expect(progressOf({ loaded: null, total: null, progress: 0.42 })).toBe(0.42);
+    expect(progressOf({ loaded: 50, total: 200 })).toBe(0.25);
+    expect(progressOf({ progress: 1.3 })).toBe(1);
+    expect(progressOf({ progress: -1 })).toBe(0);
+    expect(progressOf({ loaded: 5, total: 0 })).toBeNull();
+    expect(progressOf({})).toBeNull();
+    expect(progressOf(null)).toBeNull();
+  });
+
+  it("draws the photograph's download on the signature line of the plate in front, unless DOWNLOAD AND DEVELOP is drawing its own", () => {
+    expect(page).toMatch(/progress=\{props\.progress \?\? \(current \? cloud\.shown : null\)\}/);
+    expect(full).toMatch(/onProgress=\{\(e\) => \{\s*const fraction = progressOf\(e\);/);
+    // Drawn or failed, the line is the signature line again.
+    expect(photograph).toMatch(/onLoad=\{\(\) => \{\s*silent\.current = 0;\s*onCloud\(null\);/);
+    expect(photograph).toMatch(/onError=\{\(e: ImageErrorEventData\) => \{\s*onCloud\(null\);/);
+  });
+});
+
+/**
+ * One plate in front of the member whose photograph Photos never answers,
+ * run the way the plate's effect runs `stallCheck`: it waits, asks once
+ * more, then says why. `progressEvery` is iCloud's progress, which keeps it
+ * waiting for as long as the download moves.
+ */
+function stalledPlate(online: boolean, progressEvery: number | null, until: number) {
+  let t = 0;
+  let heard = 0;
+  let silent = 0;
+  let attempts = 1;
+  let trouble: string | null = null;
+  let next = PLATE_STALL_MS;
+  while (t < until && trouble == null) {
+    const progressAt = progressEvery == null ? Infinity : (Math.floor(t / progressEvery) + 1) * progressEvery;
+    if (progressAt < next) {
+      t = progressAt;
+      heard = t;
+      continue;
+    }
+    t = next;
+    const step = stallCheck(heard, t, silent, online);
+    if ("wait" in step) next = t + step.wait;
+    else if ("again" in step) {
+      silent += 1;
+      attempts += 1;
+      heard = t;
+      next = t + PLATE_STALL_MS;
+    } else trouble = step.trouble;
+  }
+  return { attempts, trouble, at: Math.min(t, until) };
+}
+
+describe("a plate that hears nothing of its photograph", () => {
+  it("asks once more, then says why, instead of leaving its soft proof in place", () => {
+    expect(SILENT_TRIES).toBe(1);
+    expect(stalledPlate(true, null, 120_000)).toEqual({ attempts: 2, trouble: "other", at: 2 * PLATE_STALL_MS });
+    expect(stalledPlate(false, null, 120_000)).toEqual({ attempts: 2, trouble: "offline", at: 2 * PLATE_STALL_MS });
+  });
+
+  it("waits for as long as iCloud's download is moving", () => {
+    expect(stalledPlate(true, 5_000, 120_000)).toEqual({ attempts: 1, trouble: null, at: 120_000 });
+  });
+
+  it("waits the whole stall from the last thing it heard", () => {
+    expect(stallCheck(0, 5_000, 0, true)).toEqual({ wait: PLATE_STALL_MS - 5_000 });
+    expect(stallCheck(0, PLATE_STALL_MS, 0, true)).toEqual({ again: true });
+    expect(stallCheck(0, PLATE_STALL_MS, 1, true)).toEqual({ trouble: "other" });
+    expect(stallCheck(0, PLATE_STALL_MS, 1, false)).toEqual({ trouble: "offline" });
+  });
+
+  it("is watched only in front of the member, while it is still waiting for its picture", () => {
+    const page = read("src/components/darkroom/PrintPage.tsx");
+    expect(page).toMatch(/const waiting = current && images && !drawn && trouble == null && !gone && source != null;/);
+    expect(page).toMatch(/const next = stallCheck\(heard\.current, Date\.now\(\), silent\.current, online\);/);
+    // iCloud's progress counts as hearing something.
+    expect(page).toMatch(/onProgress=\{\(fraction\) => \{\s*heard\.current = Date\.now\(\);/);
   });
 });

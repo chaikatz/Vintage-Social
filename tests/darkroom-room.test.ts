@@ -1172,7 +1172,9 @@ describe("the room's own rules, in its source", () => {
   it("keeps the proof out of the image cache", () => {
     const page = read(path.resolve(__dirname, "../src/components/darkroom/PrintPage.tsx"));
     expect(page).toMatch(/cachePolicy="none"/);
-    expect(page).toMatch(/cachePolicy="memory"/);
+    // The photograph itself is kept in memory only, by the request it is made with.
+    expect(page).toMatch(/cachePolicy=\{request\.cachePolicy\}/);
+    expect(read(path.resolve(__dirname, "../src/components/darkroom/plateImage.ts"))).toMatch(/cachePolicy: "memory",/);
     expect(page).not.toMatch(/memory-disk|cachePolicy="disk"/);
   });
 });

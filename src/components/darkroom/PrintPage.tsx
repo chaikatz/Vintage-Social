@@ -1,16 +1,17 @@
-import React, { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
-  type Animated,
   type GestureResponderEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import { Image, type ImageErrorEventData } from "expo-image";
+import { Image, type ImageErrorEventData, type ImageSource } from "expo-image";
 import { printSource } from "@/darkroom/printSource";
 import type { Print } from "@/darkroom/types";
 import { Blades } from "./Blades";
@@ -29,6 +30,7 @@ import {
   underPlate,
 } from "./geometry";
 import { useLook } from "./look";
+import { photographRequest, PLATE_STALL_MS, progressOf, stallCheck } from "./plateImage";
 import { RoomText } from "./Type";
 import { placeholderWords, type PlateTrouble } from "./words";
 
@@ -36,7 +38,8 @@ import { placeholderWords, type PlateTrouble } from "./words";
 const PROOF_WIDTH = 48;
 /** Past this the plate counts as zoomed in, and a tap on it turns no page. */
 const ZOOMED = 1.02;
-const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" } as const;
+/** A download's rule follows each step of iCloud's progress over this, as DOWNLOAD AND DEVELOP's does. */
+const CLOUD_STEP_MS = 120;
 
 /**
  * One print: a plate, and its label hung beneath — the signature line, as
@@ -71,6 +74,15 @@ const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" }
  * roll is written to the app's disk cache. A `ph://` URI is never
  * prefetched: without a frame the loader asks Photos for the maximum
  * size.
+ *
+ * The full image's request is fixed for the life of its view
+ * (`photographRequest` in plateImage.ts): on iOS a change to any of its
+ * props loads it again, cancelling what was still coming in, so nothing
+ * about it changes as the member turns to it. While a print comes down
+ * from iCloud, the plate in front draws the download along its signature
+ * line, as DOWNLOAD AND DEVELOP's does; and a plate in front that hears
+ * nothing at all asks again once, then says why it has no photograph,
+ * rather than leaving its soft proof in place for good.
  *
  * The plate zooms under a pinch, 1–2×, inside its own box (PhotoInspector's
  * ZoomablePhoto, with no double-tap, so a single tap has no delay), and
@@ -142,6 +154,7 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
   const look = useLook();
   const ratio = ratioOf(print);
   const [measured, setMeasured] = useState<number | null>(null);
+  const cloud = useCloudProgress(look.reduceMotion);
   const caption = measured ?? captionHeight(fontScale, long ? 2 : 1);
   const box = plateBox(ratio, width, stageHeight, caption, pixelRatio);
   const captionW = captionWidth(box.width);
@@ -165,7 +178,7 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
         testID={current ? "darkroom-plate" : undefined}
       >
         <Zoom box={box} current={current} onTap={props.onTap}>
-          <Photograph {...props} box={box} />
+          <Photograph {...props} box={box} onCloud={cloud.step} />
         </Zoom>
         {feedCrops(ratio) ? <Blades plate={box} ratio={ratio} closed={props.bladesClosed} /> : null}
         <View
@@ -179,7 +192,7 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
           gap={gap}
           label={props.label}
           line={props.line}
-          progress={props.progress}
+          progress={props.progress ?? (current ? cloud.shown : null)}
           word={props.wordLabel ? { label: props.wordLabel, on: props.wordOn, inert: props.wordInert, hint: props.wordHint } : null}
           onDate={() => props.onDate(print)}
           onWord={() => props.onWord(print)}
@@ -285,13 +298,56 @@ function actualSize(view: ScrollView | null, box: { width: number; height: numbe
   view.scrollResponderZoomTo({ x: 0, y: 0, width: box.width, height: box.height, animated: false }, false);
 }
 
+/**
+ * iCloud's progress on the plate's photograph, for its signature line: a
+ * fraction on the native driver, shown while something has come in and
+ * the photograph has not yet drawn. `step` is handed each fraction, and
+ * null when the photograph has drawn or failed.
+ */
+function useCloudProgress(reduceMotion: boolean) {
+  const fraction = useRef(new Animated.Value(0)).current;
+  const coming = useRef(false);
+  const [shown, setShown] = useState(false);
+  const progress = useMemo(() => ({ fraction }), [fraction]);
+  const step = useCallback(
+    (value: number | null) => {
+      if (value == null) {
+        if (!coming.current) return;
+        coming.current = false;
+        setShown(false);
+        return;
+      }
+      if (!coming.current) {
+        coming.current = true;
+        fraction.setValue(0);
+        setShown(true);
+      }
+      Animated.timing(fraction, {
+        toValue: value,
+        duration: reduceMotion ? 0 : CLOUD_STEP_MS,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }).start();
+    },
+    [fraction, reduceMotion],
+  );
+  return { shown: shown ? progress : null, step };
+}
+
 /** The well, the proof, the photograph — or the words that say why there is none. */
-function Photograph(props: PrintPageProps & { box: { width: number; height: number } }) {
-  const { print, box, images, proof, current, dissolve, revision, online, limited, gone, onLoad, onGone } = props;
+function Photograph(
+  props: PrintPageProps & { box: { width: number; height: number }; onCloud: (fraction: number | null) => void },
+) {
+  const { print, box, images, proof, current, dissolve, revision, online, limited, gone, onLoad, onGone, onCloud } = props;
   const look = useLook();
   const [trouble, setTrouble] = useState<PlateTrouble | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [drawn, setDrawn] = useState(false);
+  const source = printSource(print.uri);
+  /** When this plate last heard anything of its photograph: the request, or iCloud's progress. */
+  const heard = useRef(0);
+  /** Tries since the last answer that heard nothing at all. */
+  const silent = useRef(0);
 
   // The library changed, or the phone came back online: a print that
   // could not be drawn is asked for again. Never because it failed while
@@ -301,6 +357,7 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
     if (seenRevision.current === revision) return;
     seenRevision.current = revision;
     if (trouble) {
+      silent.current = 0;
       setTrouble(null);
       setAttempt((a) => a + 1);
     }
@@ -315,10 +372,40 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
       return;
     }
     if (again) {
+      silent.current = 0;
       setTrouble(null);
       setAttempt((a) => a + 1);
     }
   }, [online, trouble]);
+
+  // In front of the member, with neither a picture nor a failure: a
+  // request Photos could not answer says nothing, so after a while of
+  // hearing nothing the plate asks once more, and then says why.
+  const waiting = current && images && !drawn && trouble == null && !gone && source != null;
+  useEffect(() => {
+    if (!waiting) return;
+    heard.current = Math.max(heard.current, Date.now());
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const check = () => {
+      timer = null;
+      const next = stallCheck(heard.current, Date.now(), silent.current, online);
+      if ("wait" in next) {
+        timer = setTimeout(check, next.wait);
+      } else if ("again" in next) {
+        silent.current += 1;
+        heard.current = Date.now();
+        onCloud(null);
+        setAttempt((a) => a + 1);
+      } else {
+        onCloud(null);
+        setTrouble(next.trouble);
+      }
+    };
+    timer = setTimeout(check, PLATE_STALL_MS);
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [waiting, attempt, online, onCloud]);
 
   if (trouble || gone) {
     const why: PlateTrouble = gone ? "missing" : (trouble ?? "missing");
@@ -335,7 +422,6 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
     );
   }
 
-  const source = printSource(print.uri);
   const ratio = ratioOf(print);
   const proofHeight = PROOF_WIDTH / ratio;
   return (
@@ -355,28 +441,73 @@ function Photograph(props: PrintPageProps & { box: { width: number; height: numb
         </View>
       ) : null}
       {images && source != null ? (
-        <Image
+        <Full
           key={`${print.id}:${attempt}`}
+          id={print.id}
           source={source}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          cachePolicy="memory"
-          recyclingKey={print.id}
-          priority={current ? "high" : "low"}
-          transition={dissolve && !look.reduceMotion ? DISSOLVE : 0}
+          dissolve={dissolve}
+          onProgress={(fraction) => {
+            heard.current = Date.now();
+            onCloud(fraction);
+          }}
           onLoad={() => {
+            silent.current = 0;
+            onCloud(null);
             setDrawn(true);
             onLoad(print.id);
           }}
           onError={(e: ImageErrorEventData) => {
+            onCloud(null);
             const why = plateTrouble(e?.error, online);
             setTrouble(why);
             if (why === "missing") onGone(print.id);
           }}
-          accessibilityIgnoresInvertColors
         />
       ) : null}
     </View>
+  );
+}
+
+/**
+ * The photograph itself, at the plate's size. Its request is decided as
+ * the view is made and never changes while it lives (see plateImage.ts):
+ * a new attempt is a new view.
+ */
+function Full({
+  id,
+  source,
+  dissolve,
+  onProgress,
+  onLoad,
+  onError,
+}: {
+  id: string;
+  source: ImageSource | number;
+  dissolve: boolean;
+  onProgress: (fraction: number) => void;
+  onLoad: () => void;
+  onError: (e: ImageErrorEventData) => void;
+}) {
+  const look = useLook();
+  const [request] = useState(() => photographRequest(dissolve, look.reduceMotion));
+  return (
+    <Image
+      source={source}
+      style={StyleSheet.absoluteFill}
+      contentFit="cover"
+      recyclingKey={id}
+      cachePolicy={request.cachePolicy}
+      priority={request.priority}
+      allowDownscaling={request.allowDownscaling}
+      transition={request.transition}
+      onProgress={(e) => {
+        const fraction = progressOf(e);
+        if (fraction != null) onProgress(fraction);
+      }}
+      onLoad={onLoad}
+      onError={onError}
+      accessibilityIgnoresInvertColors
+    />
   );
 }
 
