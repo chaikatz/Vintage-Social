@@ -7,7 +7,7 @@ import { LOOKING } from "./words";
 export const SLOW_AFTER_MS = 1200;
 
 /**
- * A chapter's title card: a word page, not a print. The way in in gold,
+ * A chapter's title card: a word page, not a print. The way in in the accent,
  * its name large in the serif — a year in old-style figures, as a book
  * sets one — and the rule. Shown only while a chapter is being dealt and
  * not ready within a quarter of a second (see `useStageFades`), and as
@@ -44,7 +44,7 @@ export function TitleCard({
 
   return (
     <View style={styles.card}>
-      <RoomText kind="eyebrow" tone="gold" maxFontSizeMultiplier={1.4} style={styles.center}>
+      <RoomText kind="eyebrow" tone="accent" maxFontSizeMultiplier={1.4} style={styles.center}>
         {eyebrow}
       </RoomText>
       <RoomText

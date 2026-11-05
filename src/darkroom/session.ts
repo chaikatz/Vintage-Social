@@ -32,6 +32,8 @@ const PLACE_FILE = "darkroom-place.json";
 const PLACE_KEY = "vintage.darkroom-place";
 const INTRO_FILE = "darkroom-intro.json";
 const INTRO_KEY = "vintage.darkroom-intro";
+const CONTENTS_FILE = "darkroom-contents.json";
+const CONTENTS_KEY = "vintage.darkroom-contents";
 
 export const PLACE_KEPT_MS = 12 * 3_600_000;
 /** The deck keeps this many prints behind the current one, so a swipe back still finds them. */
@@ -267,16 +269,16 @@ export function forgetPlace(): void {
   deleteDiskCache(PLACE_FILE, PLACE_KEY);
 }
 
-/** No more writes of the place or the first-visit flag, until `reopenSession`. */
+/** No more writes of the place, the first-visit flag or the Contents flag, until `reopenSession`. */
 export function sealSession(): void {
   sealed = true;
 }
 
 /**
  * A member is signed in again after a seal: the place, the positions and
- * the first-visit flag kept in memory while it was shut belonged to the
- * member who left, so they go, and the next read starts from the files.
- * Without a seal there is nothing to let go, and nothing changes.
+ * the two flags kept in memory while it was shut belonged to the member
+ * who left, so they go, and the next read starts from the files. Without
+ * a seal there is nothing to let go, and nothing changes.
  */
 export function reopenSession(): void {
   if (!sealed) return;
@@ -287,6 +289,7 @@ export function reopenSession(): void {
   movedPast = null;
   chapters.clear();
   intro = null;
+  contents = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -351,4 +354,32 @@ export function markIntroSeen(): void {
 export function forgetIntro(): void {
   intro = false;
   deleteDiskCache(INTRO_FILE, INTRO_KEY);
+}
+
+// ---------------------------------------------------------------------------
+// Contents, found
+// ---------------------------------------------------------------------------
+
+let contents: boolean | null = null;
+
+/**
+ * Contents has been opened on this phone, by whoever is signed in. Until
+ * it has, the running head says under CONTENTS what is in it; the first
+ * opening, however it is opened, puts that line away for good.
+ */
+export function contentsFound(): boolean {
+  if (contents === null) contents = readDiskCache(CONTENTS_FILE, CONTENTS_KEY, (raw) => (raw === true ? true : null)) === true;
+  return contents;
+}
+
+export function markContentsFound(): void {
+  if (contents === true) return;
+  contents = true;
+  if (!sealed) writeDiskCache(CONTENTS_FILE, CONTENTS_KEY, true);
+}
+
+/** At sign-out: the next member is shown the way into Contents again. */
+export function forgetContentsFound(): void {
+  contents = false;
+  deleteDiskCache(CONTENTS_FILE, CONTENTS_KEY);
 }

@@ -1,7 +1,7 @@
 import { deleteDiskCache, readDiskCache, writeDiskCache } from "@/utils/diskCache";
 import { forgetHistory, reopenHistory, sealHistory } from "./history";
 import { forgetSetAside, reopenSetAside, sealSetAside } from "./setAside";
-import { forgetChapters, forgetIntro, forgetPlace, reopenSession, sealSession } from "./session";
+import { forgetChapters, forgetContentsFound, forgetIntro, forgetPlace, reopenSession, sealSession } from "./session";
 
 /**
  * Forgetting, in the two sizes a member can ask for, and the record of
@@ -45,10 +45,11 @@ function forgetOwner(): void {
 /**
  * Everything the Darkroom keeps on this phone — what was looked at and
  * posted, what was set aside, where the member was, that the first-visit
- * page was passed, the positions in memory, and whose it all was — gone,
- * files and all. Called when the member signs out, here or anywhere, so
- * the next member to sign in on this phone finds no trace of the last
- * one's browsing, and is shown the first-visit page and what it promises.
+ * page was passed and Contents opened, the positions in memory, and whose
+ * it all was — gone, files and all. Called when the member signs out,
+ * here or anywhere, so the next member to sign in on this phone finds no
+ * trace of the last one's browsing, and is shown the first-visit page and
+ * what it promises, and the way into Contents.
  *
  * The writes are shut first and stay shut until a member is next signed
  * in (`claimDarkroom`). The room may still be open when a session ends
@@ -66,6 +67,7 @@ export function forgetDarkroom(): void {
     forgetSetAside,
     forgetPlace,
     forgetIntro,
+    forgetContentsFound,
     forgetChapters,
     forgetOwner,
   ]);

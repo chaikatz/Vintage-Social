@@ -443,13 +443,15 @@ describe("On this day", () => {
 describe("the routes", () => {
   const layout = code("app/_layout.tsx");
 
-  it("fade into the Darkroom over 360 ms on the app's own page, whichever print it is set to", () => {
+  it("fade into the Darkroom over 360 ms on the app's own page, light or dark", () => {
     const darkroom = layout.slice(layout.indexOf('name="darkroom"'));
-    expect(darkroom.slice(0, 400)).toMatch(/animation: "fade",\s*animationDuration: 360/);
-    expect(darkroom.slice(0, 400)).toMatch(/fullScreenGestureEnabled: false/);
-    // The page's dynamic colour, not one print's plain string: the room matches the appearance.
-    expect(darkroom.slice(0, 400)).toMatch(/contentStyle: \{ backgroundColor: colors\.paper \}/);
-    expect(layout).not.toMatch(/\bdark\.\w+/);
+    const options = darkroom.slice(0, darkroom.indexOf("/>"));
+    expect(options).toMatch(/animation: "fade",\s*animationDuration: 360/);
+    expect(options).toMatch(/fullScreenGestureEnabled: false/);
+    // No page of its own: the stack's, which is the app's paper in either appearance.
+    expect(options).not.toMatch(/contentStyle|backgroundColor/);
+    expect(layout).toMatch(/screenOptions=\{\{[\s\S]*?contentStyle: \{ backgroundColor: colors\.paper \}/);
+    expect(layout).not.toMatch(/\bdark\.[a-zA-Z]/);
   });
 
   it("give compose a 280 ms fade only when it is developed from the Darkroom", () => {

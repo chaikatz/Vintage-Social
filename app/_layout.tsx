@@ -90,11 +90,9 @@ export default function RootLayout() {
                 : { animation: "default" as const }),
             })}
           />
-          {/* The Darkroom fades in on the app's own page, whichever print
-              the app is set to — black in Dark, paper in Light — so the
-              room is never a different colour from where it was entered.
-              Back is the left edge only — a pan anywhere else is the next
-              print. */}
+          {/* The Darkroom fades in, onto the app's own page: the room is
+              printed in whichever appearance the app is in. Back is the
+              left edge only — a pan anywhere else is the next print. */}
           <Stack.Screen
             name="darkroom"
             options={{
@@ -103,7 +101,6 @@ export default function RootLayout() {
               animationDuration: 360,
               gestureEnabled: true,
               fullScreenGestureEnabled: false,
-              contentStyle: { backgroundColor: colors.paper },
             }}
           />
           {/* Screens with sideways gestures of their own — a pinch on a

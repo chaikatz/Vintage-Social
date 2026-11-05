@@ -22,6 +22,18 @@ export const STAGE_LABEL = "Photograph";
 export const STAGE_HINT = "Swipe up or down for the next or previous photograph.";
 export const CONTENTS_HINT = "Choose a way in, a year or a month.";
 export const CHAPTER_HINT = "Opens the contents.";
+/** Under CONTENTS, until it has first been opened on this phone: what is in it. */
+export const CONTENTS_INVITE = "Every way in is here: this day, a roll, any year.";
+
+/** The Contents sheet's headings, one over each part, as an index sets them. */
+export const CONTENTS_WAYS_IN = "Ways in";
+export const CONTENTS_BY_YEAR = "By year";
+export const CONTENTS_ORDER = "Oldest first";
+
+/** Over the open year's month strip: "The months of 2016". */
+export function monthsOf(year: number): string {
+  return `The months of ${year}`;
+}
 
 /** The running head's name for a chapter: "On this day" · "Surprise me" · "2016" · "Set aside". */
 export function chapterName(mode: DarkroomMode, year: number | null): string {
@@ -79,7 +91,7 @@ export interface StateWords {
   line1: string | null;
   /** In place of the phrase, or null for the phrase. */
   line2: string | null;
-  /** Line 2 is the progress rule. */
+  /** The download is drawn along the signature line; the caption keeps its own line 2. */
   progress: boolean;
   /** The word at the caption's right, or none. */
   right: { label: string; act: RightAct; inert: boolean } | null;
@@ -242,7 +254,7 @@ export function captionWords(p: {
     word: w.right
       ? {
           label: w.right.label,
-          // The gold dot, in every chapter but the shelf, where every print is set aside.
+          // The dot in the accent, in every chapter but the shelf, where every print is set aside.
           on: toggle && p.setAside && !p.shelfChapter,
           inert: w.right.inert,
           hint: toggle ? (p.setAside ? SET_ASIDE_HINT_ON : SET_ASIDE_HINT_OFF) : undefined,
@@ -265,7 +277,7 @@ export interface StageAction {
  * only while it would do something, so a develop state shows through:
  * DOWNLOAD AND DEVELOP and NOT NOW in iCloud, STOP while downloading (the
  * only way out then, §6.3), REMOVE for a print gone from the shelf. Off
- * VoiceOver SET ASIDE carries a gold dot; here it says PUT BACK instead.
+ * VoiceOver SET ASIDE carries a dot in the accent; here it says PUT BACK instead.
  * With no print in front of the member — the next batch still being
  * dealt — only Contents is left.
  */

@@ -7,10 +7,14 @@ import {
   captionHeight,
   DATE_REACH,
   groupTop,
+  MIN_CAPTION_WIDTH,
   plateBox,
   plateTrouble,
+  SIGNATURE_RULE,
+  signatureGap,
   TOUCH_TARGET,
   troubleOffline,
+  underPlate,
   WORD_REACH,
 } from "@/components/darkroom/geometry";
 import type { PlateTrouble } from "@/components/darkroom/words";
@@ -172,7 +176,7 @@ describe("the caption's presses (§11.6)", () => {
   const WORD = 10 * 1.13;
   const SMALLEST = 0.823;
 
-  it("makes the date 44 tall, from the plate's edge down over the line", () => {
+  it("makes the date 44 tall, from the signature line down over the line beneath", () => {
     expect(DATE_REACH.top + LINE_1 + DATE_REACH.bottom).toBe(TOUCH_TARGET);
     expect(DATE_REACH.top).toBeLessThanOrEqual(CAPTION_GAP);
     expect(DATE_REACH.bottom).toBeLessThanOrEqual(6 + 20);
@@ -183,10 +187,13 @@ describe("the caption's presses (§11.6)", () => {
     expect(TOUCH_TARGET - WORD_REACH.top - WORD_REACH.bottom).toBeLessThanOrEqual(WORD * SMALLEST);
   });
 
-  it("keeps SET ASIDE off the plate beside the date", () => {
+  it("keeps SET ASIDE off the photograph beside the date, reaching at most over the signature line", () => {
+    // The least paper there ever is under a plate: a sixteenth of the narrowest label.
+    const paper = signatureGap(MIN_CAPTION_WIDTH);
+    expect(paper).toBe(15);
     for (const scale of [SMALLEST, 1, 1.5]) {
       const row = Math.max(LINE_1, Math.round(LINE_1 * scale));
-      expect(CAPTION_GAP + (row - WORD * scale) / 2 - WORD_REACH.top).toBeGreaterThanOrEqual(0);
+      expect(paper + SIGNATURE_RULE + CAPTION_GAP + (row - WORD * scale) / 2 - WORD_REACH.top).toBeGreaterThanOrEqual(0);
     }
   });
 
@@ -195,14 +202,15 @@ describe("the caption's presses (§11.6)", () => {
       for (const ratio of [1 / 3, 9 / 16, 3 / 4, 1, 4 / 3, 3]) {
         for (const caption of [captionHeight(1, 1) + 17, captionHeight(1, 2) + 17, captionHeight(2, 2) + 25]) {
           const plate = plateBox(ratio, 393, stage, caption, 3);
-          const below = stage - groupTop(stage, plate.height, caption) - plate.height - caption;
+          const under = underPlate(plate.width, caption, 3);
+          const below = stage - groupTop(stage, plate.height, under) - plate.height - under;
           expect(below).toBeGreaterThanOrEqual(WORD_REACH.bottom);
         }
       }
     }
   });
 
-  it("takes each reach back with a margin, and lets a touch through the line and the rule", () => {
+  it("takes each reach back with a margin, and lets a touch through the line and the signature line", () => {
     const caption = read("src/components/darkroom/Caption.tsx");
     expect(caption).not.toMatch(/hitSlop=\{\{\s*top/);
     expect(caption).toMatch(/paddingTop: DATE_REACH\.top,[\s\S]*?marginTop: -DATE_REACH\.top,/);
@@ -212,7 +220,48 @@ describe("the caption's presses (§11.6)", () => {
     expect(caption).toMatch(/ownRow: \{[^}]*marginTop: 6 - WORD_REACH\.top/);
     const line = caption.match(/<RoomText\s+kind="line"[^>]*>/)?.[0] ?? "";
     expect(line).toMatch(/pointerEvents="none"/);
-    expect(caption).toMatch(/<View style=\{styles\.progressSlot\}[^>]*pointerEvents="none"/);
+    const signature = caption.slice(caption.indexOf("function Signature("));
+    expect(signature).toMatch(/<View\s+style=\{\[styles\.signature,[^>]*pointerEvents="none"/);
+  });
+});
+
+describe("the signature line (the print's rule, under every plate)", () => {
+  const caption = read("src/components/darkroom/Caption.tsx");
+  const page = read("src/components/darkroom/PrintPage.tsx");
+  const signature = caption.slice(caption.indexOf("function Signature("), caption.indexOf("const styles"));
+  const body = caption.slice(caption.indexOf("export function Caption("), caption.indexOf("function CaptionRight("));
+
+  it("sits the print's paper under the photograph, the label's width, with the caption hung beneath it", () => {
+    expect(page).toMatch(/const gap = signatureGap\(captionW, pixelRatio\);/);
+    expect(page).toMatch(/groupTop\(stageHeight, box\.height, underPlate\(box\.width, caption, pixelRatio\)\)/);
+    expect(page).toMatch(/<Caption\s+width=\{captionW\}\s+gap=\{gap\}/);
+    expect(body).toMatch(/<View style=\{\{ width, paddingTop: gap \}\} testID=\{testID\}>\s*<Signature width=\{width\}/);
+    // The caption measures from the line down, so the paper above it, which grows with the plate, is never fed back.
+    expect(body).toMatch(/<View\s+style=\{styles\.caption\}\s+onLayout=/);
+    expect(caption).toMatch(/caption: \{ paddingTop: CAPTION_GAP \}/);
+    expect(caption).toMatch(/signature: \{ height: SIGNATURE_RULE \}/);
+  });
+
+  it("takes its inks from the print, with Increase Contrast and whether a download is drawn, and is never read aloud", () => {
+    // The strong line, the firm line under Increase Contrast, and what a download is drawn in: `signatureInks` (tests/darkroom-room.test.ts).
+    expect(caption).toMatch(/import \{ signatureInks \} from "\.\/room";/);
+    expect(signature).toMatch(/const inks = signatureInks\(look\.room, look\.contrast, progress != null\);/);
+    expect(signature).toMatch(/style=\{\[styles\.signature, \{ width, backgroundColor: inks\.line \}\]\}/);
+    // No ink of the line's own beside the pairing, which would let Increase Contrast sink the download again.
+    expect(signature).not.toMatch(/look\.room\.(lineFirm|lineStrong|accent|ink)\b/);
+    expect(signature).toMatch(/accessible=\{false\}/);
+    expect(signature).toMatch(/importantForAccessibility="no-hide-descendants"/);
+  });
+
+  it("carries a download along itself in the pairing's ink, and the caption keeps its own line", () => {
+    // One line under the photograph: no rule of the download's own in place of the italic line.
+    expect(caption).not.toMatch(/ProgressRule|progressSlot/);
+    expect(body).not.toMatch(/\{progress \? \(/);
+    expect(body).toMatch(/<Signature width=\{width\} progress=\{progress \?\? null\}/);
+    expect(signature).toMatch(/\{ backgroundColor: inks\.drawn \}, drawn\]/);
+    // Measured: drawn out from the left. Not: the whole line breathes, and is still under Reduce Motion.
+    expect(signature).toMatch(/outputRange: \[-width \/ 2, 0\]/);
+    expect(signature).toMatch(/const breathing = progress != null && fraction == null && !look\.reduceMotion;/);
   });
 });
 

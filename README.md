@@ -420,7 +420,9 @@ The member's own camera roll, one photograph at a time, from further back
 than anyone scrolls. It is `app/darkroom.tsx`, a screen pushed on the root
 stack — not a tab, because the tab pager owns every sideways pan, and not a
 modal, because the editor has to open above it and come back to it. It is
-always printed on the dark page. Back is the left edge or the chevron;
+printed on the app's own page, light or dark as the appearance is, and
+each photograph carries the print's signature line under it, the caption
+hung beneath. Back is the left edge or the chevron;
 anywhere else a swipe turns the page. The way in is the first of the Post
 tab's two bars, ENTER THE MEMORY ROOM, printed as the invitation card is
 (brown and gold on the light print; on the dark one a grey card a step up
@@ -430,8 +432,9 @@ line when the member was in the room
 within twelve hours. The "In your library" rows of On this day
 (`app/memories.tsx`) open it too. It exists on iOS and in the web demo only.
 
-There are four chapters, chosen in Contents (the chapter name or CONTENTS
-in the running head). *On this day* is this date in earlier years, widening
+There are four chapters, chosen in Contents (the chapter name, or the
+CONTENTS tab in the running head, which says what is inside until it is
+first opened). *On this day* is this date in earlier years, widening
 to the week and then the season when the day is thin: at most four moments
 a year, one from each year oldest first and then the rest, forty at most.
 *Surprise me* deals rolls of 24 from anywhere older than 90 days, weighted
@@ -458,7 +461,7 @@ DOWNLOAD AND DEVELOP. Images are cached in memory only. What it keeps on the pho
 what was looked at and posted (`darkroom-history.json` in the cache
 folder, two months and a year), the shelf (`darkroom-set-aside.json`: id,
 date, size), the place (`darkroom-place.json`, twelve hours) and that the
-first-visit page was passed. Sign-out deletes all of it; Settings' "Forget
+first-visit page was passed and Contents opened. Sign-out deletes all of it; Settings' "Forget
 what the Memory Room has shown me" deletes all but the shelf. The privacy
 policy (`src/legal/documents.ts`, `npm run build:legal`) says exactly this.
 
