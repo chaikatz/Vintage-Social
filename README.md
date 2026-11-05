@@ -792,7 +792,7 @@ this repo:
   `/invite`, "Sign in" → `/sign-in`), and the footer (`/privacy`, `/terms`), set in HTML to the same
   tokens, type and measurements as `app/(gate)/landing.tsx` — and where the three prints lay, the
   centrepiece: the 3D VINTAGE mark made on Claude Design, the serif V from the app icon with its rule,
-  cut in espresso, turning slowly. The stage is transparent until the scene draws, so the page never
+  cut in espresso (in white on the app's black page), turning slowly. The stage is transparent until the scene draws, so the page never
   flashes another colour. `tests/homePage.test.ts` holds it to that. The invitation page (`api/invite.ts`) is set the same way — the name in the corner, the turning V, "chai
   invited you to VINTAGE.", "Open VINTAGE" as words with the rule — and so are the two screens in the app
   that carry an invitation (`app/(gate)/invite.tsx`, `app/invites.tsx`), which turn the same V (`MarkStage`, see

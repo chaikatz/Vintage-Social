@@ -10,12 +10,16 @@
  *
  * The page's <body data-fill="…"> sets how much of the view the mark takes
  * (the frame's half-height is fill × the mark's radius), as `fill` does on
- * the web stage.
+ * the web stage. Its data-ink="rrggbb", when the app fills it in, is the
+ * colour the V is cut in: the espresso on paper, a white on the black
+ * page. Anything else leaves the espresso.
  */
 import * as THREE from './vendor/three.module.js';
 import { buildVintageMark, spinVintageMark } from './mark.js';
 
 const fill = parseFloat(document.body.dataset.fill) || 1.3;
+const inkHex = document.body.dataset.ink ?? '';
+const ink = /^[0-9a-f]{6}$/i.test(inkHex) ? parseInt(inkHex, 16) : undefined;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -34,7 +38,7 @@ const soft = new THREE.DirectionalLight(0xfff4e6, 0.5);
 soft.position.set(-5, 3, -4);
 scene.add(soft);
 
-const group = buildVintageMark(THREE);
+const group = buildVintageMark(THREE, { color: ink });
 // Start where the still (assets/brand/mark-v.png) was taken, so a swap from it is seamless.
 group.rotation.y = 0.42;
 scene.add(group);
