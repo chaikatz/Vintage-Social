@@ -28,12 +28,13 @@ import { useSetAside } from "@/darkroom/setAside";
  * mono eyebrow that names it, one short line that says when to take it,
  * and one bar. The two bars are the same size to the thumb and do not
  * look alike. The Memory Room comes first, since it is the thing only
- * VINTAGE does, and its bar is the invitation card's dark brown, ruled
- * and lettered in gold. The library's is the house's ruled bar in ink
- * (solid where it is the page's only bar), one tap to the system picker
- * as it always was; the camera and a short clip are quiet words under it,
- * with the clip's limit beneath them. Then On this day, one line at the
- * foot.
+ * VINTAGE does, and its bar is the invitation card's dark stock, ruled
+ * and lettered in its ink: brown and gold on paper, and in Dark a card a
+ * step up from the black, lettered in white. The library's is the
+ * house's ruled bar in ink (solid where it is the page's only bar), one
+ * tap to the system picker as it always was; the camera and a short clip
+ * are quiet words under it, with the clip's limit beneath them. Then On
+ * this day, one line at the foot.
  *
  * This tab never reads the photo library. It may be on screen, or
  * preloaded beside one, without the member having gone near the Memory
@@ -361,7 +362,7 @@ const styles = StyleSheet.create({
 
   section: { marginTop: spacing.xxl + spacing.sm },
   eyebrow: { fontFamily: type.mono, fontSize: 10, letterSpacing: 2.4, ...caps, color: colors.inkFaint },
-  // The room's name, in the page's one accent: burnt sienna on paper, gold on the dark print.
+  // The room's name, in the page's one accent: burnt sienna on paper, white on black.
   roomEyebrow: { color: colors.accent },
   line: { fontSize: 15, lineHeight: 21, color: colors.inkSoft, marginTop: spacing.sm },
   bar: {

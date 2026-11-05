@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
   // The card a member hands over, printed like the door: the name small in
-  // the corner, the V, the address beneath. The same cream as the page — no
+  // the corner, the V, the address beneath. The same paper as the page — no
   // frame, no panel; the card is the page.
   // A thin rule around it: this is the invitation, the thing that is sent.
   card: {

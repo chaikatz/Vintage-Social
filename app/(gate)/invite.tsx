@@ -33,8 +33,8 @@ import { enterApp, useSession } from "@/providers/SessionProvider";
  * Set the way the front door is: the name small in the corner, the V as
  * the centrepiece, the words beneath it, fields ruled onto the page, and
  * the one way in as a line of capitals signed with the short rule. No
- * frame, no fill — the same cream page the landing is printed on, so an
- * invitation and the door are one thing.
+ * frame, no fill — the same page the landing is printed on, cream or
+ * black as the phone is set, so an invitation and the door are one thing.
  */
 export default function Invite() {
   const router = useRouter();
