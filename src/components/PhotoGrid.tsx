@@ -7,6 +7,7 @@ import { mediaUrl } from "@/api/media";
 import { getFilter } from "@/filters";
 import { cssFilterFor } from "@/filters/cssFilter";
 import { needsDisplayFilter } from "@/utils/displayFilter";
+import { useImageRetry } from "@/media/imageRetry";
 import type { PostRow } from "@/types/db";
 
 /** A grid row: the post, and whether it is here because its author tagged you. */
@@ -90,6 +91,8 @@ export function PhotoTile({
   // has come in over it, so nothing blinks or moves.
   const large = full && !isVideo ? mediaUrl("media", post.media_path) : null;
   const url = large ?? small;
+  // A square that fails to load is asked for again rather than left empty (src/media/imageRetry.ts).
+  const retry = useImageRetry(url);
   // Same rule as the feed: only unbaked media needs the filter applied
   // here, so a square matches the photograph it opens.
   const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
@@ -116,6 +119,8 @@ export function PhotoTile({
           style={[styles.cell, live ? ({ filter: live } as object) : null]}
           contentFit="cover"
           transition={60}
+          key={retry.attempt}
+          onError={retry.onError}
         />
       ) : (
         <View style={[styles.cell, styles.empty]}>

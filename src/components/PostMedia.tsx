@@ -14,6 +14,7 @@ import { cssFilterFor } from "@/filters/cssFilter";
 import { needsDisplayFilter } from "@/utils/displayFilter";
 import { useVideoMuted, toggleVideoMuted } from "@/utils/videoSound";
 import { clipTiming, type ClipSurface } from "@/utils/videoTiming";
+import { useImageRetry } from "@/media/imageRetry";
 import { DateStamp } from "./DateStamp";
 import { FilterOverlay } from "./FilterOverlay";
 import type { PostRow } from "@/types/db";
@@ -205,6 +206,9 @@ export function PostMedia({
 
   const frame = [styles.media, bare && styles.bare, { aspectRatio: ratio }];
   const pictureKey = recyclingKey ?? post.media_path;
+  // A photograph that fails to load is asked for again, the small copy
+  // standing in meanwhile (src/media/imageRetry.ts).
+  const photoRetry = useImageRetry(isVideo ? null : post.media_path);
 
   // Pinch a photograph to look closer. It grows about the point between
   // the fingers and springs back when they lift — a look, not a mode. Two
@@ -340,6 +344,8 @@ export function PostMedia({
             priority={priority}
             cachePolicy={cachePolicy}
             recyclingKey={pictureKey}
+            key={photoRetry.attempt}
+            onError={photoRetry.onError}
           />
         </Animated.View>
       ) : null}
@@ -450,6 +456,7 @@ function VideoMedia({
   useClipTiming(path, active, isPlaying, surface, recyclingKey);
 
   const posterUrl = mediaUrl("thumbnails", poster);
+  const posterRetry = useImageRetry(posterUrl);
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -459,6 +466,8 @@ function VideoMedia({
           style={[StyleSheet.absoluteFill, cssFilter ? ({ filter: cssFilter } as object) : null]}
           contentFit="cover"
           cachePolicy={cachePolicy}
+          key={posterRetry.attempt}
+          onError={posterRetry.onError}
         />
       ) : null}
       <Pressable
@@ -516,6 +525,7 @@ function VideoPoster({
   cachePolicy: "memory" | "memory-disk";
 }) {
   const posterUrl = mediaUrl("thumbnails", poster);
+  const posterRetry = useImageRetry(posterUrl);
   return (
     <Pressable onPress={onPress} style={StyleSheet.absoluteFill}>
       {posterUrl ? (
@@ -524,6 +534,8 @@ function VideoPoster({
           style={[StyleSheet.absoluteFill, cssFilter ? ({ filter: cssFilter } as object) : null]}
           contentFit="cover"
           cachePolicy={cachePolicy}
+          key={posterRetry.attempt}
+          onError={posterRetry.onError}
         />
       ) : null}
     </Pressable>
