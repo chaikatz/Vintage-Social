@@ -51,6 +51,9 @@ export const colors = {
   paper: dyn(light.paper, dark.paper), // app background, the header, the tab bar
   paperRaised: dyn(light.paperRaised, dark.paperRaised), // cards, inputs, buttons
   paperSunken: dyn(light.paperSunken, dark.paperSunken), // pressed states, wells
+  // The wash under something new, an unread notice: the sunken paper on
+  // paper; on black only just lifted, so a page of them is still black.
+  wash: dyn(light.paperSunken, "#161618"),
 
   // Ink
   ink: dyn(light.ink, dark.ink), // primary text

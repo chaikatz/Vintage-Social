@@ -61,6 +61,7 @@ describe("the light print", () => {
     const onPaper = Object.fromEntries((Object.keys(colors) as Token[]).map((t) => [t, print(t).light]));
     expect(onPaper).toEqual({
       ...light,
+      wash: light.paperSunken,
       like: "#B3402E",
       danger: "#A03B2E",
       success: "#5C7048",
@@ -160,6 +161,9 @@ describe("the dark print", () => {
     expect(ratio(d("borderStrong"), d("paper"))).toBeGreaterThan(ratio(d("border"), d("paper")));
     // The card's edge is what draws it on the black.
     expect(ratio(d("goldSoft"), d("paper"))).toBeGreaterThanOrEqual(3);
+    // An unread notice is washed, not filled: seen on the black, and a page of them still a black page.
+    expect(ratio(d("wash"), d("paper"))).toBeGreaterThanOrEqual(1.1);
+    expect(ratio(d("wash"), d("paper"))).toBeLessThan(ratio(d("paperRaised"), d("paper")));
   });
 
   it("marks with colour where white would be lost", () => {
@@ -287,5 +291,9 @@ describe("the tokens, where they are used", () => {
   it("marks a letter unread in the badge's colour, on the tray's icon and in the list", () => {
     expect(style(code("app/(tabs)/_layout.tsx"), "badge")).toMatch(/backgroundColor: colors\.badge,/);
     expect(style(code("app/messages/index.tsx"), "dot")).toMatch(/backgroundColor: colors\.badge,/);
+  });
+
+  it("washes an unread notice rather than filling it", () => {
+    expect(code("app/(tabs)/activity.tsx")).toMatch(/\n\s*unread: \{ backgroundColor: colors\.wash \},/);
   });
 });
