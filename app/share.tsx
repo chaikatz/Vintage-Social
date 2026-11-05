@@ -10,6 +10,7 @@ import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
+import { memberLabel } from "@/components/memberLabel";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
 import { fetchFollowing } from "@/api/profiles";
@@ -152,7 +153,7 @@ export default function Share() {
               onPress={() => toggle(item.id)}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: on }}
-              accessibilityLabel={item.full_name ? `${item.username}, ${item.full_name}` : item.username}
+              accessibilityLabel={memberLabel(item.username, item.full_name)}
             >
               <Avatar path={item.avatar_url} username={item.username} size={40} />
               <View style={styles.rowText}>

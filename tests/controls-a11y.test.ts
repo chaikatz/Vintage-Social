@@ -1,15 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@/components/Avatar", () => ({ Avatar: () => null }));
-vi.mock("react-native", () => ({
-  Pressable: () => null,
-  StyleSheet: { create: <T,>(s: T) => s },
-  Text: () => null,
-  View: () => null,
-}));
-vi.mock("@/theme", () => ({ colors: {}, spacing: { sm: 8, md: 12, lg: 16 }, radii: {} }));
+import { describe, expect, it } from "vitest";
+import { memberLabel } from "@/components/memberLabel";
 
 /**
  * The app's shared controls, as VoiceOver meets them: the Button says it
@@ -35,6 +27,14 @@ describe("Button", () => {
   });
 });
 
+describe("a member, as VoiceOver reads them", () => {
+  it("is their username, then what the row says under it, where it says anything", () => {
+    expect(memberLabel("june", "June Nakamura", "Osaka")).toBe("june, June Nakamura, Osaka");
+    expect(memberLabel("june", null, undefined)).toBe("june");
+    expect(memberLabel("june", "", "Osaka")).toBe("june, Osaka");
+  });
+});
+
 describe("UserRow", () => {
   const src = code("src/components/UserRow.tsx");
 
@@ -44,11 +44,8 @@ describe("UserRow", () => {
     expect(src).toMatch(/<\/Pressable>\s*\{right\}\s*<\/View>/);
   });
 
-  it("names the member it opens", async () => {
-    const { userRowLabel } = await import("@/components/UserRow");
-    expect(userRowLabel("june", "June Nakamura", "Osaka")).toBe("june, June Nakamura, Osaka");
-    expect(userRowLabel("june", null, undefined)).toBe("june");
-    expect(src).toMatch(/accessibilityRole="button"\s*accessibilityLabel=\{userRowLabel\(username, title, subtitle\)\}/);
+  it("names the member it opens", () => {
+    expect(src).toMatch(/accessibilityRole="button"\s*accessibilityLabel=\{memberLabel\(username, title, subtitle\)\}/);
   });
 
   it("keeps the look: the row's sides padded, the member's part its height", () => {

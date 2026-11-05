@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/theme";
 import { Avatar } from "./Avatar";
+import { memberLabel } from "./memberLabel";
 
 interface Props {
   username: string;
@@ -10,11 +11,6 @@ interface Props {
   subtitle?: string | null;
   onPress: () => void;
   right?: React.ReactElement;
-}
-
-/** What VoiceOver reads for the member: the name, then what the row says under it. */
-export function userRowLabel(username: string, title?: string | null, subtitle?: string | null): string {
-  return [username, title, subtitle].filter(Boolean).join(", ");
 }
 
 /**
@@ -33,7 +29,7 @@ export function UserRow({ username, avatarPath, title, subtitle, onPress, right 
         style={styles.person}
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={userRowLabel(username, title, subtitle)}
+        accessibilityLabel={memberLabel(username, title, subtitle)}
       >
         <Avatar path={avatarPath} username={username} size={44} />
         <View style={styles.text}>

@@ -5,6 +5,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
 import { fetchFollowing, searchProfiles } from "@/api/profiles";
 import { Avatar } from "./Avatar";
+import { memberLabel } from "./memberLabel";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
@@ -117,7 +118,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
                 onPress={() => toggle(item)}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: on, disabled: !on && selected.length >= MAX_TAGS }}
-                accessibilityLabel={item.full_name ? `${item.username}, ${item.full_name}` : item.username}
+                accessibilityLabel={memberLabel(item.username, item.full_name)}
               >
                 <Avatar path={item.avatar_url} username={item.username} size={36} />
                 <View style={styles.rowText}>

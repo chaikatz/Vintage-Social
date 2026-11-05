@@ -7,6 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { withRowBack, withoutRow } from "@/components/decidedRows";
+import { memberLabel } from "@/components/memberLabel";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideFollowRequest, fetchPendingRequests } from "@/api/profiles";
 import type { ProfileRow } from "@/types/db";
@@ -83,7 +84,7 @@ export default function Requests() {
               style={styles.person}
               onPress={() => router.push(`/user/${item.username}`)}
               accessibilityRole="button"
-              accessibilityLabel={item.full_name ? `${item.username}, ${item.full_name}` : item.username}
+              accessibilityLabel={memberLabel(item.username, item.full_name)}
             >
               <Avatar path={item.avatar_url} username={item.username} size={44} />
               <View style={styles.personText}>
