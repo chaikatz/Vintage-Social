@@ -12,9 +12,24 @@ export function takenDate(post: Pick<PostRow, "taken_at" | "created_at">): Date 
   return new Date(post.taken_at ?? post.created_at);
 }
 
-/** Newest capture first. Used for the "taken" order of a profile grid. */
+/**
+ * Newest capture first. Used for the "taken" order of a profile grid.
+ *
+ * Each date is read once, not twice for every comparison: a sort compares
+ * a few times per photograph, and reading an ISO date afresh each time was
+ * most of the work of drawing a long grid or timeline (some forty thousand
+ * dates for two thousand photographs in no particular order). Those taken
+ * at the same moment keep the order they came in, as before.
+ */
 export function sortByTaken<T extends Pick<PostRow, "taken_at" | "created_at">>(posts: T[]): T[] {
-  return [...posts].sort((a, b) => takenDate(b).getTime() - takenDate(a).getTime());
+  return byTimeDescending(posts, (post) => takenDate(post).getTime());
+}
+
+/** `items` by `timeOf`, newest first, each item's time read once; equal times keep their order. */
+export function byTimeDescending<T>(items: readonly T[], timeOf: (item: T) => number): T[] {
+  const keyed = items.map((item, i) => ({ item, i, t: timeOf(item) }));
+  keyed.sort((a, b) => b.t - a.t || a.i - b.i);
+  return keyed.map((k) => k.item);
 }
 
 // ---------------------------------------------------------------------------
