@@ -497,9 +497,14 @@ describe("the cards drawn only on the way down", () => {
   const card = code("src/components/PostCard.tsx");
   const media = code("src/components/PostMedia.tsx");
 
-  it("are frames without pictures until the gallery shows, and the tapped photograph loads first", () => {
+  it("are frames without pictures away from the reader, and the tapped photograph loads first", () => {
     const cell = tags(gallery, "PostCard")[0] ?? "";
-    expect(cell).toMatch(/frameOnly=\{!ready && index >= MEASURE_LIMIT && item\.id !== postId\}/);
+    // Only the cards around the reader draw their photograph (src/media/cardWindow.ts):
+    // around the tapped one while the gallery lands, around the card on screen after.
+    expect(cell).toMatch(/frameOnly=\{!isWarm\(index, pictures\)\}/);
+    expect(gallery).toMatch(
+      /const pictures = pictureWindow\(\{ ready, startIndex, seenIndex: seenIndex < 0 \? null : seenIndex, count: posts\.length \}\);/,
+    );
     expect(cell).toMatch(/priority=\{item\.id === postId \? "high" : "normal"\}/);
   });
 

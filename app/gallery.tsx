@@ -19,6 +19,7 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { galleryEra, galleryRows } from "@/utils/profileViews";
 import { isWarm, warmWindow } from "@/utils/videoWindow";
+import { pictureWindow } from "@/media/cardWindow";
 import {
   LANDING_STEP_MS,
   approachOffset,
@@ -270,6 +271,9 @@ export default function Gallery() {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 120 }).current;
   const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
   const warm = warmWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
+  // And only the cards around the reader draw their photograph: the rest
+  // are their frames, at the same height (see src/media/cardWindow.ts).
+  const pictures = pictureWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
 
   const loading = !postsQ.isFetched || !authorQ.isFetched || waiting;
 
@@ -287,8 +291,9 @@ export default function Gallery() {
         // tapped one is there to measure straight away and nothing above
         // it is drawn later, under the reader. Capped so a very long
         // history does not draw itself entirely at once; past the cap the
-        // list draws its way down to the tapped card, out of sight. A clip
-        // among them is its poster, at its own height, and makes no player.
+        // list draws its way down to the tapped card, out of sight. Only the
+        // cards around the tapped one draw their photograph; the rest are
+        // frames at their own height, and a clip among them makes no player.
         initialNumToRender={Math.min(startIndex + 3, MEASURE_LIMIT)}
         // While it is hidden it draws twice as many cards at a time: no one
         // is scrolling it, and the cards it walks past are frames, quick to
@@ -324,10 +329,11 @@ export default function Gallery() {
               onMore={(p) => onMore(p, () => router.back())}
               active={ready && focused && item.id === visibleId}
               warm={isWarm(index, warm)}
-              // A card drawn only on the way down to the tapped one is its
-              // frame, the same height, until the gallery shows: nobody sees
-              // it, and its picture would only hold the tapped one back.
-              frameOnly={!ready && index >= MEASURE_LIMIT && item.id !== postId}
+              // A card away from the reader is its frame, the same height:
+              // on the way down to the tapped one nobody sees it, and its
+              // picture would only hold the tapped one back; once the
+              // gallery shows, the photographs come in a few cards ahead.
+              frameOnly={!isWarm(index, pictures)}
               priority={item.id === postId ? "high" : "normal"}
               surface="gallery"
             />
