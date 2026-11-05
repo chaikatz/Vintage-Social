@@ -24,3 +24,17 @@ describe("the editor's controls", () => {
     );
   });
 });
+
+describe("Who was there", () => {
+  const picker = readFileSync(path.resolve(import.meta.dirname, "../src/components/TagPicker.tsx"), "utf8");
+
+  it("reads each member as ticked or not, and full once ten are named", () => {
+    expect(picker).toMatch(
+      /onPress=\{\(\) => toggle\(item\)\}\s*accessibilityRole="checkbox"\s*accessibilityState=\{\{ checked: on, disabled: !on && selected\.length >= MAX_TAGS \}\}/,
+    );
+  });
+
+  it("names the chip that takes a member back out", () => {
+    expect(picker).toMatch(/accessibilityLabel=\{`Take \$\{p\.username\} out`\}/);
+  });
+});

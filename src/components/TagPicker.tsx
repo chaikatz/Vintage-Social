@@ -85,7 +85,13 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
         {selected.length > 0 ? (
           <View style={styles.chips}>
             {selected.map((p) => (
-              <Pressable key={p.id} style={styles.chip} onPress={() => toggle(p)}>
+              <Pressable
+                key={p.id}
+                style={styles.chip}
+                onPress={() => toggle(p)}
+                accessibilityRole="button"
+                accessibilityLabel={`Take ${p.username} out`}
+              >
                 <Text style={styles.chipText}>{p.username}</Text>
                 <Feather name="x" size={12} color={colors.inkSoft} />
               </Pressable>
@@ -112,7 +118,13 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
           renderItem={({ item }) => {
             const on = chosen.has(item.id);
             return (
-              <Pressable style={styles.row} onPress={() => toggle(item)}>
+              <Pressable
+                style={styles.row}
+                onPress={() => toggle(item)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: on, disabled: !on && selected.length >= MAX_TAGS }}
+                accessibilityLabel={item.full_name ? `${item.username}, ${item.full_name}` : item.username}
+              >
                 <Avatar path={item.avatar_url} username={item.username} size={36} />
                 <View style={styles.rowText}>
                   <Text style={styles.username}>{item.username}</Text>
