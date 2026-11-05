@@ -33,6 +33,9 @@ import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * One conversation. Messages are plain: words, or a photograph passed along
  * with a line about it. No reactions, no read receipts beyond marking the

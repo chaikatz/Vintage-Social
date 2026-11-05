@@ -24,6 +24,9 @@ import {
 import { useSession } from "@/providers/SessionProvider";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Find people, or look at what the rest of VINTAGE has been shooting.
  *

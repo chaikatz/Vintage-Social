@@ -15,6 +15,9 @@ import { postAge } from "@/utils/time";
 import { useSession } from "@/providers/SessionProvider";
 import type { ActivityWithRefs } from "@/types/db";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 function line(item: ActivityWithRefs): string {
   switch (item.type) {
     case "like":

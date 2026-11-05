@@ -28,6 +28,9 @@ import { MAX_COMMENT_LENGTH } from "@/utils/validation";
 import type { CommentWithAuthor } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * The comments on one photograph.
  *

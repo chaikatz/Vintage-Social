@@ -12,6 +12,9 @@ import { postAge } from "@/utils/time";
 import { inboxPreview } from "@/utils/messageText";
 import type { ConversationWithPeer } from "@/types/db";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * The inbox. One thread per member, newest first — no folders, no requests
  * queue, no "primary" and "general". If you can see someone on VINTAGE you

@@ -10,6 +10,10 @@ import { useNotificationTaps } from "@/utils/push";
 import { KeyboardDone } from "@/components/KeyboardDone";
 import { startOutbox } from "@/uploads";
 
+// A page that breaks while it is drawn shows the recover page instead of
+// closing the app (src/navigation/Recover.tsx).
+export { RecoverApp as ErrorBoundary } from "@/navigation/Recover";
+
 // Before the first screen draws, so the page opens on the print it was left on.
 restoreAppearance();
 
