@@ -285,7 +285,9 @@ describe("the tokens, where they are used", () => {
       const src = code(f);
       expect(src, f).not.toMatch(old);
       // A plain dark string would print the black page on Light too; only the export's own print takes one.
-      if (f !== "src/theme/index.ts" && f !== "src/components/ExportCard.tsx") expect(src, f).not.toMatch(/\bdark\.(paper|ink|border|accent)\w*/);
+      // Inside a DynamicColorIOS it is the dark half of a colour that follows the appearance, which is the point.
+      const plain = src.replace(/DynamicColorIOS\(\{[^}]*\}\)/g, (call) => call.replace(/\bdark: dark\.\w+/g, ""));
+      if (f !== "src/theme/index.ts" && f !== "src/components/ExportCard.tsx") expect(plain, f).not.toMatch(/\bdark\.(paper|ink|border|accent)\w*/);
     }
   });
 
