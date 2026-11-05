@@ -70,7 +70,12 @@ supabase.auth.onAuthStateChange((event) => {
   if (event === "SIGNED_OUT") forgetDarkroom();
 });
 
-// Refresh tokens only while the app is foregrounded.
+// Refresh tokens only while the app is foregrounded. From launch too: iOS
+// tells a listener the app has become active only when it changes, and by
+// the time this listens on a cold start it already is, so the first run of
+// the app after a launch used to go without a refresher until the next
+// trip to the background.
+if (!isDemoMode() && AppState.currentState !== "background") supabase.auth.startAutoRefresh();
 AppState.addEventListener("change", (state) => {
   if (state === "active") {
     supabase.auth.startAutoRefresh();

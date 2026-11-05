@@ -25,11 +25,34 @@ export const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Whether the app is in front, for react-query, as iOS reports a change:
+ * away once it has gone to the background, back once it is active again,
+ * and no change while it is only inactive. Inactive is the app still on
+ * screen under something of the system's: Control Center, the
+ * notification list pulled down, a permission question, Face ID, a call's
+ * banner. Each of those used to count as leaving and coming back, and
+ * re-read every screen still mounted (every tab, every page pushed over
+ * them) at the moment the member returned to the app.
+ */
+export function focusAfter(state: string): boolean | null {
+  if (state === "active") return true;
+  if (state === "background") return false;
+  return null;
+}
+
 if (Platform.OS !== "web") {
   // react-query listens to `window` for these in a browser; the phone
   // has to be told.
   focusManager.setEventListener((handleFocus) => {
-    const sub = AppState.addEventListener("change", (state) => handleFocus(state === "active"));
+    // Where it stands as this listens, so the first "active" after a
+    // launch is not taken for a return.
+    const now = focusAfter(AppState.currentState);
+    if (now !== null) handleFocus(now);
+    const sub = AppState.addEventListener("change", (state) => {
+      const focused = focusAfter(state);
+      if (focused !== null) handleFocus(focused);
+    });
     return () => sub.remove();
   });
   onlineManager.setEventListener((setOnline) =>
