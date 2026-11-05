@@ -254,7 +254,7 @@ export function captionWords(p: {
     word: w.right
       ? {
           label: w.right.label,
-          // The gold dot, in every chapter but the shelf, where every print is set aside.
+          // The dot in the accent, in every chapter but the shelf, where every print is set aside.
           on: toggle && p.setAside && !p.shelfChapter,
           inert: w.right.inert,
           hint: toggle ? (p.setAside ? SET_ASIDE_HINT_ON : SET_ASIDE_HINT_OFF) : undefined,
@@ -277,7 +277,7 @@ export interface StageAction {
  * only while it would do something, so a develop state shows through:
  * DOWNLOAD AND DEVELOP and NOT NOW in iCloud, STOP while downloading (the
  * only way out then, §6.3), REMOVE for a print gone from the shelf. Off
- * VoiceOver SET ASIDE carries a gold dot; here it says PUT BACK instead.
+ * VoiceOver SET ASIDE carries a dot in the accent; here it says PUT BACK instead.
  * With no print in front of the member — the next batch still being
  * dealt — only Contents is left.
  */

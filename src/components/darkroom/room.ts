@@ -31,7 +31,8 @@ import { dark, light, type } from "@/theme";
  *               Increase Contrast.
  *   lineFirm    the theme's faintest ink, as a line that is plainly
  *               there: the edge of the CONTENTS tab, and the signature
- *               line under Increase Contrast.
+ *               line under Increase Contrast (`signatureInks` says what
+ *               a download is drawn in along it).
  *
  * Every ink the room sets type in reaches WCAG AA (4.5:1) on every ground
  * it is set on, in both prints. Where the theme's ink does not, the room
@@ -118,6 +119,44 @@ export const rooms: Record<Scheme, Room> = { light: roomFor("light"), dark: room
 export function useScheme(): Scheme {
   const scheme = useColorScheme();
   return Platform.OS === "ios" && scheme === "dark" ? "dark" : "light";
+}
+
+/** WCAG's 3:1 for what is not type: a line, a fill, the state of a control. */
+export const NON_TEXT = 3;
+
+/**
+ * The signature line's two inks: the line, and a download drawn along it
+ * (`Signature` in Caption.tsx).
+ *
+ * The line is the print's strong line, and its firm line under Increase
+ * Contrast, so the line is plainly there. A download is drawn in the
+ * accent wherever the accent stands 3:1 off the line it runs along;
+ * otherwise in the ink. On the light print under Increase Contrast, burnt
+ * sienna on the firm line is 1.65:1 and the ink is 4.88:1, so the download
+ * is drawn in the ink there and Increase Contrast raises it rather than
+ * lowering it. Only where not even the ink stands 3:1 off the firm line
+ * does the line keep its strong line while a download is drawn, the ink
+ * along it. So in either print, Increase Contrast or not, how far a
+ * download has come is 3:1 or better against the rest of the line.
+ */
+export function signatureInks(room: Room, contrast: boolean, drawing: boolean): { line: string; drawn: string } {
+  const line = contrast ? room.lineFirm : room.lineStrong;
+  if (!drawing) return { line, drawn: room.accent };
+  const pairs: readonly (readonly [string, string])[] = contrast
+    ? [
+        [line, room.accent],
+        [line, room.ink],
+        [room.lineStrong, room.ink],
+        [room.lineStrong, room.accent],
+      ]
+    : [
+        [line, room.accent],
+        [line, room.ink],
+      ];
+  const [l, d] =
+    pairs.find(([a, b]) => contrastRatio(a, b) >= NON_TEXT) ??
+    pairs.reduce((best, p) => (contrastRatio(p[0], p[1]) > contrastRatio(best[0], best[1]) ? p : best));
+  return { line: l, drawn: d };
 }
 
 /** The signed rule under a word sits at this opacity; Increase Contrast takes it to 1. */

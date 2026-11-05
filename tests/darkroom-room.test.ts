@@ -96,7 +96,16 @@ import {
   type Chapter,
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, type Reader } from "@/components/darkroom/dealer";
-import { contrastRatio, roles, rooms, toneColor, useScheme, type Room, type Scheme } from "@/components/darkroom/room";
+import {
+  contrastRatio,
+  roles,
+  rooms,
+  signatureInks,
+  toneColor,
+  useScheme,
+  type Room,
+  type Scheme,
+} from "@/components/darkroom/room";
 import { Visit } from "@/components/darkroom/visit";
 import { dark, light } from "@/theme";
 import type { LibrarySource, Print } from "@/darkroom/types";
@@ -212,6 +221,44 @@ describe("the room's page", () => {
       expect(toneColor(r, "ink", true), scheme).toBe(r.ink);
       expect(toneColor(r, "soft", true), scheme).toBe(r.soft);
     }
+  });
+
+  it("keeps the signature line the strong line, and the firm line under Increase Contrast, while nothing is drawn", () => {
+    for (const [scheme] of prints) {
+      const r = rooms[scheme];
+      expect(signatureInks(r, false, false).line, scheme).toBe(r.lineStrong);
+      expect(signatureInks(r, true, false).line, scheme).toBe(r.lineFirm);
+    }
+  });
+
+  it("draws a download 3:1 or better off the line it runs along, in both prints, Increase Contrast or not", () => {
+    for (const [scheme] of prints) {
+      const r = rooms[scheme];
+      for (const contrast of [false, true]) {
+        const { line, drawn } = signatureInks(r, contrast, true);
+        const at = `${scheme}${contrast ? " under Increase Contrast" : ""}`;
+        expect(ratio(drawn, line), `${at}: ${drawn} along ${line}`).toBeGreaterThanOrEqual(3);
+        // What is drawn shows on the page too, and is always one of the room's own marks on one of its own lines.
+        expect(ratio(drawn, r.page), at).toBeGreaterThanOrEqual(3);
+        expect([r.accent, r.ink], at).toContain(drawn);
+        expect([r.lineStrong, r.lineFirm], at).toContain(line);
+        // The accent wherever it stands 3:1 off the line the print would draw; the ink only where it does not.
+        const own = contrast ? r.lineFirm : r.lineStrong;
+        if (ratio(r.accent, own) >= 3) expect({ line, drawn }, at).toEqual({ line: own, drawn: r.accent });
+        else if (ratio(r.ink, own) >= 3) expect({ line, drawn }, at).toEqual({ line: own, drawn: r.ink });
+      }
+    }
+  });
+
+  it("draws the light print's download in the ink under Increase Contrast, where the accent would sink into the firm line", () => {
+    // Burnt sienna along the firm line is 1.65:1: under Increase Contrast it is the ink, on the line Increase Contrast sets.
+    expect(ratio(light.accent, light.inkFaint)).toBeLessThan(3);
+    expect(signatureInks(rooms.light, true, true)).toEqual({ line: light.inkFaint, drawn: light.ink });
+    // So Increase Contrast raises how far a download has come on the light print, never lowers it.
+    const plain = signatureInks(rooms.light, false, true);
+    const firm = signatureInks(rooms.light, true, true);
+    expect(plain).toEqual({ line: light.borderStrong, drawn: light.accent });
+    expect(ratio(firm.drawn, firm.line)).toBeGreaterThan(ratio(plain.drawn, plain.line));
   });
 });
 

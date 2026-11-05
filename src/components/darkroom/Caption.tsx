@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Pressable, StyleSheet, View, type LayoutChangeEvent } from "react-native";
 import { CAPTION_GAP, DATE_REACH, SIGNATURE_RULE, TOUCH_TARGET, WORD_REACH } from "./geometry";
 import { useLook } from "./look";
+import { signatureInks } from "./room";
 import { RoomText } from "./Type";
 
 /** Clear space between the date and the word at the right. */
@@ -38,10 +39,11 @@ export interface CaptionWord {
  * never moves a line.
  *
  * While a print comes down from iCloud the download is drawn along the
- * signature line itself, in the accent: out from the left as it comes
- * down when it can be measured, the whole line breathing when it cannot
- * (still, under Reduce Motion). One line under the photograph, never two,
- * and the caption keeps its words.
+ * signature line itself, in the accent (the ink, where the accent would
+ * not stand 3:1 off the line: `signatureInks`): out from the left as it
+ * comes down when it can be measured, the whole line breathing when it
+ * cannot (still, under Reduce Motion). One line under the photograph,
+ * never two, and the caption keeps its words.
  *
  * The date and the word are each a 44 pt press (§11.6), reaching over the
  * space above and the line beneath without moving a letter (`DATE_REACH`
@@ -180,10 +182,12 @@ function CaptionRight({
 
 /**
  * The signature line, `width` long, in the print's strong line (its
- * faintest ink under Increase Contrast). Never read aloud, and never in a
- * finger's way. A download is drawn along it in the accent: out from the
- * left as it comes down, or the whole line breathing while it cannot say
- * how far.
+ * firm line under Increase Contrast). Never read aloud, and never in a
+ * finger's way. A download is drawn along it, out from the left as it
+ * comes down, or the whole line breathing while it cannot say how far;
+ * in the accent, or the ink where the accent would not stand 3:1 off the
+ * line, so Increase Contrast never makes how far fainter than that
+ * (`signatureInks` in room.ts).
  */
 function Signature({
   width,
@@ -195,6 +199,7 @@ function Signature({
   testID?: string;
 }) {
   const look = useLook();
+  const inks = signatureInks(look.room, look.contrast, progress != null);
   const fraction = progress?.fraction ?? null;
   const breathing = progress != null && fraction == null && !look.reduceMotion;
   const breath = useRef(new Animated.Value(1)).current;
@@ -226,13 +231,13 @@ function Signature({
       : { opacity: breath };
   return (
     <View
-      style={[styles.signature, { width, backgroundColor: look.contrast ? look.room.lineFirm : look.room.lineStrong }]}
+      style={[styles.signature, { width, backgroundColor: inks.line }]}
       accessible={false}
       importantForAccessibility="no-hide-descendants"
       pointerEvents="none"
       testID={testID}
     >
-      {drawn ? <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: look.room.accent }, drawn]} /> : null}
+      {drawn ? <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: inks.drawn }, drawn]} /> : null}
     </View>
   );
 }

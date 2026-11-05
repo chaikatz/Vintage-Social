@@ -242,18 +242,23 @@ describe("the signature line (the print's rule, under every plate)", () => {
     expect(caption).toMatch(/signature: \{ height: SIGNATURE_RULE \}/);
   });
 
-  it("is the print's strong line, the faintest ink under Increase Contrast, and never read aloud", () => {
-    expect(signature).toMatch(/backgroundColor: look\.contrast \? look\.room\.lineFirm : look\.room\.lineStrong/);
+  it("takes its inks from the print, with Increase Contrast and whether a download is drawn, and is never read aloud", () => {
+    // The strong line, the firm line under Increase Contrast, and what a download is drawn in: `signatureInks` (tests/darkroom-room.test.ts).
+    expect(caption).toMatch(/import \{ signatureInks \} from "\.\/room";/);
+    expect(signature).toMatch(/const inks = signatureInks\(look\.room, look\.contrast, progress != null\);/);
+    expect(signature).toMatch(/style=\{\[styles\.signature, \{ width, backgroundColor: inks\.line \}\]\}/);
+    // No ink of the line's own beside the pairing, which would let Increase Contrast sink the download again.
+    expect(signature).not.toMatch(/look\.room\.(lineFirm|lineStrong|accent|ink)\b/);
     expect(signature).toMatch(/accessible=\{false\}/);
     expect(signature).toMatch(/importantForAccessibility="no-hide-descendants"/);
   });
 
-  it("carries a download along itself in the accent, and the caption keeps its own line", () => {
+  it("carries a download along itself in the pairing's ink, and the caption keeps its own line", () => {
     // One line under the photograph: no rule of the download's own in place of the italic line.
     expect(caption).not.toMatch(/ProgressRule|progressSlot/);
     expect(body).not.toMatch(/\{progress \? \(/);
     expect(body).toMatch(/<Signature width=\{width\} progress=\{progress \?\? null\}/);
-    expect(signature).toMatch(/\{ backgroundColor: look\.room\.accent \}, drawn\]/);
+    expect(signature).toMatch(/\{ backgroundColor: inks\.drawn \}, drawn\]/);
     // Measured: drawn out from the left. Not: the whole line breathes, and is still under Reduce Motion.
     expect(signature).toMatch(/outputRange: \[-width \/ 2, 0\]/);
     expect(signature).toMatch(/const breathing = progress != null && fraction == null && !look\.reduceMotion;/);
