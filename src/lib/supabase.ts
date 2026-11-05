@@ -1,10 +1,11 @@
 import "react-native-url-polyfill/auto";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type Session } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 import { AppState, Platform } from "react-native";
 import { isDemoMode, requireEnv } from "./env";
 import type { Database } from "@/types/db";
 import { forgetDarkroom } from "@/darkroom/forget";
+import { parseStoredSession } from "./storedSession";
 
 /**
  * Session tokens live in the iOS keychain (SecureStore), not AsyncStorage.
@@ -32,6 +33,29 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+
+/** Where auth keeps the session on this phone: the client's own key, read back rather than worked out again. */
+const sessionKey = (supabase as unknown as { storageKey?: string }).storageKey ?? "";
+
+/**
+ * The session auth has kept on this phone, straight from the keychain:
+ * no request, no refresh (see storedSession.ts). Null when there is none,
+ * in demo mode, or when the keychain cannot be read.
+ */
+export async function readStoredSession(): Promise<Session | null> {
+  if (isDemoMode() || !sessionKey) return null;
+  try {
+    const raw =
+      Platform.OS === "web"
+        ? typeof localStorage !== "undefined"
+          ? localStorage.getItem(sessionKey)
+          : null
+        : await SecureStore.getItemAsync(sessionKey);
+    return parseStoredSession(raw);
+  } catch {
+    return null;
+  }
+}
 
 // The Darkroom's memory on this phone goes with the session. Listened for
 // here, as the client is made, rather than in the session provider: auth

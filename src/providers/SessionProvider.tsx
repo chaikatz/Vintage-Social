@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import { router } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { readStoredSession, supabase } from "@/lib/supabase";
 import { queryClient } from "@/lib/queryClient";
 import { withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
@@ -18,6 +18,8 @@ import type { ProfileRow } from "@/types/db";
 import { forgetPushToken } from "@/utils/push";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 import { forgetOutbox } from "@/uploads";
+import { forgetMember, recallMember, rememberMember } from "./rememberedMember";
+import { openSession } from "./launchSession";
 
 interface SessionState {
   /** undefined while restoring the persisted session on launch. */
@@ -142,8 +144,14 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    // Who is signed in, from the phone's own copy at once and from auth
+    // when it has answered, so the launch never waits on the network to
+    // find out (launchSession.ts).
+    const stopOpening = openSession(supabase.auth, readStoredSession, setSession);
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
+      // The first answer of nobody is the launch read's to give (above):
+      // auth says it also when a refresh could not reach the server.
+      if (event === "INITIAL_SESSION" && !next) return;
       // SIGNED_OUT forgets the Darkroom where the client is made
       // (src/lib/supabase.ts), so that one said during launch is heard.
       // auth-js says it only once it has removed the session from this
@@ -158,11 +166,17 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       //
       // Posts still going up go with the session: their uploads are made
       // as the member who has just left.
-      if (event === "SIGNED_OUT") forgetOutbox();
+      if (event === "SIGNED_OUT") {
+        forgetOutbox();
+        forgetMember();
+      }
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
     });
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      stopOpening();
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   // Keyed on who is signed in, not on the session object: a token refresh
@@ -177,6 +191,9 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   // One read at a time: a second call while the first is still retrying
   // joins it instead of stacking another behind it.
   const inFlight = useRef<Promise<boolean> | null>(null);
+  // Who is signed in now, for a read that lands after they have gone.
+  const currentUser = useRef(userId);
+  currentUser.current = userId;
   const refreshProfile = useCallback(async (): Promise<boolean> => {
     if (!userId) {
       setProfile(null);
@@ -191,8 +208,13 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
         if (error) throw error;
         return data as ProfileRow | null;
       });
+      // Read for a member who has since signed out: neither shown nor kept.
+      if (currentUser.current !== userId) return false;
       setProfile(data);
       setProfileLoaded(true);
+      // Kept for the next launch to open on (rememberedMember.ts).
+      if (data) rememberMember(data);
+      else forgetMember();
       return true;
     } catch {
       // The read failed, not the membership. Keep what we knew; a member
@@ -212,10 +234,18 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId, restoring]);
 
+  // A member this phone has seen opens on the profile last read for them,
+  // at once, and the read goes on behind it; anyone else waits for the read.
   useEffect(() => {
-    setProfileLoaded(false);
+    const known = userId ? recallMember(userId) : null;
+    if (known) {
+      setProfile(known);
+      setProfileLoaded(true);
+    } else {
+      setProfileLoaded(false);
+    }
     refreshProfile();
-  }, [refreshProfile]);
+  }, [refreshProfile]); // userId is read through refreshProfile
 
   // No profile yet and the read keeps failing: try again until it lands.
   useEffect(() => {
@@ -235,6 +265,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
     forgetDarkroom();
     forgetOutbox();
+    forgetMember();
     await leaveToLanding();
   }, []);
 
