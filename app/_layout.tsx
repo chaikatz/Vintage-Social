@@ -4,7 +4,7 @@ import { Stack } from "expo-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { SessionProvider } from "@/providers/SessionProvider";
-import { colors, dark, type } from "@/theme";
+import { colors, type } from "@/theme";
 import { restoreAppearance } from "@/utils/appearance";
 import { useNotificationTaps } from "@/utils/push";
 import { KeyboardDone } from "@/components/KeyboardDone";
@@ -90,10 +90,11 @@ export default function RootLayout() {
                 : { animation: "default" as const }),
             })}
           />
-          {/* The Darkroom: the lights go down as it fades in, onto the
-              deepest brown the theme has, so not a frame of the light page
-              shows in Light appearance. Back is the left edge only — a pan
-              anywhere else is the next print. */}
+          {/* The Darkroom fades in on the app's own page, whichever print
+              the app is set to — black in Dark, paper in Light — so the
+              room is never a different colour from where it was entered.
+              Back is the left edge only — a pan anywhere else is the next
+              print. */}
           <Stack.Screen
             name="darkroom"
             options={{
@@ -102,7 +103,7 @@ export default function RootLayout() {
               animationDuration: 360,
               gestureEnabled: true,
               fullScreenGestureEnabled: false,
-              contentStyle: { backgroundColor: dark.paperSunken },
+              contentStyle: { backgroundColor: colors.paper },
             }}
           />
           {/* Screens with sideways gestures of their own — a pinch on a

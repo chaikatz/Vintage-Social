@@ -291,7 +291,7 @@ function Film({ post, width, height }: { post: PostRow; width: number; height: n
       {poster ? <Image source={poster} style={StyleSheet.absoluteFill} contentFit="contain" cachePolicy="memory-disk" /> : null}
       <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="contain" nativeControls={false} />
       <View style={styles.sound} pointerEvents="none">
-        <Feather name={muted ? "volume-x" : "volume-2"} size={15} color={colors.onShutter} />
+        <Feather name={muted ? "volume-x" : "volume-2"} size={15} color={colors.onCamera} />
       </View>
     </Pressable>
   );
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.shutter,
+    backgroundColor: colors.camera,
     opacity: 0.85,
   },
   caption: {

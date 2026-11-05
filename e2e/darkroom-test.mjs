@@ -200,7 +200,8 @@ await tapPlate(0.15);
 check("…and the left half brings it back", (await dateLabel()) === secondDate, await dateLabel());
 
 // --- set aside ----------------------------------------------------------------------------
-// Set aside, the word turns from faint to the room's cream ink, beside its gold dot.
+// Set aside, the word turns from faint to the room's ink, beside its dot: white on
+// the black page, or the light print's ink where the room is printed on paper.
 const asideInk = () =>
   page.evaluate(() => {
     const word = [...document.querySelectorAll('[data-testid="darkroom-caption-word"]')].find((e) => e.offsetParent !== null);
@@ -211,7 +212,7 @@ const before = await asideInk();
 await byId("darkroom-caption-word").first().click();
 await wait(600);
 const after = await asideInk();
-check("SET ASIDE marks the print", before !== after && /246, 236, 223/.test(after), `${before} → ${after}`);
+check("SET ASIDE marks the print", before !== after && /^rgb\((255, 255, 255|43, 38, 32)\)$/.test(after), `${before} → ${after}`);
 
 // --- Contents, and the years ------------------------------------------------------------------
 check("CONTENTS opens the sheet", await openContents());

@@ -21,8 +21,9 @@ import { Wordmark } from "@/components/Wordmark";
  *
  * Inside VINTAGE the chrome recedes and the photographs carry the screen.
  * Out here there are no photographs of yours yet, so the app introduces
- * itself the way the landing page does: the cream page, ink, the wordmark
- * tracked wide, letterspaced capitals on the buttons. These screens hide
+ * itself the way the landing page does: the page (cream, or black in
+ * Dark), ink, the wordmark tracked wide, letterspaced capitals on the
+ * buttons. These screens hide
  * the navigation header and carry their own back mark, because a grey iOS
  * bar across the top would break the object.
  */

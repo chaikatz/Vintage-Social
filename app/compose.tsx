@@ -454,7 +454,7 @@ export default function Compose() {
                   onPress={() => setMotion((m) => !m)}
                   accessibilityLabel={motion ? "Show the still" : "Play the clip"}
                 >
-                  <Feather name={motion ? "pause" : "play"} size={14} color={colors.onShutter} />
+                  <Feather name={motion ? "pause" : "play"} size={14} color={colors.onCamera} />
                 </Pressable>
               ) : null}
               {moving ? (
@@ -463,7 +463,7 @@ export default function Compose() {
                   onPress={() => setPreviewMuted((m) => !m)}
                   accessibilityLabel={previewMuted ? "Turn sound on" : "Turn sound off"}
                 >
-                  <Feather name={previewMuted ? "volume-x" : "volume-2"} size={14} color={colors.onShutter} />
+                  <Feather name={previewMuted ? "volume-x" : "volume-2"} size={14} color={colors.onCamera} />
                 </Pressable>
               ) : null}
             </View>
@@ -533,7 +533,7 @@ export default function Compose() {
             value={stampOn}
             onValueChange={setStampOn}
             trackColor={{ true: colors.accent, false: colors.borderStrong }}
-            thumbColor={colors.paperRaised}
+            thumbColor={stampOn ? colors.paperRaised : colors.knob}
           />
         </Pressable>
 
@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
 
   preview: {
     width: "100%",
-    backgroundColor: colors.shutter,
+    backgroundColor: colors.camera,
     overflow: "hidden",
   },
   previewFilm: { position: "absolute", left: spacing.lg, bottom: spacing.md },
@@ -740,7 +740,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 2.2,
     textTransform: "uppercase",
-    color: colors.onShutter,
+    color: colors.onCamera,
     opacity: 0.85,
   },
 

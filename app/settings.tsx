@@ -209,7 +209,7 @@ export default function Settings() {
           value={isPrivate}
           onValueChange={setIsPrivate}
           trackColor={{ true: colors.accent, false: colors.borderStrong }}
-          thumbColor={colors.paperRaised}
+          thumbColor={isPrivate ? colors.paperRaised : colors.knob}
         />
       </View>
 
@@ -253,7 +253,7 @@ export default function Settings() {
             value={prefs[key]}
             onValueChange={togglePref(key)}
             trackColor={{ true: colors.accent, false: colors.borderStrong }}
-            thumbColor={colors.paperRaised}
+            thumbColor={prefs[key] ? colors.paperRaised : colors.knob}
           />
         </View>
       ))}
@@ -262,7 +262,7 @@ export default function Settings() {
 
       <View style={styles.settingText}>
         <Text style={styles.settingLabel}>Appearance</Text>
-        <Text style={styles.settingHint}>The same page, printed light or on dark brown.</Text>
+        <Text style={styles.settingHint}>The same page, printed light or on black.</Text>
       </View>
       <View style={styles.choices} accessibilityRole="radiogroup">
         {(

@@ -11,10 +11,10 @@ import { ruleWidth } from "./rule";
  * nothing around it. No rounded corners — ink on paper, not a button in
  * a browser.
  *
- * The fourth, `card`, is the bar in the invitation card's printed brown,
- * ruled and lettered in its gold: the way into the Memory Room. On the
- * dark page the brown is a shade below the paper, so the rule is what
- * draws its edge.
+ * The fourth, `card`, is the bar in the invitation card's stock, ruled and
+ * lettered in its ink: the way into the Memory Room. On paper that is
+ * printed brown and gold; on the black page it is a card a step up from
+ * the black, lettered in white, with the grey rule drawing its edge.
  */
 export function GateButton({
   title,

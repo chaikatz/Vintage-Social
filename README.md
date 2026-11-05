@@ -107,7 +107,7 @@ src/
   hooks/                shared post actions (liking, the "…" menu)
   navigation/           the swipeable bottom tab bar
   providers/            session/membership context
-  theme/                design tokens (warm paper, hairline borders)
+  theme/                design tokens (warm paper, hairline borders; black for Dark)
   types/db.ts           database types (mirrors supabase/migrations)
   utils/                validation, time formatting, EXIF capture dates
 supabase/
@@ -422,9 +422,11 @@ stack — not a tab, because the tab pager owns every sideways pan, and not a
 modal, because the editor has to open above it and come back to it. It is
 always printed on the dark page. Back is the left edge or the chevron;
 anywhere else a swipe turns the page. The way in is the first of the Post
-tab's two bars, ENTER THE MEMORY ROOM, in the invitation card's brown and
-gold: SET ASIDE · 3 stands under it when anything is set aside, and "You
-left off in August 2018." replaces its line when the member was in the room
+tab's two bars, ENTER THE MEMORY ROOM, printed as the invitation card is
+(brown and gold on the light print; on the dark one a grey card a step up
+from the black, lettered in white): SET ASIDE · 3 stands under it when
+anything is set aside, and "You left off in August 2018." replaces its
+line when the member was in the room
 within twelve hours. The "In your library" rows of On this day
 (`app/memories.tsx`) open it too. It exists on iOS and in the web demo only.
 
@@ -595,7 +597,13 @@ this repo:
    `com.vintage.social` — confirm it before your first build. Camera/photo/microphone
    usage strings are already configured in `app.json`.
 4. **App icon & splash** — `assets/` still contains Expo template art;
-   replace with VINTAGE marks before shipping.
+   replace with VINTAGE marks before shipping. The iOS launch screen has
+   no image today, so it is the system background: white on a phone set to
+   Light, black on one set to Dark. `ios.splash` in `app.json` already
+   holds the same two colours (`#FFFFFF`, and `#000000` for Dark), because
+   once a splash `image` is added Expo paints the launch in that colour set
+   instead, and without the dark value a cold start in Dark would be white.
+   The launch screen is native: it changes only with a full EAS build.
 5. **Push notifications** (optional, future) — not implemented; would need
    APNs keys via EAS.
 
@@ -645,7 +653,7 @@ this repo:
   choose the production build profile → *Push Notifications* → set up a key. Without it tokens are
   filed but Apple delivers nothing. `expo-notifications` is native, so this is a full EAS build.
 - **Sharing outside VINTAGE** — the send (paper plane) sheet now opens with "Share outside VINTAGE".
-  A photograph leaves as a *print*: paper (light or darkroom brown), a margin, and a label with the
+  A photograph leaves as a *print*: paper (light, or the dark print's black), a margin, and a label with the
   wordmark, place · date, and the member's name; a "Story" shape puts the same print on a 9:16 page.
   Stills are captured on the phone (`react-native-view-shot`) at 3× a 540-point card; films are
   branded natively by `modules/vintage-video` (`brand`) — the same paper and label painted around the
@@ -792,7 +800,7 @@ this repo:
   `/invite`, "Sign in" → `/sign-in`), and the footer (`/privacy`, `/terms`), set in HTML to the same
   tokens, type and measurements as `app/(gate)/landing.tsx` — and where the three prints lay, the
   centrepiece: the 3D VINTAGE mark made on Claude Design, the serif V from the app icon with its rule,
-  cut in espresso, turning slowly. The stage is transparent until the scene draws, so the page never
+  cut in espresso (in white on the app's black page), turning slowly. The stage is transparent until the scene draws, so the page never
   flashes another colour. `tests/homePage.test.ts` holds it to that. The invitation page (`api/invite.ts`) is set the same way — the name in the corner, the turning V, "chai
   invited you to VINTAGE.", "Open VINTAGE" as words with the rule — and so are the two screens in the app
   that carry an invitation (`app/(gate)/invite.tsx`, `app/invites.tsx`), which turn the same V (`MarkStage`, see
