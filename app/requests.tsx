@@ -9,9 +9,9 @@ import { LoadFailed } from "@/components/LoadFailed";
 import { withRowBack, withoutRow } from "@/components/decidedRows";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideFollowRequest, fetchPendingRequests } from "@/api/profiles";
+import type { ProfileRow } from "@/types/db";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
-import type { ProfileRow } from "@/types/db";
 
 /**
  * Who has asked to follow you, while your account is private. Each one is a

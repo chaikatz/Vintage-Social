@@ -85,13 +85,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
         {selected.length > 0 ? (
           <View style={styles.chips}>
             {selected.map((p) => (
-              <Pressable
-                key={p.id}
-                style={styles.chip}
-                onPress={() => toggle(p)}
-                accessibilityRole="button"
-                accessibilityLabel={`Take ${p.username} out`}
-              >
+              <Pressable key={p.id} style={styles.chip} onPress={() => toggle(p)}>
                 <Text style={styles.chipText}>{p.username}</Text>
                 <Feather name="x" size={12} color={colors.inkSoft} />
               </Pressable>

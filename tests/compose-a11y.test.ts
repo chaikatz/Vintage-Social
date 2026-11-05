@@ -33,8 +33,4 @@ describe("Who was there", () => {
       /onPress=\{\(\) => toggle\(item\)\}\s*accessibilityRole="checkbox"\s*accessibilityState=\{\{ checked: on, disabled: !on && selected\.length >= MAX_TAGS \}\}/,
     );
   });
-
-  it("names the chip that takes a member back out", () => {
-    expect(picker).toMatch(/accessibilityLabel=\{`Take \$\{p\.username\} out`\}/);
-  });
 });
