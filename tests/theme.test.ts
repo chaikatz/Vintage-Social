@@ -78,6 +78,8 @@ describe("the light print", () => {
       // The camera's two are the shutter's own on paper, and a knob is the raised paper.
       camera: "#1C1915",
       onCamera: "#F2EBDD",
+      // A mark on a photograph in the feed keeps the off-white it was always drawn in.
+      onPhoto: "#F6F1E8",
       knob: light.paperRaised,
     });
     expect((GATE_BUTTON as unknown as Print).light).toBe("#3F3C35");
@@ -138,6 +140,7 @@ describe("the dark print", () => {
     const pairs: [Token, Token][] = [
       ["onShutter", "shutter"],
       ["onCamera", "camera"],
+      ["onPhoto", "camera"],
       ["gold", "card"],
     ];
     for (const [on, fill] of pairs) {
@@ -315,6 +318,16 @@ describe("the tokens, where they are used", () => {
     for (const f of ["app/memories.tsx", "app/library-picker.tsx"]) {
       expect(code(f), f).toMatch(/<ActivityIndicator color=\{colors\.onCamera\} \/>/);
     }
+  });
+
+  it("draws the feed's marks on a photograph white on black, not a fixed cream", () => {
+    expect(print("onPhoto").dark).toBe("#FFFFFF");
+    const media = code("src/components/PostMedia.tsx");
+    // The double-tap heart, the stalled film's play mark and the sound control.
+    expect(media).toMatch(/<MaterialCommunityIcons name="heart" size=\{92\} color=\{colors\.onPhoto\} \/>/);
+    expect(media).toMatch(/<Feather name="play" size=\{22\} color=\{colors\.onPhoto\} \/>/);
+    expect(media).toMatch(/<Feather name=\{muted \? "volume-x" : "volume-2"\} size=\{15\} color=\{colors\.onPhoto\} \/>/);
+    expect(media).not.toMatch(/#F6F1E8/i);
   });
 
   it("marks a letter unread in the badge's colour, on the tray's icon and in the list", () => {

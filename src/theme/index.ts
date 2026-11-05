@@ -96,6 +96,10 @@ export const colors = {
   // set on them is light on both prints.
   camera: dyn("#1C1915", "#000000"),
   onCamera: dyn("#F2EBDD", "#FFFFFF"),
+  // A mark set straight on a photograph or a film in the feed — the
+  // double-tap heart, the play and sound glyphs on their dark discs. The
+  // print's own off-white on paper; on black, white, as every other mark.
+  onPhoto: dyn("#F6F1E8", "#FFFFFF"),
   // A switch's knob while it is off. On, the knob is the raised paper
   // over the accent's track; off, on paper it is the same, and on black it
   // is white over the grey track, as iOS sets one.

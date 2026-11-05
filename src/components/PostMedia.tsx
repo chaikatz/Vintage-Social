@@ -199,7 +199,7 @@ export function PostMedia({
         },
       ]}
     >
-      <MaterialCommunityIcons name="heart" size={92} color="#F6F1E8" />
+      <MaterialCommunityIcons name="heart" size={92} color={colors.onPhoto} />
     </Animated.View>
   );
 
@@ -481,7 +481,7 @@ function VideoMedia({
       </Pressable>
       {stalled ? (
         <View pointerEvents="none" style={styles.playMark}>
-          <Feather name="play" size={22} color="#F6F1E8" />
+          <Feather name="play" size={22} color={colors.onPhoto} />
         </View>
       ) : null}
       {/* Sound is off until asked for, and the control says so rather than
@@ -492,8 +492,8 @@ function VideoMedia({
         style={styles.sound}
         accessibilityLabel={muted ? "Turn sound on" : "Turn sound off"}
       >
-        {/* Fixed cream: the disc beneath is always dark, whichever print the page is. */}
-        <Feather name={muted ? "volume-x" : "volume-2"} size={15} color="#F6F1E8" />
+        {/* Light on either print: the disc beneath is always dark, whichever print the page is. */}
+        <Feather name={muted ? "volume-x" : "volume-2"} size={15} color={colors.onPhoto} />
       </Pressable>
     </View>
   );
