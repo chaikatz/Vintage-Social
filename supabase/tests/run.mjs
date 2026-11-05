@@ -16,6 +16,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, chmodSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { extensionStandIns, withStandIns } from "./standins.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrations = join(here, "..", "migrations");
@@ -88,6 +89,19 @@ try {
 
   run(join(pgBin, "createdb"), ["-h", sock, "-U", "vintage_owner", "vintage"], { stdio: "ignore" });
 
+  // pg_net and pg_cron are Supabase's, not PostgreSQL's: a stock server has
+  // neither, and 0017 asks for both. Where one is missing, a migration that
+  // creates it is applied from a copy that makes, instead, the one function
+  // the migrations call from it (net.http_post, cron.schedule), with the
+  // same name and arguments and no effect. Nothing else in the file
+  // changes, and a server that has the real extension gets the real one.
+  const available = new Set(
+    psql(["-U", "vintage_owner", "-At", "-c",
+      "select name from pg_available_extensions where name in ('pg_net', 'pg_cron')"])
+      .stdout.trim().split("\n").filter(Boolean),
+  );
+  const standIns = extensionStandIns(available);
+
   const files = [
     join(here, "00_scaffold.sql"),
     ...execFileSync("ls", [migrations])
@@ -98,8 +112,11 @@ try {
 
   for (const f of files) {
     const label = f.replace(join(here, ".."), "supabase");
-    process.stdout.write(`· ${label} … `);
-    psql(["-U", "vintage_owner", "-q", "-f", f], { stdio: ["ignore", "ignore", "pipe"] });
+    const { path: applied, stood } = withStandIns(f, standIns, dir, (copy) => {
+      if (runAs) execFileSync("chown", [runAs, copy]);
+    });
+    process.stdout.write(`· ${label}${stood.length ? ` (stand-in for ${stood.join(", ")})` : ""} … `);
+    psql(["-U", "vintage_owner", "-q", "-f", applied], { stdio: ["ignore", "ignore", "pipe"] });
     console.log("ok");
   }
 
