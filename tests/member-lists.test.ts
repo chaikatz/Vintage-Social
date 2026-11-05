@@ -73,6 +73,12 @@ describe("a member list that could not be read", () => {
   }
 });
 
+describe("Send to", () => {
+  it("says the members you follow could not be read, rather than that there is nobody to send to", () => {
+    expect(code("app/share.tsx")).toMatch(/peopleQ\.isError \? \(\s*<LoadFailed what="who you follow" onRetry=\{\(\) => peopleQ\.refetch\(\)\} \/>\s*\) : peopleQ\.isFetched \? \(/);
+  });
+});
+
 describe("Followers and following", () => {
   it("says when a follow or unfollow was refused", () => {
     const src = code("app/follows.tsx");

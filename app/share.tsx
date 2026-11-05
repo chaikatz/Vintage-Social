@@ -9,6 +9,7 @@ import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
 import { fetchFollowing } from "@/api/profiles";
@@ -133,7 +134,9 @@ export default function Share() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          peopleQ.isFetched ? (
+          peopleQ.isError ? (
+            <LoadFailed what="who you follow" onRetry={() => peopleQ.refetch()} />
+          ) : peopleQ.isFetched ? (
             <EmptyState
               title="Nobody to send to yet"
               body="Follow a few members and you can pass photographs along to them."
