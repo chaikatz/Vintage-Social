@@ -260,13 +260,21 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
   // The card a member hands over, printed like the door: the name small in
-  // the corner, the V, the address beneath. The same cream as the page — no
-  // frame, no panel; the card is the page.
-  // A thin rule around it: this is the invitation, the thing that is sent.
+  // the corner, the V, the address beneath. It is a card, the thing that is
+  // sent, so it reads as one lying on the page: on a stock a shade brighter
+  // than the paper, with a fine edge and a soft shadow under it, the way a
+  // printed invitation casts one on a desk. (On the dark print the shadow
+  // is lost on black; the raised stock and its edge carry it there.)
   card: {
-    backgroundColor: colors.paper,
+    backgroundColor: colors.paperRaised,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.ink,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.sm,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.xl,
