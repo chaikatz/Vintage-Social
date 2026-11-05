@@ -176,9 +176,12 @@ const Bubble = React.memo(function Bubble({
         {shared ? (
           <Pressable style={styles.shared} onPress={() => onOpenPost(shared.id)}>
             {thumb ? <Image source={thumb} style={styles.sharedImage} contentFit="cover" /> : null}
-            <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
-              {shared.author.username}
-            </Text>
+            {/* A photograph whose author the reader may not see comes without one. */}
+            {shared.author ? (
+              <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
+                {shared.author.username}
+              </Text>
+            ) : null}
           </Pressable>
         ) : null}
         {message.body ? (

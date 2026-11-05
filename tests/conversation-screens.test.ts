@@ -72,3 +72,14 @@ describe("a comment posted or removed", () => {
     expect(comments.match(/errorMessage\(err, /g)).toHaveLength(2);
   });
 });
+
+describe("a row whose member the reader may not see", () => {
+  it("is drawn without the name, or left out, rather than breaking the page", () => {
+    const comments = read("app/comments.tsx");
+    expect(comments).toMatch(/const comments = useMemo\(\(\) => \(commentsQ\.data \?\? \[\]\)\.filter\(\(c\) => c\.author != null\), \[commentsQ\.data\]\);/);
+    expect(comments).toMatch(/data=\{comments\}/);
+    expect(comments).toMatch(/post\.caption && post\.author \? \(/);
+    const thread = read("app/messages/[id].tsx");
+    expect(thread).toMatch(/\{shared\.author \? \(\s*<Text style=\{\[styles\.sharedCaption/);
+  });
+});

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Keyboard,
@@ -65,6 +65,10 @@ export default function Comments() {
   });
 
   const post = postQ.data;
+  // A comment whose author the reader may not see (a profile row-level
+  // security keeps from them) comes back without one: left out, rather
+  // than breaking the page on a name that is not there.
+  const comments = useMemo(() => (commentsQ.data ?? []).filter((c) => c.author != null), [commentsQ.data]);
 
   // The count under the photograph, moved by one wherever the post is on
   // screen. The feed used to be re-read for it: every page loaded, one
@@ -163,12 +167,12 @@ export default function Comments() {
       keyboardVerticalOffset={headerHeight}
     >
       <FlatList
-        data={commentsQ.data ?? []}
+        data={comments}
         keyExtractor={(c) => c.id}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
-          post.caption ? (
+          post.caption && post.author ? (
             <View style={styles.captionRow}>
               <Pressable onPress={() => router.push(`/user/${post.author.username}`)}>
                 <Avatar
