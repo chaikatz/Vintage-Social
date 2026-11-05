@@ -9,6 +9,7 @@ vi.mock("@/darkroom/history", () => ({ developedRecently: () => false, localDay:
 vi.mock("@/darkroom/session", () => ({ keepChapter: () => undefined, recallChapter: () => null }));
 vi.mock("@/darkroom/setAside", () => ({ isSetAside: () => false, setAsidePrints: () => [] }));
 
+import { Drawn, RELEASE_AFTER } from "@/components/darkroom/drawn";
 import { DISSOLVE, photographRequest, PLATE_STALL_MS, progressOf, SILENT_TRIES, stallCheck } from "@/components/darkroom/plateImage";
 import { Visit } from "@/components/darkroom/visit";
 import { gated, inBackground, onThisDay, Surprise, yearIndex } from "@/darkroom/discovery";
@@ -413,5 +414,65 @@ describe("a plate that hears nothing of its photograph", () => {
     expect(page).toMatch(/const next = stallCheck\(heard\.current, Date\.now\(\), silent\.current, online\);/);
     // iCloud's progress counts as hearing something.
     expect(page).toMatch(/onProgress=\{\(fraction\) => \{\s*heard\.current = Date\.now\(\);/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What the room keeps in memory
+// ---------------------------------------------------------------------------
+
+/** A plate's photograph decoded at its size on a 3× phone, 430 points wide, a little larger as Photos' fast resize hands it back. */
+const PRINT_MB = (1194 * 1.3 * 1590 * 1.3 * 4) / 1e6;
+
+/** A member turns through `n` prints; how many decoded photographs the room is keeping in memory at the end, at most. */
+function keptAfter(n: number): { kept: number; releases: number } {
+  const drawn = new Drawn();
+  let kept = 0;
+  let releases = 0;
+  for (let i = 0; i < n; i++) {
+    kept += 1;
+    const { release } = drawn.add(`p${i}`);
+    if (release) {
+      releases += 1;
+      drawn.released([`p${i - 1}`, `p${i}`, `p${i + 1}`]);
+      // The cache is emptied; the plates on screen still hold theirs.
+      kept = 2;
+    }
+  }
+  return { kept, releases };
+}
+
+describe("the room's photographs in memory", () => {
+  it("lets go of what it decoded every few prints, so an evening in the room stays a few hundred megabytes at most", () => {
+    // Before: every print drawn stayed until iOS warned — a year's edit of 120 prints held all 120.
+    const year = keptAfter(120);
+    expect(year.releases).toBe(Math.floor(120 / RELEASE_AFTER));
+    expect(year.kept).toBeLessThanOrEqual(RELEASE_AFTER + 2);
+    expect(RELEASE_AFTER * PRINT_MB).toBeLessThan(220);
+    expect(120 * PRINT_MB).toBeGreaterThan(1000);
+  });
+
+  it("counts a print once, however often it draws, and forgets all but the plates on screen when it lets go", () => {
+    const drawn = new Drawn();
+    expect(drawn.add("a")).toEqual({ first: true, release: false });
+    expect(drawn.add("a")).toEqual({ first: false, release: false });
+    for (let i = 1; i < RELEASE_AFTER - 1; i++) drawn.add(`x${i}`);
+    expect(drawn.add("last")).toEqual({ first: true, release: true });
+    drawn.released(["x3", "last"]);
+    expect(drawn.has("a")).toBe(false);
+    expect(drawn.has("x3")).toBe(true);
+    expect(drawn.has("last")).toBe(true);
+    // A print let go of dissolves in again when it next draws, and counts toward the next letting-go.
+    expect(drawn.add("a")).toEqual({ first: true, release: false });
+  });
+
+  it("lets go as it draws and as the room closes, keeping the plates on screen", () => {
+    const room = read("src/darkroom/useDarkroom.ts");
+    expect(room).toMatch(/void Image\.clearMemoryCache\(\)\.catch\(\(\) => undefined\)/);
+    const loaded = room.slice(room.indexOf("const imageLoaded = useCallback"), room.indexOf("const hasLoaded = useCallback"));
+    expect(loaded).toMatch(/const \{ first, release \} = loaded\.current\.add\(id\);/);
+    expect(loaded).toMatch(/if \(release\) \{[\s\S]*?c\.prints\.slice\(Math\.max\(0, c\.index - 1\), c\.index \+ 2\)[\s\S]*?releaseDrawn\(\);/);
+    const unmount = room.slice(room.indexOf("// --- mount and unmount"));
+    expect(unmount).toMatch(/mounted\.current = false;\s*\/\/[^\n]*\n\s*releaseDrawn\(\);/);
   });
 });

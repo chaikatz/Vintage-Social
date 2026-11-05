@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
+import { Image } from "expo-image";
 import * as MediaLibrary from "expo-media-library";
 import {
   choiceOf,
@@ -19,6 +20,7 @@ import {
   type Where,
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, editReader, surpriseReader } from "@/components/darkroom/dealer";
+import { Drawn } from "@/components/darkroom/drawn";
 import { Visit } from "@/components/darkroom/visit";
 import type { DayState, EmptyWhy } from "@/components/darkroom/words";
 import { readAccess, requestAccess, type LibraryAccess } from "./access";
@@ -116,6 +118,18 @@ export interface RoomParams {
 
 const isGranted = (a: LibraryAccess | "checking") => a === "full" || a === "limited";
 
+/**
+ * Lets go of the photographs decoded and kept in expo-image's memory cache
+ * (see `drawn.ts`). The plates on screen keep what they show.
+ */
+function releaseDrawn(): void {
+  try {
+    void Image.clearMemoryCache().catch(() => undefined);
+  } catch {
+    // Nothing kept, or nothing to let go of it with.
+  }
+}
+
 export function useDarkroom(params: RoomParams) {
   const source = useMemo(() => darkroomSource(), []);
   const visit = useMemo(() => (source ? new Visit(source) : null), [source]);
@@ -147,8 +161,8 @@ export function useDarkroom(params: RoomParams) {
   /** The first-visit word has been said and iOS asked, and the room has not yet gone in. */
   const asking = useRef(false);
   const afterFirst = useRef(false);
-  /** Prints whose full image has drawn this visit. */
-  const loaded = useRef(new Set<string>());
+  /** Prints whose full image has drawn this visit, and when to let go of the copies kept in memory. */
+  const loaded = useRef(new Drawn());
   const [loadTick, setLoadTick] = useState(0);
 
   const patch = useCallback((p: Partial<DarkroomState> | ((s: DarkroomState) => Partial<DarkroomState>)) => {
@@ -827,11 +841,20 @@ export function useDarkroom(params: RoomParams) {
 
   // --- images ------------------------------------------------------------------
 
-  /** A print's full image has drawn. A print that had been gone is back. */
+  /**
+   * A print's full image has drawn. A print that had been gone is back.
+   * Every so many new prints, the decoded copies kept in memory are let go
+   * of, all but the plates on screen (`drawn.ts`).
+   */
   const imageLoaded = useCallback(
     (id: string) => {
-      const first = !loaded.current.has(id);
-      loaded.current.add(id);
+      const { first, release } = loaded.current.add(id);
+      if (release) {
+        const c = live.current.chapter;
+        const onScreen = c ? c.prints.slice(Math.max(0, c.index - 1), c.index + 2).map((p) => p.id) : [];
+        loaded.current.released([...onScreen, id]);
+        releaseDrawn();
+      }
       if (live.current.missing.has(id)) {
         patch((s) => {
           const missing = new Set(s.missing);
@@ -992,6 +1015,8 @@ export function useDarkroom(params: RoomParams) {
       dealer.current?.release();
       dealer.current = null;
       mounted.current = false;
+      // The room has closed: the photographs it decoded are not kept in memory after it.
+      releaseDrawn();
     };
     // Once, for the life of the room.
     // eslint-disable-next-line react-hooks/exhaustive-deps
