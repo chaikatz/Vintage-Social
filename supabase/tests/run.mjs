@@ -110,8 +110,18 @@ try {
     join(here, "01_fixtures.sql"),
   ];
 
+  let snapshotTaken = false;
   for (const f of files) {
     const label = f.replace(join(here, ".."), "supabase");
+    // Keep the policies, indexes and functions 0023 replaces, so
+    // 08_policy_rewrite.sql can ask every question again under them.
+    const name = f.split("/").pop();
+    if (!snapshotTaken && f.startsWith(migrations) && name >= "0023") {
+      process.stdout.write("· supabase/tests/snapshot_before_0023.sql … ");
+      psql(["-U", "vintage_owner", "-q", "-f", join(here, "snapshot_before_0023.sql")], { stdio: ["ignore", "ignore", "pipe"] });
+      snapshotTaken = true;
+      console.log("ok");
+    }
     const { path: applied, stood } = withStandIns(f, standIns, dir, (copy) => {
       if (runAs) execFileSync("chown", [runAs, copy]);
     });
@@ -208,6 +218,54 @@ try {
       console.log("ok");
       const note = (eras.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
       if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+    }
+  }
+
+  // 0023: every member asks every table everything, under the rewritten
+  // policies and under the ones they replaced, and gets the same answers
+  // (08); the plans at many times today's size (09); and the rollback
+  // file, applied for real, puts the old policies back exactly before
+  // 0023 is applied again (10). 08 and 09 roll back; 10 leaves the
+  // database as 0023 made it.
+  for (const file of ["08_policy_rewrite.sql", "09_scale_plans.sql", "10_rollback_0023.sql"]) {
+    if (res.status !== 0 || process.exitCode === 1) break;
+    if (!existsSync(join(here, file))) continue;
+    process.stdout.write(`· supabase/tests/${file} … `);
+    const started = Date.now();
+    const r = psql(["-U", "vintage_owner", "-f", join(here, file)], { allowFail: true });
+    if (r.status !== 0) {
+      console.log("FAILED");
+      process.stdout.write(r.stdout ?? "");
+      process.stderr.write(r.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log(`ok (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+      const note = (r.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+      if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+      for (const l of (r.stdout ?? "").split("\n")) if (/^\s*(asked|plan:|time:)/.test(l)) console.log(`  ${l.trim()}`);
+    }
+  }
+
+  // The read-only script the owner runs on production after 0023: it must
+  // run clean here, and every check it makes must hold. Its last block
+  // always raises (to undo the role it takes), so stopping on errors is
+  // off for it, and its message is read instead.
+  const verify0023 = join(here, "..", "production", "12_policies_read_once_verify.sql");
+  if (existsSync(verify0023) && res.status === 0 && process.exitCode !== 1) {
+    process.stdout.write("· supabase/production/12_policies_read_once_verify.sql … ");
+    const r = psql(["-U", "vintage_owner", "-v", "ON_ERROR_STOP=0", "-A", "-F", "|", "-f", verify0023], { allowFail: true });
+    const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
+    const failing = rows.filter((l) => !l.endsWith("|t"));
+    const result = (r.stderr ?? "").split("RESULT")[1] ?? "";
+    const answers = result.split("\n").filter((l) => /:\s+(yes|NO)\s*$/.test(l));
+    const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l) && !/RESULT/.test(l) && !/^\s*$/.test(l));
+    if (rows.length !== 12 || failing.length > 0 || answers.length !== 4 || answers.some((l) => /NO\s*$/.test(l)) || errors.length > 1) {
+      console.log("FAILED");
+      process.stdout.write(r.stdout ?? "");
+      process.stderr.write(r.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log(`ok (${rows.length} checks, ${answers.length} plan answers, all as expected)`);
     }
   }
 
