@@ -85,6 +85,16 @@ function when(p: PlaceablePost): string {
   return p.taken_at ?? p.created_at;
 }
 
+/**
+ * Two of the server's timestamps, newest first. They are ISO strings in one
+ * format, so their characters already sort by time: compared as they are,
+ * not through the locale's collation, which the phone's runtime does a
+ * character at a time, for every comparison a sort makes.
+ */
+function newerFirst(a: string, b: string): number {
+  return a < b ? 1 : a > b ? -1 : 0;
+}
+
 function yearOf(iso: string): number | null {
   const y = new Date(iso).getFullYear();
   return Number.isFinite(y) ? y : null;
@@ -133,7 +143,7 @@ export function groupByPlace<T extends PlaceablePost>(posts: readonly T[], label
   const groups: PlaceGroup<T>[] = [...drafts.entries()].map(([key, d]) => {
     const placed = key !== UNPLACED;
     const spots = [...d.spots.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-    const sorted = [...d.posts].sort((a, b) => when(b).localeCompare(when(a)));
+    const sorted = [...d.posts].sort((a, b) => newerFirst(when(a), when(b)));
     return {
       key,
       title: d.title,
@@ -153,7 +163,7 @@ export function groupByPlace<T extends PlaceablePost>(posts: readonly T[], label
     if (a.posts.length !== b.posts.length) return b.posts.length - a.posts.length;
     const la = when(a.posts[0]);
     const lb = when(b.posts[0]);
-    if (la !== lb) return lb.localeCompare(la);
+    if (la !== lb) return newerFirst(la, lb);
     return a.title.localeCompare(b.title);
   });
 }

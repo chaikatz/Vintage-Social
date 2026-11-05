@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { byTimeDescending, sortByTaken, takenDate } from "@/utils/memories";
 import { buildTimeline } from "@/utils/timeline";
 import { editEras } from "@/utils/eraEdits";
+import { groupByPlace } from "@/utils/placeGroups";
 
 /** A grid of `n` in no particular order, some with no capture date and some taken at the same moment. */
 function grid(n: number) {
@@ -73,5 +74,22 @@ describe("sorting by when the shutter fired", () => {
   it("puts equal times in the order given", () => {
     const items = ["a", "b", "c", "d"];
     expect(byTimeDescending(items, (x) => (x === "c" ? 2 : 1))).toEqual(["c", "a", "b", "d"]);
+  });
+});
+
+describe("the places view's order", () => {
+  it("compares the server's timestamps as they are, not through the locale, and orders as before", () => {
+    const posts = grid(600).map((p) => ({ ...p, location: ["Lisbon", "Paris", "Kyoto"][Number(p.id.slice(1)) % 3] }));
+    const collate = vi.spyOn(String.prototype, "localeCompare");
+    const groups = groupByPlace(posts, () => null);
+    const onDates = collate.mock.contexts.filter((s) => /^\d{4}-\d\d-\d\dT/.test(String(s)));
+    collate.mockRestore();
+    // Every comparison of a sort used to collate two timestamps.
+    expect(onDates).toHaveLength(0);
+    for (const g of groups) {
+      const when = g.posts.map((p) => p.taken_at ?? p.created_at);
+      const before = [...when].sort((a, b) => b.localeCompare(a));
+      expect(when).toEqual(before);
+    }
   });
 });
