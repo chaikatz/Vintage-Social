@@ -102,8 +102,13 @@ export default function Settings() {
       },
     }),
   );
+  // Each flip writes the whole row, so nothing is written until the row
+  // has been read: switches drawn from the defaults while the read was on
+  // its way, or after it failed, wrote every other one back on, undoing
+  // what the member had turned off.
+  const prefsKnown = prefsQuery.data != null;
   const togglePref = (key: keyof NotificationPrefs) => (on: boolean) => {
-    if (!userId) return;
+    if (!userId || !prefsKnown) return;
     const next = { ...prefs, [key]: on };
     setPrefsEdit(next);
     if (on) registerAfterSave.current = true;
@@ -304,6 +309,11 @@ export default function Settings() {
           A name and what happened, nothing more. Likes arrive at most once every half hour; a
           memory at most once a day.
         </Text>
+        {prefsQuery.isError && !prefsKnown ? (
+          <Pressable onPress={() => prefsQuery.refetch()} accessibilityRole="button" hitSlop={8}>
+            <Text style={styles.prefsFailed}>Couldn’t load these. Tap to try again.</Text>
+          </Pressable>
+        ) : null}
       </View>
       {(
         [
@@ -324,6 +334,7 @@ export default function Settings() {
           <Switch
             value={prefs[key]}
             onValueChange={togglePref(key)}
+            disabled={!prefsKnown}
             accessibilityLabel={`${label} notifications`}
             trackColor={{ true: colors.accent, false: colors.borderStrong }}
             thumbColor={prefs[key] ? colors.paperRaised : colors.knob}
@@ -471,6 +482,7 @@ const styles = StyleSheet.create({
   prefRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.md },
   prefLabel: { fontSize: 14, color: colors.ink },
   prefHint: { ...type.caption, fontSize: 12, marginTop: 1 },
+  prefsFailed: { ...type.caption, fontSize: 12, marginTop: spacing.sm, color: colors.danger },
   choices: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
   choice: {
     flex: 1,

@@ -137,6 +137,13 @@ describe("the Settings screen", () => {
     );
   });
 
+  it("writes no notification switch until the member's own row has been read", () => {
+    expect(settings).toMatch(/const prefsKnown = prefsQuery\.data != null;/);
+    expect(settings).toMatch(/if \(!userId \|\| !prefsKnown\) return;\s*const next = \{ \.\.\.prefs, \[key\]: on \};/);
+    expect(settings).toMatch(/onValueChange=\{togglePref\(key\)\}\s*disabled=\{!prefsKnown\}/);
+    expect(settings).toMatch(/prefsQuery\.isError && !prefsKnown \? \(\s*<Pressable onPress=\{\(\) => prefsQuery\.refetch\(\)\}/);
+  });
+
   it("names every switch for VoiceOver", () => {
     const switches = settings.match(/<Switch\b[\s\S]*?\/>/g) ?? [];
     expect(switches.length).toBeGreaterThanOrEqual(2);
