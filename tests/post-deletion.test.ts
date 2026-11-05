@@ -43,11 +43,23 @@ vi.mock("@/lib/supabase", () => ({
             h.calls.push(`look ${table} ${columns} ${column}=${value}`);
             return h.lookAnswer;
           },
-          order: async () => {
-            h.calls.push(`read ${table} ${column}=${value}`);
-            return h.thread;
-          },
+          // A thread is read newest first, as many as max_rows, and turned round.
+          order: (_column: string, { ascending }: { ascending: boolean }) => ({
+            limit: async () => {
+              h.calls.push(`read ${table} ${column}=${value}`);
+              const rows = (h.thread.data ?? []) as { created_at: string }[];
+              const sorted = [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at));
+              return { ...h.thread, data: ascending ? sorted : sorted.reverse() };
+            },
+          }),
         }),
+        // The photographs a thread carries are looked up together.
+        in: async (column: string, values: string[]) => {
+          for (const value of values) h.calls.push(`look ${table} ${columns} ${column}=${value}`);
+          if (h.lookAnswer.error) return { data: null, error: h.lookAnswer.error };
+          const found = h.lookAnswer.data && values.includes(h.lookAnswer.data.id) ? [h.lookAnswer.data] : [];
+          return { data: found, error: null };
+        },
       }),
     }),
   },

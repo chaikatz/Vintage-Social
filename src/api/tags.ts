@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import type { PostRow, PostTagWithMember, TagStatus } from "@/types/db";
+import { readInChunks } from "./batch";
 
 /**
  * Tagging members in a photograph.
@@ -55,18 +56,25 @@ export async function fetchTaggedPosts(userId: string): Promise<PostRow[]> {
   return rows.map((r) => r.post).filter((p): p is PostRow => Boolean(p) && !p!.removed_at);
 }
 
-/** Which of these posts the viewer is tagged in, and where each tag stands. */
+/**
+ * Which of these posts the viewer is tagged in, and where each tag stands.
+ * A hundred posts a request, so a long Activity list never outgrows one
+ * request's URL (./batch).
+ */
 export async function fetchMyTagStatus(userId: string, postIds: string[]): Promise<Record<string, TagStatus>> {
   if (postIds.length === 0) return {};
   if (isDemoMode()) return demo.demoMyTagStatus(userId, postIds);
-  const { data, error } = await supabase
-    .from("post_tags")
-    .select("post_id, status")
-    .eq("user_id", userId)
-    .in("post_id", postIds);
-  if (error) throw error;
+  const rows = await readInChunks(postIds, async (chunk) => {
+    const { data, error } = await supabase
+      .from("post_tags")
+      .select("post_id, status")
+      .eq("user_id", userId)
+      .in("post_id", chunk);
+    if (error) throw error;
+    return (data ?? []) as { post_id: string; status: TagStatus }[];
+  });
   const out: Record<string, TagStatus> = {};
-  for (const row of (data ?? []) as { post_id: string; status: TagStatus }[]) out[row.post_id] = row.status;
+  for (const row of rows) out[row.post_id] = row.status;
   return out;
 }
 

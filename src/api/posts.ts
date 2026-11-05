@@ -4,10 +4,11 @@ import * as demo from "@/demo/store";
 import type { CommentWithAuthor, PostRow, PostWithAuthor, ProfileRow } from "@/types/db";
 import { ROWS_PER_READ } from "@/utils/eraEdits";
 import { withTimeout } from "@/utils/retry";
+import { readInChunks } from "./batch";
 
 export const FEED_PAGE_SIZE = 12;
 
-const POST_WITH_AUTHOR = "*, author:profiles!posts_author_id_fkey(id, username, full_name, avatar_url)";
+export const POST_WITH_AUTHOR = "*, author:profiles!posts_author_id_fkey(id, username, full_name, avatar_url)";
 
 /**
  * Who the member follows, remembered for a minute.
@@ -284,18 +285,25 @@ export async function fetchLikers(postId: string): Promise<Pick<ProfileRow, "id"
     .filter((p): p is Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url"> => Boolean(p));
 }
 
-/** Which of these posts has the viewer liked? Returns a set of post ids. */
+/**
+ * Which of these posts has the viewer liked? Returns a set of post ids.
+ * Asked a hundred posts at a time: a gallery or a long scroll can hold
+ * more ids than one request's URL can carry (./batch).
+ */
 export async function fetchMyLikes(userId: string, postIds: string[]): Promise<Set<string>> {
   if (postIds.length === 0) return new Set();
   if (isDemoMode()) return demo.demoFetchMyLikes(userId, postIds);
 
-  const { data, error } = await supabase
-    .from("likes")
-    .select("post_id")
-    .eq("user_id", userId)
-    .in("post_id", postIds);
-  if (error) throw error;
-  return new Set((data ?? []).map((r) => r.post_id as string));
+  const rows = await readInChunks(postIds, async (chunk) => {
+    const { data, error } = await supabase
+      .from("likes")
+      .select("post_id")
+      .eq("user_id", userId)
+      .in("post_id", chunk);
+    if (error) throw error;
+    return (data ?? []) as { post_id: string }[];
+  });
+  return new Set(rows.map((r) => r.post_id));
 }
 
 export async function likePost(userId: string, postId: string): Promise<void> {
@@ -320,23 +328,42 @@ export async function unlikePost(userId: string, postId: string): Promise<void> 
   if (error) throw error;
 }
 
+/**
+ * A photograph's conversation, oldest first. PostgREST stops at max_rows
+ * (1000, ROWS_PER_READ) without saying so, and it used to stop at the
+ * oldest thousand: on a photograph with more, the newest comments - the
+ * ones people had just written - never appeared. It now reads the newest
+ * thousand and turns them round, which is the same list whenever there
+ * are fewer.
+ */
 export async function fetchComments(postId: string): Promise<CommentWithAuthor[]> {
   if (isDemoMode()) return demo.demoFetchComments(postId);
 
   const { data, error } = await supabase
     .from("comments")
-    .select("*, author:profiles!comments_author_id_fkey(id, username, avatar_url)")
+    .select(PREVIEW_COMMENT)
     .eq("post_id", postId)
     .is("removed_at", null)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false })
+    .limit(ROWS_PER_READ);
   if (error) throw error;
-  return (data ?? []) as unknown as CommentWithAuthor[];
+  return ((data ?? []) as unknown as CommentWithAuthor[]).reverse();
 }
+
+/** A comment as the app shows it: the row, and who wrote it. */
+const PREVIEW_COMMENT = "*, author:profiles!comments_author_id_fkey(id, username, avatar_url)";
 
 /**
  * The newest comments on each of these posts, for the previews under a
- * photograph in the feed. One query for the whole page rather than one per
- * card — a feed of twenty posts shouldn't cost twenty round trips.
+ * photograph in the feed. One query for a hundred cards rather than one
+ * per card — a feed of twenty posts shouldn't cost twenty round trips.
+ *
+ * Each post brings at most `perPost` comments, the newest, chosen by the
+ * database (an embedded resource's order and limit apply per post). It
+ * used to bring every comment on every post in the list and keep the
+ * last few: a photograph with hundreds of comments sent all of them on
+ * every page of the feed, and past max_rows (1000) the list was cut from
+ * the newest end, so the previews showed old comments as the latest.
  */
 export async function fetchCommentPreviews(
   postIds: string[],
@@ -345,19 +372,23 @@ export async function fetchCommentPreviews(
   if (postIds.length === 0) return {};
   if (isDemoMode()) return demo.demoCommentPreviews(postIds, perPost);
 
-  const { data, error } = await supabase
-    .from("comments")
-    .select("*, author:profiles!comments_author_id_fkey(id, username, avatar_url)")
-    .in("post_id", postIds)
-    .is("removed_at", null)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
+  const rows = await readInChunks(postIds, async (chunk) => {
+    const { data, error } = await supabase
+      .from("posts")
+      .select(`id, comments!comments_post_id_fkey(${PREVIEW_COMMENT})`)
+      .in("id", chunk)
+      .is("comments.removed_at", null)
+      .order("created_at", { referencedTable: "comments", ascending: false })
+      .limit(perPost, { referencedTable: "comments" });
+    if (error) throw error;
+    return (data ?? []) as unknown as { id: string; comments: CommentWithAuthor[] | null }[];
+  });
 
   const out: Record<string, CommentWithAuthor[]> = {};
-  for (const c of (data ?? []) as unknown as CommentWithAuthor[]) {
-    (out[c.post_id] ??= []).push(c);
+  for (const post of rows) {
+    const newestFirst = post.comments ?? [];
+    if (newestFirst.length > 0) out[post.id] = [...newestFirst].reverse();
   }
-  for (const id of Object.keys(out)) out[id] = out[id].slice(-perPost);
   return out;
 }
 
