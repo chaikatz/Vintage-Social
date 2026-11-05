@@ -76,3 +76,58 @@ export function idsAround(ids: readonly string[], focus: number, stretch = ACTIO
   const k = Math.floor(at / stretch);
   return ids.slice(Math.max(0, (k - 1) * stretch), (k + 2) * stretch);
 }
+
+/**
+ * The timeline (src/components/Timeline.tsx) hangs a member's every
+ * photograph off one line in a plain scroll view, which it needs whole to
+ * magnify. It used to fetch and decode every one of them the moment it
+ * was opened: a hundred and fifty pictures at once for the longest
+ * history on production today. Now a row draws its picture once the
+ * reader comes within a few screens of it, and keeps it; the frame is
+ * there, at its size, before that.
+ */
+
+/** Rows that draw their picture from the start: the first screen or two. */
+export const TIMELINE_FIRST_ROWS = 8;
+/** Screens below the bottom of the view whose rows draw their pictures ahead of the reader. */
+export const TIMELINE_AHEAD_SCREENS = 2;
+/** Rows revealed past the last one needed, so the timeline is drawn again only every few rows. */
+export const TIMELINE_REVEAL_STEP = 6;
+
+/**
+ * How many rows draw their picture, given where the reader is: never
+ * fewer than before (`through`). `tops` are the rows' tops in the line's
+ * own unscaled coordinates; the line sits `blockTop` down the page, scaled
+ * by `scale` about its top and lifted by `lift` (never positive), as the
+ * timeline draws it.
+ */
+export function timelineReveal({
+  tops,
+  through,
+  scrollY,
+  viewport,
+  blockTop,
+  scale,
+  lift,
+}: {
+  tops: readonly (number | undefined)[];
+  through: number;
+  scrollY: number;
+  viewport: number;
+  blockTop: number;
+  scale: number;
+  lift: number;
+}): number {
+  const count = tops.length;
+  if (count === 0 || through >= count) return through;
+  const bottom = scrollY + viewport * (1 + TIMELINE_AHEAD_SCREENS);
+  const limit = (bottom - blockTop - Math.min(0, lift)) / Math.max(scale, 0.1);
+  let i = Math.max(0, through);
+  while (i < count) {
+    const top = tops[i];
+    if (top == null || top > limit) break;
+    i++;
+  }
+  if (i <= through) return through;
+  return Math.min(count, i + TIMELINE_REVEAL_STEP);
+}

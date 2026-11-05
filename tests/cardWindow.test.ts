@@ -1,7 +1,17 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ACTION_STRETCH, PICTURES_AHEAD, PICTURES_BEHIND, idsAround, pictureWindow } from "@/media/cardWindow";
+import {
+  ACTION_STRETCH,
+  PICTURES_AHEAD,
+  PICTURES_BEHIND,
+  TIMELINE_AHEAD_SCREENS,
+  TIMELINE_FIRST_ROWS,
+  TIMELINE_REVEAL_STEP,
+  idsAround,
+  pictureWindow,
+  timelineReveal,
+} from "@/media/cardWindow";
 import { isWarm, warmWindow, type WarmWindow } from "@/utils/videoWindow";
 
 /**
@@ -145,5 +155,53 @@ describe("Home and the gallery", () => {
     expect(gallery).toMatch(/usePostActions\(userId, actionIds\)/);
     expect(gallery).not.toMatch(/usePostActions\(userId, postIds\)/);
     expect(home).not.toMatch(/usePostActions\(userId, postIds\)/);
+  });
+});
+
+describe("the timeline's pictures", () => {
+  // Rows of 230 points under a 350-point profile, in a 700-point view.
+  const tops = Array.from({ length: 157 }, (_, i) => i * 230);
+  const at = (scrollY: number, through = TIMELINE_FIRST_ROWS, more: Partial<{ scale: number; lift: number }> = {}) =>
+    timelineReveal({ tops, through, scrollY, viewport: 700, blockTop: 350, scale: 1, lift: 0, ...more });
+
+  it("are the first screens' rows when it opens, not every photograph", () => {
+    expect(TIMELINE_FIRST_ROWS).toBe(8);
+    expect(TIMELINE_AHEAD_SCREENS).toBe(2);
+    // The first eight already reach three screens down here, so nothing more yet.
+    expect(at(0)).toBe(TIMELINE_FIRST_ROWS);
+    // From none: the rows whose top is within three screens of the top of the page, and a step more.
+    expect(at(0, 0)).toBe(Math.floor((2100 - 350) / 230) + 1 + TIMELINE_REVEAL_STEP);
+    expect(at(0, 0)).toBeLessThan(20);
+  });
+
+  it("come in a few screens ahead of the reader, and stay", () => {
+    const down = at(5000);
+    expect(tops[down - 1 - TIMELINE_REVEAL_STEP]).toBeLessThanOrEqual(5000 + 2100 - 350);
+    expect(down).toBeGreaterThan(at(0));
+    // Scrolling back up never takes a picture away.
+    expect(at(0, down)).toBe(down);
+  });
+
+  it("reach further when the line is shrunk, and follow it when it is lifted", () => {
+    expect(at(0, TIMELINE_FIRST_ROWS, { scale: 0.5 })).toBeGreaterThan(at(0));
+    expect(at(0, TIMELINE_FIRST_ROWS, { lift: -2000 })).toBeGreaterThan(at(0));
+  });
+
+  it("wait for rows that have not said where they are", () => {
+    const partial = [0, 230, undefined, 690];
+    expect(timelineReveal({ tops: partial, through: 0, scrollY: 0, viewport: 700, blockTop: 0, scale: 1, lift: 0 })).toBe(
+      Math.min(4, 2 + TIMELINE_REVEAL_STEP),
+    );
+    expect(timelineReveal({ tops: [], through: 3, scrollY: 0, viewport: 700, blockTop: 0, scale: 1, lift: 0 })).toBe(3);
+  });
+
+  it("are drawn only for the rows revealed, by a row that is a memo and reports its top", () => {
+    const timeline = code("src/components/Timeline.tsx");
+    expect(timeline).toMatch(/const Row = React\.memo\(function Row\(\{/);
+    expect(timeline).toMatch(/drawn=\{i < through\}/);
+    expect(timeline).toMatch(/\{url && drawn \? \(\s*<Image/);
+    expect(timeline.match(/onLayout=\{onLayout\}/g)).toHaveLength(3);
+    expect(timeline).toMatch(/scrollY\.current = e\.nativeEvent\.contentOffset\.y;\s*reveal\(\);/);
+    expect(timeline).toMatch(/const inspect = useCallback\(/);
   });
 });
