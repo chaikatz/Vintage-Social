@@ -29,9 +29,11 @@ export function firstPageOnly<T, P>(data: InfiniteData<T, P> | undefined): Infin
 export const NEAR_TOP = 2;
 
 /**
- * Whether coming back to the app (or back online) refreshes the feed: the
- * reader is at its top, and what it shows is older than a query's usual
- * staleness. `seenIndex` is the last card reported on screen, or -1.
+ * Whether coming back to the app (or back online) refreshes the feed: it
+ * never loaded (opened offline, say: it is asked for again, as the query
+ * itself would have), or the reader is at its top and what it shows is
+ * older than a query's usual staleness. `seenIndex` is the last card
+ * reported on screen, or -1.
  */
 export function refreshOnReturn({
   seenIndex,
@@ -44,7 +46,7 @@ export function refreshOnReturn({
   now: number;
   staleMs: number;
 }): boolean {
+  if (!(updatedAt > 0)) return true;
   if (seenIndex > NEAR_TOP) return false;
-  if (!(updatedAt > 0)) return false;
   return now - updatedAt >= staleMs;
 }

@@ -84,7 +84,11 @@ describe("coming back to the app", () => {
   it("leaves a reader further down where they are, and a fresh feed alone", () => {
     expect(refreshOnReturn({ ...base, seenIndex: 3, now: base.updatedAt + 600_000 })).toBe(false);
     expect(refreshOnReturn({ ...base, seenIndex: 0, now: base.updatedAt + 29_999 })).toBe(false);
-    expect(refreshOnReturn({ ...base, seenIndex: 0, updatedAt: 0, now: 5_000_000 })).toBe(false);
+  });
+
+  it("asks again for a feed that never loaded (opened offline), as the query itself would have", () => {
+    expect(refreshOnReturn({ ...base, seenIndex: -1, updatedAt: 0, now: 5_000_000 })).toBe(true);
+    expect(refreshOnReturn({ ...base, seenIndex: 9, updatedAt: 0, now: 5_000_000 })).toBe(true);
   });
 });
 
