@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import * as Location from "expo-location";
-import { makeLazyWriter, readDiskCache, writeDiskCache } from "./diskCache";
+import { makeLazyWriter, readDiskCache, setBounded, trimOldest, writeDiskCache } from "./diskCache";
 
 /**
  * Turning the place a member typed into a point.
@@ -23,6 +23,14 @@ const KEY = "vintage.place-points";
 
 const cache = new Map<string, Point | null>();
 let loaded = false;
+
+/**
+ * Places kept, the most recently found: the file is read whole on the
+ * first look and written whole while places are found, so it is kept to
+ * a size that costs nothing to read. A place let go is looked up again
+ * the next time it is wanted.
+ */
+export const POINTS_KEPT = 2000;
 
 /** The stored points, checked value by value. */
 export function parseStoredPoints(raw: unknown): Record<string, Point | null> | null {
@@ -51,6 +59,7 @@ function load() {
   for (const [k, v] of Object.entries(stored)) {
     if (!cache.has(k)) cache.set(k, v);
   }
+  trimOldest(cache, POINTS_KEPT);
 }
 
 const persist = makeLazyWriter(() => writeDiskCache(FILE, KEY, Object.fromEntries(cache)));
@@ -93,7 +102,7 @@ export async function geocodePlace(place: string, timeoutMs = 2500): Promise<Poi
       // Remember the answer — including "no such place" — but only when the
       // lookup actually answered. A timeout stays unremembered so a later,
       // calmer moment can try again.
-      cache.set(k, point);
+      setBounded(cache, k, point, POINTS_KEPT);
       persist();
       return point;
     });
