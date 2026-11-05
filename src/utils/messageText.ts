@@ -32,3 +32,13 @@ export function inboxPreview(last: Pick<MessageRow, "body" | "post_id"> | null):
   if (last.body) return last.body;
   return last.post_id ? "Sent a photograph" : PHOTOGRAPH_UNAVAILABLE;
 }
+
+/**
+ * Whether a thread holds a message from the other member that the reader
+ * has not seen: what opening it has to mark read. Nothing to mark, no
+ * write, and no new read of the inbox and its badge after it.
+ */
+export function unreadFrom(messages: readonly Pick<MessageRow, "sender_id" | "read_at">[] | undefined, readerId: string): boolean {
+  if (!readerId || !messages) return false;
+  return messages.some((m) => m.sender_id !== readerId && !m.read_at);
+}

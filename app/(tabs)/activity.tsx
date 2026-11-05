@@ -54,9 +54,10 @@ export default function Activity() {
   const isFocused = useIsFocused();
   useEffect(() => {
     if (isFocused && userId && activity.isFetched) {
-      markActivityRead(userId).then(() =>
-        queryClient.invalidateQueries({ queryKey: ["activity-unread"] }),
-      );
+      markActivityRead(userId)
+        .then(() => queryClient.invalidateQueries({ queryKey: ["activity-unread"] }))
+        // Not marked this time; the next visit marks it.
+        .catch(() => undefined);
     }
   }, [isFocused, userId, activity.isFetched, queryClient]);
 
