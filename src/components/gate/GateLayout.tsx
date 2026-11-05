@@ -15,6 +15,7 @@ import { StatusBar } from "expo-status-bar";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
 import { Wordmark } from "@/components/Wordmark";
+import { backFromDoor } from "./door";
 
 /**
  * The ground every signed-out screen stands on.
@@ -71,7 +72,7 @@ export function GateLayout({
         <Pressable
           style={[styles.back, { top: insets.top + spacing.sm }]}
           hitSlop={14}
-          onPress={() => router.back()}
+          onPress={() => backFromDoor(router)}
           accessibilityLabel="Back"
         >
           <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />

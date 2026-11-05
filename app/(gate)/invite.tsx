@@ -25,7 +25,9 @@ import {
 } from "@/utils/validation";
 import { checkUsernameAvailable, fetchInviteOwner, joinWithInvite } from "@/api/membership";
 import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
-import { enterApp, useSession } from "@/providers/SessionProvider";
+import { useSession } from "@/providers/SessionProvider";
+import { backFromDoor } from "@/components/gate/door";
+import { useDoorClosesBehind } from "@/components/gate/useDoor";
 
 /**
  * The invitation.
@@ -55,6 +57,10 @@ export default function Invite() {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
+  // Signed in, the card goes in: after a join whose account was made but
+  // whose invitation was refused, to the waiting room that takes the code;
+  // for a member who opened a link, to the app (see door.ts).
+  const goIn = useDoorClosesBehind(busy);
 
   // Ask who is behind the link as soon as there is one worth asking about.
   // This is the whole emotional payload of an invitation, and it should not
@@ -107,7 +113,7 @@ export default function Invite() {
         code: slugFromInput(code),
       });
       await refreshProfile();
-      await enterApp();
+      await goIn();
     } catch (err) {
       showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
     } finally {
@@ -132,7 +138,7 @@ export default function Invite() {
         >
           {/* The name, small, in the corner — back to the door is one tap left of it. */}
           <View style={styles.head}>
-            <Pressable hitSlop={14} onPress={() => router.back()} accessibilityLabel="Back" style={styles.back}>
+            <Pressable hitSlop={14} onPress={() => backFromDoor(router)} accessibilityLabel="Back" style={styles.back}>
               <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />
             </Pressable>
             <Wordmark tagline="Members only" />
