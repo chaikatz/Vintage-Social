@@ -10,7 +10,7 @@ import { formatMemberNumber } from "./membership";
  * icon, small, in the bottom-left corner. Two
  * formats: `print`, the photograph's own shape with the paper around it,
  * for a feed; `story`, a 9:16 page with the print sitting in the middle,
- * for a story. Two papers: the light page and the darkroom brown.
+ * for a story. Two papers: the light page and the dark print's black.
  *
  * Everything is expressed in the units of `width`, so the same numbers
  * draw the on-screen preview (points), the captured still (points at the

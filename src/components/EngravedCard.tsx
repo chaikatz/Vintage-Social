@@ -20,7 +20,7 @@ export function EngravedCard({
   /** Length of the mitre along each edge, in points. */
   cut?: number;
   style?: ViewStyle;
-  /** Dark stock with gold rules, or the cream page with ink rules. */
+  /** The card's dark stock with its gold (white on the black page) rules, or the page with ink rules. */
   tone?: "dark" | "paper";
 }) {
   const [size, setSize] = React.useState({ width: 0, height: 0 });

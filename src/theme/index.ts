@@ -4,9 +4,10 @@ import { DynamicColorIOS, Platform, type ColorValue } from "react-native";
  * VINTAGE design tokens.
  *
  * Two prints of the same page. Light: warm off-white paper, ink-dark text,
- * hairline borders. Dark: the same page struck on deep brown — the brown
- * of an old darkroom — with cream type and gold marks. Photography
- * dominates either way; chrome recedes. No gradients, no glass.
+ * hairline borders. Dark: the page every phone's dark mode is — black,
+ * with white type, white marks, and greys for everything quieter, as iOS
+ * sets its own. Photography dominates either way; chrome recedes. No
+ * gradients, no glass.
  *
  * Every token is a dynamic colour on iOS, so the whole app follows the
  * appearance setting at render time without a single component knowing;
@@ -17,18 +18,18 @@ function dyn(light: string, dark: string): ColorValue {
   return Platform.OS === "ios" ? DynamicColorIOS({ light, dark }) : light;
 }
 
-/** The dark print, as sampled from the reference, for anything that needs a plain string. */
+/** The dark print, for anything that needs a plain string. Neutral throughout: no brown, no cream, no gold. */
 export const dark = {
-  paper: "#3B2C27", // the page: Espresso (SW 2736), the brown of a darkroom wall
-  paperRaised: "#47362F", // buttons, inputs — a step up, still brown
-  paperSunken: "#2F221E", // the tab bar, the header, the gaps between prints
-  ink: "#F6ECDF", // cream type
-  inkSoft: "#DDC7AC",
-  inkFaint: "#B39A80",
-  border: "#52403A", // a hairline you feel more than see
-  borderStrong: "#74604F", // button edges and rules — visible against the espresso
-  accent: "#D4B48F", // gold marks
-  accentDeep: "#B08E67",
+  paper: "#000000", // the page, the header and the tab bar: black
+  paperRaised: "#1C1C1E", // cards, inputs, buttons, sheets — a step up from the black
+  paperSunken: "#2C2C2E", // wells, pressed states, an unread row — a step further, so they show on black and on a card
+  ink: "#FFFFFF", // white type
+  inkSoft: "#AEAEB2", // secondary: "2d ago", a name's second line
+  inkFaint: "#8E8E93", // tertiary and placeholders: iOS's own system grey
+  border: "#38383A", // a hairline: iOS's own separator on black
+  borderStrong: "#48484A", // button edges, and the quiet grey rule under a print's photograph
+  accent: "#FFFFFF", // white marks
+  accentDeep: "#D1D1D6",
 } as const;
 
 /** The light print, as it has always been. */
@@ -47,9 +48,9 @@ export const light = {
 
 export const colors = {
   // Surfaces
-  paper: dyn(light.paper, dark.paper), // app background
+  paper: dyn(light.paper, dark.paper), // app background, the header, the tab bar
   paperRaised: dyn(light.paperRaised, dark.paperRaised), // cards, inputs, buttons
-  paperSunken: dyn(light.paperSunken, dark.paperSunken), // pressed states, wells, the tab bar
+  paperSunken: dyn(light.paperSunken, dark.paperSunken), // pressed states, wells
 
   // Ink
   ink: dyn(light.ink, dark.ink), // primary text
@@ -60,28 +61,42 @@ export const colors = {
   border: dyn(light.border, dark.border), // hairline borders
   borderStrong: dyn(light.borderStrong, dark.borderStrong),
 
-  // Accents — burnt sienna on paper, gold on the darkroom brown
+  // Accents — burnt sienna on paper, white on black
   accent: dyn(light.accent, dark.accent),
   accentDeep: dyn(light.accentDeep, dark.accentDeep),
-  like: dyn("#B3402E", "#E07A6A"), // faded red for the like heart
-  danger: dyn("#A03B2E", "#E28A7A"),
-  success: dyn("#5C7048", "#9DB48A"),
+  like: dyn("#B3402E", "#FF3040"), // the like heart: a faded red on paper, a clear red on black
+  danger: dyn("#A03B2E", "#FF453A"),
+  success: dyn("#5C7048", "#30D158"),
+  // Something unread — a letter in the tray. The accent on paper; on black
+  // the accent is white, which the white icon beside it would swallow, so
+  // it is the heart's red, as every app marks it.
+  badge: dyn(light.accent, "#FF3040"),
 
   // The invitation card: a dark, printed object rather than a screen. Used
-  // only where VINTAGE presents itself — the invitation, and the gate.
-  card: dyn("#3A322A", "#2F221E"), // deep printed brown — on the espresso page, one shade down
-  cardDeep: dyn("#2F2821", "#261B17"), // the same, one shade down again
-  gold: "#D6BE94", // the ink the rule and the wordmark are struck in
-  goldSoft: "#B9A47E", // the same, receded
+  // only where VINTAGE presents itself — the invitation, and the gate. On
+  // paper it is printed brown, ruled and lettered in gold; on black it is
+  // a card a step up from the page, lettered in white and edged in grey.
+  card: dyn("#3A322A", dark.paperRaised),
+  cardDeep: dyn("#2F2821", "#121212"), // the same, one shade down
+  gold: dyn("#D6BE94", "#FFFFFF"), // the ink the rule and the wordmark are struck in
+  goldSoft: dyn("#B9A47E", "#636366"), // the same, receded
 
   // Photographic details
   stamp: "#FFB03A", // date-stamp amber
   stampGlow: "rgba(255, 150, 40, 0.55)",
-  // Camera / capture surfaces and the primary button. On the dark print
-  // the shutter is the cream, so the one button on a screen still reads
-  // as the one button.
-  shutter: dyn("#1C1915", "#F3E6D3"),
-  onShutter: dyn("#F2EBDD", "#3B2C27"),
+  // The primary button. On black the shutter is white with black on it,
+  // so the one button on a screen still reads as the one button.
+  shutter: dyn("#1C1915", "#FFFFFF"),
+  onShutter: dyn("#F2EBDD", "#000000"),
+  // The dark of a camera, whichever the print: the box a photograph is
+  // previewed in, and the discs set over a photograph or a film. What is
+  // set on them is light on both prints.
+  camera: dyn("#1C1915", "#000000"),
+  onCamera: dyn("#F2EBDD", "#FFFFFF"),
+  // A switch's knob while it is off. On, the knob is the raised paper
+  // over the accent's track; off, on paper it is the same, and on black it
+  // is white over the grey track, as iOS sets one.
+  knob: dyn(light.paperRaised, "#FFFFFF"),
 } as const;
 
 export const spacing = {
