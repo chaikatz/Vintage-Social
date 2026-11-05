@@ -18,10 +18,40 @@
 // Copy is kept quiet on purpose: a name and what happened, no exclamation
 // marks, no "don't miss", no emoji.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+//
+// Built to hold up as the club grows (logic.ts holds the parts tested in
+// tests/push-function.test.ts):
+//   * Expo is given a hundred notices a request, a few requests at once,
+//     each with a deadline; one Expo is too busy for is tried once more.
+//   * A device Expo says is gone (DeviceNotRegistered) is forgotten: its
+//     token row is deleted, as the phone deletes it on sign-out. A phone
+//     that comes back registers again.
+//   * Every `in` filter (preferences, tokens) goes a hundred ids a read,
+//     because it rides in the URL; followers are read a thousand at a
+//     time (PostgREST's max_rows) until there are no more, up to
+//     MAX_FOLLOWERS_TOLD, so one post's fan-out is bounded.
+//   * On This Day asks for photographs taken on today's date in each
+//     earlier year (an index range each, posts_taken_idx in 0023) rather
+//     than every dated photograph in the club, which past a thousand
+//     PostgREST cut short and members silently missed their memory.
 
-const EXPO_PUSH = "https://exp.host/--/api/v2/push/send";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  chunk,
+  eachChunk,
+  IDS_PER_READ,
+  memoryDays,
+  pickMemories,
+  sendToExpo,
+  type MemoryPost,
+  type Message,
+} from "./logic.ts";
+
 const LIKE_QUIET_MINUTES = 30;
+/** PostgREST hands back at most this many rows a read (max_rows). */
+const ROWS_PER_READ = 1000;
+/** The most followers one new photograph is announced to. */
+const MAX_FOLLOWERS_TOLD = 50_000;
 
 type Kind = "activity" | "post" | "memories";
 
@@ -44,16 +74,6 @@ const DEFAULT_PREFS: Prefs = {
   posts: true,
   memories: true,
 };
-
-interface Message {
-  to: string;
-  title?: string;
-  body: string;
-  data: Record<string, string>;
-  sound: "default" | null;
-  /** Expo collapses notifications sharing a thread on the lock screen. */
-  channelId?: string;
-}
 
 const admin = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -98,24 +118,30 @@ async function prefsFor(userIds: string[]): Promise<Map<string, Prefs>> {
   const out = new Map<string, Prefs>();
   for (const id of userIds) out.set(id, DEFAULT_PREFS);
   if (userIds.length === 0) return out;
-  const { data } = await admin.from("notification_prefs").select("*").in("user_id", userIds);
-  for (const row of data ?? []) out.set(row.user_id, row as Prefs);
+  // A hundred members a read: the ids ride in the URL. A read that fails
+  // leaves those members on the defaults, as one failed read always did.
+  await eachChunk(chunk(userIds, IDS_PER_READ), 4, async (ids) => {
+    const { data } = await admin.from("notification_prefs").select("*").in("user_id", ids);
+    for (const row of data ?? []) out.set(row.user_id, row as Prefs);
+  });
   return out;
 }
 
 async function tokensFor(userIds: string[]): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   if (userIds.length === 0) return out;
-  const { data } = await admin
-    .from("push_tokens")
-    .select("token, user_id")
-    .in("user_id", userIds)
-    .is("invalid_at", null);
-  for (const row of data ?? []) {
-    const list = out.get(row.user_id) ?? [];
-    list.push(row.token);
-    out.set(row.user_id, list);
-  }
+  await eachChunk(chunk(userIds, IDS_PER_READ), 4, async (ids) => {
+    const { data } = await admin
+      .from("push_tokens")
+      .select("token, user_id")
+      .in("user_id", ids)
+      .is("invalid_at", null);
+    for (const row of data ?? []) {
+      const list = out.get(row.user_id) ?? [];
+      list.push(row.token);
+      out.set(row.user_id, list);
+    }
+  });
   return out;
 }
 
@@ -159,15 +185,18 @@ async function handleActivity(id: string): Promise<unknown> {
       if (!prefs.likes) return { sent: 0, reason: "muted" };
       // A run of likes reads as one. If this member was told about a like
       // in the last half hour, the rest wait for them in Activity.
+      // One such row is enough to know: no exact count of a popular
+      // member's likes, just whether there is one.
       const since = new Date(Date.now() - LIKE_QUIET_MINUTES * 60_000).toISOString();
-      const { count } = await admin
+      const { data: recent } = await admin
         .from("activity")
-        .select("id", { count: "exact", head: true })
+        .select("id")
         .eq("recipient_id", recipient)
         .eq("type", "like")
         .neq("id", id)
-        .gte("pushed_at", since);
-      if ((count ?? 0) > 0) return { sent: 0, reason: "quiet" };
+        .gte("pushed_at", since)
+        .limit(1);
+      if ((recent ?? []).length > 0) return { sent: 0, reason: "quiet" };
       body = `${who} liked your photograph.`;
       break;
     }
@@ -238,28 +267,46 @@ async function handlePost(id: string): Promise<unknown> {
   // The house accounts are furniture; nobody is woken for them.
   if (!author || author.is_house) return { sent: 0, reason: "house" };
 
-  const { data: followers } = await admin
-    .from("follows")
-    .select("follower_id")
-    .eq("followee_id", post.author_id)
-    .eq("status", "accepted");
-  const ids = (followers ?? []).map((f) => f.follower_id as string);
-  if (ids.length === 0) return { sent: 0, reason: "no followers" };
-
-  const prefs = await prefsFor(ids);
-  const wanted = ids.filter((uid) => (prefs.get(uid) ?? DEFAULT_PREFS).posts);
-  const tokens = await tokensFor(wanted);
-
   const what = post.media_type === "video" ? "a short film" : "a photograph";
   const place = (post.location ?? "").trim();
   const body = place ? `${author.username} posted ${what} from ${place}.` : `${author.username} posted ${what}.`;
-  const messages: Message[] = [];
-  for (const uid of wanted) {
-    for (const to of tokens.get(uid) ?? []) {
-      messages.push({ to, body, data: { kind: "post", postId: post.id }, sound: null });
+
+  // Followers a page at a time (PostgREST stops at max_rows), each page
+  // told before the next is read, so memory stays one page deep. Ordered
+  // by follower so the pages neither overlap nor skip.
+  const total = { sent: 0, failed: 0, followers: 0 };
+  for (let from = 0; from < MAX_FOLLOWERS_TOLD; from += ROWS_PER_READ) {
+    const { data: page, error } = await admin
+      .from("follows")
+      .select("follower_id")
+      .eq("followee_id", post.author_id)
+      .eq("status", "accepted")
+      .order("follower_id", { ascending: true })
+      .range(from, from + ROWS_PER_READ - 1);
+    if (error) break;
+    const ids = (page ?? []).map((f) => f.follower_id as string);
+    total.followers += ids.length;
+    if (ids.length > 0) {
+      const prefs = await prefsFor(ids);
+      const wanted = ids.filter((uid) => (prefs.get(uid) ?? DEFAULT_PREFS).posts);
+      const tokens = await tokensFor(wanted);
+      const messages: Message[] = [];
+      for (const uid of wanted) {
+        for (const to of tokens.get(uid) ?? []) {
+          messages.push({ to, body, data: { kind: "post", postId: post.id }, sound: null });
+        }
+      }
+      const result = await send(messages);
+      total.sent += result.sent;
+      total.failed += result.failed;
+    }
+    if (ids.length < ROWS_PER_READ) break;
+    if (from + ROWS_PER_READ >= MAX_FOLLOWERS_TOLD) {
+      console.warn(`post ${post.id}: told the first ${MAX_FOLLOWERS_TOLD} followers and stopped`);
     }
   }
-  return send(messages);
+  if (total.followers === 0) return { sent: 0, reason: "no followers" };
+  return { sent: total.sent, failed: total.failed };
 }
 
 /**
@@ -279,30 +326,40 @@ async function handleMemories(): Promise<unknown> {
     .select("key");
   if (!guard || guard.length === 0) return { sent: 0, reason: "already ran today" };
 
-  const month = today.getUTCMonth() + 1;
-  const day = today.getUTCDate();
-  const year = today.getUTCFullYear();
-
-  // Posts whose capture date falls on this month/day in an earlier year.
-  const { data: posts } = await admin
+  // Posts whose capture date falls on this month/day in an earlier year:
+  // one small range read per year (posts_taken_idx), back to the oldest
+  // dated photograph in the club, each paged past max_rows. It used to
+  // read every dated photograph in the club and keep today's, and
+  // PostgREST stopped at a thousand without saying which.
+  const { data: oldest } = await admin
     .from("posts")
-    .select("id, author_id, taken_at, location")
+    .select("taken_at")
     .not("taken_at", "is", null)
     .is("removed_at", null)
-    .lt("taken_at", `${year}-01-01`)
-    .limit(5000);
-  const byMember = new Map<string, { id: string; yearsAgo: number; place: string | null }>();
-  for (const p of posts ?? []) {
-    const d = new Date(p.taken_at as string);
-    if (d.getUTCMonth() + 1 !== month || d.getUTCDate() !== day) continue;
-    const yearsAgo = year - d.getUTCFullYear();
-    if (yearsAgo < 1) continue;
-    const prev = byMember.get(p.author_id as string);
-    // The furthest back is the one worth a word.
-    if (!prev || yearsAgo > prev.yearsAgo) {
-      byMember.set(p.author_id as string, { id: p.id as string, yearsAgo, place: (p.location as string | null)?.trim() || null });
+    .order("taken_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!oldest?.taken_at) return { sent: 0, reason: "nothing today" };
+  const days = memoryDays(today, new Date(oldest.taken_at as string).getUTCFullYear());
+  const found = await eachChunk(days.map((d) => [d]), 4, async ([d]) => {
+    const rows: MemoryPost[] = [];
+    for (let from = 0; ; from += ROWS_PER_READ) {
+      const { data: page } = await admin
+        .from("posts")
+        .select("id, author_id, taken_at, location")
+        .is("removed_at", null)
+        .gte("taken_at", d.start)
+        .lt("taken_at", d.end)
+        .order("taken_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + ROWS_PER_READ - 1);
+      rows.push(...((page ?? []) as MemoryPost[]));
+      if ((page ?? []).length < ROWS_PER_READ) break;
     }
-  }
+    return rows;
+  });
+  // The furthest back is the one worth a word.
+  const byMember = pickMemories(found.flat(), today);
   const members = [...byMember.keys()];
   if (members.length === 0) return { sent: 0, reason: "nothing today" };
 
@@ -322,35 +379,16 @@ async function handleMemories(): Promise<unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// through Expo, in chunks; dead devices are retired
+// through Expo, in chunks; dead devices are forgotten
 // ---------------------------------------------------------------------------
 
 async function send(messages: Message[]): Promise<{ sent: number; failed: number }> {
-  let sent = 0;
-  let failed = 0;
-  const dead: string[] = [];
-  for (let i = 0; i < messages.length; i += 100) {
-    const chunk = messages.slice(i, i + 100);
-    const res = await fetch(EXPO_PUSH, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(chunk),
-    });
-    if (!res.ok) {
-      failed += chunk.length;
-      continue;
-    }
-    const { data } = (await res.json()) as { data?: { status: string; details?: { error?: string } }[] };
-    (data ?? []).forEach((ticket, index) => {
-      if (ticket.status === "ok") sent++;
-      else {
-        failed++;
-        if (ticket.details?.error === "DeviceNotRegistered") dead.push(chunk[index].to);
-      }
-    });
-  }
-  if (dead.length > 0) {
-    await admin.from("push_tokens").update({ invalid_at: new Date().toISOString() }).in("token", dead);
+  if (messages.length === 0) return { sent: 0, failed: 0 };
+  const { sent, failed, dead } = await sendToExpo(messages, { fetch: (url, init) => fetch(url, init) });
+  // A device that is gone will not come back under this token; the row
+  // goes, a hundred tokens a delete (they ride in the URL).
+  for (const tokens of chunk(dead, IDS_PER_READ)) {
+    await admin.from("push_tokens").delete().in("token", tokens);
   }
   return { sent, failed };
 }
