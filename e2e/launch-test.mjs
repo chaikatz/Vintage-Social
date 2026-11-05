@@ -683,6 +683,107 @@ check("Stamp reads the capture date, not today", /6 14/.test(afterPost));
 check("A new post says it went up just now", (await byLabel("Posted just now").count()) > 0);
 await shot("18-posted");
 
+// ===========================================================================
+// PHASE C — the door signed in, Settings' switches, a reported comment
+// ===========================================================================
+
+// Signed in, an invitation link goes into the app. Left on the card, a
+// second account could be made over this one, and a join refused after
+// its account was made left the new member there for good.
+await go("/invite/someone-invitation", 3400);
+check(
+  "A signed-in member who opens an invitation link goes into the app, not onto the card",
+  new URL(page.url()).pathname === "/" &&
+    (await byText("Accept the invitation").count()) === 0 &&
+    (await seen(page.locator('[role="tab"]')).count()) > 0,
+  page.url(),
+);
+
+// The private account switch does what it says when it is flipped: it
+// used to wait for Save, and going back left the account as it was.
+const privateSwitch = () => byLabel("Private account").first();
+const openSettings = async () => {
+  await tab("profile");
+  await byLabel("Settings").first().click();
+  await wait(2200);
+};
+await openSettings();
+const wasPrivate = await privateSwitch().isChecked();
+await privateSwitch().click();
+await wait(1200);
+await back(1600);
+await openSettings();
+check("The private account switch holds once flipped, without Save", (await privateSwitch().isChecked()) === !wasPrivate);
+await privateSwitch().click();
+await wait(1200);
+await back(1600);
+await openSettings();
+check("…and flipped back, it holds back", (await privateSwitch().isChecked()) === wasPrivate);
+await back(1600);
+
+// A reported comment: held a moment, reported, and an admin can remove it
+// from the queue, where a comment's report used to offer only Dismiss.
+await tab("home");
+await cardOf("forgives everything").getByLabel("Comments", { exact: true }).first().click();
+await wait(2500);
+// The comment as it is drawn on top: the feed's preview of it lies under this screen.
+const reported = await page.evaluate(() => {
+  for (const el of document.querySelectorAll('[dir="auto"]')) {
+    if (!/The emptiness makes it\./.test(el.textContent ?? "")) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    const at = { x: r.x + 12, y: r.y + Math.min(r.height, 20) / 2 };
+    const hit = document.elementFromPoint(at.x, at.y);
+    if (hit && (hit === el || el.contains(hit))) return at;
+  }
+  return null;
+});
+await page.mouse.move(reported?.x ?? 0, reported?.y ?? 0);
+await page.mouse.down();
+await wait(900);
+await page.mouse.up();
+await wait(1900);
+check("Holding another member's comment offers to report it", /Report comment/.test(dialogs.at(-1) ?? "") && /\/report/.test(page.url()), page.url());
+await tap("Harassment or abuse", 600);
+await tap("Send report", 2200);
+check("The comment's report is sent, once", /An admin will take a look/.test(dialogs.at(-1) ?? ""));
+await toTabs();
+await signOutFromSettings();
+await signInAs("admin@vintage.club");
+await tab("profile");
+await byLabel("Admin").first().click();
+await wait(2300);
+await tap("Reports", 2600);
+const queueNow = await text();
+check(
+  "A reported comment can be removed from the reports queue",
+  /comment · reported by elena\.marchetti/.test(queueNow) && (await byText("Remove comment").count()) > 0,
+);
+await shot("19-comment-report");
+await tap("Remove comment", 2600);
+check("Removed, the comment's report leaves the open queue", !/comment · reported by elena\.marchetti/.test(await text()));
+await tap("resolved", 2200);
+check("…and is resolved as content removed", /comment · reported by elena\.marchetti/.test(await text()) && /Content removed/.test(await text()));
+
+// Opened on an invitation, with nothing behind the card, its back mark
+// still leads to the door. It used to go back to nothing at all.
+{
+  const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const card = await fresh.newPage();
+  card.on("pageerror", (e) => errors.push("fresh: " + e.message));
+  await card.goto(B + "/invite/someone-invitation", { waitUntil: "networkidle" });
+  await card.waitForTimeout(2600);
+  const onCard = /By invitation/.test((await card.textContent("body")) ?? "");
+  await card.getByLabel("Back", { exact: true }).locator("visible=true").first().click();
+  await card.waitForTimeout(2400);
+  check(
+    "Opened on an invitation, the card's back mark leads to the door",
+    onCard && (await card.getByText("Apply for membership", { exact: true }).locator("visible=true").count()) > 0,
+    card.url(),
+  );
+  await fresh.close();
+}
+
 console.log("\nJS errors:", errors.length ? errors.slice(0, 10) : "none");
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
