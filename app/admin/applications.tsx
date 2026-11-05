@@ -5,6 +5,7 @@ import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideApplication, fetchApplications } from "@/api/moderation";
 import { postAge } from "@/utils/time";
@@ -48,6 +49,8 @@ export default function AdminApplications() {
             key={t}
             onPress={() => setTab(t)}
             style={[styles.tab, tab === t && styles.tabActive]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: tab === t }}
           >
             {t}
           </Text>
@@ -58,7 +61,13 @@ export default function AdminApplications() {
         keyExtractor={(a) => a.id}
         refreshing={apps.isRefetching}
         onRefresh={() => apps.refetch()}
-        ListEmptyComponent={apps.isFetched ? <EmptyState title={`No ${tab} applications`} /> : null}
+        ListEmptyComponent={
+          apps.isError ? (
+            <LoadFailed what="the applications" onRetry={() => apps.refetch()} />
+          ) : apps.isFetched ? (
+            <EmptyState title={`No ${tab} applications`} />
+          ) : null
+        }
         renderItem={({ item }) => (
           <View style={styles.card}>
             <View style={styles.cardHeader}>

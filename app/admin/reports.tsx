@@ -6,10 +6,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing, type } from "@/theme";
-import { fetchReports, removePost, resolveReport, type ReportWithRefs } from "@/api/moderation";
+import { fetchReports, removeComment, removePost, resolveReport, type ReportWithRefs } from "@/api/moderation";
+import { fetchProfileById } from "@/api/profiles";
+import { withRowBack, withoutRow } from "@/components/decidedRows";
+import { errorMessage } from "@/utils/errorMessage";
 import { postAge } from "@/utils/time";
 import type { ReportStatus } from "@/types/db";
+
+/**
+ * What an admin can do with an open report. A reported photograph can be
+ * removed, and so can a reported comment, which used to offer only
+ * Dismiss; a reported member is opened, to be warned or suspended from
+ * their profile or Members.
+ */
+type ReportAction = "dismiss" | "removePost" | "removeComment";
 
 const TABS: ReportStatus[] = ["open", "resolved", "dismissed"];
 
@@ -25,30 +37,62 @@ export default function AdminReports() {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
 
-  const resolve = useMutation({
-    mutationFn: ({ id, status, note }: { id: string; status: "resolved" | "dismissed"; note: string }) =>
-      resolveReport(id, status, note),
-    onSuccess: refresh,
-  });
-
-  const removeReportedPost = useMutation({
-    mutationFn: async (report: ReportWithRefs) => {
-      if (report.post_id) await removePost(report.post_id, `Removed after report: ${report.reason}`);
+  // A report leaves the open list the moment it is acted on, so it cannot
+  // be acted on twice (a second Remove sent the author a second notice),
+  // and a refusal puts that one back and says why. Dismiss used to fail
+  // in silence.
+  const openKey = ["admin-reports", "open"];
+  const act = useMutation({
+    mutationFn: async ({ report, action }: { report: ReportWithRefs; action: ReportAction }) => {
+      const note = `Removed after report: ${report.reason}`;
+      if (action === "dismiss") {
+        await resolveReport(report.id, "dismissed", "No action needed");
+        return;
+      }
+      if (action === "removePost" && report.post_id) await removePost(report.post_id, note);
+      if (action === "removeComment" && report.comment_id) await removeComment(report.comment_id, note);
       await resolveReport(report.id, "resolved", "Content removed");
     },
-    onSuccess: refresh,
-    onError: (err) => showAlert("Action failed", err instanceof Error ? err.message : String(err)),
+    onMutate: async ({ report }) => {
+      await queryClient.cancelQueries({ queryKey: openKey });
+      const order = (queryClient.getQueryData<ReportWithRefs[]>(openKey) ?? []).map((r) => r.id);
+      queryClient.setQueryData<ReportWithRefs[]>(openKey, (rows) => withoutRow(rows, report.id));
+      return { order };
+    },
+    onError: (err, { report }, ctx) => {
+      queryClient.setQueryData<ReportWithRefs[]>(openKey, (rows) => withRowBack(rows, report, ctx?.order));
+      showAlert("Action failed", errorMessage(err, "Nothing changed. Try again in a moment."));
+    },
+    onSettled: refresh,
   });
 
   const openTarget = (report: ReportWithRefs) => {
     if (report.post_id) router.push(`/post/${report.post_id}`);
   };
 
+  // The report names the member by id only; their page is found by name.
+  const openMember = async (report: ReportWithRefs) => {
+    if (!report.profile_id) return;
+    try {
+      const member = await fetchProfileById(report.profile_id);
+      if (member) router.push(`/user/${member.username}`);
+      else showAlert("Not found", "This member’s account no longer exists. The report can be dismissed.");
+    } catch (err) {
+      showAlert("Couldn’t open the member", errorMessage(err, "Try again in a moment."));
+    }
+  };
+
   return (
     <Screen padded={false}>
       <View style={styles.tabs}>
         {TABS.map((t) => (
-          <Text key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}>
+          <Text
+            key={t}
+            onPress={() => setTab(t)}
+            style={[styles.tab, tab === t && styles.tabActive]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: tab === t }}
+          >
             {t}
           </Text>
         ))}
@@ -58,7 +102,13 @@ export default function AdminReports() {
         keyExtractor={(r) => r.id}
         refreshing={reports.isRefetching}
         onRefresh={() => reports.refetch()}
-        ListEmptyComponent={reports.isFetched ? <EmptyState title={`No ${tab} reports`} /> : null}
+        ListEmptyComponent={
+          reports.isError ? (
+            <LoadFailed what="the reports" onRetry={() => reports.refetch()} />
+          ) : reports.isFetched ? (
+            <EmptyState title={`No ${tab} reports`} />
+          ) : null
+        }
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Text style={styles.headline}>
@@ -79,16 +129,26 @@ export default function AdminReports() {
                       title="Remove content"
                       variant="danger"
                       small
-                      onPress={() => removeReportedPost.mutate(item)}
+                      onPress={() => act.mutate({ report: item, action: "removePost" })}
                       style={styles.action}
                     />
                   </>
+                ) : item.comment_id ? (
+                  <Button
+                    title="Remove comment"
+                    variant="danger"
+                    small
+                    onPress={() => act.mutate({ report: item, action: "removeComment" })}
+                    style={styles.action}
+                  />
+                ) : item.profile_id ? (
+                  <Button title="View member" variant="secondary" small onPress={() => openMember(item)} style={styles.action} />
                 ) : null}
                 <Button
                   title="Dismiss"
                   variant="secondary"
                   small
-                  onPress={() => resolve.mutate({ id: item.id, status: "dismissed", note: "No action needed" })}
+                  onPress={() => act.mutate({ report: item, action: "dismiss" })}
                   style={styles.action}
                 />
               </View>
