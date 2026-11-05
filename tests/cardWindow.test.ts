@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PICTURES_AHEAD, PICTURES_BEHIND, pictureWindow } from "@/media/cardWindow";
+import { ACTION_STRETCH, PICTURES_AHEAD, PICTURES_BEHIND, idsAround, pictureWindow } from "@/media/cardWindow";
 import { isWarm, warmWindow, type WarmWindow } from "@/utils/videoWindow";
 
 /**
@@ -68,5 +70,80 @@ describe("the gallery's pictures", () => {
       expect(pictures.length).toBe(PICTURES_BEHIND + 1 + PICTURES_AHEAD);
       expect(firstDraw - pictures.filter((i) => i < firstDraw).length).toBeGreaterThan(50);
     }
+  });
+});
+
+const ids = (n: number) => Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+
+describe("the posts whose likes and comment previews are read", () => {
+  it("come a feed page at a time", () => {
+    expect(ACTION_STRETCH).toBe(12);
+  });
+
+  it("are the reader's stretch and one either side", () => {
+    const all = ids(100);
+    expect(idsAround(all, 0)).toEqual(all.slice(0, 24));
+    expect(idsAround(all, 30)).toEqual(all.slice(12, 48));
+    expect(idsAround(all, 99)).toEqual(all.slice(84, 100));
+  });
+
+  it("stay the same request until the reader crosses into another stretch", () => {
+    const all = ids(100);
+    const key = (focus: number) => idsAround(all, focus).join(",");
+    for (let i = 24; i < 36; i++) expect(key(i)).toBe(key(24));
+    expect(key(36)).not.toBe(key(35));
+  });
+
+  it("always hold the card on screen and its neighbours, whatever the stretch", () => {
+    const all = ids(500);
+    for (let focus = 0; focus < 500; focus++) {
+      const read = new Set(idsAround(all, focus));
+      for (const near of [focus - 2, focus - 1, focus, focus + 1, focus + 2]) {
+        if (near >= 0 && near < 500) expect(read.has(all[near])).toBe(true);
+      }
+    }
+  });
+
+  it("never grow with the list: a thousand photographs is still three stretches", () => {
+    const all = ids(1000);
+    let longest = 0;
+    for (let focus = 0; focus < 1000; focus++) longest = Math.max(longest, idsAround(all, focus).length);
+    expect(longest).toBe(3 * ACTION_STRETCH);
+    // The address the likes read makes: postgrest-js encodes each comma as %2C.
+    const address = (list: string[]) => `post_id=in.(${list.join("%2C")})`.length;
+    // The gateway refused 1,000 ids (431 at 37 kB, measured); 36 ids is under 1.5 kB.
+    expect(address(all)).toBeGreaterThan(37_000);
+    expect(address(idsAround(all, 500))).toBeLessThan(1_500);
+  });
+
+  it("are nothing for an empty list, and the start for a focus that is not a number", () => {
+    expect(idsAround([], 5)).toEqual([]);
+    expect(idsAround(ids(30), Number.NaN)).toEqual(ids(30).slice(0, 24));
+    expect(idsAround(ids(30), -4)).toEqual(ids(30).slice(0, 24));
+  });
+});
+
+/** The source without its comments. */
+function code(file: string): string {
+  return readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8")
+    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+describe("Home and the gallery", () => {
+  it("read likes and comment previews for the cards around the reader only", () => {
+    const home = code("app/(tabs)/index.tsx");
+    expect(home).toMatch(/const actionIds = useMemo\(\(\) => idsAround\(postIds, Math\.max\(0, seenIndex\)\), \[postIds, seenIndex\]\);/);
+    expect(home).toMatch(/usePostActions\(userId, actionIds\)/);
+    expect(home).toMatch(/if \(id\) setSeenId\(id\);/);
+    // The outbox still hears about every post the feed holds.
+    expect(home).toMatch(/notePostsInFeed\(postIds\)/);
+
+    const gallery = code("app/gallery.tsx");
+    expect(gallery).toMatch(/idsAround\(postIds, videoFocus\(\{ ready, startIndex, seenIndex: seenIndex < 0 \? null : seenIndex \}\)\)/);
+    expect(gallery).toMatch(/usePostActions\(userId, actionIds\)/);
+    expect(gallery).not.toMatch(/usePostActions\(userId, postIds\)/);
+    expect(home).not.toMatch(/usePostActions\(userId, postIds\)/);
   });
 });

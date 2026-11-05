@@ -15,6 +15,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { onHomeAgain } from "@/utils/homeRefresh";
 import { notePostsInFeed, setOutboxProfileRefresher, usePendingPosts, type PendingState } from "@/uploads";
 import { pendingNeedsTop } from "@/uploads/store";
+import { idsAround } from "@/media/cardWindow";
 import type { PostWithAuthor } from "@/types/db";
 
 /**
@@ -82,8 +83,14 @@ export default function Home() {
   }, [outbox, postIds, userId]);
   useEffect(() => notePostsInFeed(postIds), [postIds]);
 
+  // Likes and comment previews are read for the cards around the reader,
+  // not every post loaded (see src/media/cardWindow.ts): the last card
+  // reported on screen, kept while nothing is.
+  const [seenId, setSeenId] = useState<string | null>(null);
+  const seenIndex = useMemo(() => (seenId ? postIds.indexOf(seenId) : -1), [postIds, seenId]);
+  const actionIds = useMemo(() => idsAround(postIds, Math.max(0, seenIndex)), [postIds, seenIndex]);
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
-    usePostActions(userId, postIds);
+    usePostActions(userId, actionIds);
 
   // Leaving the feed — another tab, a profile, a single post — pauses it.
   // The tab stays mounted underneath, and a clip you can no longer see
@@ -125,7 +132,9 @@ export default function Home() {
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     // The most-covered item wins; FlatList reports them top to bottom.
     const first = viewableItems.find((v) => v.isViewable);
-    setVisibleId((first?.item as { id: string } | undefined)?.id ?? null);
+    const id = (first?.item as { id: string } | undefined)?.id ?? null;
+    setVisibleId(id);
+    if (id) setSeenId(id);
   }).current;
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 60,

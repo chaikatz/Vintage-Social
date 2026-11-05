@@ -18,8 +18,8 @@ import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { galleryEra, galleryRows } from "@/utils/profileViews";
-import { isWarm, warmWindow } from "@/utils/videoWindow";
-import { pictureWindow } from "@/media/cardWindow";
+import { isWarm, videoFocus, warmWindow } from "@/utils/videoWindow";
+import { idsAround, pictureWindow } from "@/media/cardWindow";
 import {
   LANDING_STEP_MS,
   approachOffset,
@@ -247,8 +247,15 @@ export default function Gallery() {
   }, []);
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
+  const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
+  // Likes and comment previews for the cards around the reader, not the
+  // author's every photograph (see src/media/cardWindow.ts).
+  const actionIds = useMemo(
+    () => idsAround(postIds, videoFocus({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex })),
+    [postIds, ready, startIndex, seenIndex],
+  );
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
-    usePostActions(userId, postIds);
+    usePostActions(userId, actionIds);
 
   // Only the card on screen plays (visibleId, above), and only it and its
   // neighbours have a player at all (see src/utils/videoWindow.ts). The
@@ -269,7 +276,6 @@ export default function Gallery() {
     if (id) setSeenId(id);
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 120 }).current;
-  const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
   const warm = warmWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
   // And only the cards around the reader draw their photograph: the rest
   // are their frames, at the same height (see src/media/cardWindow.ts).
