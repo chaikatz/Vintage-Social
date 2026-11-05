@@ -20,6 +20,7 @@ import { useDarkroom, type RoomParams } from "@/darkroom/useDarkroom";
 import { chooseMorePhotographs, openPhotoSettings } from "@/darkroom/access";
 import { developedAt, markSeen } from "@/darkroom/history";
 import { captionFor } from "@/darkroom/labels";
+import { contentsFound, markContentsFound } from "@/darkroom/session";
 import { putBack, toggleSetAside, useSetAside } from "@/darkroom/setAside";
 import type { DarkroomMode, Print } from "@/darkroom/types";
 import { Contents } from "@/components/darkroom/Contents";
@@ -212,15 +213,27 @@ export default function Darkroom() {
     pruneShelf: darkroom.pruneShelf,
   });
 
+  /** Contents has been opened on this phone: the running head stops saying what is in it. */
+  const [found, setFound] = useState(contentsFound);
+
   /**
    * Contents, unless a develop is working or downloading. Page turns are
    * held then and STOP is the way out (§6.3): a chapter chosen meanwhile
    * would open frozen, and the editor would follow with the print left
    * behind, under the sheet or over the new chapter. The word stays where
-   * it is; it does nothing until the develop is done.
+   * it is; it does nothing until the develop is done. However it is
+   * opened — CONTENTS, the chapter's name, the line under CONTENTS, the
+   * caption thread, a word on an end page, VoiceOver's action — the first
+   * opening is remembered, and the line under CONTENTS goes while the
+   * sheet is up, so the stage takes back its room out of sight.
    */
   const showContents = (months = false) => {
-    if (!develop.busy) sheet.show(months);
+    if (develop.busy) return;
+    sheet.show(months);
+    if (!found) {
+      markContentsFound();
+      setFound(true);
+    }
   };
 
   /** After a chapter change: said, and the focus on the stage, once the sheet has gone and the chapter is in. */
@@ -514,6 +527,7 @@ export default function Darkroom() {
           top={insets.top}
           name={headName}
           contents={inside}
+          invite={!found}
           held={develop.busy}
           onBack={back}
           onContents={() => showContents()}

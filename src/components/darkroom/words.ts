@@ -22,6 +22,18 @@ export const STAGE_LABEL = "Photograph";
 export const STAGE_HINT = "Swipe up or down for the next or previous photograph.";
 export const CONTENTS_HINT = "Choose a way in, a year or a month.";
 export const CHAPTER_HINT = "Opens the contents.";
+/** Under CONTENTS, until it has first been opened on this phone: what is in it. */
+export const CONTENTS_INVITE = "Every way in is here: this day, a roll, any year.";
+
+/** The Contents sheet's headings, one over each part, as an index sets them. */
+export const CONTENTS_WAYS_IN = "Ways in";
+export const CONTENTS_BY_YEAR = "By year";
+export const CONTENTS_ORDER = "Oldest first";
+
+/** Over the open year's month strip: "The months of 2016". */
+export function monthsOf(year: number): string {
+  return `The months of ${year}`;
+}
 
 /** The running head's name for a chapter: "On this day" · "Surprise me" · "2016" · "Set aside". */
 export function chapterName(mode: DarkroomMode, year: number | null): string {

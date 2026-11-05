@@ -226,7 +226,7 @@ function Signature({
       : { opacity: breath };
   return (
     <View
-      style={[styles.signature, { width, backgroundColor: look.contrast ? look.room.lineContrast : look.room.lineStrong }]}
+      style={[styles.signature, { width, backgroundColor: look.contrast ? look.room.lineFirm : look.room.lineStrong }]}
       accessible={false}
       importantForAccessibility="no-hide-descendants"
       pointerEvents="none"

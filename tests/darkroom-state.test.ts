@@ -87,6 +87,7 @@ const OLD_HISTORY = "document/darkroom-history.json";
 const SHELF = "document/darkroom-set-aside.json";
 const PLACE = "document/darkroom-place.json";
 const INTRO = "document/darkroom-intro.json";
+const CONTENTS = "document/darkroom-contents.json";
 const OWNER = "document/darkroom-owner.json";
 
 function print(n: number, over: Partial<Print> = {}): Print {
@@ -659,6 +660,28 @@ describe("the first-visit flag", () => {
   });
 });
 
+describe("the Contents flag", () => {
+  it("is written once to darkroom-contents.json, however often Contents opens, and read back after a relaunch", async () => {
+    let { session } = await launch();
+    expect(session.contentsFound()).toBe(false);
+    expect(phone.files.has(CONTENTS)).toBe(false);
+    session.markContentsFound();
+    session.markContentsFound();
+    session.markContentsFound();
+    expect(session.contentsFound()).toBe(true);
+    expect(stored(CONTENTS)).toBe(true);
+    expect(writesTo(CONTENTS)).toBe(1);
+    ({ session } = await launch());
+    expect(session.contentsFound()).toBe(true);
+  });
+
+  it("is read as not found from a file that does not say so", async () => {
+    phone.files.set(CONTENTS, JSON.stringify("yes"));
+    const { session } = await launch();
+    expect(session.contentsFound()).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Posting what was developed
 // ---------------------------------------------------------------------------
@@ -734,7 +757,8 @@ async function filled() {
   session.flushPlace();
   session.keepChapter("surprise", { prints: prints(3), index: 0, reader: null, more: true, reach: null });
   session.markIntroSeen();
-  expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, SHELF, PLACE, OWNER].sort());
+  session.markContentsFound();
+  expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, CONTENTS, SHELF, PLACE, OWNER].sort());
   return app;
 }
 
@@ -751,18 +775,20 @@ describe("forgetting", () => {
     expect(session.placeLine()).toBeNull();
     expect(session.recallChapter("surprise")).toBeNull();
     expect(session.introSeen()).toBe(false);
+    expect(session.contentsFound()).toBe(false);
 
     // And nothing comes back at the next launch.
     const again = await launch();
     expect(again.shelf.isSetAside("p3")).toBe(false);
     expect(again.session.introSeen()).toBe(false);
+    expect(again.session.contentsFound()).toBe(false);
     expect(again.history.developedAt("p2")).toBeNull();
   });
 
   it("from Settings, forgets what was shown, posted and where the member was, and keeps the shelf", async () => {
     const { history, shelf, session, forget } = await filled();
     forget.forgetDarkroomHistory();
-    expect([...phone.files.keys()].sort()).toEqual([INTRO, SHELF, OWNER].sort());
+    expect([...phone.files.keys()].sort()).toEqual([INTRO, CONTENTS, SHELF, OWNER].sort());
     expect(history.seenWithin("p1", 21)).toBe(false);
     expect(history.developedAt("p2")).toBeNull();
     expect(history.dayFinished()).toBeNull();
@@ -770,6 +796,7 @@ describe("forgetting", () => {
     expect(session.recallChapter("surprise")).toBeNull();
     expect(shelf.isSetAside("p3")).toBe(true);
     expect(session.introSeen()).toBe(true);
+    expect(session.contentsFound()).toBe(true);
 
     // The member is still signed in, so what they look at next is kept as before.
     history.markSeen("p9");
@@ -804,13 +831,14 @@ describe("whose the Darkroom is", () => {
     // Offline, with the access token expired: nobody is signed in for a
     // while, and nothing is forgotten for it.
     const app = await launch();
-    expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, SHELF, PLACE, OWNER].sort());
+    expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, CONTENTS, SHELF, PLACE, OWNER].sort());
     // The token refreshes: the same member, with the shelf, the place, the
     // first-visit page passed and the history all still there.
     app.forget.claimDarkroom("a");
     expect(app.shelf.isSetAside("p3")).toBe(true);
     expect(app.session.placeLine()).toBe("You left off in August 2018.");
     expect(app.session.introSeen()).toBe(true);
+    expect(app.session.contentsFound()).toBe(true);
     expect(app.history.developedAt("p2")).not.toBeNull();
     expect(writesTo(OWNER)).toBe(1);
   });
@@ -824,6 +852,7 @@ describe("whose the Darkroom is", () => {
     expect(session.placeLine()).toBeNull();
     expect(session.recallChapter("surprise")).toBeNull();
     expect(session.introSeen()).toBe(false);
+    expect(session.contentsFound()).toBe(false);
     expect(history.seenWithin("p1", 21)).toBe(false);
     expect(history.developedAt("p2")).toBeNull();
 
@@ -872,6 +901,7 @@ describe("a room still open when the session ends", () => {
     history.finishDay("2026-10-22");
     shelf.toggleSetAside(print(4));
     session.markIntroSeen();
+    session.markContentsFound();
     posted.markDeveloped("p5");
     session.savePlace({ mode: "surprise", year: null, month: 0, index: 3, prints: prints(6) });
     session.flushPlace();
@@ -890,6 +920,7 @@ describe("a room still open when the session ends", () => {
     expect(session.readPlace()).toBeNull();
     expect(session.recallChapter("surprise")).toBeNull();
     expect(session.introSeen()).toBe(false);
+    expect(session.contentsFound()).toBe(false);
     expect(shelf.setAsidePrints()).toEqual([]);
     expect(history.seenWithin("q0", 21)).toBe(false);
     expect(history.developedAt("p5")).toBeNull();
@@ -960,6 +991,7 @@ describe("a room still open when the session ends", () => {
     session.savePlace({ mode: "surprise", year: null, month: 0, index: 2, prints: prints(6) });
     session.keepChapter("surprise", { prints: prints(6), index: 2, reader: null, more: true, reach: null });
     session.markIntroSeen();
+    session.markContentsFound();
     history.markSeen("q1");
     shelf.toggleSetAside(print(4));
     // The delete of the owner's file failed; the next claim matches it.
@@ -968,6 +1000,7 @@ describe("a room still open when the session ends", () => {
     expect(session.readPlace()).toBeNull();
     expect(session.recallChapter("surprise")).toBeNull();
     expect(session.introSeen()).toBe(false);
+    expect(session.contentsFound()).toBe(false);
     expect(history.seenWithin("q1", 21)).toBe(false);
     expect(shelf.setAsidePrints()).toEqual([]);
     expect([...phone.files.keys()]).toEqual([OWNER]);
@@ -1104,7 +1137,7 @@ describe("the auth client the provider listens to", () => {
       expect(data.session).toBeNull();
       expect(events).not.toContain("SIGNED_OUT");
       expect(keychain.has(KEY)).toBe(true);
-      expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, SHELF, PLACE, OWNER].sort());
+      expect([...phone.files.keys()].sort()).toEqual([HISTORY, INTRO, CONTENTS, SHELF, PLACE, OWNER].sort());
 
       // The network comes back: the same member, and the shelf is still there.
       answer.now = "online";

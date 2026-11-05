@@ -243,7 +243,7 @@ describe("the signature line (the print's rule, under every plate)", () => {
   });
 
   it("is the print's strong line, the faintest ink under Increase Contrast, and never read aloud", () => {
-    expect(signature).toMatch(/backgroundColor: look\.contrast \? look\.room\.lineContrast : look\.room\.lineStrong/);
+    expect(signature).toMatch(/backgroundColor: look\.contrast \? look\.room\.lineFirm : look\.room\.lineStrong/);
     expect(signature).toMatch(/accessible=\{false\}/);
     expect(signature).toMatch(/importantForAccessibility="no-hide-descendants"/);
   });

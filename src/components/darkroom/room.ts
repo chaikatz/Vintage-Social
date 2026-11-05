@@ -15,22 +15,23 @@ import { dark, light, type } from "@/theme";
  *   page        the room itself: the app's paper, so the room is the
  *               page the member came from.
  *   well        the fill a plate sits in before its pixels arrive: a
- *               step into the paper on the light print, a step up out of
- *               the black on the dark one.
+ *               step into the paper on the light print, a step up off
+ *               the page on the dark one.
  *   sheet       the Contents sheet, the theme's raised paper, as a sheet
  *               lies on the page it opens over.
  *   ink, soft, faint
  *               the three inks type is set in.
  *   accent      the room's marks: the date, a chapter's name over a
- *               title card, the dot of a print set aside, the ribbon in
- *               Contents.
+ *               title card, the dot of a print set aside, where you are
+ *               in Contents, and the CONTENTS tab until it is first
+ *               opened.
  *   line        the plate's hairline, felt more than seen.
  *   lineStrong  the print's rule: the signature line under a plate, the
  *               rules in Contents, and the plate's hairline under
  *               Increase Contrast.
- *   lineContrast
- *               the signature line under Increase Contrast: the theme's
- *               faintest ink, a rule that is plainly there.
+ *   lineFirm    the theme's faintest ink, as a line that is plainly
+ *               there: the edge of the CONTENTS tab, and the signature
+ *               line under Increase Contrast.
  *
  * Every ink the room sets type in reaches WCAG AA (4.5:1) on every ground
  * it is set on, in both prints. Where the theme's ink does not, the room
@@ -49,7 +50,7 @@ export interface Room {
   accent: string;
   line: string;
   lineStrong: string;
-  lineContrast: string;
+  lineFirm: string;
 }
 
 export type Scheme = "light" | "dark";
@@ -100,7 +101,7 @@ export function roomFor(scheme: Scheme): Room {
     accent,
     line: p.border,
     lineStrong: p.borderStrong,
-    lineContrast: p.inkFaint,
+    lineFirm: p.inkFaint,
   };
 }
 
@@ -144,6 +145,8 @@ const caps = { textTransform: "uppercase" as const };
 export const roles = {
   eyebrow: { style: { fontFamily: mono, fontSize: 10, ...untrack(2.4), ...caps }, tone: "faint" },
   head: { style: { fontFamily: mono, fontSize: 10, ...untrack(2.4), ...caps }, tone: "soft" },
+  /** CONTENTS in its tab at the head of the room: a step up from the head, in the full ink. */
+  tab: { style: { fontFamily: mono, fontSize: 11, lineHeight: 14, ...untrack(2.2), ...caps }, tone: "ink" },
   dateLabel: { style: { fontFamily: mono, fontSize: 11, lineHeight: 14, ...untrack(2.2), ...caps }, tone: "accent" },
   small: { style: { fontFamily: mono, fontSize: 10, ...untrack(2.2), ...caps }, tone: "faint" },
   wordPrimary: { style: { fontFamily: mono, fontSize: 12, ...untrack(3), ...caps }, tone: "ink" },

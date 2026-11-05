@@ -8,7 +8,16 @@ import type { Where } from "./chapter";
 import { useLook } from "./look";
 import { RoomText, Rule } from "./Type";
 import { Word } from "./Word";
-import { dayFolio, LOOKING, photographs, type DayState } from "./words";
+import {
+  CONTENTS_BY_YEAR,
+  CONTENTS_ORDER,
+  CONTENTS_WAYS_IN,
+  dayFolio,
+  LOOKING,
+  monthsOf,
+  photographs,
+  type DayState,
+} from "./words";
 
 /** At this type size a folio goes under its title rather than beside it. Rows only ever grow. */
 const STACK_AT = 1.6;
@@ -16,13 +25,17 @@ const STACK_AT = 1.6;
 const OPEN_OFFSET = 96;
 
 /**
- * The Contents sheet, set like the front of a photobook: the three ways
- * in, each with its folio set right on the same baseline, then the years
- * the library holds, oldest first, the way an archive reads forward —
- * and under the year that is open, its twelve months. A short ribbon in
- * the accent hangs in the margin beside where you are. No dot leaders,
- * no decades, no thumbnails. It lies on the raised paper of the print the
- * app is showing.
+ * The Contents sheet, set like the front of a photobook and read as an
+ * index, each part under its own heading: WAYS IN, the three ways in,
+ * each with its folio set right on the same baseline; BY YEAR, the years
+ * the library holds, oldest first, the way an archive reads forward; and
+ * under the year that is open, THE MONTHS OF that year. Where you are is
+ * marked three ways: a ribbon in the accent hangs in the margin beside
+ * its line, its title is set in the accent, and its folio in the soft ink;
+ * the month of the photograph in front of you is underlined in the
+ * accent. VoiceOver hears each heading as a heading, and where you are
+ * as selected. No dot leaders, no decades, no thumbnails. It lies on the
+ * raised paper of the print the app is showing.
  *
  * It is the one place the chapter changes. Every choice closes the sheet
  * first; whatever pushes a screen or opens a picker waits for the sheet
@@ -122,6 +135,7 @@ export function Contents({
         <View style={[styles.headRule, rule]} />
 
         <ScrollView ref={scroll} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 32 }]}>
+          <Section title={CONTENTS_WAYS_IN} first stacked={stacked} testID="darkroom-contents-ways-in" />
           <Line
             title="On this day"
             folio={dayFolio(day, now)}
@@ -158,12 +172,7 @@ export function Contents({
             </RoomText>
           ) : null}
 
-          <View style={styles.section}>
-            <RoomText kind="eyebrow" maxFontSizeMultiplier={2.4}>
-              By year
-            </RoomText>
-            <View style={[styles.sectionRule, rule]} />
-          </View>
+          <Section title={CONTENTS_BY_YEAR} aside={CONTENTS_ORDER} stacked={stacked} testID="darkroom-contents-by-year" />
           {years == null ? (
             <RoomText kind="foot" maxFontSizeMultiplier={2.4} style={styles.looking}>
               {LOOKING}
@@ -185,18 +194,29 @@ export function Contents({
                     onPlaced={isOpen && !toMonths ? here : undefined}
                   />
                   {strip ? (
-                    <View style={styles.months} onLayout={toMonths ? here : undefined}>
-                      {strip.map((count, m) => (
-                        <Month
-                          key={m}
-                          month={m}
-                          year={y.year}
-                          count={count}
-                          inView={monthInView === m}
-                          width={cell}
-                          onPress={() => onChoose("year", y.year, m)}
-                        />
-                      ))}
+                    <View style={styles.monthsBlock} onLayout={toMonths ? here : undefined}>
+                      <RoomText
+                        kind="eyebrow"
+                        accessibilityRole="header"
+                        maxFontSizeMultiplier={2.4}
+                        style={styles.monthsHead}
+                        testID="darkroom-months-head"
+                      >
+                        {monthsOf(y.year)}
+                      </RoomText>
+                      <View style={styles.months}>
+                        {strip.map((count, m) => (
+                          <Month
+                            key={m}
+                            month={m}
+                            year={y.year}
+                            count={count}
+                            inView={monthInView === m}
+                            width={cell}
+                            onPress={() => onChoose("year", y.year, m)}
+                          />
+                        ))}
+                      </View>
                     </View>
                   ) : null}
                 </React.Fragment>
@@ -227,7 +247,59 @@ export function Contents({
   );
 }
 
-/** A line of the contents: the title, the folio on its baseline, and the ribbon beside where you are. */
+/**
+ * A heading over one part of the contents, as an index sets one: its name
+ * in tracked capitals, a rule out to the margin, and, where it says one,
+ * the order the part reads in. At the largest type the order goes under
+ * the name.
+ */
+function Section({
+  title,
+  aside,
+  first = false,
+  stacked,
+  testID,
+}: {
+  title: string;
+  aside?: string;
+  first?: boolean;
+  stacked: boolean;
+  testID?: string;
+}) {
+  const { room } = useLook();
+  return (
+    <View
+      style={[styles.section, first && styles.sectionFirst]}
+      accessible
+      accessibilityRole="header"
+      accessibilityLabel={aside ? `${title}, ${aside.toLowerCase()}` : title}
+      testID={testID}
+    >
+      <View style={styles.sectionRow}>
+        <RoomText kind="eyebrow" maxFontSizeMultiplier={2.4}>
+          {title}
+        </RoomText>
+        <View style={[styles.sectionRule, { backgroundColor: room.lineStrong }]} />
+        {aside && !stacked ? (
+          <RoomText kind="eyebrow" maxFontSizeMultiplier={2.4}>
+            {aside}
+          </RoomText>
+        ) : null}
+      </View>
+      {aside && stacked ? (
+        <RoomText kind="eyebrow" maxFontSizeMultiplier={2.4} style={styles.asideUnder}>
+          {aside}
+        </RoomText>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * A line of the contents: the title, the folio on its baseline, and, where
+ * you are, the ribbon in the margin, the title in the accent and the folio
+ * in the soft ink.
+ */
 function Line({
   title,
   folio,
@@ -261,12 +333,26 @@ function Line({
       accessibilityState={{ selected: current, disabled }}
       testID={`darkroom-contents-${title.toLowerCase().replace(/\s+/g, "-")}`}
     >
-      <View style={[styles.ribbon, { backgroundColor: current ? room.accent : "transparent" }]} accessible={false} />
+      <View
+        style={[styles.ribbon, { backgroundColor: current ? room.accent : "transparent" }]}
+        accessible={false}
+        testID={current ? "darkroom-contents-here" : undefined}
+      />
       <View style={stacked ? styles.lineStacked : styles.lineRow}>
-        <RoomText kind={year ? "contentsYear" : "contentsLine"} tone={disabled ? "faint" : "ink"} maxFontSizeMultiplier={2.4} style={styles.title}>
+        <RoomText
+          kind={year ? "contentsYear" : "contentsLine"}
+          tone={disabled ? "faint" : current ? "accent" : "ink"}
+          maxFontSizeMultiplier={2.4}
+          style={styles.title}
+        >
           {title}
         </RoomText>
-        <RoomText kind={year ? "count" : "folio"} maxFontSizeMultiplier={2.4} style={stacked ? styles.folioUnder : null}>
+        <RoomText
+          kind={year ? "count" : "folio"}
+          tone={current ? "soft" : undefined}
+          maxFontSizeMultiplier={2.4}
+          style={stacked ? styles.folioUnder : null}
+        >
           {folio}
         </RoomText>
       </View>
@@ -274,7 +360,11 @@ function Line({
   );
 }
 
-/** One month of the open year: its initials, dimmed and closed when the month has no photographs. */
+/**
+ * One month of the open year: its initials, dimmed and closed when the
+ * month has no photographs; the month in front of you in the accent,
+ * underlined.
+ */
 function Month({
   month,
   year,
@@ -303,10 +393,10 @@ function Month({
       accessibilityState={{ disabled: empty, selected: inView }}
       testID={`darkroom-month-${month}`}
     >
-      <RoomText kind="month" tone={empty ? "faint" : "soft"} maxFontSizeMultiplier={2.4}>
+      <RoomText kind="month" tone={empty ? "faint" : inView ? "accent" : "soft"} maxFontSizeMultiplier={2.4}>
         {monthName(month).slice(0, 3)}
       </RoomText>
-      <Rule width={14} color={look.room.accent} style={[styles.monthRule, { opacity: inView ? (look.contrast ? 1 : 0.8) : 0 }]} />
+      <Rule width={18} color={look.room.accent} style={[styles.monthRule, { opacity: inView ? (look.contrast ? 1 : 0.8) : 0 }]} />
     </Pressable>
   );
 }
@@ -318,19 +408,25 @@ const styles = StyleSheet.create({
   headRule: { height: 1, marginHorizontal: 24 },
   scroll: { paddingHorizontal: 24, paddingTop: 14 },
   line: { flexDirection: "row", alignItems: "center", minHeight: 52, marginLeft: -20 },
-  ribbon: { width: 12, height: 1, marginRight: 8 },
+  // A ribbon marker, hanging in the margin 8 pt from the title.
+  ribbon: { width: 3, height: 22, marginLeft: 9, marginRight: 8 },
   lineRow: { flex: 1, flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
   lineStacked: { flex: 1, paddingVertical: 8 },
   title: { flexShrink: 1, marginRight: 12 },
   folioUnder: { marginTop: 4 },
   pruned: { marginTop: -6, marginBottom: 6 },
-  section: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 32, marginBottom: 6 },
+  section: { marginTop: 32, marginBottom: 6 },
+  sectionFirst: { marginTop: 6 },
+  sectionRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   sectionRule: { flex: 1, height: StyleSheet.hairlineWidth },
+  asideUnder: { marginTop: 6 },
   looking: { marginTop: 10 },
-  months: { flexDirection: "row", flexWrap: "wrap", marginBottom: 8 },
+  monthsBlock: { marginTop: 2, marginBottom: 8 },
+  monthsHead: { marginBottom: 2 },
+  months: { flexDirection: "row", flexWrap: "wrap" },
   month: { height: 44, alignItems: "center", justifyContent: "center" },
   monthEmpty: { opacity: 0.4 },
-  monthRule: { marginTop: 4 },
+  monthRule: { marginTop: 4, height: 2 },
   pressed: { opacity: 0.6 },
   foot: { marginTop: 36, alignItems: "center", gap: 10 },
   footRow: { flexDirection: "row", gap: 16 },

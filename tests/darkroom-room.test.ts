@@ -55,11 +55,17 @@ import {
   captionWords,
   chapterAnnouncement,
   chapterName,
+  CONTENTS_BY_YEAR,
+  CONTENTS_HINT,
+  CONTENTS_INVITE,
+  CONTENTS_ORDER,
+  CONTENTS_WAYS_IN,
   dayFolio,
   deniedPage,
   emptyPage,
   endPage,
   firstVisitPage,
+  monthsOf,
   nextYearWord,
   photographs,
   placeholderWords,
@@ -590,6 +596,17 @@ describe("the room's other words", () => {
     expect(photographs(1204)).toBe("1,204 photographs");
   });
 
+  it("says under CONTENTS what is in it, and heads each part of the sheet as an index does", () => {
+    expect(CONTENTS_INVITE).toBe("Every way in is here: this day, a roll, any year.");
+    // VoiceOver hears the same from CONTENTS itself.
+    expect(CONTENTS_HINT).toBe("Choose a way in, a year or a month.");
+    expect([CONTENTS_WAYS_IN, CONTENTS_BY_YEAR, CONTENTS_ORDER]).toEqual(["Ways in", "By year", "Oldest first"]);
+    expect(monthsOf(2016)).toBe("The months of 2016");
+    // The year's heading is the chapter's own name for a year, as its title card says it.
+    expect(CONTENTS_BY_YEAR).toBe(chapterName("year", null));
+    expect(titleCardWords("year", 2016, 0, NOW)?.eyebrow).toBe(CONTENTS_BY_YEAR);
+  });
+
   it("says the pruning once, in words", () => {
     expect(prunedNote(0)).toBeNull();
     expect(prunedNote(1)).toBe("One you set aside is no longer in your library.");
@@ -1016,6 +1033,60 @@ describe("the room's own rules, in its source", () => {
     expect(screen).toMatch(/room: rooms\[scheme\]/);
     expect(screen).toMatch(/\[scheme, contrast, bold, reduceMotion, screenReader\]/);
     expect(screen).toMatch(/style=\{\[styles\.root, \{ backgroundColor: look\.room\.page \}\]\}/);
+  });
+
+  it("makes CONTENTS plainly a control: an open book and the word in a ruled tab, a 44 pt press", () => {
+    const head = read(files.find((f) => f.endsWith("RunningHead.tsx"))!);
+    const control = head.slice(head.indexOf('testID="darkroom-contents"') - 700, head.indexOf("darkroom-contents-invite"));
+    expect(control).toMatch(/accessibilityLabel="Contents"/);
+    expect(control).toMatch(/accessibilityHint=\{held \? undefined : CONTENTS_HINT\}/);
+    expect(control).toMatch(/<Feather name="book-open" size=\{14\} color=\{room\.ink\} accessible=\{false\} \/>/);
+    expect(control).toMatch(/<RoomText kind="tab"[^>]*>\s*Contents\s*<\/RoomText>/);
+    expect(head).toMatch(/contents: \{ minHeight: 44, minWidth: 44,/);
+    expect(head).toMatch(/tab: \{[^}]*minHeight: 30,[^}]*borderWidth: 1,/);
+    // Ruled in the accent until Contents is first opened; then the firm line, the soft ink under Increase Contrast.
+    expect(head).toMatch(/const edge = invite \? room\.accent : contrast \? room\.soft : room\.lineFirm;/);
+    expect(head).toMatch(/style=\{\[styles\.tab, \{ borderColor: edge \}\]\}/);
+    expect(roles.tab.tone).toBe("ink");
+    expect(roles.tab.style.fontSize).toBeGreaterThan(roles.head.style.fontSize);
+  });
+
+  it("says under CONTENTS what is in it until Contents is first opened, and remembers that on the phone", () => {
+    const head = read(files.find((f) => f.endsWith("RunningHead.tsx"))!);
+    const invite = head.slice(head.indexOf("{contents && invite ? ("), head.indexOf("const styles"));
+    expect(invite).toMatch(/onPress=\{onContents\}/);
+    expect(invite).toMatch(/\{CONTENTS_INVITE\}/);
+    // For the eye: VoiceOver hears it from CONTENTS's hint.
+    expect(invite).toMatch(/accessible=\{false\}\s+accessibilityElementsHidden\s+importantForAccessibility="no-hide-descendants"/);
+    const screen = read(files.find((f) => f.endsWith("app/darkroom.tsx"))!);
+    expect(screen).toMatch(/const \[found, setFound\] = useState\(contentsFound\);/);
+    expect(screen).toMatch(/invite=\{!found\}/);
+    // Every way into the sheet goes through showContents, which marks it found once it opens.
+    expect(screen).toMatch(
+      /const showContents = \(months = false\) => \{\s*if \(develop\.busy\) return;\s*sheet\.show\(months\);\s*if \(!found\) \{\s*markContentsFound\(\);\s*setFound\(true\);/,
+    );
+    expect(screen.match(/sheet\.show\(/g)).toHaveLength(1);
+  });
+
+  it("reads the sheet as a guided index, and marks where you are", () => {
+    const sheet = read(files.find((f) => f.endsWith("Contents.tsx"))!);
+    expect(sheet).toMatch(/<Section title=\{CONTENTS_WAYS_IN\} first/);
+    expect(sheet).toMatch(/<Section title=\{CONTENTS_BY_YEAR\} aside=\{CONTENTS_ORDER\}/);
+    expect(sheet).toMatch(/\{monthsOf\(y\.year\)\}/);
+    // Each heading is a heading to VoiceOver.
+    const section = sheet.slice(sheet.indexOf("function Section("), sheet.indexOf("function Line("));
+    expect(section).toMatch(/accessibilityRole="header"/);
+    expect(sheet.match(/accessibilityRole="header"/g)?.length).toBeGreaterThanOrEqual(3);
+    // Where you are: the ribbon, the title in the accent, the folio soft, and selected to VoiceOver.
+    const line = sheet.slice(sheet.indexOf("function Line("), sheet.indexOf("function Month("));
+    expect(line).toMatch(/backgroundColor: current \? room\.accent : "transparent"/);
+    expect(line).toMatch(/tone=\{disabled \? "faint" : current \? "accent" : "ink"\}/);
+    expect(line).toMatch(/tone=\{current \? "soft" : undefined\}/);
+    expect(line).toMatch(/accessibilityState=\{\{ selected: current, disabled \}\}/);
+    expect(sheet).toMatch(/ribbon: \{ width: 3, height: 22,/);
+    const month = sheet.slice(sheet.indexOf("function Month("), sheet.indexOf("const styles"));
+    expect(month).toMatch(/tone=\{empty \? "faint" : inView \? "accent" : "soft"\}/);
+    expect(month).toMatch(/accessibilityState=\{\{ disabled: empty, selected: inView \}\}/);
   });
 
   it("leaves the status bar to the app, which follows the appearance as the room does", () => {
