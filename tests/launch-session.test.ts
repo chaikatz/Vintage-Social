@@ -97,6 +97,24 @@ describe("opening the app on who is signed in", () => {
     expect(h.get()?.user.id).toBe("u1");
   });
 
+  it("says when auth could not reach the server, and only then", async () => {
+    const unreachable = vi.fn();
+    openSession(
+      { getSession: async () => ({ data: { session: null }, error: new AuthRetryableFetchError("offline", 0) }) },
+      async () => session("u1"),
+      holder().set,
+      unreachable,
+    );
+    await flush();
+    expect(unreachable).toHaveBeenCalledTimes(1);
+
+    const fine = vi.fn();
+    openSession({ getSession: async () => ({ data: { session: session("u1") }, error: null }) }, async () => null, holder().set, fine);
+    openSession({ getSession: async () => ({ data: { session: null }, error: null }) }, async () => null, holder().set, fine);
+    await flush();
+    expect(fine).not.toHaveBeenCalled();
+  });
+
   it("still lets the member in when auth's network failure comes before the keychain read", async () => {
     const h = holder();
     const stored = later<Session | null>();
@@ -248,13 +266,27 @@ describe("the session provider", () => {
   const provider = read("src/providers/SessionProvider.tsx");
 
   it("opens on the phone's copy and on the remembered profile, without waiting on the network", () => {
-    expect(provider).toMatch(/openSession\(supabase\.auth, readStoredSession, setSession\)/);
+    expect(provider).toMatch(/openSession\(supabase\.auth, readStoredSession, setSession, /);
     // A first answer of nobody from auth is not a sign-out.
     expect(provider).toMatch(/if \(event === "INITIAL_SESSION" && !next\) return;/);
     // The remembered profile, for this member only, before the read.
     expect(provider).toMatch(/const known = userId \? recallMember\(userId\) : null;\s*if \(known\) \{\s*setProfile\(known\);\s*setProfileLoaded\(true\);/);
     // Every read that lands is kept for the next launch.
     expect(provider).toMatch(/if \(data\) rememberMember\(data\);\s*else forgetMember\(\);/);
+  });
+
+  it("reads every screen and the profile again once auth, unreachable at launch, gets through", () => {
+    expect(provider).toMatch(/openSession\(supabase\.auth, readStoredSession, setSession, \(\) => \{\s*authUnreachable\.current = true;/);
+    expect(provider).toMatch(
+      /if \(authUnreachable\.current && next && \(event === "TOKEN_REFRESHED" \|\| event === "SIGNED_IN"\)\) \{\s*authUnreachable\.current = false;\s*void queryClient\.invalidateQueries\(\);\s*void readProfileAgain\.current\(\);/,
+    );
+    expect(provider).toMatch(/readProfileAgain\.current = refreshProfile;/);
+  });
+
+  it("never takes a read made without the member's token for no profile at all", () => {
+    // That would send an approved member to the waitlist screen.
+    expect(provider).toMatch(/if \(!data && !\(await supabase\.auth\.getSession\(\)\)\.data\.session\) throw new NotSignedInYet\(\);/);
+    expect(provider).toMatch(/retryOn: \(err\) => err instanceof NotSignedInYet \|\| isTransient\(err\)/);
   });
 
   it("forgets the remembered profile wherever the session ends", () => {

@@ -11,7 +11,7 @@ import { router } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { readStoredSession, supabase } from "@/lib/supabase";
 import { queryClient } from "@/lib/queryClient";
-import { withRetry } from "@/utils/retry";
+import { isTransient, withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
@@ -138,20 +138,47 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/**
+ * A read that found no profile while the member's token could not be
+ * refreshed: it went out without the token, and no row is what such a
+ * read sees. Not taken for "no profile", which would send an approved
+ * member to the waitlist; it is tried again like a dropped connection.
+ */
+class NotSignedInYet extends Error {
+  constructor() {
+    super("Signing in again");
+    this.name = "NotSignedInYet";
+  }
+}
+
 function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
+  // Auth could not reach the server as the app opened (launchSession.ts).
+  const authUnreachable = useRef(false);
+  // The profile read, for the auth listener, which is made before it.
+  const readProfileAgain = useRef<() => Promise<boolean>>(async () => false);
 
   useEffect(() => {
     // Who is signed in, from the phone's own copy at once and from auth
     // when it has answered, so the launch never waits on the network to
     // find out (launchSession.ts).
-    const stopOpening = openSession(supabase.auth, readStoredSession, setSession);
+    const stopOpening = openSession(supabase.auth, readStoredSession, setSession, () => {
+      authUnreachable.current = true;
+    });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       // The first answer of nobody is the launch read's to give (above):
       // auth says it also when a refresh could not reach the server.
       if (event === "INITIAL_SESSION" && !next) return;
+      // What was read while auth could not reach the server went out
+      // without the member's token and came back empty. Once a refresh
+      // goes through, every screen and the profile read again.
+      if (authUnreachable.current && next && (event === "TOKEN_REFRESHED" || event === "SIGNED_IN")) {
+        authUnreachable.current = false;
+        void queryClient.invalidateQueries();
+        void readProfileAgain.current();
+      }
       // SIGNED_OUT forgets the Darkroom where the client is made
       // (src/lib/supabase.ts), so that one said during launch is heard.
       // auth-js says it only once it has removed the session from this
@@ -203,11 +230,15 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     if (inFlight.current) return inFlight.current;
     const run = (async () => {
     try {
-      const data = await withRetry(async () => {
-        const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
-        if (error) throw error;
-        return data as ProfileRow | null;
-      });
+      const data = await withRetry(
+        async () => {
+          const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+          if (error) throw error;
+          if (!data && !(await supabase.auth.getSession()).data.session) throw new NotSignedInYet();
+          return data as ProfileRow | null;
+        },
+        { retryOn: (err) => err instanceof NotSignedInYet || isTransient(err) },
+      );
       // Read for a member who has since signed out: neither shown nor kept.
       if (currentUser.current !== userId) return false;
       setProfile(data);
@@ -233,6 +264,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       inFlight.current = null;
     }
   }, [userId, restoring]);
+  readProfileAgain.current = refreshProfile;
 
   // A member this phone has seen opens on the profile last read for them,
   // at once, and the read goes on behind it; anyone else waits for the read.

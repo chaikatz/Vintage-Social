@@ -27,12 +27,16 @@ export interface LaunchAuth {
  *
  * `set` takes an update of what is held, so an event auth sent meanwhile
  * (a sign-out, a refresh) is never overwritten by an older answer.
+ * `unreachable` is told when auth could not reach the server: until a
+ * refresh goes through, what the app reads goes out without the member's
+ * token and comes back empty, so it is read again then.
  * Returns the way to stop listening for both answers.
  */
 export function openSession(
   auth: LaunchAuth,
   readStored: () => Promise<Session | null>,
   set: (update: (now: HeldSession) => HeldSession) => void,
+  unreachable: () => void = () => undefined,
 ): () => void {
   let alive = true;
   readStored().then(
@@ -41,8 +45,9 @@ export function openSession(
     },
     () => undefined,
   );
-  const stillHere = () =>
-    readStored().then(
+  const stillHere = () => {
+    unreachable();
+    return readStored().then(
       (stored) => {
         if (alive) set((now) => (now !== undefined ? now : stored));
       },
@@ -50,6 +55,7 @@ export function openSession(
         if (alive) set((now) => (now !== undefined ? now : null));
       },
     );
+  };
   auth.getSession().then(
     ({ data, error }) => {
       if (!alive) return;
