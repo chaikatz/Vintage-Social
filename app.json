@@ -10,6 +10,12 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.vintage.social",
+      "splash": {
+        "backgroundColor": "#FFFFFF",
+        "dark": {
+          "backgroundColor": "#000000"
+        }
+      },
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "VINTAGE shows you the photographs in your library, and when each was taken, so you can find one to share. They are read on this iPhone; nothing is uploaded unless you post it.",
         "NSCameraUsageDescription": "VINTAGE needs camera access so you can take photographs to share.",

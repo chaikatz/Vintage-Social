@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { colors, dark, light } from "@/theme";
@@ -241,6 +242,34 @@ describe("the black page", () => {
     const settings = code("app/settings.tsx");
     expect(settings).toMatch(/The same page, printed light or on black\./);
     expect(settings).not.toMatch(/brown/i);
+  });
+
+  it("is the launch screen's colour on a phone set to Dark, with a splash image or without one", () => {
+    const expo = JSON.parse(readFileSync(path.join(root, "app.json"), "utf8")).expo;
+    // The launch screen follows the phone's appearance only while the app does.
+    expect(expo.userInterfaceStyle).toBe("automatic");
+    expect(expo.ios.userInterfaceStyle ?? expo.userInterfaceStyle).toBe("automatic");
+    // With no splash image, prebuild leaves the launch storyboard on the
+    // system background: white on Light, black on Dark. Once an image is
+    // set, the storyboard paints this colour set instead, and with no dark
+    // value in it a phone set to Dark would launch white. So the dark value
+    // is here already: black, the app's own page; the light one white, as
+    // the launch has always been.
+    expect(expo.ios.splash.dark.backgroundColor).toBe("#000000");
+    expect(expo.ios.splash.dark.backgroundColor).toBe(dark.paper);
+    expect(expo.ios.splash.backgroundColor).toBe("#FFFFFF");
+    // And that is what prebuild makes of it: Expo's own iOS splash config,
+    // resolved as the CLI resolves it. Without ios.splash it has no dark
+    // value at all.
+    const fromExpo = createRequire(createRequire(path.join(root, "package.json")).resolve("expo/package.json"));
+    const fromCli = createRequire(fromExpo.resolve("@expo/cli/package.json"));
+    const { getIosSplashConfig } = fromCli(
+      "@expo/prebuild-config/build/plugins/unversioned/expo-splash-screen/getIosSplashConfig",
+    ) as { getIosSplashConfig: (c: unknown, p: null) => { backgroundColor: string; dark?: { backgroundColor?: string } } };
+    const launch = getIosSplashConfig(expo, null);
+    expect(launch.backgroundColor).toBe("#FFFFFF");
+    expect(launch.dark?.backgroundColor).toBe("#000000");
+    expect(getIosSplashConfig({}, null).dark).toBeUndefined();
   });
 });
 

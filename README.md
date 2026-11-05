@@ -595,7 +595,13 @@ this repo:
    `com.vintage.social` — confirm it before your first build. Camera/photo/microphone
    usage strings are already configured in `app.json`.
 4. **App icon & splash** — `assets/` still contains Expo template art;
-   replace with VINTAGE marks before shipping.
+   replace with VINTAGE marks before shipping. The iOS launch screen has
+   no image today, so it is the system background: white on a phone set to
+   Light, black on one set to Dark. `ios.splash` in `app.json` already
+   holds the same two colours (`#FFFFFF`, and `#000000` for Dark), because
+   once a splash `image` is added Expo paints the launch in that colour set
+   instead, and without the dark value a cold start in Dark would be white.
+   The launch screen is native: it changes only with a full EAS build.
 5. **Push notifications** (optional, future) — not implemented; would need
    APNs keys via EAS.
 
