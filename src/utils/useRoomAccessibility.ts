@@ -17,8 +17,9 @@ import { accessibilitySetting, useAccessibilitySetting } from "./useReducedMotio
 /**
  * Increase Contrast ("darker system colours"). Where it is on, the room's
  * faint text is set in its soft ink, its rules are drawn at full strength,
- * the well's hairline takes the strong line, and the signature line under
- * a plate is drawn in the print's faintest ink.
+ * the well's hairline takes the strong line, the signature line under a
+ * plate is drawn in the print's faintest ink, and the CONTENTS tab is
+ * ruled in its soft ink.
  */
 export const increaseContrast = accessibilitySetting(
   () => AccessibilityInfo.isDarkerSystemColorsEnabled?.(),

@@ -10,7 +10,8 @@ import { rooms, type Room } from "./room";
  *                  in room.ts): every colour in the room is read from it.
  *   contrast       Increase Contrast: faint type is set soft, rules go to
  *                  full opacity, the well's hairline is the strong line,
- *                  and the signature line is drawn in the faintest ink.
+ *                  the signature line is drawn in the faintest ink, and
+ *                  the CONTENTS tab is ruled in the soft ink.
  *   bold           Bold Text: every word in the room is set bold; both
  *                  Courier New and Georgia have bold faces on iOS.
  *   reduceMotion   Reduce Motion: every fade, dissolve, scale and slide

@@ -5,9 +5,11 @@
  *
  * On the reference phone (393 × 852, insets 59/34) the running head runs
  * from 59 to 103, DEVELOP's block from 762 to 810, and the stage between
- * them is 659 high; on an SE (375 × 667, insets 20/0) it is 531. The
- * screen lays these out with flex and measures the stage; the numbers
- * here are what it is measured against.
+ * them is 659 high; on an SE (375 × 667, insets 20/0) it is 531. Until
+ * Contents is first opened the running head carries a second line, about
+ * 23 more, and the stage is that much shorter. The screen lays these out
+ * with flex and measures the stage; the numbers here are what it is
+ * measured against.
  *
  * Under each plate is its label, as a VINTAGE print has one: paper, then
  * the signature line — the print's hairline rule — and the caption hung
