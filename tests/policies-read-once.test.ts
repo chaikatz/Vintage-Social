@@ -123,3 +123,25 @@ describe("0023: every policy reads the caller once", () => {
     expect(code(verify)).not.toMatch(/\b(insert|update|delete|create|alter|drop|grant|revoke|truncate)\b/i);
   });
 });
+
+describe("0024: who has blocked whom answers only for the caller", () => {
+  const sql = code(readFileSync(join(migrations, "0024_block_checks_answer_for_the_caller.sql"), "utf8"));
+
+  it("blocked_between answers only when the caller is one of the two", () => {
+    const body = sql.slice(sql.indexOf("function public.blocked_between"), sql.indexOf("function public.blocked_by"));
+    expect(body).toMatch(/and auth\.uid\(\) in \(p_a, p_b\)/);
+    expect(body).toMatch(/security definer set search_path = public/);
+  });
+
+  it("blocked_by answers only when the caller is the one who might be blocked", () => {
+    const body = sql.slice(sql.indexOf("function public.blocked_by"));
+    expect(body).toMatch(/and p_me = auth\.uid\(\)/);
+    expect(body).toMatch(/security definer set search_path = public/);
+  });
+
+  it("changes no grant, and the harness asks them about other people", () => {
+    expect(sql).not.toMatch(/\b(grant|revoke)\b/i);
+    const runner = readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8");
+    expect(runner).toMatch(/"11_block_privacy\.sql"/);
+  });
+});
