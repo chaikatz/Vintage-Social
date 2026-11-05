@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -29,6 +29,7 @@ import {
 import { pushSupported, registerForPush } from "@/utils/push";
 import { deleteMyAccount } from "@/api/account";
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL, supportMailto } from "@/config/launch";
+import { createSettingWriter } from "@/components/settingWriter";
 
 export default function Settings() {
   const router = useRouter();
@@ -49,8 +50,14 @@ export default function Settings() {
     setAppearance(choice);
   };
 
-  // What the phone is allowed to say. Read once; each switch writes at once.
+  // What the phone is allowed to say. Read once; each switch writes at once,
+  // one write at a time and the newest last (settingWriter). A refusal puts
+  // the switches back as the server has them.
   const userId = session?.user?.id ?? "";
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+  const refreshRef = useRef(refreshProfile);
+  refreshRef.current = refreshProfile;
   const prefsQuery = useQuery({
     queryKey: ["notification-prefs", userId],
     queryFn: () => fetchNotificationPrefs(userId),
@@ -58,17 +65,56 @@ export default function Settings() {
   });
   const [prefsEdit, setPrefsEdit] = useState<NotificationPrefs | null>(null);
   const prefs = prefsEdit ?? prefsQuery.data ?? DEFAULT_PREFS;
+  // Turning something on is also a reason to make sure the phone is registered.
+  const registerAfterSave = useRef(false);
+  const [prefsWriter] = useState(() =>
+    createSettingWriter<NotificationPrefs>({
+      write: async (next) => {
+        await updateNotificationPrefs(userIdRef.current, next);
+        queryClient.setQueryData(["notification-prefs", userIdRef.current], next);
+      },
+      onSaved: () => {
+        if (registerAfterSave.current && pushSupported()) registerForPush(userIdRef.current);
+        registerAfterSave.current = false;
+      },
+      onFailed: (err) => {
+        registerAfterSave.current = false;
+        setPrefsEdit(null);
+        showAlert("Couldn’t save", errorMessage(err, "Try again in a moment."));
+      },
+    }),
+  );
   const togglePref = (key: keyof NotificationPrefs) => (on: boolean) => {
+    if (!userId) return;
     const next = { ...prefs, [key]: on };
     setPrefsEdit(next);
+    if (on) registerAfterSave.current = true;
+    prefsWriter.set(next);
+  };
+
+  // A private account is private the moment the switch says so, as the
+  // notification switches below it are: it used to wait for Save, and a
+  // member who flipped it and went back was public with the switch on.
+  const savedPrivate = useRef(profile?.is_private ?? false);
+  const [privacyWriter] = useState(() =>
+    createSettingWriter<boolean>({
+      write: async (on) => {
+        await updateOwnProfile(userIdRef.current, { is_private: on });
+        savedPrivate.current = on;
+      },
+      onSaved: () => {
+        refreshRef.current().catch(() => undefined);
+      },
+      onFailed: (err) => {
+        setIsPrivate(savedPrivate.current);
+        showAlert("Couldn’t change your account", errorMessage(err, "It is as it was. Try again in a moment."));
+      },
+    }),
+  );
+  const togglePrivate = (on: boolean) => {
     if (!userId) return;
-    updateNotificationPrefs(userId, next)
-      .then(() => {
-        queryClient.setQueryData(["notification-prefs", userId], next);
-        // Turning something on is also a reason to make sure the phone is registered.
-        if (on && pushSupported()) registerForPush(userId);
-      })
-      .catch((err) => showAlert("Couldn’t save", errorMessage(err, "Try again in a moment.")));
+    setIsPrivate(on);
+    privacyWriter.set(on);
   };
 
   const requests = useQuery({
@@ -115,7 +161,6 @@ export default function Settings() {
         full_name: fullName.trim(),
         bio: bio.trim(),
         city: city.trim(),
-        is_private: isPrivate,
         ...(avatarPath ? { avatar_url: avatarPath } : {}),
       });
       await refreshProfile();
@@ -207,7 +252,8 @@ export default function Settings() {
         </View>
         <Switch
           value={isPrivate}
-          onValueChange={setIsPrivate}
+          onValueChange={togglePrivate}
+          accessibilityLabel="Private account"
           trackColor={{ true: colors.accent, false: colors.borderStrong }}
           thumbColor={isPrivate ? colors.paperRaised : colors.knob}
         />
@@ -252,6 +298,7 @@ export default function Settings() {
           <Switch
             value={prefs[key]}
             onValueChange={togglePref(key)}
+            accessibilityLabel={`${label} notifications`}
             trackColor={{ true: colors.accent, false: colors.borderStrong }}
             thumbColor={prefs[key] ? colors.paperRaised : colors.knob}
           />
@@ -328,7 +375,11 @@ export default function Settings() {
       {SUPPORT_EMAIL ? (
         <Pressable
           style={styles.linkRow}
-          onPress={() => Linking.openURL(supportMailto("VINTAGE support") ?? "")}
+          onPress={() =>
+            Linking.openURL(supportMailto("VINTAGE support") ?? "").catch(() =>
+              showAlert("Write to us", `No mail account is set up on this phone. Our address is ${SUPPORT_EMAIL}.`),
+            )
+          }
           accessibilityRole="link"
         >
           <View>
