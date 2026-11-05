@@ -1,9 +1,11 @@
 // The Darkroom, walked through the real interface in the demo web build:
-// the door on the Post tab → the first-visit page → On this day → a page
-// turn → taps on the photograph, either half → set aside → Contents and
-// its years → a year's months → a year
-// chapter → Surprise me → the Set aside chapter → the end of On this day
-// → DEVELOP into the editor, and back to the same print.
+// the door on the Post tab → the first-visit page → On this day, on the
+// app's own page, each plate with its signature line, and CONTENTS a tab
+// with a line under it on a first visit → a page turn → taps on the
+// photograph, either half → set aside → Contents, read as an index, and
+// its years → a year's months → a year chapter → Surprise me → the Set
+// aside chapter → the end of On this day → DEVELOP into the editor, and
+// back to the same print.
 //
 //   npm run build:web && npm run test:darkroom      (SHOT_DIR=… to keep screenshots)
 //
@@ -23,7 +25,14 @@ const B = "http://127.0.0.1:8090";
 const W = 393;
 const H = 852;
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
-const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: out ? 3 : 1, isMobile: true, hasTouch: true });
+// The browser asks for its dark scheme: the app, and so the room, still show the light print there.
+const ctx = await browser.newContext({
+  viewport: { width: W, height: H },
+  deviceScaleFactor: out ? 3 : 1,
+  isMobile: true,
+  hasTouch: true,
+  colorScheme: "dark",
+});
 const page = await ctx.newPage();
 
 const errors = [];
@@ -138,6 +147,88 @@ check("Entering opens On this day, on today’s date", opened && /on this day/i.
 check("DEVELOP is the page’s one ruled word", (await byId("darkroom-develop").count()) > 0);
 await shot("discovery");
 
+// --- the room's page: the app's own, and the light print in the browser -----------------
+// The light print's paper is #FAF6EF and its accent #A65B2A; the brown dark print's page was #2F221E.
+const LIGHT_PAPER = "rgb(250, 246, 239)";
+const LIGHT_ACCENT = "rgb(166, 91, 42)";
+const style = (id, prop) =>
+  page.evaluate(
+    ([testId, p]) => {
+      const el = [...document.querySelectorAll(`[data-testid="${testId}"]`)].find((e) => e.getBoundingClientRect().width > 0);
+      return el ? getComputedStyle(el)[p] : "";
+    },
+    [id, prop],
+  );
+const box = (id) =>
+  page.evaluate((testId) => {
+    const el = [...document.querySelectorAll(`[data-testid="${testId}"]`)].find((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.left >= -1 && r.left < window.innerWidth;
+    });
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
+  }, id);
+const roomPage = await style("darkroom", "backgroundColor");
+const dateInk = await page.evaluate(() => {
+  const date = [...document.querySelectorAll('[data-testid="darkroom-caption-date"]')].find((e) => e.offsetParent !== null);
+  const letters = date ? [...date.querySelectorAll("div")].find((d) => d.children.length === 0 && /\d{4}/.test(d.textContent ?? "")) : null;
+  return letters ? getComputedStyle(letters).color : "";
+});
+check(
+  "The room is printed on the app’s own page: the light print in the browser, even set dark",
+  roomPage === LIGHT_PAPER && dateInk === LIGHT_ACCENT,
+  `${roomPage} · date ${dateInk}`,
+);
+
+// --- the signature line ------------------------------------------------------------------
+// The print's hairline rule under the photograph: the plate's width, a sixteenth of it below, the caption under it.
+const plate0 = await box("darkroom-plate");
+const rule0 = await box("darkroom-caption-signature");
+const date0 = await box("darkroom-caption-date");
+check(
+  "The signature line hangs under the plate, its width, a sixteenth of it below",
+  plate0 != null &&
+    rule0 != null &&
+    Math.abs(rule0.width - plate0.width) <= 1 &&
+    Math.abs(rule0.x - plate0.x) <= 1 &&
+    rule0.height >= 0.9 &&
+    rule0.height <= 1.5 &&
+    Math.abs(rule0.y - plate0.bottom - plate0.width / 16) <= 1,
+  JSON.stringify({ plate: plate0, rule: rule0 }),
+);
+check(
+  "…in the print’s strong line, with the caption hung beneath it",
+  rule0 != null && date0 != null && date0.y + 10 >= rule0.bottom && (await style("darkroom-caption-signature", "backgroundColor")) === "rgb(213, 203, 184)",
+  `${await style("darkroom-caption-signature", "backgroundColor")}`,
+);
+await shot("signature");
+
+// --- CONTENTS: a tab, and on a first visit the line under it -------------------------------
+const press = await box("darkroom-contents");
+const tab = await box("darkroom-contents-tab");
+const tabText = ((await byId("darkroom-contents-tab").first().textContent().catch(() => "")) ?? "").trim();
+check(
+  "CONTENTS is a tab with an open book, its press at least 44 × 44",
+  press != null && press.height >= 44 && press.width >= 44 && tab != null && tab.height >= 30 && tab.width >= 96 && /Contents$/.test(tabText) && tabText.length > "Contents".length,
+  JSON.stringify({ press, tab, tabText }),
+);
+check(
+  "On a first visit the tab is ruled in the accent",
+  (await style("darkroom-contents-tab", "borderTopColor")) === LIGHT_ACCENT && (await style("darkroom-contents-tab", "borderTopWidth")) === "1px",
+  await style("darkroom-contents-tab", "borderTopColor"),
+);
+const invite = await box("darkroom-contents-invite");
+const inviteText = ((await byId("darkroom-contents-invite").first().textContent().catch(() => "")) ?? "").trim();
+check(
+  "…and a line under it says what is in Contents",
+  invite != null && tab != null && invite.y >= tab.bottom - 2 && Math.abs(invite.right - (press?.right ?? 0)) <= 2 && inviteText === "Every way in is here: this day, a roll, any year.",
+  `${inviteText} ${JSON.stringify(invite)}`,
+);
+const plateBelow = await box("darkroom-plate");
+check("The line keeps off the photograph", invite != null && plateBelow != null && invite.bottom <= plateBelow.y, JSON.stringify(plateBelow));
+await shot("contents-tab");
+
 // --- a page turn -----------------------------------------------------------------------
 await turn(1);
 const secondDate = await dateLabel();
@@ -228,6 +319,33 @@ check(
   yearTitles.join(", "),
 );
 check("Contents says everything is read on the phone", /Everything here is read on this iPhone\. Nothing is sent\./.test(sheet));
+check(
+  "Contents reads as an index: a heading over the ways in, and over the years, oldest first",
+  /Ways in/.test(sheet) &&
+    /By year/.test(sheet) &&
+    /Oldest first/.test(sheet) &&
+    (await seen(page.locator('[data-testid="darkroom-contents-ways-in"][role="heading"]')).count()) === 1 &&
+    (await seen(page.locator('[data-testid="darkroom-contents-by-year"][role="heading"]')).count()) === 1,
+);
+const ribbon = await box("darkroom-contents-here");
+const dayLine = await box("darkroom-contents-on-this-day");
+const dayTitleInk = await page.evaluate(() => {
+  const line = [...document.querySelectorAll('[data-testid="darkroom-contents-on-this-day"]')].find((e) => e.offsetParent !== null);
+  const title = line ? [...line.querySelectorAll("div")].find((d) => d.children.length === 0 && d.textContent === "On this day") : null;
+  return title ? getComputedStyle(title).color : "";
+});
+// (VoiceOver hears it as selected; React Native for the web does not carry that state to the page.)
+check(
+  "Where you are is marked: the ribbon beside On this day, and its title in the accent",
+  ribbon != null &&
+    dayLine != null &&
+    ribbon.height >= 20 &&
+    ribbon.right <= dayLine.x + 24 &&
+    Math.abs(ribbon.y + ribbon.height / 2 - (dayLine.y + dayLine.height / 2)) <= 4 &&
+    dayTitleInk === LIGHT_ACCENT &&
+    (await seen(page.locator('[data-testid="darkroom-contents-here"]')).count()) === 1,
+  `${dayTitleInk} ${JSON.stringify({ ribbon, dayLine })}`,
+);
 await shot("contents");
 
 // --- a year, and its months -------------------------------------------------------------------
@@ -235,6 +353,12 @@ const chosenYear = yearTitles[Math.min(2, yearTitles.length - 1)];
 await yearLines.nth(Math.min(2, yearCount - 1)).click();
 await wait(2600);
 check("A year opens as a chapter", (await chapterHead()) === String(chosenYear), await chapterHead());
+// light.inkFaint, #9C927F: the print's firm line.
+check(
+  "Once Contents has been opened, the line under CONTENTS is put away, and the tab ruled in the firm line",
+  (await byId("darkroom-contents-invite").count()) === 0 && (await style("darkroom-contents-tab", "borderTopColor")) === "rgb(156, 146, 127)",
+  await style("darkroom-contents-tab", "borderTopColor"),
+);
 const yearLine = ((await byId("darkroom-caption-line").first().textContent().catch(() => "")) ?? "").trim();
 check("The year’s caption gives the weekday", /^A (Sun|Mon|Tues|Wednes|Thurs|Fri|Satur)day\b/.test(yearLine), yearLine || (await text()).slice(0, 300));
 
@@ -242,6 +366,10 @@ await openContents();
 await wait(1400);
 const months = seen(page.locator('[data-testid^="darkroom-month-"]'));
 check("The open year shows its twelve months", (await months.count()) === 12);
+check(
+  "…under a heading of their own",
+  ((await byId("darkroom-months-head").first().textContent().catch(() => "")) ?? "").trim() === `The months of ${chosenYear}`,
+);
 await shot("months");
 const filled = seen(page.locator('[data-testid^="darkroom-month-"]:not([aria-disabled="true"])'));
 const filledCount = await filled.count();
