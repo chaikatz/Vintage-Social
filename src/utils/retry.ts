@@ -47,6 +47,30 @@ export function isTransient(err: unknown): boolean {
 }
 
 /**
+ * A request that ran out of time, as against one the connection dropped
+ * at once: our own limits ("… timed out"), and NSURLSession's ("The
+ * request timed out."). Worth one more go, not three: each try of a
+ * stalled connection is a full limit's wait behind a skeleton.
+ */
+export function isTimedOut(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as Record<string, unknown>;
+  if (e.name === "TimeoutError") return true;
+  const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
+  return /timed? ?out/.test(message);
+}
+
+/**
+ * Whether a screen's read is tried again (react-query's `retry`, given
+ * the failures so far, from 0): a connection that let go, up to three
+ * times, briefly spaced; one that ran out of time, once; a refusal, never.
+ */
+export function retryRead(failureCount: number, error: unknown): boolean {
+  if (!isTransient(error)) return false;
+  return failureCount < (isTimedOut(error) ? 1 : 3);
+}
+
+/**
  * A request that took longer than it was given. The message says "timed
  * out" on purpose, so `isTransient` treats it like any other connection
  * that let go: an aborted request may still have landed, and the retry

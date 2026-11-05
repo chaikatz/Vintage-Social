@@ -6,6 +6,7 @@ import { isDemoMode, requireEnv } from "./env";
 import type { Database } from "@/types/db";
 import { forgetDarkroom } from "@/darkroom/forget";
 import { parseStoredSession } from "./storedSession";
+import { boundedFetch } from "./boundedFetch";
 
 /**
  * Session tokens live in the iOS keychain (SecureStore), not AsyncStorage.
@@ -32,6 +33,9 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: false,
   },
+  // Every request but a file's has a limit (boundedFetch.ts). The global
+  // fetch is looked up on each call, as the client itself does.
+  global: { fetch: boundedFetch((input, init) => fetch(input, init)) },
 });
 
 /** Where auth keeps the session on this phone: the client's own key, read back rather than worked out again. */

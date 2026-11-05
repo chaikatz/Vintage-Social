@@ -1,22 +1,25 @@
 import { QueryClient, focusManager, onlineManager } from "@tanstack/react-query";
 import { AppState, Platform } from "react-native";
 import NetInfo from "@react-native-community/netinfo";
-import { isTransient } from "@/utils/retry";
+import { retryRead } from "@/utils/retry";
 
 /**
  * One cache for the whole app.
  *
  * A request that failed because the connection let go is tried again,
- * briefly spaced out; a refusal is not. Coming back from the background
- * re-reads what is on screen, and a signal that returns resumes whatever
- * was waiting on it — without either, a brief drop left a screen on its
- * empty state until someone pulled to refresh.
+ * briefly spaced out, and one that ran out of time once; a refusal is
+ * not. Coming back from the background re-reads what is on screen, and a
+ * signal that returns resumes whatever was waiting on it — without
+ * either, a brief drop left a screen on its empty state until someone
+ * pulled to refresh.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      retry: (failureCount, error) => failureCount < 3 && isTransient(error),
+      // A stalled read is tried once more, not three times: each try is a
+      // full request limit (src/lib/boundedFetch.ts) behind a skeleton.
+      retry: retryRead,
       retryDelay: (attempt) => Math.min(800 * 2 ** attempt, 5000),
     },
   },
