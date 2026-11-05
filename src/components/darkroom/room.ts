@@ -25,8 +25,12 @@ import { dark, light, type } from "@/theme";
  *               title card, the dot of a print set aside, the ribbon in
  *               Contents.
  *   line        the plate's hairline, felt more than seen.
- *   lineStrong  the print's rule: the rules in Contents, and the plate's
- *               hairline under Increase Contrast.
+ *   lineStrong  the print's rule: the signature line under a plate, the
+ *               rules in Contents, and the plate's hairline under
+ *               Increase Contrast.
+ *   lineContrast
+ *               the signature line under Increase Contrast: the theme's
+ *               faintest ink, a rule that is plainly there.
  *
  * Every ink the room sets type in reaches WCAG AA (4.5:1) on every ground
  * it is set on, in both prints. Where the theme's ink does not, the room
@@ -45,6 +49,7 @@ export interface Room {
   accent: string;
   line: string;
   lineStrong: string;
+  lineContrast: string;
 }
 
 export type Scheme = "light" | "dark";
@@ -95,6 +100,7 @@ export function roomFor(scheme: Scheme): Room {
     accent,
     line: p.border,
     lineStrong: p.borderStrong,
+    lineContrast: p.inkFaint,
   };
 }
 

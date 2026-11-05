@@ -79,7 +79,7 @@ export interface StateWords {
   line1: string | null;
   /** In place of the phrase, or null for the phrase. */
   line2: string | null;
-  /** Line 2 is the progress rule. */
+  /** The download is drawn along the signature line; the caption keeps its own line 2. */
   progress: boolean;
   /** The word at the caption's right, or none. */
   right: { label: string; act: RightAct; inert: boolean } | null;

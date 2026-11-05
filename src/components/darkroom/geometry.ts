@@ -9,12 +9,20 @@
  * screen lays these out with flex and measures the stage; the numbers
  * here are what it is measured against.
  *
+ * Under each plate is its label, as a VINTAGE print has one: paper, then
+ * the signature line — the print's hairline rule — and the caption hung
+ * beneath it. The paper between the photograph and the line is the
+ * print's own proportion (`exportLayout`: a sixteenth of the line's
+ * width), so the room's plates and the prints a member exports are set
+ * alike.
+ *
  * At the end are the plate's two other rules that need no screen: how far
  * the caption's presses reach, and what a plate that cannot draw its
  * photograph decides about asking again.
  *
  * Pure, so the tests can hold the plate to its sizes.
  */
+import { exportLayout, PRINT_WIDTH } from "@/utils/exportLayout";
 import type { PlateTrouble } from "./words";
 
 /** The running head's height; a minimum, so it grows with Dynamic Type. */
@@ -26,8 +34,19 @@ export const DEVELOP_LIFT = 8;
 export const MIN_BOTTOM_INSET = 16;
 /** The plate keeps this far from each side of the page. */
 export const PLATE_GUTTER = 16;
-/** The caption hangs this far under the plate. */
-export const CAPTION_GAP = 14;
+
+/** A square print, as it is exported: the paper under its photograph, measured. */
+const PRINT = exportLayout(1, "print", PRINT_WIDTH);
+/**
+ * The paper between the photograph and the signature line, as a share of
+ * the line's width: the print's gap over its picture's width, which is
+ * the width of its rule. A sixteenth.
+ */
+export const SIGNATURE_SHARE = (PRINT.rule.y - (PRINT.photo.y + PRINT.photo.height)) / PRINT.photo.width;
+/** The signature line's weight: the print's rule at the plate's size, which never comes to less than 1. */
+export const SIGNATURE_RULE = 1;
+/** The caption hangs this far under the signature line: the print's label, at the plate's size. */
+export const CAPTION_GAP = 10;
 /** Room kept above the group, and below it. */
 const ABOVE = 12;
 const BELOW = 20;
@@ -45,11 +64,11 @@ export function stageFrame(height: number, insets: { top: number; bottom: number
 }
 
 /**
- * The caption's height, the gap above it included:
- * `14 + round(14·s1) + 6 + round(20·s2)·L`, where s1 and s2 are the font
- * scale capped as the two lines cap it (1.5 and 2.0), and L is the number
- * of lines the second line takes. 54 at the default size. The page
- * confirms it by measuring, and refits when it differs.
+ * The caption's height, from the signature line down, the space under the
+ * line included: `10 + round(14·s1) + 6 + round(20·s2)·L`, where s1 and
+ * s2 are the font scale capped as the two lines cap it (1.5 and 2.0), and
+ * L is the number of lines the second line takes. 50 at the default size.
+ * The page confirms it by measuring, and refits when it differs.
  */
 export function captionHeight(fontScale: number, lines: 1 | 2): number {
   const scale = Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1;
@@ -70,8 +89,12 @@ function toPixel(value: number, pixelRatio: number): number {
 
 /**
  * The plate: the largest box of the print's own shape that fits the page
- * width less its gutters, and the stage less the room above, the caption
- * and the room below. Rounded to the screen's pixels.
+ * width less its gutters, and the stage less the room above, the label
+ * under it (the paper, the signature line and the caption) and the room
+ * below. The paper grows with the plate's width, so the two are worked
+ * out together: a sixteenth of the plate's width for a plate 240 or
+ * wider, and a sixteenth of 240 under a narrower one, whose label is
+ * still 240 wide. Rounded to the screen's pixels.
  */
 export function plateBox(
   ratio: number,
@@ -82,17 +105,32 @@ export function plateBox(
 ): { width: number; height: number } {
   const r = ratio > 0 && Number.isFinite(ratio) ? ratio : 1;
   const maxW = Math.max(1, pageWidth - PLATE_GUTTER * 2);
-  const maxH = Math.max(1, stageHeight - ABOVE - caption - BELOW);
-  const w = Math.min(maxW, maxH * r);
+  // The photograph and the paper under it, down to the signature line.
+  const room = Math.max(1, stageHeight - ABOVE - caption - SIGNATURE_RULE - BELOW);
+  // w / r + w / 16 = room, for a plate as wide as its label…
+  const wide = room / (1 / r + SIGNATURE_SHARE);
+  // …or w / r + 240 / 16 = room, under a narrower one.
+  const narrow = Math.max(1, (room - MIN_CAPTION_WIDTH * SIGNATURE_SHARE) * r);
+  const w = Math.min(maxW, wide >= MIN_CAPTION_WIDTH ? wide : narrow);
   return { width: toPixel(w, pixelRatio), height: toPixel(w / r, pixelRatio) };
 }
 
-/** The plate and its caption, centred in the stage as one group, a little above true centre. */
-export function groupTop(stageHeight: number, plateHeight: number, caption: number): number {
-  return Math.max(MIN_TOP, (stageHeight - plateHeight - caption) / 2 - OPTICAL_LIFT);
+/** The paper between a photograph and its signature line, for a label (and line) this wide. */
+export function signatureGap(labelWidth: number, pixelRatio = 1): number {
+  return toPixel(Math.max(0, labelWidth) * SIGNATURE_SHARE, pixelRatio);
 }
 
-/** The caption runs flush with the plate's edges, and never narrower than 240. */
+/** Everything under a plate this wide: the paper, the signature line, and the caption beneath. */
+export function underPlate(plateWidth: number, caption: number, pixelRatio = 1): number {
+  return signatureGap(captionWidth(plateWidth), pixelRatio) + SIGNATURE_RULE + caption;
+}
+
+/** The plate and its label, centred in the stage as one group, a little above true centre. */
+export function groupTop(stageHeight: number, plateHeight: number, under: number): number {
+  return Math.max(MIN_TOP, (stageHeight - plateHeight - under) / 2 - OPTICAL_LIFT);
+}
+
+/** The caption and its signature line run flush with the plate's edges, and never narrower than 240. */
 export function captionWidth(plateWidth: number): number {
   return Math.max(plateWidth, MIN_CAPTION_WIDTH);
 }
@@ -143,9 +181,9 @@ const LINE_1 = 14;
  * `captionHeight` still holds, and the target is part of the measured
  * layout, where a test can see it. (HitSlop's trouble here was never its
  * reach: the line beneath, drawn later, took the touch first. That line
- * and the progress slot now let touches through.)
+ * and the signature line now let touches through.)
  *
- * The date reaches up to the plate's edge and down over the line
+ * The date reaches up to the signature line and down over the line
  * beneath: 44 at the default type size and more as the type grows. Below
  * the default its press keeps a minimum height of 44, which leaves the
  * 14 pt the row is held to anyway, so nothing moves. The word at the
@@ -153,7 +191,9 @@ const LINE_1 = 14;
  * of its own: about 11 pt tall, and 9.3 at the smallest Dynamic Type
  * size. So it reaches further down, and its reach and letters make 44 at
  * every size without its minimum height ever taking effect, which would
- * move the word when it has a row of its own.
+ * move the word when it has a row of its own. Upward it reaches over the
+ * signature line into the paper above it, never as far as the
+ * photograph: that paper is at least a sixteenth of 240.
  */
 export const DATE_REACH = { top: CAPTION_GAP, bottom: TOUCH_TARGET - LINE_1 - CAPTION_GAP };
 export const WORD_REACH = { top: 15, bottom: 20 };

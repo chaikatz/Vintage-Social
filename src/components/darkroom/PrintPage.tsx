@@ -23,8 +23,10 @@ import {
   groupTop,
   plateBox,
   plateTrouble,
+  signatureGap,
   troubleOffline,
   ratioOf,
+  underPlate,
 } from "./geometry";
 import { useLook } from "./look";
 import { RoomText } from "./Type";
@@ -37,7 +39,9 @@ const ZOOMED = 1.02;
 const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" } as const;
 
 /**
- * One print: a plate, and its caption hung beneath.
+ * One print: a plate, and its label hung beneath — the signature line, as
+ * a VINTAGE print rules one under its photograph, and the caption under
+ * that (`Caption`).
  *
  * The well is sized from the library's own numbers before a pixel
  * arrives, filled with the well colour and framed by a hairline, so
@@ -140,8 +144,9 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
   const [measured, setMeasured] = useState<number | null>(null);
   const caption = measured ?? captionHeight(fontScale, long ? 2 : 1);
   const box = plateBox(ratio, width, stageHeight, caption, pixelRatio);
-  const top = groupTop(stageHeight, box.height, caption);
   const captionW = captionWidth(box.width);
+  const gap = signatureGap(captionW, pixelRatio);
+  const top = groupTop(stageHeight, box.height, underPlate(box.width, caption, pixelRatio));
 
   // A new type size or a new second line is measured afresh.
   const measuredFor = useRef(`${fontScale}:${long}`);
@@ -171,6 +176,7 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
       <View style={[styles.caption, { top: top + box.height, left: (width - captionW) / 2 }]}>
         <Caption
           width={captionW}
+          gap={gap}
           label={props.label}
           line={props.line}
           progress={props.progress}

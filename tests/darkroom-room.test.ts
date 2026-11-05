@@ -43,8 +43,13 @@ import {
   groupTop,
   plateBox,
   ratioOf,
+  SIGNATURE_RULE,
+  SIGNATURE_SHARE,
+  signatureGap,
   stageFrame,
+  underPlate,
 } from "@/components/darkroom/geometry";
+import { exportLayout, PRINT_WIDTH } from "@/utils/exportLayout";
 import {
   actionNamed,
   captionWords,
@@ -210,43 +215,66 @@ describe("geometry", () => {
     expect(stageFrame(667, { top: 20, bottom: 0 })).toEqual({ top: 64, height: 531 });
   });
 
-  it("measures the caption as 54 at the default size, capped by line", () => {
-    expect(captionHeight(1, 1)).toBe(54);
-    expect(captionHeight(1, 2)).toBe(74);
+  it("measures the caption from the signature line as 50 at the default size, capped by line", () => {
+    expect(captionHeight(1, 1)).toBe(50);
+    expect(captionHeight(1, 2)).toBe(70);
     // Line 1 stops at 1.5, line 2 at 2.0.
-    expect(captionHeight(3, 1)).toBe(14 + 21 + 6 + 40);
-    expect(captionHeight(3, 2)).toBe(14 + 21 + 6 + 80);
-    expect(captionHeight(Number.NaN, 1)).toBe(54);
+    expect(captionHeight(3, 1)).toBe(10 + 21 + 6 + 40);
+    expect(captionHeight(3, 2)).toBe(10 + 21 + 6 + 80);
+    expect(captionHeight(Number.NaN, 1)).toBe(50);
   });
 
-  it("fits the plate to its own shape on the reference phone", () => {
-    const at = (r: number) => plateBox(r, 393, 659, 54, 3);
+  it("leaves the print's own paper between the photograph and the signature line", () => {
+    // The exported print: its rule sits a sixteenth of its picture's width under the picture.
+    const print = exportLayout(1, "print", PRINT_WIDTH);
+    expect(SIGNATURE_SHARE).toBe((print.rule.y - (print.photo.y + print.photo.height)) / print.photo.width);
+    expect(SIGNATURE_SHARE).toBeCloseTo(1 / 16, 6);
+    // The line is the print's rule at the plate's size: 1 pt, as the print's 1.08 at 540 comes to.
+    expect(SIGNATURE_RULE).toBe(Math.max(1, Math.floor((print.rule.height / print.photo.width) * 361)));
+    // 361 pt on the reference phone: 22⅔ pt, on its third of a point.
+    expect(signatureGap(361, 3)).toBeCloseTo(22.67, 2);
+    // Under a plate narrower than its 240 pt label, the label's.
+    expect(underPlate(187, 50, 3)).toBe(15 + 1 + 50);
+    expect(underPlate(361, 50, 3)).toBeCloseTo(22.67 + 1 + 50, 2);
+  });
+
+  it("fits the plate to its own shape on the reference phone, with its label under it", () => {
+    const at = (r: number) => plateBox(r, 393, 659, 50, 3);
     expect(at(3 / 4).width).toBe(361);
     expect(at(3 / 4).height).toBeCloseTo(481.33, 1);
     expect(at(4 / 3).width).toBe(361);
     expect(Math.round(at(4 / 3).height)).toBe(271);
-    expect(Math.round(at(9 / 16).width)).toBe(322);
-    expect(at(9 / 16).height).toBeCloseTo(573, 0);
     expect(Math.round(at(3).height)).toBe(120);
+    // A tall print fills the stage less the room above and below, its paper, line and caption included.
+    for (const r of [9 / 16, 1 / 3]) {
+      const box = at(r);
+      expect(box.height + underPlate(box.width, 50, 3), String(r)).toBeCloseTo(659 - 12 - 20, 0);
+    }
+    expect(Math.round(at(9 / 16).width)).toBe(313);
+    expect(at(9 / 16).height).toBeCloseTo(556.33, 1);
+    expect(at(1 / 3).width).toBe(187);
   });
 
   it("keeps an SE's plate to 343 × 445", () => {
-    const box = plateBox(0.5, 375, 531, 54, 2);
+    const box = plateBox(0.5, 375, 531, 50, 2);
     expect(box.height).toBeLessThanOrEqual(445);
-    expect(plateBox(10, 375, 531, 54, 2).width).toBe(343);
+    expect(box.height + underPlate(box.width, 50, 2)).toBeLessThanOrEqual(531 - 12 - 20);
+    expect(plateBox(10, 375, 531, 50, 2).width).toBe(343);
   });
 
   it("rounds to the screen's own pixels", () => {
-    const box = plateBox(4 / 3, 393, 659, 54, 3);
+    const box = plateBox(4 / 3, 393, 659, 50, 3);
     expect(Math.abs(box.height * 3 - Math.round(box.height * 3))).toBeLessThan(1e-9);
+    const gap = signatureGap(box.width, 3);
+    expect(Math.abs(gap * 3 - Math.round(gap * 3))).toBeLessThan(1e-9);
   });
 
   it("hangs the group a little above centre, never under 8", () => {
-    expect(groupTop(659, 481, 54)).toBe((659 - 481 - 54) / 2 - 12);
-    expect(groupTop(659, 650, 54)).toBe(8);
+    expect(groupTop(659, 481, 74)).toBe((659 - 481 - 74) / 2 - 12);
+    expect(groupTop(659, 650, 74)).toBe(8);
   });
 
-  it("keeps a caption to the plate's edges, and at least 240 wide", () => {
+  it("keeps a caption and its line to the plate's edges, and at least 240 wide", () => {
     expect(captionWidth(361)).toBe(361);
     expect(captionWidth(120)).toBe(240);
   });
