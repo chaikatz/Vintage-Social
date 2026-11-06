@@ -39,6 +39,8 @@ interface Props {
    * props hands it straight on.
    */
   frameOnly?: boolean;
+  /** With `frameOnly`, the grid's small copy stands in the frame; see PostMedia. Defaults to false. */
+  standIn?: boolean;
   /** Load this card's picture ahead of the others'; see PostMedia. Defaults to "normal". */
   priority?: "high" | "normal";
   /** Where the card is, for the development build's start-up timings only. */
@@ -68,6 +70,7 @@ export const PostCard = React.memo(function PostCard({
   active = true,
   warm = true,
   frameOnly = false,
+  standIn = false,
   priority = "normal",
   surface = "feed",
 }: Props) {
@@ -104,6 +107,7 @@ export const PostCard = React.memo(function PostCard({
         recyclingKey={post.id}
         warm={warm}
         frameOnly={frameOnly}
+        standIn={standIn}
         priority={priority}
         surface={surface}
       />

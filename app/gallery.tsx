@@ -19,7 +19,7 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { galleryEra, galleryRows } from "@/utils/profileViews";
 import { isWarm, videoFocus, warmWindow } from "@/utils/videoWindow";
-import { idsAround, pictureWindow } from "@/media/cardWindow";
+import { idsAround, pictureWindow, standInWindow } from "@/media/cardWindow";
 import { commentsOrNone, likeCounted } from "@/media/stableCards";
 import {
   LANDING_STEP_MS,
@@ -287,6 +287,10 @@ export default function Gallery() {
   // And only the cards around the reader draw their photograph: the rest
   // are their frames, at the same height (see src/media/cardWindow.ts).
   const pictures = pictureWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
+  // Once it shows, the frames near the reader hold the grid's small copy
+  // until their photograph is drawn, so a quick scroll never comes to rest
+  // on empty frames while the window catches up.
+  const standIns = standInWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
 
   const loading = !postsQ.isFetched || !authorQ.isFetched || waiting;
 
@@ -347,6 +351,7 @@ export default function Gallery() {
               // picture would only hold the tapped one back; once the
               // gallery shows, the photographs come in a few cards ahead.
               frameOnly={!isWarm(index, pictures)}
+              standIn={isWarm(index, standIns)}
               priority={item.id === postId ? "high" : "normal"}
               surface="gallery"
             />

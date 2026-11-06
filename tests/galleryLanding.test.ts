@@ -508,6 +508,14 @@ describe("the cards drawn only on the way down", () => {
     expect(cell).toMatch(/priority=\{item\.id === postId \? "high" : "normal"\}/);
   });
 
+  it("hold the grid's small copy near the reader once the gallery shows, so a quick scroll never rests on empty frames", () => {
+    const cell = tags(gallery, "PostCard")[0] ?? "";
+    expect(cell).toMatch(/standIn=\{isWarm\(index, standIns\)\}/);
+    expect(gallery).toMatch(
+      /const standIns = standInWindow\(\{ ready, startIndex, seenIndex: seenIndex < 0 \? null : seenIndex, count: posts\.length \}\);/,
+    );
+  });
+
   it("are drawn twenty at a time while the list is hidden, and as usual once it shows", () => {
     expect(gallery).toMatch(/maxToRenderPerBatch=\{ready \? undefined : WALK_BATCH\}/);
     expect(gallery).toMatch(/const WALK_BATCH = 20;/);
@@ -515,19 +523,27 @@ describe("the cards drawn only on the way down", () => {
 
   it("are passed through the card to its picture, and nowhere else", () => {
     expect(card).toMatch(/^\s*frameOnly = false,$/m);
+    expect(card).toMatch(/^\s*standIn = false,$/m);
     expect(card).toMatch(/^\s*priority = "normal",$/m);
     const picture = tags(card, "PostMedia")[0] ?? "";
     expect(picture).toMatch(/frameOnly=\{frameOnly\}/);
+    expect(picture).toMatch(/standIn=\{standIn\}/);
     expect(picture).toMatch(/priority=\{priority\}/);
   });
 
-  it("draw the frame at the picture's own height, with no picture and no poster in it", () => {
+  it("draw the frame at the picture's own height, with no picture and no poster in it, or only the small copy standing in", () => {
     expect(media).toMatch(/^\s*frameOnly = false,$/m);
+    expect(media).toMatch(/^\s*standIn = false,$/m);
     // The frame is its own shape whatever is in it; the picture fills it from inside.
     expect(media).toMatch(/const frame = \[styles\.media, bare && styles\.bare, \{ aspectRatio: ratio \}\];/);
-    expect(media).toMatch(/\{url && !frameOnly \? \(\s*<Animated\.View style=\{\[StyleSheet\.absoluteFill, zoomStyle\]\}>\s*<Image\s+source=\{url\}/);
+    // Frame only: the small copy when it stands in, else nothing. One image either way,
+    // so the small copy gives way to the photograph by a change of source.
+    expect(media).toMatch(/const inFrame = frameOnly \? \(standIn \? thumb : null\) : url;/);
+    expect(media).toMatch(/\{inFrame \? \(\s*<Animated\.View style=\{\[StyleSheet\.absoluteFill, zoomStyle\]\}>\s*<Image\s+source=\{inFrame\}/);
+    expect(media).toMatch(/placeholder=\{thumb && thumb !== inFrame \? thumb : undefined\}/);
+    expect(media.match(/<Image\b/g)).toHaveLength(3);
     const poster = tags(media, "VideoPoster")[0] ?? "";
-    expect(poster).toMatch(/poster=\{frameOnly \? null : post\.thumb_path\}/);
+    expect(poster).toMatch(/poster=\{frameOnly && !standIn \? null : post\.thumb_path\}/);
     // A clip with its player is never held back.
     expect(tags(media, "VideoMedia")[0]).not.toMatch(/frameOnly/);
   });

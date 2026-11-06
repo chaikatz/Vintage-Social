@@ -48,6 +48,37 @@ export function pictureWindow({
   return { first: Math.max(0, focus - behind), last: Math.min(count - 1, focus + ahead) };
 }
 
+/** Cards either side of the reader whose frame shows the grid's small copy while the photograph is not drawn. */
+export const STAND_INS_AROUND = 8;
+
+/**
+ * The cards, once the gallery shows, whose frame holds the grid's small
+ * copy when it is not drawing the photograph itself (PostMedia's
+ * `standIn`): eight either side of the reader. None while it lands.
+ *
+ * The photographs follow the card reported on screen, and a card is
+ * reported only once it has been on screen a beat (120 ms, 60% of it):
+ * after a quick scroll the cards the reader came to rest on were empty
+ * frames until the window caught up and their photographs arrived. The
+ * small copy is usually on the phone already, from the grid the gallery
+ * was opened from, and it is small; it fills those frames at once, and
+ * the photograph comes in over it as before.
+ */
+export function standInWindow({
+  ready,
+  startIndex,
+  seenIndex,
+  count,
+}: {
+  ready: boolean;
+  startIndex: number;
+  seenIndex: number | null;
+  count: number;
+}): WarmWindow {
+  if (!ready) return { first: 0, last: -1 };
+  return pictureWindow({ ready, startIndex, seenIndex, count, behind: STAND_INS_AROUND, ahead: STAND_INS_AROUND });
+}
+
 /**
  * How many posts make one stretch of likes and comment previews: a feed
  * page, so the feed's stretches fill as its pages arrive.

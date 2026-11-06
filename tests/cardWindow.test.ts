@@ -11,6 +11,8 @@ import {
   idsAround,
   pictureWindow,
   rowTops,
+  STAND_INS_AROUND,
+  standInWindow,
   timelineWindow,
   type RowWindow,
 } from "@/media/cardWindow";
@@ -82,6 +84,41 @@ describe("the gallery's pictures", () => {
       expect(pictures.length).toBe(PICTURES_BEHIND + 1 + PICTURES_AHEAD);
       expect(firstDraw - pictures.filter((i) => i < firstDraw).length).toBeGreaterThan(50);
     }
+  });
+});
+
+describe("the gallery's small copies standing in", () => {
+  it("are none while the gallery lands, so the landing fetches what it did", () => {
+    for (const startIndex of [0, 60, 156]) {
+      expect(drawn(standInWindow({ ready: false, startIndex, seenIndex: null, count: 157 }), 157)).toEqual([]);
+    }
+  });
+
+  it("are eight cards either side of the reader once it shows, around every card that draws its photograph", () => {
+    expect(STAND_INS_AROUND).toBe(8);
+    const w = standInWindow({ ready: true, startIndex: 60, seenIndex: 70, count: 157 });
+    expect(drawn(w, 157)).toEqual(Array.from({ length: 17 }, (_, i) => 62 + i));
+    for (const seenIndex of [null, 0, 5, 70, 156]) {
+      const pictures = pictureWindow({ ready: true, startIndex: 60, seenIndex, count: 157 });
+      const standIns = standInWindow({ ready: true, startIndex: 60, seenIndex, count: 157 });
+      for (const i of drawn(pictures, 157)) expect(isWarm(i, standIns)).toBe(true);
+    }
+  });
+
+  it("cover a quick scroll of a few cards before the window catches up", () => {
+    // The reader was on card 70 and flicked on six; the window still sits on 70.
+    const standIns = standInWindow({ ready: true, startIndex: 60, seenIndex: 70, count: 157 });
+    const pictures = pictureWindow({ ready: true, startIndex: 60, seenIndex: 70, count: 157 });
+    for (const landed of [76, 77]) {
+      expect(isWarm(landed, pictures)).toBe(false);
+      expect(isWarm(landed, standIns)).toBe(true);
+    }
+  });
+
+  it("stop at the ends of the list", () => {
+    expect(drawn(standInWindow({ ready: true, startIndex: 0, seenIndex: 2, count: 5 }), 5)).toEqual([0, 1, 2, 3, 4]);
+    const none = standInWindow({ ready: true, startIndex: 0, seenIndex: null, count: 0 });
+    expect(none.last).toBeLessThan(none.first);
   });
 });
 
