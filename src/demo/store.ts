@@ -248,10 +248,25 @@ const authorRef = (id: string) => {
 
 const withAuthor = (post: PostRow): PostWithAuthor => ({ ...clone(post), author: authorRef(post.author_id) });
 
+/**
+ * Whether the member has reported this photograph, and so no longer sees
+ * it (0033): never their own, and admins see everything.
+ */
+function reportedBy(viewerId: string | null, post: PostRow): boolean {
+  if (!viewerId || post.author_id === viewerId) return false;
+  if (state.profiles.find((p) => p.id === viewerId)?.role === "admin") return false;
+  return state.reports.some((r) => r.reporter_id === viewerId && r.post_id === post.id);
+}
+
 // ---------------------------------------------------------------------------
 // posts / feed
 // ---------------------------------------------------------------------------
-export function demoFetchFeedPage(userId: string, page: number, pageSize: number): PostWithAuthor[] {
+/** The feed after `before` (the last post of the page before), as feed_page (0025) gives it. */
+export function demoFetchFeedPage(
+  userId: string,
+  before: { at: string; id: string } | null,
+  pageSize: number,
+): PostWithAuthor[] {
   const followees = new Set(
     state.follows
       .filter((f) => f.follower_id === userId && f.status === "accepted")
@@ -259,20 +274,21 @@ export function demoFetchFeedPage(userId: string, page: number, pageSize: number
   );
   followees.add(userId);
   const feed = state.posts
-    .filter((p) => followees.has(p.author_id) && !p.removed_at)
-    .sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return feed.slice(page * pageSize, (page + 1) * pageSize).map(withAuthor);
+    .filter((p) => followees.has(p.author_id) && !p.removed_at && !reportedBy(userId, p))
+    .filter((p) => !before || p.created_at < before.at || (p.created_at === before.at && p.id < before.id))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+  return feed.slice(0, pageSize).map(withAuthor);
 }
 
 export function demoFetchUserPosts(authorId: string): PostRow[] {
   return state.posts
-    .filter((p) => p.author_id === authorId && !p.removed_at)
+    .filter((p) => p.author_id === authorId && !p.removed_at && !reportedBy(state.currentUserId, p))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map(clone);
 }
 
 export function demoFetchPost(postId: string): PostWithAuthor | null {
-  const post = state.posts.find((p) => p.id === postId && !p.removed_at);
+  const post = state.posts.find((p) => p.id === postId && !p.removed_at && !reportedBy(state.currentUserId, p));
   return post ? withAuthor(post) : null;
 }
 
@@ -496,6 +512,23 @@ export function demoFetchFollowers(userId: string): ProfileRow[] {
     .map((f) => state.profiles.find((p) => p.id === f.follower_id))
     .filter((p): p is ProfileRow => Boolean(p))
     .map(clone);
+}
+
+/**
+ * A member's accepted follows on one side, each with the time it was made,
+ * for fetchFollowPage: the server pages them newest follow first, ties
+ * by the other member's id.
+ */
+export function demoFollowRows(userId: string, side: "followers" | "following"): { at: string; member: ProfileRow }[] {
+  const rows: { at: string; member: ProfileRow }[] = [];
+  for (const f of state.follows) {
+    if (f.status !== "accepted") continue;
+    if ((side === "followers" ? f.followee_id : f.follower_id) !== userId) continue;
+    const other = side === "followers" ? f.follower_id : f.followee_id;
+    const member = state.profiles.find((p) => p.id === other);
+    if (member) rows.push({ at: f.created_at, member: clone(member) });
+  }
+  return rows;
 }
 
 export function demoPendingRequests(followeeId: string): ProfileRow[] {
@@ -919,10 +952,22 @@ export function demoDecideApplication(applicationId: string, decision: Exclude<A
 }
 
 export function demoFetchReports(status: ReportStatus) {
+  const nameOf = (id: string | null) => {
+    const p = id ? state.profiles.find((x) => x.id === id) : undefined;
+    return p ? { id: p.id, username: p.username } : null;
+  };
   return state.reports
     .filter((r) => r.status === status)
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map((r) => ({ ...clone(r), reporter: authorRef(r.reporter_id) }));
+    .map((r) => {
+      const c = r.comment_id ? state.comments.find((x) => x.id === r.comment_id) : undefined;
+      return {
+        ...clone(r),
+        reporter: r.reporter_id ? authorRef(r.reporter_id) : null,
+        comment: c ? { id: c.id, body: c.body, post_id: c.post_id, removed_at: c.removed_at, author: nameOf(c.author_id) } : null,
+        member: nameOf(r.profile_id),
+      };
+    });
 }
 
 export function demoResolveReport(reportId: string, status: Exclude<ReportStatus, "open">, resolution: string): void {
@@ -1028,6 +1073,7 @@ export function demoFetchExplore(viewerId: string, limit: number): PostRow[] {
       (p) =>
         !p.removed_at &&
         p.author_id !== viewerId &&
+        !reportedBy(viewerId, p) &&
         demoCanViewPosts(viewerId, p.author_id),
     )
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -1181,7 +1227,7 @@ export function demoFetchPostTags(postId: string): PostTagWithMember[] {
 export function demoFetchTaggedPosts(userId: string): PostRow[] {
   const ids = new Set(state.tags.filter((t) => t.user_id === userId && t.status === "accepted").map((t) => t.post_id));
   return state.posts
-    .filter((p) => ids.has(p.id) && !p.removed_at)
+    .filter((p) => ids.has(p.id) && !p.removed_at && !reportedBy(state.currentUserId, p))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map(clone);
 }

@@ -161,7 +161,7 @@ describe("0023: every policy reads the caller once", () => {
     expect(verify).toMatch(/perform set_config\('vintage\.verify_plan', v_answer, false\);/);
     expect((last.match(/current_setting\('vintage\.verify_plan', true\)/g) ?? []).length).toBe(4);
     const runner = readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8");
-    expect(runner).toMatch(/r\.status !== 0 \|\| rows\.length !== 23 \|\| failing\.length > 0 \|\| errors\.length > 0/);
+    expect(runner).toMatch(/r\.status !== 0 \|\| rows\.length !== 34 \|\| failing\.length > 0 \|\| errors\.length > 0/);
   });
 });
 
@@ -181,7 +181,18 @@ describe("0025: the home feed in one piece", () => {
     expect(sql).toMatch(/p\.removed_at is null/);
     expect(sql).toMatch(/order by p\.created_at desc, p\.id desc/);
     expect(sql).toMatch(/least\(greatest\(coalesce\(p_limit, 12\), 1\), 100\)/);
-    expect(sql).toMatch(/greatest\(coalesce\(p_offset, 0\), 0\)/);
+  });
+
+  // By offset, a post deleted between two pages made the next one skip a
+  // post, and one arriving made it repeat one; deep pages read every post
+  // above them. A page starts after the last post the reader holds.
+  it("pages after the last post held (time, then id), never by an offset", () => {
+    expect(sql).toMatch(/p_before_at timestamptz default null,\s+p_before_id uuid default null/);
+    expect(sql).not.toMatch(/p_offset|offset \$/);
+    expect(sql).toMatch(
+      /if p_before_at is not null then\s+v_sql := v_sql \|\| '\s+and p\.created_at <= \$3\s+and \(p\.created_at < \$3 or p\.id < \$4\)';/,
+    );
+    expect(sql).toMatch(/drop function if exists public\.feed_page\(integer, integer\);/);
   });
 
   // Asked as one statement with the follows as a subquery, the planner
@@ -190,7 +201,8 @@ describe("0025: the home feed in one piece", () => {
   // nobody, at 1,000 members). The posts query is planned with the list.
   it("plans the posts query with the author list in hand, not as a subquery", () => {
     expect(sql).toMatch(/language plpgsql/);
-    expect(sql).toMatch(/return query execute\s+'select p\.\* from public\.posts p[\s\S]*?p\.author_id = any \(\$1\)[\s\S]*?limit \$2 offset \$3'\s+using v_authors,/);
+    expect(sql).toMatch(/v_sql := 'select p\.\* from public\.posts p[\s\S]*?p\.author_id = any \(\$1\)'/);
+    expect(sql).toMatch(/order by p\.created_at desc, p\.id desc\s+limit \$2';\s+return query execute v_sql\s+using v_authors,/);
     expect(sql).not.toMatch(/author_id in \(\s*select/);
     expect(readFileSync(join(root, "supabase", "tests", "09_scale_plans.sql"), "utf8")).toMatch(
       /feed_page for a member who follows nobody reads their own photographs, not the club''s/,
@@ -198,8 +210,8 @@ describe("0025: the home feed in one piece", () => {
   });
 
   it("is for members only, and the harness compares it with the old read page by page", () => {
-    expect(sql).toMatch(/revoke execute on function public\.feed_page\(integer, integer\) from public, anon, authenticated;/);
-    expect(sql).toMatch(/grant execute on function public\.feed_page\(integer, integer\) to authenticated;/);
+    expect(sql).toMatch(/revoke execute on function public\.feed_page\(integer, timestamptz, uuid\) from public, anon, authenticated;/);
+    expect(sql).toMatch(/grant execute on function public\.feed_page\(integer, timestamptz, uuid\) to authenticated;/);
     expect(readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8")).toMatch(/"12_feed_page\.sql"/);
   });
 });
@@ -254,16 +266,18 @@ describe("0026 and 0027: the push function's own reads and writes", () => {
   });
 });
 
-describe("proposed 0028: comments, likes and tags only with their photograph", () => {
-  const file = "proposed_0028_comments_likes_tags_follow_the_photograph.sql";
-  const proposal = code(readFileSync(join(root, "supabase", "tests", file), "utf8"));
+describe("0028: comments, likes and tags only with their photograph", () => {
+  const file = "0028_comments_likes_tags_follow_the_photograph.sql";
+  const proposal = code(readFileSync(join(migrations, file), "utf8"));
 
-  it("waits for the owner: it is not among the migrations, and the harness only tries it and rolls back", () => {
-    expect(readdirSync(migrations).some((f) => /^0028|comments_likes_tags/.test(f))).toBe(false);
+  it("is a migration now, and the harness proves it against the database without it", () => {
+    expect(readdirSync(join(root, "supabase", "tests")).some((f) => /^proposed_/.test(f))).toBe(false);
     const runner = readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8");
-    expect(runner).toMatch(/"13_proposed_0028\.sql"/);
-    const test = readFileSync(join(root, "supabase", "tests", "13_proposed_0028.sql"), "utf8");
-    expect(test).toMatch(new RegExp(`\\\\ir ${file.replace(/\./g, "\\.")}`));
+    expect(runner).toMatch(/"13_photograph_rows_0028\.sql"/);
+    const test = readFileSync(join(root, "supabase", "tests", "13_photograph_rows_0028.sql"), "utf8");
+    // Taken away, read, put back by the migration file itself, read again.
+    expect(test).toMatch(/drop policy "comments: only with their photograph" on public\.comments;/);
+    expect(test).toMatch(new RegExp(`\\\\ir \\.\\./migrations/${file.replace(/\./g, "\\.")}`));
     expect(test.trim().endsWith("rollback;")).toBe(true);
   });
 

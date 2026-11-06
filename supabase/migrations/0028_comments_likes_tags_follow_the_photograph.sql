@@ -1,12 +1,9 @@
--- VINTAGE · proposed 0028 · comments, likes and tags are seen only with their photograph
+-- VINTAGE · 0028 · comments, likes and tags are seen only with their photograph
 --
--- NOT A MIGRATION YET. It changes what members may read, so it waits for
--- the owner's decision; it lives beside the tests, which apply it inside
--- a transaction and roll it back (supabase/tests/13_proposed_0028.sql),
--- and nothing applies it on its own. To adopt it: copy this file to
--- supabase/migrations/0028_comments_likes_tags_follow_the_photograph.sql,
--- then apply it to staging and production after 0023-0027, in the SQL
--- editor, as the others.
+-- Tried first as a proposal beside the tests, now a migration: every read
+-- the app makes of these three tables was checked against it (below), and
+-- none loses anything it shows. Apply after 0023-0027, in the SQL editor,
+-- as the others.
 --
 -- The gap. A photograph on a private account is seen only by its author,
 -- their accepted followers and the admins ("posts: members read live").
@@ -35,14 +32,26 @@
 -- widens it; admins read every photograph, so they still read every row.
 -- Nothing else changes: no write policy, no column, no row.
 --
--- What members would notice: nothing in the app (it asks only for rows on
--- photographs it shows, and for the member's own). What the API stops
--- answering: rows on photographs the member may not see.
+-- What members would notice: nothing in the app. Every read it makes of
+-- these tables is of rows on a photograph it is showing, or of the
+-- member's own rows: a photograph's comments and its preview comments
+-- (asked through the photograph itself), its likers (the author's own
+-- photograph), whether the member liked these photographs and where they
+-- stand in these tags (their own rows, by user_id), the tags on a
+-- photograph shown, and the photographs a member accepted being tagged in
+-- (each read through the photograph itself, so one the reader cannot see
+-- was already left out; now its tag row is too).
+-- Activity reads none of the three: its rows name the photograph and are
+-- read through posts. A member's own like, comment or tag on a photograph
+-- they can no longer see (a private account they stopped following, a
+-- block, a removal) is still theirs to read, take back, delete, decline
+-- or remove. What the API stops answering: rows on photographs the member
+-- may not see that are not theirs.
 --
--- Proven by supabase/tests/13_proposed_0028.sql: for each of nine
--- callers, what they read of each table afterwards is exactly what they
--- read before, less the rows whose photograph they cannot see and that
--- are not theirs; and their own likes, comments and tags on such a
+-- Proven by supabase/tests/13_photograph_rows_0028.sql: for each of nine
+-- callers, what they read of each table with this is exactly what they
+-- read without it, less the rows whose photograph they cannot see and
+-- that are not theirs; and their own likes, comments and tags on such a
 -- photograph can still be removed, declined or taken back.
 --
 -- Cost. The exists is a primary-key lookup on posts per row read, with

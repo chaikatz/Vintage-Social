@@ -1,22 +1,24 @@
--- The proposed 0028 (proposed_0028_comments_likes_tags_follow_the_photograph.sql),
--- tried and rolled back: comments, likes and tags are read only with
--- their photograph, or when they are the reader's own.
+-- 0028 (supabase/migrations/0028_comments_likes_tags_follow_the_photograph.sql):
+-- comments, likes and tags are read only with their photograph, or when
+-- they are the reader's own. The runner has applied it with the others;
+-- here its three policies are taken away, as the database stood before
+-- it, everything is read, and the migration file is applied again.
 --
 -- A small club with a private member and a public one, an accepted
 -- follower and one still asking, a block, a removed photograph, and
 -- comments, likes and tags on each from members who can and cannot see
 -- them. Nine callers read every comment, like and tag they can, and
--- every photograph, before the proposal and after it. After must be
+-- every photograph, without 0028 and with it. With it must be
 -- exactly before, less the rows whose photograph the caller could not
 -- see and that are not theirs. Their own rows on a photograph they cannot
 -- see can still be taken back, declined and removed, as before.
 --
--- Runs in one transaction and rolls back: nothing here, the proposal
--- included, outlives the file.
+-- Runs in one transaction and rolls back: the policies are as 0028 made
+-- them when it ends.
 
 begin;
 
-create temp table proposal_start as select coalesce(max(seq), 0) as seq from tests.results;
+create temp table p28_start as select coalesce(max(seq), 0) as seq from tests.results;
 
 insert into auth.users (id, email, raw_user_meta_data) values
   ('d0000000-0000-4000-8000-000000000001', 'pub@p28.test',      '{"username":"p28.public"}'),
@@ -178,12 +180,15 @@ insert into p28_writes values
    'delete from public.comments where id = ''d2000000-0000-4000-8000-000000000001''');
 create temp table p28_write_answers (run text, label text, answer text);
 
--- Before.
+-- Before: as the database stood without 0028.
+drop policy "comments: only with their photograph" on public.comments;
+drop policy "likes: only with their photograph" on public.likes;
+drop policy "post_tags: only with their photograph" on public.post_tags;
 select tests.p28_read_all('before');
 insert into p28_write_answers select 'before', label, tests.p28_try(uid, sql) from p28_writes;
 
 \o /dev/null
-\ir proposed_0028_comments_likes_tags_follow_the_photograph.sql
+\ir ../migrations/0028_comments_likes_tags_follow_the_photograph.sql
 \o
 
 -- After.
@@ -208,7 +213,7 @@ join p28_reads vis on vis.run = 'before' and vis.viewer = b.viewer and vis.tbl =
 where b.run = 'before' and b.tbl <> 'posts';
 
 insert into tests.results (name, expected, actual)
-select 'proposed 0028: ' || a.viewer || ' reads of ' || a.tbl || ' exactly what they could, less rows on photographs they cannot see',
+select '0028: ' || a.viewer || ' reads of ' || a.tbl || ' exactly what they could, less rows on photographs they cannot see',
        array_to_string(e.keys, ','), array_to_string(a.keys, ',')
 from p28_reads a
 join p28_expected e on e.viewer = a.viewer and e.tbl = a.tbl
@@ -216,38 +221,38 @@ where a.run = 'after'
 order by a.viewer, a.tbl;
 
 insert into tests.results (name, expected, actual)
-select 'proposed 0028: ' || b.viewer || ' sees the same photographs', array_to_string(b.keys, ','), array_to_string(a.keys, ',')
+select '0028: ' || b.viewer || ' sees the same photographs', array_to_string(b.keys, ','), array_to_string(a.keys, ',')
 from p28_reads b join p28_reads a on a.viewer = b.viewer and a.tbl = b.tbl and a.run = 'after'
 where b.run = 'before' and b.tbl = 'posts'
 order by b.viewer;
 
 insert into tests.results (name, expected, actual)
-select 'proposed 0028: ' || b.label, b.answer, a.answer
+select '0028: ' || b.label, b.answer, a.answer
 from p28_write_answers b join p28_write_answers a on a.label = b.label and a.run = 'after'
 where b.run = 'before';
 
--- The gap it closes, said plainly, so a proposal that hid nothing fails.
+-- The gap it closes, said plainly, so a migration that hid nothing fails.
 insert into tests.results (name, expected, actual) values
-  ('proposed 0028: before it, the stranger read comments on the private photograph', 'true',
+  ('0028: before it, the stranger read comments on the private photograph', 'true',
    (select array_to_string(keys, ',') ~ 'd1000000-0000-4000-8000-000000000002' from p28_reads
      where run = 'before' and viewer = 'stranger' and tbl = 'comments')::text),
-  ('proposed 0028: after it, no longer', 'false',
+  ('0028: after it, no longer', 'false',
    (select array_to_string(keys, ',') ~ 'd2000000-0000-4000-8000-00000000000[12]' from p28_reads
      where run = 'after' and viewer = 'stranger' and tbl = 'comments')::text),
-  ('proposed 0028: the one asking still reads their own like on it, and nobody else''s', 'd0000000-0000-4000-8000-000000000004',
+  ('0028: the one asking still reads their own like on it, and nobody else''s', 'd0000000-0000-4000-8000-000000000004',
    coalesce((select string_agg(split_part(k, '@', 3), ',') from p28_reads, unnest(keys) k
      where run = 'after' and viewer = 'asking' and tbl = 'likes' and split_part(k, '@', 1) = 'd1000000-0000-4000-8000-000000000002'), '<none>')),
-  ('proposed 0028: the follower and the admin still read every like on it', '4,4',
+  ('0028: the follower and the admin still read every like on it', '4,4',
    (select count(*) from p28_reads, unnest(keys) k
      where run = 'after' and viewer = 'follower' and tbl = 'likes' and split_part(k, '@', 1) = 'd1000000-0000-4000-8000-000000000002')::text
    || ',' ||
    (select count(*) from p28_reads, unnest(keys) k
      where run = 'after' and viewer = 'admin' and tbl = 'likes' and split_part(k, '@', 1) = 'd1000000-0000-4000-8000-000000000002')::text),
-  ('proposed 0028: a comment on a removed photograph is read by the admins, its author and the photograph''s, no one else', 'true,true,true,false',
+  ('0028: a comment on a removed photograph is read by the admins, its author and the photograph''s, no one else', 'true,true,true,false',
    (select string_agg((array_to_string(keys, ',') ~ 'd2000000-0000-4000-8000-000000000006')::text, ',' order by o)
       from p28_reads join (values ('admin', 1), ('stranger', 2), ('public', 3), ('follower', 4)) v(viewer, o) using (viewer)
      where run = 'after' and tbl = 'comments')),
-  ('proposed 0028: three restrictive policies, nothing else', '3',
+  ('0028: three restrictive policies, nothing else', '3',
    (select count(*)::text from pg_policies where schemaname = 'public'
      and policyname in ('comments: only with their photograph', 'likes: only with their photograph',
                         'post_tags: only with their photograph')
@@ -256,19 +261,19 @@ insert into tests.results (name, expected, actual) values
 \pset border 2
 select r.seq, r.name, r.expected, r.actual,
        case when r.expected = r.actual then 'pass' else 'FAIL' end as status
-from tests.results r, proposal_start s
+from tests.results r, p28_start s
 where r.seq > s.seq and (r.expected is distinct from r.actual or r.name !~ ' reads of ')
 order by r.seq;
 
 do $verdict$
 declare v_failed int;
 begin
-  select count(*) into v_failed from tests.results r, proposal_start s
+  select count(*) into v_failed from tests.results r, p28_start s
    where r.seq > s.seq and r.expected is distinct from r.actual;
   if v_failed > 0 then
-    raise exception '% proposed 0028 checks FAILED', v_failed;
+    raise exception '% 0028 checks FAILED', v_failed;
   end if;
-  raise notice 'proposed 0028 checks passed';
+  raise notice '0028 checks passed';
 end
 $verdict$;
 

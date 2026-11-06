@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert, showPrompt } from "@/utils/alert";
 import { Screen } from "@/components/Screen";
 import { colors, radii, spacing, type } from "@/theme";
-import { fetchApplications, fetchDefaultInviteQuota, fetchReports, setDefaultInviteQuota } from "@/api/moderation";
+import { countApplications, countReports, fetchDefaultInviteQuota, setDefaultInviteQuota } from "@/api/moderation";
 import { useSession } from "@/providers/SessionProvider";
 
 /** The admin dashboard. Only profiles with role = admin can see this. */
@@ -14,14 +14,17 @@ export default function AdminHome() {
   const router = useRouter();
   const { isAdmin, profileLoaded } = useSession();
 
+  // How many wait, counted by the database: the rows themselves are read
+  // on the screens that show them, a page at a time. Under the same keys
+  // as those screens' lists, so a decision there counts again here.
   const pendingApps = useQuery({
-    queryKey: ["admin-apps", "pending"],
-    queryFn: () => fetchApplications("pending"),
+    queryKey: ["admin-apps", "pending", "count"],
+    queryFn: () => countApplications("pending"),
     enabled: isAdmin,
   });
   const openReports = useQuery({
-    queryKey: ["admin-reports", "open"],
-    queryFn: () => fetchReports("open"),
+    queryKey: ["admin-reports", "open", "count"],
+    queryFn: () => countReports("open"),
     enabled: isAdmin,
   });
   const queryClient = useQueryClient();
@@ -56,13 +59,13 @@ export default function AdminHome() {
     {
       icon: "inbox" as const,
       title: "Applications",
-      sub: `${pendingApps.data?.length ?? 0} waiting for review`,
+      sub: `${pendingApps.data ?? 0} waiting for review`,
       href: "/admin/applications",
     },
     {
       icon: "flag" as const,
       title: "Reports",
-      sub: `${openReports.data?.length ?? 0} open`,
+      sub: `${openReports.data ?? 0} open`,
       href: "/admin/reports",
     },
     {

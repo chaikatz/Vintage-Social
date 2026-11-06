@@ -281,42 +281,159 @@ begin
 end
 $fn$;
 
--- The read the app made before 0025, for comparison (old_feed_sql in 12).
+-- The read the app made before 0025, for comparison (old_feed_sql in 12):
+-- a page by offset. feed_page is asked for the page after a post instead
+-- (its cursor), so each case names how many posts the reader holds; the
+-- cursor is the last of them, found by the old read, as the member.
+create or replace function tests.old_feed_sql_at(p_uid uuid, p_limit int, p_offset int)
+returns text language sql as $fn$
+  select format(
+    'select p.id from public.posts p
+      where p.author_id = any (array[%L::uuid] || array(select f.followee_id from public.follows f
+                                                         where f.follower_id = %L and f.status = ''accepted''))
+        and p.removed_at is null
+      order by p.created_at desc, p.id desc
+      limit %s offset %s', p_uid, p_uid, p_limit, p_offset)
+$fn$;
+
+create temp table feed_cases (label text primary key, uid uuid, held int);
+insert into feed_cases values
+  ('a member who follows nobody', 'feed5ca1-0000-4000-8000-000000000001', 0),
+  ('a typical member, first page', :'me', 0),
+  ('a typical member, second page', :'me', 12),
+  ('a member who follows the whole club', 'feed5ca1-0000-4000-8000-000000000002', 0),
+  ('the whole club, twenty pages in', 'feed5ca1-0000-4000-8000-000000000002', 240);
+-- Past the end: the reader holds every post of their feed.
+insert into feed_cases
+select 'past the end of a typical feed', :'me', count(*)
+from tests.posts_read(:'me', tests.old_feed_sql_at(:'me', 100000, 0)) r
+cross join lateral regexp_split_to_table(r.ids, ',');
+
+-- Each case's cursor: the last post the reader holds, as the old read gives it.
+create temp table feed_cursors as
+select c.label, p.created_at as at, p.id
+from feed_cases c
+cross join lateral tests.posts_read(c.uid, tests.old_feed_sql_at(c.uid, 1, c.held - 1)) r
+join public.posts p on p.id = r.ids::uuid
+where c.held > 0;
+
 create temp table feed_reads (label text primary key, rows_read bigint, ids text, ms numeric, old_ids text);
 insert into feed_reads
-select v.label, f.rows_read, f.ids, f.ms, o.ids
-from (values
-  ('a member who follows nobody', 'feed5ca1-0000-4000-8000-000000000001'::uuid, 0),
-  ('a typical member, first page', :'me'::uuid, 0),
-  ('past the end of a typical feed', :'me'::uuid, 100000),
-  ('a member who follows the whole club', 'feed5ca1-0000-4000-8000-000000000002'::uuid, 0),
-  ('the whole club, twenty pages in', 'feed5ca1-0000-4000-8000-000000000002'::uuid, 240)
-) v(label, uid, off)
-cross join lateral tests.posts_read(v.uid, format('select id from public.feed_page(12, %s)', v.off)) f
-cross join lateral tests.posts_read(v.uid, format(
-  'select p.id from public.posts p
-    where p.author_id = any (array[%L::uuid] || array(select f.followee_id from public.follows f
-                                                      where f.follower_id = %L and f.status = ''accepted''))
-      and p.removed_at is null
-    order by p.created_at desc, p.id desc limit 12 offset %s', v.uid, v.uid, v.off)) o;
+select c.label, f.rows_read, f.ids, f.ms, o.ids
+from feed_cases c
+left join feed_cursors k on k.label = c.label
+cross join lateral tests.posts_read(c.uid,
+  case when k.id is null then 'select id from public.feed_page(12)'
+       else format('select id from public.feed_page(12, %L, %L)', k.at, k.id) end) f
+cross join lateral tests.posts_read(c.uid, tests.old_feed_sql_at(c.uid, 12, c.held)) o;
 
 insert into tests.results (name, expected, actual)
 select 'scale: feed_page, ' || label || ', is the page the old read gave', 'true', (ids = old_ids)::text
 from feed_reads;
 
 insert into tests.results (name, expected, actual) values
+  ('scale: every case past the first page has its cursor', '3',
+   (select count(*)::text from feed_cursors)),
+  ('scale: past the end of a typical feed is no page at all', '-',
+   (select ids from feed_reads where label = 'past the end of a typical feed')),
   ('scale: feed_page for a member who follows nobody reads their own photographs, not the club''s', 'true',
    ((select rows_read from feed_reads where label = 'a member who follows nobody') <= 12)::text),
-  ('scale: feed_page past the end of a feed reads only its authors'' photographs', 'true',
-   ((select rows_read from feed_reads where label = 'past the end of a typical feed')
+  ('scale: feed_page for a typical member reads only its authors'' photographs', 'true',
+   ((select rows_read from feed_reads where label = 'a typical member, first page')
      <= (select count(*) from public.posts
           where author_id = :'me' or author_id in (select followee_id from public.follows
                                                     where follower_id = :'me' and status = 'accepted')))::text),
   ('scale: and that is a small part of the club', 'true',
-   ((select rows_read from feed_reads where label = 'past the end of a typical feed')
+   ((select rows_read from feed_reads where label = 'a typical member, first page')
      < (select count(*) / 10 from public.posts))::text),
+  -- From the cursor down: each page reads less than the one before it,
+  -- and past the end, where the offset read every post of the feed's
+  -- authors to find none, it reads none.
+  ('scale: feed_page, the second page reads no more than the first', 'true',
+   ((select rows_read from feed_reads where label = 'a typical member, second page')
+     <= (select rows_read from feed_reads where label = 'a typical member, first page'))::text),
+  ('scale: feed_page past the end of a feed reads nothing', 'true',
+   ((select rows_read from feed_reads where label = 'past the end of a typical feed') <= 2)::text),
   ('scale: feed_page for a member who follows everyone walks newest first and stops at the page', 'true',
-   ((select rows_read from feed_reads where label = 'a member who follows the whole club') <= 60)::text);
+   ((select rows_read from feed_reads where label = 'a member who follows the whole club') <= 60)::text),
+  -- Twenty pages in, by offset, it walked past the 240 posts before the
+  -- page (259 read); from a cursor it starts there.
+  ('scale: feed_page twenty pages in reads about a page, not the twenty before it', 'true',
+   ((select rows_read from feed_reads where label = 'the whole club, twenty pages in') <= 60)::text);
+
+-- ---------------------------------------------------------------------------
+-- a member's followers and following, a page at a time (src/api/profiles.ts)
+-- ---------------------------------------------------------------------------
+-- Fifty at a time, the newest follow first, each page after the last
+-- follow held, as PostgREST asks it: ten pages into the followers of the
+-- member the whole club follows, and into the following of the member
+-- who follows the whole club. Their follows were all made above in one
+-- statement, at one instant; spread over a thousand minutes here, as a
+-- real list's are.
+update public.follows f set created_at = now() - s.n * interval '1 minute'
+from (select follower_id, followee_id, row_number() over (order by follower_id, followee_id) as n
+        from public.follows
+       where followee_id = :'popular' or follower_id = 'feed5ca1-0000-4000-8000-000000000002') s
+where f.follower_id = s.follower_id and f.followee_id = s.followee_id;
+analyze public.follows;
+
+select f.created_at as fat, f.follower_id as fid from public.follows f
+where f.followee_id = :'popular' and f.status = 'accepted'
+order by f.created_at desc, f.follower_id desc offset 499 limit 1 \gset
+select f.created_at as gat, f.followee_id as gid from public.follows f
+where f.follower_id = 'feed5ca1-0000-4000-8000-000000000002' and f.status = 'accepted'
+order by f.created_at desc, f.followee_id desc offset 499 limit 1 \gset
+
+create or replace function tests.follow_page_sql(p_side text, p_member uuid, p_at timestamptz, p_id uuid)
+returns text language sql as $fn$
+  select format(
+    'select f.created_at, f.%1$s,
+            (select row_to_json(m) from (select id, username, full_name, avatar_url, city
+               from public.profiles where id = f.%1$s) m) as member
+     from public.follows f
+     where f.%2$s = %3$L and f.status = ''accepted''
+       and f.created_at <= %4$L and (f.created_at < %4$L or (f.created_at = %4$L and f.%1$s < %5$L))
+     order by f.created_at desc, f.%1$s desc limit 50',
+    case p_side when 'followers' then 'follower_id' else 'followee_id' end,
+    case p_side when 'followers' then 'followee_id' else 'follower_id' end,
+    p_member, p_at, p_id)
+$fn$;
+
+create temp table follow_pages (label text primary key, plan json);
+insert into follow_pages values
+  ('their followers, ten pages in',
+   tests.plan_as(:'me', tests.follow_page_sql('followers', :'popular', :'fat', :'fid'))),
+  ('whom they follow, ten pages in',
+   tests.plan_as(:'me', tests.follow_page_sql('following', 'feed5ca1-0000-4000-8000-000000000002', :'gat', :'gid')));
+-- And what the index allows, whatever the size of the tables: on a list
+-- this short, reading all of it is often the cheaper plan and no fault;
+-- on one of tens of thousands it is not.
+set local enable_seqscan = off;
+set local enable_bitmapscan = off;
+insert into follow_pages values
+  ('their followers, ten pages in, by the index',
+   tests.plan_as(:'me', tests.follow_page_sql('followers', :'popular', :'fat', :'fid')));
+reset enable_seqscan;
+reset enable_bitmapscan;
+
+insert into tests.results (name, expected, actual)
+select 'scale: ' || label || ' is a page of fifty', '50', (plan -> 0 -> 'Plan' ->> 'Actual Rows')
+from follow_pages;
+
+insert into tests.results (name, expected, actual) values
+  ('scale: their followers, ten pages in, read no whole table of follows', 'false',
+   exists (select 1 from follow_pages p, tests.plan_nodes(p.plan) n where n.node = 'Seq Scan' and n.relation = 'follows')::text),
+  ('scale: their followers can start at the cursor (follows_followers_idx from created_at <=)', 'true',
+   ((select plan::text from follow_pages where label = 'their followers, ten pages in, by the index')
+     ~ '"Index Name": "follows_followers_idx"[^}]*"Index Cond": "\(\(followee_id = [^"]*AND \(created_at <= ')::text),
+  ('scale: and from there read about a page, not the five hundred above it', 'true',
+   ((select max(actual_rows * loops) from tests.plan_nodes((select plan from follow_pages where label = 'their followers, ten pages in, by the index'))
+      where index_name = 'follows_followers_idx') <= 120)::text);
+
+select 'time: ' || label || ' ' || round((plan -> 0 ->> 'Execution Time')::numeric, 2) || ' ms, '
+       || (select max(actual_rows * loops) from tests.plan_nodes(plan) where relation = 'follows' or index_name like 'follows%')
+       || ' follows read' as note
+from follow_pages order by label;
 
 select 'time: feed_page, ' || label || ' ' || ms || ' ms, ' || rows_read || ' photographs read' as note
 from feed_reads order by label;

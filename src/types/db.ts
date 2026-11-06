@@ -259,7 +259,8 @@ export type ActivityRow = {
 
 export type ReportRow = {
   id: string;
-  reporter_id: string;
+  /** Null once the member who filed it has deleted their account (0031): the report stays. */
+  reporter_id: string | null;
   target_type: ReportTargetType;
   post_id: string | null;
   comment_id: string | null;
@@ -352,9 +353,9 @@ export type Database = {
         Args: { p_slug: string };
         Returns: boolean;
       };
-      /** The home feed, a page at a time, as the caller (migration 0025). */
+      /** The home feed, a page at a time after the post given, as the caller (migration 0025). */
       feed_page: {
-        Args: { p_limit?: number; p_offset?: number };
+        Args: { p_limit?: number; p_before_at?: string | null; p_before_id?: string | null };
         Returns: PostRow[];
       };
       redeem_invite_link: {

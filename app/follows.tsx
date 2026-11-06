@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
@@ -9,11 +9,11 @@ import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { Bone } from "@/components/Skeleton";
 import { spacing } from "@/theme";
-import { fetchFollowers, fetchFollowing, follow, unfollow } from "@/api/profiles";
+import { fetchFollowPage, fetchFollowStates, follow, unfollow, type FollowCursor, type MemberRow } from "@/api/profiles";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
-import type { FollowStatus, ProfileRow } from "@/types/db";
+import type { FollowStatus } from "@/types/db";
 
 /**
  * Who follows a member, and who they follow.
@@ -22,6 +22,12 @@ import type { FollowStatus, ProfileRow } from "@/types/db";
  * Follow button their profile carries. Tapping a row goes through to the
  * profile. There is no count of mutuals, no "suggested", nothing sorted
  * by anything but who they are.
+ *
+ * A page at a time, the newest follow first, the next asked for as the
+ * reader nears the end: a member followed by thousands is read fifty rows
+ * at a time, and none is cut off at PostgREST's thousand. Each page brings
+ * where the reader stands with the members on it, so a row's button is
+ * right without reading every follow the reader has made.
  */
 export default function Follows() {
   const router = useRouter();
@@ -35,26 +41,37 @@ export default function Follows() {
   }>();
   const followers = kind === "followers";
 
-  const list = useQuery({
-    queryKey: ["follows", userId, kind],
-    queryFn: () => (followers ? fetchFollowers(userId ?? "") : fetchFollowing(userId ?? "")),
+  const list = useInfiniteQuery({
+    queryKey: ["follows", userId, kind, "pages"],
+    queryFn: async ({ pageParam }) => {
+      const page = await fetchFollowPage(followers ? "followers" : "following", userId ?? "", pageParam);
+      // Where I stand with the members on this page. Everyone on my own
+      // Following is followed; for anyone else's list, one read of these rows.
+      const mine: Record<string, FollowStatus> =
+        !followers && userId === myId
+          ? Object.fromEntries(page.members.map((m) => [m.id, "accepted" as const]))
+          : await fetchFollowStates(myId, page.members.map((m) => m.id));
+      return { ...page, mine };
+    },
+    initialPageParam: null as FollowCursor | null,
+    getNextPageParam: (last) => last.next,
     enabled: Boolean(userId),
   });
-
-  // Who I already follow, so every row can say so without a query each.
-  const mine = useQuery({
-    queryKey: ["following", myId],
-    queryFn: () => fetchFollowing(myId),
-    enabled: Boolean(myId),
-  });
-  const followingIds = useMemo(() => new Set((mine.data ?? []).map((p) => p.id)), [mine.data]);
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    return (list.data?.pages ?? []).flatMap((p) => p.members).filter((m) => !seen.has(m.id) && Boolean(seen.add(m.id)));
+  }, [list.data]);
+  const standing = useMemo(
+    () => Object.assign({}, ...(list.data?.pages ?? []).map((p) => p.mine)) as Record<string, FollowStatus>,
+    [list.data],
+  );
 
   // What a tap did, until the lists are re-read: a private member's Follow
   // becomes "Requested", not "Following".
   const [decided, setDecided] = useState<Record<string, FollowStatus | null>>({});
 
   const toggle = useMutation({
-    mutationFn: async ({ target, next }: { target: ProfileRow; next: boolean }) => {
+    mutationFn: async ({ target, next }: { target: MemberRow; next: boolean }) => {
       if (next) return follow(myId, target.id);
       await unfollow(myId, target.id);
       return null;
@@ -72,8 +89,8 @@ export default function Follows() {
       showAlert(next ? "Couldn’t follow" : "Couldn’t unfollow", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
-  const stateFor = (p: ProfileRow): FollowStatus | null =>
-    p.id in decided ? decided[p.id] : followingIds.has(p.id) ? "accepted" : null;
+  const stateFor = (p: MemberRow): FollowStatus | null =>
+    p.id in decided ? decided[p.id] : standing[p.id] ?? null;
 
   if (list.isError && !list.data) {
     return (
@@ -88,8 +105,17 @@ export default function Follows() {
     <Screen padded={false}>
       <Stack.Screen options={{ title: followers ? "Followers" : "Following" }} />
       <FlatList
-        data={list.data ?? []}
+        data={rows}
         keyExtractor={(p) => p.id}
+        onEndReached={() => {
+          if (list.hasNextPage && !list.isFetchingNextPage && !list.isFetchNextPageError) list.fetchNextPage();
+        }}
+        onEndReachedThreshold={1}
+        ListFooterComponent={
+          list.isFetchNextPageError ? (
+            <LoadFailed what="the rest" onRetry={() => list.fetchNextPage()} />
+          ) : null
+        }
         ListEmptyComponent={
           list.isFetched ? (
             <EmptyState

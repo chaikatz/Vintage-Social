@@ -5,6 +5,7 @@ import type { CommentWithAuthor, PostRow, PostWithAuthor, ProfileRow } from "@/t
 import { ROWS_PER_READ } from "@/utils/eraEdits";
 import { withTimeout } from "@/utils/retry";
 import { readInChunks } from "./batch";
+import { pageAfter, type Cursor } from "./keyset";
 
 export const FEED_PAGE_SIZE = 12;
 
@@ -58,6 +59,19 @@ export function forgetFeedPageMissing(): void {
 }
 
 /**
+ * Where the next page of the feed starts: the last post the reader holds,
+ * by the two things the feed is ordered by (./keyset).
+ */
+export type FeedCursor = Cursor;
+
+/** The cursor after a page: its last post, or none when the page ended the feed. */
+export function nextFeedCursor(page: Pick<PostRow, "id" | "created_at">[]): FeedCursor | undefined {
+  if (page.length < FEED_PAGE_SIZE) return undefined;
+  const last = page[page.length - 1];
+  return { at: last.created_at, id: last.id };
+}
+
+/**
  * The home feed: strictly chronological, only accounts the member follows
  * (plus their own posts). No ranking, no suggestions.
  *
@@ -66,17 +80,24 @@ export function forgetFeedPageMissing(): void {
  * into the request's URL, which a few hundred follows outgrow (./batch):
  * the most engaged members' home feed stopped loading. The old way stays
  * for a database that does not have the function yet.
+ *
+ * A page is the posts after `before`, the last post of the page before
+ * (none for the first). Counted by offset instead, a post deleted between
+ * two pages made the next one skip a post, and a post arriving between
+ * them made it repeat one.
  */
-export async function fetchFeedPage(userId: string, page: number): Promise<PostWithAuthor[]> {
-  if (isDemoMode()) return demo.demoFetchFeedPage(userId, page, FEED_PAGE_SIZE);
+export async function fetchFeedPage(userId: string, before: FeedCursor | null): Promise<PostWithAuthor[]> {
+  if (isDemoMode()) return demo.demoFetchFeedPage(userId, before, FEED_PAGE_SIZE);
 
-  const from = page * FEED_PAGE_SIZE;
   if (Date.now() >= feedPageMissingUntil) {
     // The order is asked of PostgREST too: the function's own order is
     // not promised to survive the query PostgREST wraps around it to join
     // the author, and sorting a page of twelve costs nothing.
     const { data, error } = await supabase
-      .rpc("feed_page", { p_limit: FEED_PAGE_SIZE, p_offset: from })
+      .rpc(
+        "feed_page",
+        before ? { p_limit: FEED_PAGE_SIZE, p_before_at: before.at, p_before_id: before.id } : { p_limit: FEED_PAGE_SIZE },
+      )
       .select(POST_WITH_AUTHOR)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false });
@@ -87,13 +108,15 @@ export async function fetchFeedPage(userId: string, page: number): Promise<PostW
 
   const authorIds = [userId, ...(await followingIds(userId))];
 
-  const { data, error } = await supabase
+  const query = supabase
     .from("posts")
     .select(POST_WITH_AUTHOR)
     .in("author_id", authorIds)
-    .is("removed_at", null)
+    .is("removed_at", null);
+  const { data, error } = await pageAfter(query, "created_at", "id", before)
     .order("created_at", { ascending: false })
-    .range(from, from + FEED_PAGE_SIZE - 1);
+    .order("id", { ascending: false })
+    .limit(FEED_PAGE_SIZE);
   if (error) throw error;
   return (data ?? []) as unknown as PostWithAuthor[];
 }

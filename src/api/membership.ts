@@ -24,14 +24,94 @@ export interface ApplicationInput {
   reason: string;
 }
 
-export async function checkUsernameAvailable(username: string): Promise<boolean> {
-  if (isDemoMode()) return demo.demoUsernameAvailable(normalizeUsername(username));
+/** The email and password typed on the form beside the name. */
+export interface TypedAccount {
+  email: string;
+  password: string;
+}
 
-  const { data, error } = await supabase.rpc("username_available", {
-    p_username: normalizeUsername(username),
-  });
+/** The username of the account this phone is signed in to, if any. */
+async function signedInUsername(): Promise<string | null> {
+  const { data: auth } = await supabase.auth.getSession();
+  const me = auth.session?.user;
+  if (!me) return null;
+  const { data: mine } = await supabase.from("profiles").select("username").eq("id", me.id).maybeSingle();
+  return (mine?.username as string | undefined) ?? null;
+}
+
+/**
+ * Whether a username is free. One taken by the person's own account is
+ * theirs: a sign-up that failed part-way has already made the account,
+ * with that name, and trying again must not be told it is taken.
+ *
+ * Their own account is the one signed in, or, when nobody is signed in
+ * (the first try's answer never came back, so no session was kept), the
+ * one the email and password typed beside the name open. That sign-in
+ * is kept only when the name is that account's own, for the sign-up to
+ * carry on with; any other account it opened is signed out of again, and
+ * the name is taken.
+ */
+export async function checkUsernameAvailable(username: string, typed?: TypedAccount): Promise<boolean> {
+  const name = normalizeUsername(username);
+  if (isDemoMode()) return demo.demoUsernameAvailable(name);
+
+  const { data, error } = await supabase.rpc("username_available", { p_username: name });
   if (error) throw error;
-  return Boolean(data);
+  if (data) return true;
+
+  const { data: auth } = await supabase.auth.getSession();
+  const current = auth.session?.user;
+  if (current) {
+    // Signed in to another email's account: the sign-up makes a new one,
+    // and this name is not free for it.
+    if (typed && (current.email ?? "").toLowerCase() !== typed.email.trim().toLowerCase()) return false;
+    return (await signedInUsername()) === name;
+  }
+  if (!typed || !typed.email.trim() || !typed.password) return false;
+  const { data: opened, error: refused } = await supabase.auth.signInWithPassword({
+    email: typed.email.trim(),
+    password: typed.password,
+  });
+  if (refused || !opened.user) return false;
+  if ((await signedInUsername()) === name) return true;
+  await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+  return false;
+}
+
+/** What the Apply form says to an email whose account is past the door. */
+export const ACCOUNT_EXISTS = "This email already has an account. Sign in instead.";
+
+/** "User already registered": the email has an account already. */
+function alreadyRegistered(error: { message?: string; code?: string } | null | undefined): boolean {
+  return Boolean(error) && (error!.code === "user_already_exists" || /already registered/i.test(error!.message ?? ""));
+}
+
+/**
+ * The account for this sign-up: the one a previous try of it made, when
+ * that try got as far as making it, or a new one.
+ *
+ * Applying and joining by invitation each make the account first and then
+ * do more (a portrait, the application, the invitation). When a later step
+ * failed (the signal went), trying again began by making the account
+ * again, and was refused: "User already registered". Now the account the
+ * person is signed in to is used when it is the same email; and when the
+ * email is refused as taken, the password they typed is tried on it, so
+ * the person who made it a minute ago carries on where they stopped. A
+ * password that does not open it is the original refusal, unchanged.
+ */
+async function signUpOrResume(email: string, password: string, username: string, fullName: string) {
+  const wanted = email.trim().toLowerCase();
+  const { data: auth } = await supabase.auth.getSession();
+  const current = auth.session?.user;
+  if (current && (current.email ?? "").toLowerCase() === wanted) return current;
+  try {
+    return await signUp(email, password, username, fullName);
+  } catch (err) {
+    if (!alreadyRegistered(err as { message?: string; code?: string })) throw err;
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error || !data.user) throw err;
+    return data.user;
+  }
 }
 
 async function signUp(email: string, password: string, username: string, fullName: string) {
@@ -62,7 +142,28 @@ export async function submitApplication(input: ApplicationInput): Promise<void> 
     return;
   }
 
-  const user = await signUp(input.email, input.password, input.desiredUsername, input.fullName);
+  const user = await signUpOrResume(input.email, input.password, input.desiredUsername, input.fullName);
+
+  // Only an account still at the door ("applied") has a sign-up to finish.
+  // Any other the email and password open is already known: a member let
+  // in (by invitation, with no application of their own), a suspended
+  // one, or one waitlisted or turned down. An application from it would
+  // put a new portrait over theirs and, approved by an admin who sees only
+  // the name typed, could let in again whoever it is. Nothing is uploaded
+  // or filed, and the session this opened is ended.
+  const { data: account, error: accountError } = await supabase
+    .from("profiles")
+    .select("username, status")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (accountError) throw accountError;
+  if (account?.status !== "applied") {
+    await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+    throw new Error(ACCOUNT_EXISTS);
+  }
+
+  // A previous try that filed the application has nothing left to do.
+  if (await fetchMyApplication(user.id)) return;
 
   let avatarPath: string | null = null;
   if (input.avatarUri) {
@@ -76,7 +177,9 @@ export async function submitApplication(input: ApplicationInput): Promise<void> 
   const { error } = await supabase.from("applications").insert({
     user_id: user.id,
     full_name: input.fullName.trim(),
-    desired_username: normalizeUsername(input.desiredUsername),
+    // The name the account has: an approval lets in the account, under
+    // the name its first try gave it, whatever was typed this time.
+    desired_username: (account.username as string | null) ?? normalizeUsername(input.desiredUsername),
     avatar_url: avatarPath,
     social_handle: input.socialHandle.trim() || null,
     city: input.city.trim() || null,
@@ -119,7 +222,10 @@ export async function joinWithInvite(input: InviteSignupInput): Promise<void> {
     return;
   }
 
-  await signUp(input.email, input.password, input.desiredUsername, input.fullName);
+  // A previous try may have made the account and failed at the invitation:
+  // it carries on with that account. Taking up an invitation again with an
+  // account already in is answered as done, and nothing is spent twice.
+  await signUpOrResume(input.email, input.password, input.desiredUsername, input.fullName);
   const result = await redeemInviteLink(input.code);
   const problem = describeRedeem(result);
   if (problem) {
