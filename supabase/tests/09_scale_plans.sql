@@ -361,6 +361,80 @@ insert into tests.results (name, expected, actual) values
   ('scale: feed_page twenty pages in reads about a page, not the twenty before it', 'true',
    ((select rows_read from feed_reads where label = 'the whole club, twenty pages in') <= 60)::text);
 
+-- ---------------------------------------------------------------------------
+-- a member's followers and following, a page at a time (src/api/profiles.ts)
+-- ---------------------------------------------------------------------------
+-- Fifty at a time, the newest follow first, each page after the last
+-- follow held, as PostgREST asks it: ten pages into the followers of the
+-- member the whole club follows, and into the following of the member
+-- who follows the whole club. Their follows were all made above in one
+-- statement, at one instant; spread over a thousand minutes here, as a
+-- real list's are.
+update public.follows f set created_at = now() - s.n * interval '1 minute'
+from (select follower_id, followee_id, row_number() over (order by follower_id, followee_id) as n
+        from public.follows
+       where followee_id = :'popular' or follower_id = 'feed5ca1-0000-4000-8000-000000000002') s
+where f.follower_id = s.follower_id and f.followee_id = s.followee_id;
+analyze public.follows;
+
+select f.created_at as fat, f.follower_id as fid from public.follows f
+where f.followee_id = :'popular' and f.status = 'accepted'
+order by f.created_at desc, f.follower_id desc offset 499 limit 1 \gset
+select f.created_at as gat, f.followee_id as gid from public.follows f
+where f.follower_id = 'feed5ca1-0000-4000-8000-000000000002' and f.status = 'accepted'
+order by f.created_at desc, f.followee_id desc offset 499 limit 1 \gset
+
+create or replace function tests.follow_page_sql(p_side text, p_member uuid, p_at timestamptz, p_id uuid)
+returns text language sql as $fn$
+  select format(
+    'select f.created_at, f.%1$s,
+            (select row_to_json(m) from (select id, username, full_name, avatar_url, city
+               from public.profiles where id = f.%1$s) m) as member
+     from public.follows f
+     where f.%2$s = %3$L and f.status = ''accepted''
+       and f.created_at <= %4$L and (f.created_at < %4$L or (f.created_at = %4$L and f.%1$s < %5$L))
+     order by f.created_at desc, f.%1$s desc limit 50',
+    case p_side when 'followers' then 'follower_id' else 'followee_id' end,
+    case p_side when 'followers' then 'followee_id' else 'follower_id' end,
+    p_member, p_at, p_id)
+$fn$;
+
+create temp table follow_pages (label text primary key, plan json);
+insert into follow_pages values
+  ('their followers, ten pages in',
+   tests.plan_as(:'me', tests.follow_page_sql('followers', :'popular', :'fat', :'fid'))),
+  ('whom they follow, ten pages in',
+   tests.plan_as(:'me', tests.follow_page_sql('following', 'feed5ca1-0000-4000-8000-000000000002', :'gat', :'gid')));
+-- And what the index allows, whatever the size of the tables: on a list
+-- this short, reading all of it is often the cheaper plan and no fault;
+-- on one of tens of thousands it is not.
+set local enable_seqscan = off;
+set local enable_bitmapscan = off;
+insert into follow_pages values
+  ('their followers, ten pages in, by the index',
+   tests.plan_as(:'me', tests.follow_page_sql('followers', :'popular', :'fat', :'fid')));
+reset enable_seqscan;
+reset enable_bitmapscan;
+
+insert into tests.results (name, expected, actual)
+select 'scale: ' || label || ' is a page of fifty', '50', (plan -> 0 -> 'Plan' ->> 'Actual Rows')
+from follow_pages;
+
+insert into tests.results (name, expected, actual) values
+  ('scale: their followers, ten pages in, read no whole table of follows', 'false',
+   exists (select 1 from follow_pages p, tests.plan_nodes(p.plan) n where n.node = 'Seq Scan' and n.relation = 'follows')::text),
+  ('scale: their followers can start at the cursor (follows_followers_idx from created_at <=)', 'true',
+   ((select plan::text from follow_pages where label = 'their followers, ten pages in, by the index')
+     ~ '"Index Name": "follows_followers_idx"[^}]*"Index Cond": "\(\(followee_id = [^"]*AND \(created_at <= ')::text),
+  ('scale: and from there read about a page, not the five hundred above it', 'true',
+   ((select max(actual_rows * loops) from tests.plan_nodes((select plan from follow_pages where label = 'their followers, ten pages in, by the index'))
+      where index_name = 'follows_followers_idx') <= 120)::text);
+
+select 'time: ' || label || ' ' || round((plan -> 0 ->> 'Execution Time')::numeric, 2) || ' ms, '
+       || (select max(actual_rows * loops) from tests.plan_nodes(plan) where relation = 'follows' or index_name like 'follows%')
+       || ' follows read' as note
+from follow_pages order by label;
+
 select 'time: feed_page, ' || label || ' ' || ms || ' ms, ' || rows_read || ' photographs read' as note
 from feed_reads order by label;
 

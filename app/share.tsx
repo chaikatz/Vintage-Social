@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -13,7 +13,7 @@ import { LoadFailed } from "@/components/LoadFailed";
 import { memberLabel } from "@/components/memberLabel";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
-import { fetchFollowing } from "@/api/profiles";
+import { fetchFollowPage, type FollowCursor } from "@/api/profiles";
 import { mediaUrl } from "@/api/media";
 import { sharePostWith } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
@@ -43,11 +43,16 @@ export default function Share() {
     queryFn: () => fetchPost(postId ?? ""),
     enabled: Boolean(postId),
   });
-  const peopleQ = useQuery({
-    queryKey: ["following", userId],
-    queryFn: () => fetchFollowing(userId),
+  // Who the member follows, fifty at a time as the list is scrolled: every
+  // one of them reachable, however many, none cut off at a thousand.
+  const peopleQ = useInfiniteQuery({
+    queryKey: ["following", userId, "pages"],
+    queryFn: ({ pageParam }) => fetchFollowPage("following", userId, pageParam),
+    initialPageParam: null as FollowCursor | null,
+    getNextPageParam: (last) => last.next,
     enabled: Boolean(userId),
   });
+  const people = useMemo(() => (peopleQ.data?.pages ?? []).flatMap((p) => p.members), [peopleQ.data]);
 
   const post = postQ.data;
   const thumb = useMemo(
@@ -131,10 +136,17 @@ export default function Share() {
       />
 
       <FlatList
-        data={peopleQ.data ?? []}
+        data={people}
         keyExtractor={(p) => p.id}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.list}
+        onEndReached={() => {
+          if (peopleQ.hasNextPage && !peopleQ.isFetchingNextPage && !peopleQ.isFetchNextPageError) peopleQ.fetchNextPage();
+        }}
+        onEndReachedThreshold={1}
+        ListFooterComponent={
+          peopleQ.isFetchNextPageError ? <LoadFailed what="the rest" onRetry={() => peopleQ.fetchNextPage()} /> : null
+        }
         ListEmptyComponent={
           peopleQ.isError ? (
             <LoadFailed what="who you follow" onRetry={() => peopleQ.refetch()} />

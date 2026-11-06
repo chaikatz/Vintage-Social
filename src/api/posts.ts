@@ -5,6 +5,7 @@ import type { CommentWithAuthor, PostRow, PostWithAuthor, ProfileRow } from "@/t
 import { ROWS_PER_READ } from "@/utils/eraEdits";
 import { withTimeout } from "@/utils/retry";
 import { readInChunks } from "./batch";
+import { pageAfter, type Cursor } from "./keyset";
 
 export const FEED_PAGE_SIZE = 12;
 
@@ -59,27 +60,15 @@ export function forgetFeedPageMissing(): void {
 
 /**
  * Where the next page of the feed starts: the last post the reader holds,
- * by the two things the feed is ordered by. The time is the server's own
- * string, handed back as it came: a Date keeps milliseconds, created_at
- * has microseconds, and a cursor rounded down would skip the posts in
- * between.
+ * by the two things the feed is ordered by (./keyset).
  */
-export type FeedCursor = { at: string; id: string };
+export type FeedCursor = Cursor;
 
 /** The cursor after a page: its last post, or none when the page ended the feed. */
 export function nextFeedCursor(page: Pick<PostRow, "id" | "created_at">[]): FeedCursor | undefined {
   if (page.length < FEED_PAGE_SIZE) return undefined;
   const last = page[page.length - 1];
   return { at: last.created_at, id: last.id };
-}
-
-/**
- * PostgREST's or=() reads a value up to the next "," or ")" and splits on
- * ".", so a value with those in it (an ISO time has "." and ":") is put in
- * double quotes, inside which a double quote or a backslash is escaped.
- */
-function quoted(value: string): string {
-  return `"${value.replace(/["\\]/g, "\\$&")}"`;
 }
 
 /**
@@ -119,17 +108,12 @@ export async function fetchFeedPage(userId: string, before: FeedCursor | null): 
 
   const authorIds = [userId, ...(await followingIds(userId))];
 
-  let query = supabase
+  const query = supabase
     .from("posts")
     .select(POST_WITH_AUTHOR)
     .in("author_id", authorIds)
     .is("removed_at", null);
-  if (before) {
-    query = query.or(
-      `created_at.lt.${quoted(before.at)},and(created_at.eq.${quoted(before.at)},id.lt.${quoted(before.id)})`,
-    );
-  }
-  const { data, error } = await query
+  const { data, error } = await pageAfter(query, "created_at", "id", before)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(FEED_PAGE_SIZE);

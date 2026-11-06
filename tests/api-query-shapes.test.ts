@@ -62,6 +62,7 @@ function matches(row: Row, column: string, filter: string): boolean {
   if (op === "eq") return String(cell) === value;
   if (op === "neq") return String(cell) !== value;
   if (op === "lt") return String(cell) < value;
+  if (op === "lte") return String(cell) <= value;
   if (op === "gt") return String(cell) > value;
   if (op === "in") return inList(raw).includes(String(cell));
   if (op === "is") return value === "null" ? cell == null : String(cell) === value;
@@ -153,6 +154,8 @@ const LINKS: Record<string, { child: string; parent: string; childColumn: string
   messages_conversation_id_fkey: { child: "messages", parent: "conversations", childColumn: "conversation_id", parentColumn: "id" },
   comments_author_id_fkey: { child: "comments", parent: "profiles", childColumn: "author_id", parentColumn: "id" },
   posts_author_id_fkey: { child: "posts", parent: "profiles", childColumn: "author_id", parentColumn: "id" },
+  follows_follower_id_fkey: { child: "follows", parent: "profiles", childColumn: "follower_id", parentColumn: "id" },
+  follows_followee_id_fkey: { child: "follows", parent: "profiles", childColumn: "followee_id", parentColumn: "id" },
 };
 
 function answer(url: URL): Row[] {
@@ -260,6 +263,7 @@ const posts = await import("@/api/posts");
 type FeedCursor = import("@/api/posts").FeedCursor;
 const tags = await import("@/api/tags");
 const messages = await import("@/api/messages");
+const profiles = await import("@/api/profiles");
 const { readInChunks, chunked, IDS_PER_REQUEST } = await import("@/api/batch");
 
 const ME = "00000000-0000-4000-8000-000000000001";
@@ -710,6 +714,8 @@ describe("the home feed", () => {
     expect(second.url.searchParams.get("or")).toMatch(
       /^\(created_at\.lt\."[^"]+",and\(created_at\.eq\."[^"]+",id\.lt\."[0-9a-f-]+"\)\)$/,
     );
+    // And the time on its own, which posts_author_idx can start from.
+    expect(second.url.searchParams.get("created_at")).toMatch(/^lte\.\d{4}-\d\d-\d\dT/);
     expect(second.url.searchParams.get("order")).toBe("created_at.desc,id.desc");
     expect(second.url.searchParams.get("limit")).toBe(String(posts.FEED_PAGE_SIZE));
     expect(second.url.searchParams.get("offset")).toBeNull();
@@ -735,5 +741,116 @@ describe("the home feed", () => {
     club(800);
     h.feedPage = "missing";
     await expect(posts.fetchFeedPage(ME, null)).rejects.toBeTruthy();
+  });
+});
+
+describe("followers and following", () => {
+  const STAR = id("90", 0);
+  /** STAR, followed by `n` members (one in nine since blocked, so unreadable), and following them back. */
+  function crowd(n: number) {
+    const fans = Array.from({ length: n }, (_, i) => id("91", i));
+    h.tables.profiles = [STAR, ME, ...fans.filter((_, i) => i % 9 !== 4)].map((p, i) => ({
+      id: p, username: `u${i}`, full_name: null, avatar_url: null, city: null, bio: "long",
+    }));
+    h.tables.follows = fans.flatMap((f, i) => [
+      // Many follows made in the same second: the pages cross them by id.
+      { follower_id: f, followee_id: STAR, status: i % 50 === 7 ? "pending" : "accepted", created_at: at(Math.floor(i / 3)) },
+      { follower_id: STAR, followee_id: f, status: "accepted", created_at: at(Math.floor(i / 4)) },
+    ]);
+    // I follow one of them, and have asked another.
+    h.tables.follows.push(
+      { follower_id: ME, followee_id: fans[1], status: "accepted", created_at: at(1) },
+      { follower_id: ME, followee_id: fans[2], status: "pending", created_at: at(1) },
+    );
+    return fans;
+  }
+
+  async function walk(side: "followers" | "following", who: string) {
+    const ids: string[] = [];
+    let cursor: import("@/api/profiles").FollowCursor | null = null;
+    for (let i = 0; i < 1000; i++) {
+      const page: import("@/api/profiles").FollowPage = await profiles.fetchFollowPage(side, who, cursor);
+      ids.push(...page.members.map((m) => m.id));
+      if (!page.next) break;
+      cursor = page.next;
+    }
+    return ids;
+  }
+
+  /** Who the database says, newest follow first, readable members only. */
+  function truth(side: "followers" | "following", who: string, readableOnly = true) {
+    const [mine, theirs] = side === "followers" ? ["followee_id", "follower_id"] : ["follower_id", "followee_id"];
+    const readable = new Set(h.tables.profiles.map((p) => p.id));
+    return h.tables.follows
+      .filter((f) => f[mine] === who && f.status === "accepted")
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b[theirs]).localeCompare(String(a[theirs])))
+      .map((f) => String(f[theirs]))
+      .filter((m) => !readableOnly || readable.has(m));
+  }
+
+  it("2,500 followers come a page of fifty at a time, every one once, past PostgREST's thousand", async () => {
+    crowd(2500);
+    const all = await walk("followers", STAR);
+    expect(all).toEqual(truth("followers", STAR));
+    expect(all.length).toBeGreaterThan(2000);
+    expect(new Set(all).size).toBe(all.length);
+    const reads = h.requests.filter((r) => r.url.pathname === "/rest/v1/follows");
+    expect(reads.length).toBe(Math.floor(truth("followers", STAR, false).length / 50) + 1);
+    for (const r of reads) {
+      expect(r.url.searchParams.get("limit")).toBe("50");
+      expect(r.url.searchParams.get("order")).toBe("created_at.desc,follower_id.desc");
+      // Only what a row draws: no bio, no counts, no settings.
+      expect(r.url.searchParams.get("select")).toBe(
+        "created_at,follower_id,member:profiles!follows_follower_id_fkey(id,username,full_name,avatar_url,city)",
+      );
+    }
+    // After the first, each page starts from the last follow held, the time on its own for the index.
+    expect(reads[1].url.searchParams.get("created_at")).toMatch(/^lte\./);
+    expect(reads[1].url.searchParams.get("or")).toMatch(
+      /^\(created_at\.lt\."[^"]+",and\(created_at\.eq\."[^"]+",follower_id\.lt\."[0-9a-f-]+"\)\)$/,
+    );
+  });
+
+  it("and whom they follow, the same way", async () => {
+    crowd(700);
+    const all = await walk("following", STAR);
+    expect(all).toEqual(truth("following", STAR));
+    expect(h.requests.every((r) => r.url.searchParams.get("limit") === "50")).toBe(true);
+  });
+
+  it("a page whose members cannot be read does not end the list", async () => {
+    crowd(200);
+    const newest = truth("followers", STAR);
+    // The fifty newest followers, none of them readable now.
+    h.tables.profiles = h.tables.profiles.filter((p) => !newest.slice(0, 50).includes(String(p.id)));
+    const first = await profiles.fetchFollowPage("followers", STAR, null);
+    expect(first.members).toEqual([]);
+    expect(first.next).toBeDefined();
+    const rest = await walk("followers", STAR);
+    expect(rest).toEqual(newest.slice(50));
+  });
+
+  it("where I stand with the members on a page, in one read of those rows", async () => {
+    const fans = crowd(40);
+    h.requests.length = 0;
+    const states = await profiles.fetchFollowStates(ME, fans.slice(0, 30));
+    expect(states).toEqual({ [fans[1]]: "accepted", [fans[2]]: "pending" });
+    expect(h.requests.length).toBe(1);
+    expect(h.requests[0].url.searchParams.get("follower_id")).toBe(`eq.${ME}`);
+    expect(await profiles.fetchFollowStates(ME, [])).toEqual({});
+  });
+
+  it("requests waiting on me come newest first, without a member who cannot be read", async () => {
+    crowd(400);
+    const list = await profiles.fetchPendingRequests(STAR);
+    const read = h.requests.find((r) => r.url.pathname === "/rest/v1/follows")!;
+    expect(read.url.searchParams.get("order")).toBe("created_at.desc");
+    const pending = h.tables.follows
+      .filter((f) => f.followee_id === STAR && f.status === "pending")
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    expect(pending.some((f) => !h.tables.profiles.some((p) => p.id === f.follower_id))).toBe(true);
+    expect(list.map((p) => p.id)).toEqual(
+      pending.map((f) => f.follower_id).filter((m) => h.tables.profiles.some((p) => p.id === m)),
+    );
   });
 });
