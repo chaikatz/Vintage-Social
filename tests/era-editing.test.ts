@@ -746,8 +746,8 @@ describe("the automatic reading underneath", () => {
     expect(day).toMatch(
       /const eras = useMemo\(\s*\(\) => \(eraEdits\.isFetched \? editEras\(posts\.data \?\? \[\], eraEdits\.data\?\.edits\) : \[\]\),\s*\[posts\.data, eraEdits\.data, eraEdits\.isFetched\],\s*\);/,
     );
-    // Nor is "nothing" said before then.
-    expect(day).toMatch(/const nothing =\s*posts\.isFetched &&\s*eraEdits\.isFetched &&/);
+    // Nor is "nothing" said before then, nor when the photographs could not be read (src/components/readState.ts).
+    expect(day).toMatch(/const nothing =\s*postsRead === "empty" &&\s*eraEdits\.isFetched &&/);
     expect(day).toMatch(/<View key=\{era\.key\} style=\{styles\.era\}>/);
     expect(day).not.toMatch(/groupEras\(/);
   });

@@ -6,6 +6,7 @@ import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { Bone } from "@/components/Skeleton";
 import { spacing } from "@/theme";
 import { fetchLikers } from "@/api/posts";
@@ -36,7 +37,8 @@ export default function Likes() {
       <Stack.Screen options={{ title: "Likes" }} />
       {!own ? (
         <EmptyState title="Only your own" body="Who liked a photograph is shown on your own posts." />
-      ) : likers.isError ? (
+      ) : readState(likers) === "failed" ? (
+        // Only when there is no list to show: a re-read that fails leaves the likers on screen.
         <LoadFailed what="the likes" onRetry={() => likers.refetch()} />
       ) : (
         <FlatList

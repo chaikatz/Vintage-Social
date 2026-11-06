@@ -13,6 +13,7 @@ import { EraList } from "@/components/EraList";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
 import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
 import { Timeline } from "@/components/Timeline";
@@ -68,6 +69,9 @@ export default function UserProfile() {
 
   // A private member's photographs are theirs until they let you in.
   const locked = (Boolean(profile?.is_private) && !isMe && status !== "accepted") || blocked;
+  // Whether they have let you in could not be read: said, with a way to try
+  // again, rather than "Ask to follow" to a member who already follows them.
+  const standingUnread = Boolean(profile?.is_private) && !isMe && !blocked && readState(followQ) === "failed";
 
   const postsQ = useQuery({
     queryKey: ["user-posts", profile?.id],
@@ -244,6 +248,8 @@ export default function UserProfile() {
           <Text style={styles.lockedTitle}>You blocked {profile.username}</Text>
           <Text style={styles.lockedBody}>Neither of you sees the other’s photographs. Unblock to change that.</Text>
         </View>
+      ) : standingUnread ? (
+        <LoadFailed what="their photographs" onRetry={() => followQ.refetch()} />
       ) : locked ? (
         <View style={styles.locked}>
           <Feather name="lock" size={18} color={colors.inkFaint} />
@@ -283,6 +289,8 @@ export default function UserProfile() {
     router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken", era } });
   };
   const shown = locked ? [] : rows;
+  // Their photographs and the ones they were tagged in: empty only once both have answered.
+  const gridRead = readState(postsQ, taggedQ);
 
   return (
     <Screen padded={false}>
@@ -318,8 +326,17 @@ export default function UserProfile() {
           refreshing={postsQ.isRefetching}
           onRefresh={() => postsQ.refetch()}
           header={header}
+          // A read that failed says so: it is not "No photographs yet" (src/components/readState.ts).
           empty={
-            locked ? null : postsQ.isFetched ? (
+            locked ? null : gridRead === "failed" ? (
+              <LoadFailed
+                what="their photographs"
+                onRetry={() => {
+                  postsQ.refetch();
+                  taggedQ.refetch();
+                }}
+              />
+            ) : gridRead === "empty" ? (
               <EmptyState title="No photographs yet" />
             ) : (
               <GridSkeleton />

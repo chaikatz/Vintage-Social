@@ -7,6 +7,8 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { Bone } from "@/components/Skeleton";
 import { colors, spacing, type } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
@@ -176,11 +178,22 @@ export default function Memories() {
 
   const today = new Date();
   const libraryTotal = (library.data ?? []).reduce((n, d) => n + d.photos.length, 0);
+  // A read that failed is never taken for a day with nothing in it
+  // (src/components/readState.ts): your posts that could not be read say
+  // so where they would be, and so does a library that could not be
+  // looked through. Either way the page does not say there is nothing.
+  const postsRead = readState(posts);
+  const libraryFailed = readState(access) === "failed" || (granted && readState(library) === "failed");
+  const lookThroughAgain = () => {
+    if (access.isError) void access.refetch();
+    if (library.isError) void library.refetch();
+  };
   const nothing =
-    posts.isFetched &&
+    postsRead === "empty" &&
     eraEdits.isFetched &&
     memories.length === 0 &&
     eras.length === 0 &&
+    !libraryFailed &&
     (reach === "none" || libraryTotal === 0);
 
   const showLibrary = Platform.OS !== "web" && (reach !== "none" || darkroomAvailable());
@@ -256,7 +269,9 @@ export default function Memories() {
     <>
       <Text style={styles.date}>{signatureDate(today.toISOString()).toUpperCase()}</Text>
 
-      {!posts.isFetched ? (
+      {postsRead === "failed" ? (
+        <LoadFailed what="your photographs" onRetry={() => posts.refetch()} />
+      ) : postsRead === "waiting" ? (
         <View style={styles.section}>
           <Bone style={styles.memoryBone} />
         </View>
@@ -335,6 +350,20 @@ export default function Memories() {
                 </Text>
               </View>
             </Pressable>
+          ) : libraryFailed && libraryTotal === 0 ? (
+            <View style={styles.limited}>
+              <Text style={styles.limitedLine}>Your library couldn’t be looked through just now.</Text>
+              <View style={styles.limitedWays}>
+                <Pressable
+                  onPress={lookThroughAgain}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={({ pressed }) => [styles.limitedWay, pressed && styles.pressed]}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.limitedWord}>Try again</Text>
+                </Pressable>
+              </View>
+            </View>
           ) : libraryTotal === 0 ? (
             <Text style={styles.quiet}>
               {library.isFetched ? "Nothing from this day in earlier years." : "Looking…"}

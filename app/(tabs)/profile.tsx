@@ -12,6 +12,8 @@ import { PlaceGroups } from "@/components/PlaceGroups";
 import { EraList } from "@/components/EraList";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
 import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
 import { colors, spacing } from "@/theme";
@@ -63,6 +65,8 @@ export default function OwnProfile() {
   // Your eras as you arranged them, and, once that has been read, the means to arrange them.
   const eraEdits = useEraEdits(userId);
   const eraEditor = useEraEditor(userId, posts.data);
+  // The grid is your photographs and the ones you were tagged in: empty only once both have answered.
+  const gridRead = readState(posts, tagged);
 
   if (!profile) {
     return (
@@ -173,8 +177,17 @@ export default function OwnProfile() {
             tagged.refetch();
             refreshProfile().catch(() => undefined);
           }}
+          // A read that failed says so: it is not "No photographs yet" (src/components/readState.ts).
           empty={
-            posts.isFetched ? (
+            gridRead === "failed" ? (
+              <LoadFailed
+                what="your photographs"
+                onRetry={() => {
+                  posts.refetch();
+                  tagged.refetch();
+                }}
+              />
+            ) : gridRead === "empty" ? (
               <EmptyState title="No photographs yet" body="Your grid starts with your first post." />
             ) : (
               <GridSkeleton />

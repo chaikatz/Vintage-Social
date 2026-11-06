@@ -7,6 +7,9 @@ import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
+import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { ExportCard } from "@/components/ExportCard";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
@@ -183,6 +186,11 @@ export default function Export() {
           <View style={styles.previewShadow}>
             <ExportCard post={post} source={source} format={format} paper={paper} width={previewWidth} memberNo={memberNo} />
           </View>
+        ) : readState(postQ) === "failed" ? (
+          // The photograph could not be read: said, with a way to try again, not an empty frame.
+          <LoadFailed what="this photograph" onRetry={() => postQ.refetch()} />
+        ) : readState(postQ) === "empty" ? (
+          <EmptyState title="This photograph is gone" />
         ) : null}
       </View>
 

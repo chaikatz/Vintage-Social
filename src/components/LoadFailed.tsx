@@ -7,12 +7,23 @@ import { colors, spacing, type } from "@/theme";
  * server that stumbled — instead of pretending there was nothing there.
  * "Member not found" and "A quiet start" are claims about the world; this
  * is the truth about the request, with the one thing to do about it.
+ *
+ * A read of the phone's own (its photo library) needs no connection, so
+ * it says what to do in words of its own (`body`).
  */
-export function LoadFailed({ what = "this", onRetry }: { what?: string; onRetry?: () => void }) {
+export function LoadFailed({
+  what = "this",
+  body = "Check your connection and try again.",
+  onRetry,
+}: {
+  what?: string;
+  body?: string;
+  onRetry?: () => void;
+}) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>Couldn’t load {what}</Text>
-      <Text style={styles.body}>Check your connection and try again.</Text>
+      <Text style={styles.body}>{body}</Text>
       {onRetry ? (
         <Pressable onPress={onRetry} hitSlop={10} style={styles.retry} accessibilityRole="button">
           <Text style={styles.retryText}>Try again</Text>

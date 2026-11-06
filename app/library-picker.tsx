@@ -6,6 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
 import { Screen } from "@/components/Screen";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { colors, spacing, type } from "@/theme";
 import { signatureDate } from "@/utils/time";
 import {
@@ -91,7 +93,10 @@ export default function LibraryPicker() {
         windowSize={PICKER_WINDOW}
         contentContainerStyle={{ gap: GAP, paddingBottom: spacing.xxl }}
         ListEmptyComponent={
-          photos.isFetched ? (
+          // A library that could not be read is not one with nothing from then (src/components/readState.ts).
+          readState(photos) === "failed" ? (
+            <LoadFailed what="your photographs" body="Try again in a moment." onRetry={() => photos.refetch()} />
+          ) : photos.isFetched ? (
             <EmptyState
               title="Nothing from then"
               body="VINTAGE can only look at the photographs it has been allowed to see."
