@@ -131,7 +131,7 @@ export default function Pending() {
           await refreshProfile();
           await enterApp();
         } catch (err) {
-          showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
+          showAlert("Couldn’t join", errorMessage(err, "Your invitation wasn’t taken up. Check your connection and try again."));
         } finally {
           setRedeeming(false);
         }

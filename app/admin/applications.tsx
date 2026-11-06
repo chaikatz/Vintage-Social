@@ -14,6 +14,7 @@ import { decideApplication, fetchApplications } from "@/api/moderation";
 import { postAge } from "@/utils/time";
 import type { ApplicationRow, ApplicationStatus } from "@/types/db";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 
 const TABS: ApplicationStatus[] = ["pending", "waitlisted", "approved", "rejected"];
 
@@ -56,7 +57,7 @@ export default function AdminApplications() {
     },
     onError: (err, { app }, ctx) => {
       if (ctx) queryClient.setQueryData<ApplicationRow[]>(ctx.key, (rows) => withRowBack(rows, app, ctx.order));
-      showAlert("That decision didn’t take", err instanceof Error ? err.message : String(err));
+      showAlert("That decision didn’t take", errorMessage(err, "The application is back in the list. Try again in a moment."));
     },
     onSettled: (_done, _err, { app }) => {
       setDeciding((ids) => withoutIds(ids, [app.id]));

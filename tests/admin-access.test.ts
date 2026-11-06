@@ -47,6 +47,44 @@ describe("every admin page", () => {
   }
 });
 
+/**
+ * What an admin, or someone at the door, is told when something did not
+ * happen: a sentence our own SQL raised for them, or the screen's own
+ * words for it (errorMessage). It used to be the error's text as it came:
+ * the database talking, or "[object Object]" for a refusal from Supabase,
+ * which is a plain object. (The dashboard, app/admin/index.tsx, belongs to
+ * another part of the sweep and is handed on.)
+ */
+describe("an alert about something that did not happen", () => {
+  const files = ["app/admin/applications.tsx", "app/admin/members.tsx", "app/admin/reports.tsx", "app/(gate)/pending.tsx"];
+
+  for (const file of files) {
+    it(`${file} says it in the app's words`, () => {
+      const src = code(file);
+      expect(src).not.toMatch(/err instanceof Error \? err\.message : String\(err\)|String\(err\)|\berr\.message\b/);
+      // Every alert that carries a caught error carries it through errorMessage.
+      const carried = src.match(/showAlert\([^;]*?\berr\b[^;]*?\);/g) ?? [];
+      expect(carried.length, "its alerts about a caught error").toBeGreaterThan(0);
+      for (const alert of carried) expect(alert).toMatch(/errorMessage\(\s*err,\s*"[^"]+"/);
+      expect(src).toContain('import { errorMessage } from "@/utils/errorMessage";');
+    });
+  }
+
+  it("Members names what did not happen: the warning, the suspension or reinstatement, the invitations", () => {
+    const src = code("app/admin/members.tsx");
+    expect(src).toContain('showAlert("Couldn’t send the warning", errorMessage(err, "The member hasn’t been warned. Try again in a moment."))');
+    expect(src).toMatch(/onError: \(err, \{ suspended \}\) =>\s*showAlert\(suspended \? "Couldn’t suspend" : "Couldn’t reinstate", errorMessage\(err, "Nothing changed\. Try again in a moment\."\)\)/);
+    expect(src).toContain('showAlert("Couldn’t change the invitations", errorMessage(err, "Nothing changed. Try again in a moment."))');
+    expect(src).not.toMatch(/showAlert\("Failed"/);
+  });
+
+  it("a list that could not be read says so, with Try again, on every admin page that has one", () => {
+    expect(code("app/admin/applications.tsx")).toMatch(/apps\.isError \? \(\s*<LoadFailed what="the applications" onRetry=\{\(\) => apps\.refetch\(\)\} \/>/);
+    expect(code("app/admin/members.tsx")).toMatch(/members\.isError \? \(\s*<LoadFailed what="the members" onRetry=\{\(\) => members\.refetch\(\)\} \/>/);
+    expect(code("app/admin/reports.tsx")).toMatch(/reports\.isError \? \(\s*<LoadFailed what="the reports" onRetry=\{\(\) => reports\.refetch\(\)\} \/>/);
+  });
+});
+
 describe("the hook-order reader", () => {
   it("finds a hook placed after an early return", () => {
     const broken = 'export default function X() {\n  const a = useA();\n  if (!a) return null;\n  const b = React.useState(0);\n  return <View />;\n}\n';

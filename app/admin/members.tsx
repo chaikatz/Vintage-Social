@@ -12,6 +12,7 @@ import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing } from "@/theme";
 import { fetchMembers, setInviteQuota, setSuspension, warnMember } from "@/api/moderation";
 import { formatMemberNumber } from "@/utils/membership";
+import { errorMessage } from "@/utils/errorMessage";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
@@ -47,20 +48,21 @@ export default function AdminMembers() {
   const warn = useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) => warnMember(id, note),
     onSuccess: () => showAlert("Warning sent"),
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t send the warning", errorMessage(err, "The member hasn’t been warned. Try again in a moment.")),
   });
 
   const suspend = useMutation({
     mutationFn: ({ id, suspended, note }: { id: string; suspended: boolean; note: string }) =>
       setSuspension(id, suspended, note),
     onSuccess: refresh,
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err, { suspended }) =>
+      showAlert(suspended ? "Couldn’t suspend" : "Couldn’t reinstate", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const quota = useMutation({
     mutationFn: ({ id, n }: { id: string; n: number }) => setInviteQuota(id, n),
     onSuccess: refresh,
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t change the invitations", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   // The allowance as a whole number, typed: "8" means eight invitations,
