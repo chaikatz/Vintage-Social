@@ -23,7 +23,8 @@
 -- SQL editor shows: each row says what it checked, what it found and
 -- what it should be. Every `ok` must read true. If any does not, do not
 -- ship the build that relies on them; the rollbacks are
--- supabase/tests/0023_rollback.sql and the notes at the top of 0024-0038,
+-- supabase/tests/0023_rollback.sql, supabase/tests/0038_rollback.sql
+-- and the notes at the top of 0024-0037,
 -- and none of 0023-0028 or 0030-0037 changes any member's data (0029
 -- repairs profiles left at "applied", 0034 the house photographs'
 -- thumbnails, 0038 recounts follower and following counts that are off,
@@ -108,9 +109,9 @@ with checks as (
   union all
   -- 3. Every policy is still there: 70 on public, 8 on storage.objects,
   --    as before 0023 (0023 replaces policies; it adds and removes none),
-  --    the four restrictive ones 0028 and 0033 add, and the followee's
-  --    two 0038 adds: 76.
-  select 4, 'policies on public', count(*)::text, '76'
+  --    the four restrictive ones 0028 and 0033 add, and the three 0038
+  --    adds (the followee's two, and a request seen by its two members): 77.
+  select 4, 'policies on public', count(*)::text, '77'
   from pg_policies where schemaname = 'public'
   union all
   select 5, 'policies on storage.objects (VINTAGE''s own)', count(*)::text, '8'
@@ -118,7 +119,7 @@ with checks as (
   where schemaname = 'storage' and tablename = 'objects'
     and policyname ~ '^(avatars|media): '
   union all
-  select 6, 'restrictive policies (blocking, 0028, 0033)', count(*)::text, '18'
+  select 6, 'restrictive policies (blocking, 0028, 0033, 0038)', count(*)::text, '19'
   from pg_policies where schemaname = 'public' and permissive = 'RESTRICTIVE'
   union all
   -- 4. 0023's three helpers: in the schema private, which the API does not
@@ -373,8 +374,8 @@ with checks as (
   --     no writing command, so the trigger's events, the policies' commands
   --     and the privileges are read from the catalogue's own letters: in
   --     tgtype, 1 a row, 2 before, 4 a new row, 8 a removal, 16 a change;
-  --     in polcmd, w a change and d a removal; in an ACL, w the privilege
-  --     to change rows.)
+  --     in polcmd, r a read, w a change and d a removal; in an ACL, w the
+  --     privilege to change rows.)
   select 40, '0038: a member''s new follow takes its status from the followee (a trigger as it is filed; its function in private, run as its owner, nobody''s to call)', count(*)::text, '1'
   from pg_trigger t
   join pg_proc f on f.oid = t.tgfoid
@@ -436,6 +437,50 @@ with checks as (
   from public.profiles p
   where p.follower_count <> (select count(*) from public.follows f where f.followee_id = p.id and f.status = 'accepted')
      or p.following_count <> (select count(*) from public.follows f where f.follower_id = p.id and f.status = 'accepted')
+  union all
+  -- After a change of a request's status, or its removal, and only while
+  -- it was a request (tgtype 25: a row, a removal, a change; of status).
+  select 46, '0038: a request accepted, declined or withdrawn takes its notice out of Activity (a trigger; its function in private, run as its owner, nobody''s to call)', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  join pg_namespace n on n.oid = f.pronamespace
+  where t.tgrelid = 'public.follows'::regclass and t.tgname = 'follows_request_notice_gone' and not t.tgisinternal
+    and t.tgtype = 25
+    and t.tgattr::text = (select attnum::text from pg_attribute
+                           where attrelid = 'public.follows'::regclass and attname = 'status')
+    and pg_get_triggerdef(t.oid) ~ 'old\.status = ''pending'''
+    and n.nspname = 'private' and f.proname = 'forget_follow_request'
+    and f.prosecdef and f.proconfig @> array['search_path=""']
+    and f.prosrc ~ 'public\.activity' and f.prosrc ~ 'follow_request'
+    and not has_function_privilege('authenticated', f.oid, 'execute')
+    and not has_function_privilege('anon', f.oid, 'execute')
+  union all
+  -- After a change of is_private (tgtype 17: a row, a change), and only
+  -- from private to public.
+  select 47, '0038: a private account made public lets its waiting requests in (a trigger; its function in private, run as its owner, nobody''s to call)', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  join pg_namespace n on n.oid = f.pronamespace
+  where t.tgrelid = 'public.profiles'::regclass and t.tgname = 'profiles_public_accepts_requests' and not t.tgisinternal
+    and t.tgtype = 17
+    and t.tgattr::text = (select attnum::text from pg_attribute
+                           where attrelid = 'public.profiles'::regclass and attname = 'is_private')
+    and pg_get_triggerdef(t.oid) ~ 'old\.is_private' and pg_get_triggerdef(t.oid) ~ 'NOT new\.is_private'
+    and n.nspname = 'private' and f.proname = 'accept_requests_when_public'
+    and f.prosecdef and f.proconfig @> array['search_path=""']
+    and f.prosrc ~ 'status = ''accepted''' and f.prosrc ~ 'status = ''pending'''
+    and not has_function_privilege('authenticated', f.oid, 'execute')
+    and not has_function_privilege('anon', f.oid, 'execute')
+  union all
+  select 48, '0038: a request is seen by the member who asked and the member asked, and nobody else (a restrictive read policy)', count(*)::text, '1'
+  from pg_policies pp
+  join pg_policy pol on pol.polrelid = 'public.follows'::regclass and pol.polname = pp.policyname
+  where pp.schemaname = 'public' and pp.tablename = 'follows'
+    and pp.policyname = 'follows: a request seen by its two members'
+    and not pol.polpermissive and pol.polcmd = 'r'
+    and pp.qual ~ 'status = ''accepted'''
+    and pp.qual ~ 'follower_id = \( SELECT auth\.uid\(\) AS uid\)'
+    and pp.qual ~ 'followee_id = \( SELECT auth\.uid\(\) AS uid\)'
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks

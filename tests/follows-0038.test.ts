@@ -266,7 +266,111 @@ describe("0038", () => {
     expect(sql()).not.toMatch(/grant [^;]* to [^;]*\banon\b/i);
     expect(sql()).not.toMatch(/\bservice_role\b/);
     const verify = read("supabase/production/12_policies_read_once_verify.sql").replace(/--[^\n]*/g, "");
-    for (const n of [40, 41, 42, 43, 44, 45]) expect(verify).toMatch(new RegExp(`select ${n}, '0038:`));
+    for (const n of [40, 41, 42, 43, 44, 45, 46, 47, 48]) expect(verify).toMatch(new RegExp(`select ${n}, '0038:`));
+  });
+
+  it("takes a request's notice out of Activity when it is accepted, declined or withdrawn, and only a request's", () => {
+    const s = sql();
+    expect(s).toMatch(
+      /create or replace function private\.forget_follow_request\(\)\s+returns trigger\s+language plpgsql\s+security definer\s+set search_path = ''/,
+    );
+    // Still a request after the change: its notice stands.
+    expect(s).toMatch(/if tg_op = 'UPDATE' and new\.status = 'pending' then\s+return null;\s+end if;/);
+    expect(s).toMatch(
+      /delete from public\.activity\s+where recipient_id = old\.followee_id\s+and actor_id = old\.follower_id\s+and type = 'follow_request';/,
+    );
+    expect(s).toMatch(/revoke execute on function private\.forget_follow_request\(\) from public, anon, authenticated;/);
+    expect(s).toMatch(
+      /create trigger follows_request_notice_gone\s+after update of status or delete on public\.follows\s+for each row\s+when \(old\.status = 'pending'\)\s+execute function private\.forget_follow_request\(\);/,
+    );
+  });
+
+  it("lets a private account's waiting requests in when it is made public, and nothing else", () => {
+    const s = sql();
+    expect(s).toMatch(
+      /create or replace function private\.accept_requests_when_public\(\)\s+returns trigger\s+language plpgsql\s+security definer\s+set search_path = ''/,
+    );
+    expect(s).toMatch(/update public\.follows\s+set status = 'accepted'\s+where followee_id = new\.id\s+and status = 'pending';/);
+    expect(s).toMatch(/revoke execute on function private\.accept_requests_when_public\(\) from public, anon, authenticated;/);
+    expect(s).toMatch(
+      /create trigger profiles_public_accepts_requests\s+after update of is_private on public\.profiles\s+for each row\s+when \(old\.is_private and not new\.is_private\)\s+execute function private\.accept_requests_when_public\(\);/,
+    );
+  });
+
+  it("keeps a request to its two members: a restrictive read policy that leaves accepted follows as they were", () => {
+    const s = sql();
+    expect(s).toMatch(
+      /create policy "follows: a request seen by its two members" on public\.follows\s+as restrictive for select using \(\s+status = 'accepted'\s+or follower_id = \(select auth\.uid\(\)\)\s+or followee_id = \(select auth\.uid\(\)\)\s+\);/,
+    );
+    // 0023's rewrite test knows it as a policy a later migration added.
+    expect(read("supabase/tests/08_policy_rewrite.sql")).toMatch(/\('follows', 'follows: a request seen by its two members'\)\)\)\),/);
+    // Nothing in the app asks for another member's request: every read of follows names the member
+    // asking on one side, or asks for accepted follows only.
+    for (const file of ["src/api/profiles.ts", "src/api/posts.ts"]) {
+      const src = read(file);
+      for (const [query] of src.matchAll(/\.from\("follows"\)[\s\S]*?;/g)) {
+        // A write, or the table named for one below (decideFollowRequest).
+        if (/\.(insert|delete|update)\(/.test(query) || query === '.from("follows");') continue;
+        expect(query, `${file}: ${query.slice(0, 120)}`).toMatch(/\.eq\("status", "accepted"\)|\.eq\("follower_id", followerId\)|\.eq\("followee_id", followeeId\)|\.eq\("follower_id", userId\)/);
+      }
+    }
+  });
+
+  it("has a way back that is a tested file: everything 0038 makes taken away, and counts as 0001 counts them", () => {
+    const header = read("supabase/migrations/0038_follows_respect_private_accounts.sql");
+    expect(header).toMatch(/^-- Rollback: supabase\/tests\/0038_rollback\.sql/m);
+    const back = read("supabase/tests/0038_rollback.sql").replace(/--[^\n]*/g, "");
+    expect(back).not.toMatch(/^\s*(begin|commit)\s*;/im);
+    expect(back.split(";").map((st) => st.trim()).find(Boolean)).toBe("set local lock_timeout = '5s'");
+    for (const made of [
+      /drop trigger if exists follows_status_from_followee on public\.follows;/,
+      /drop function if exists private\.follow_status_from_followee\(\);/,
+      /drop trigger if exists follows_request_notice_gone on public\.follows;/,
+      /drop function if exists private\.forget_follow_request\(\);/,
+      /drop trigger if exists profiles_public_accepts_requests on public\.profiles;/,
+      /drop function if exists private\.accept_requests_when_public\(\);/,
+      /drop policy if exists "follows: followee accepts" on public\.follows;/,
+      /drop policy if exists "follows: followee removes" on public\.follows;/,
+      /drop policy if exists "follows: a request seen by its two members" on public\.follows;/,
+      /grant update on public\.follows to anon, authenticated;/,
+      /create trigger follows_count_trigger\s+after insert or delete on public\.follows\s+for each row execute function public\.bump_follow_counts\(\);/,
+    ]) expect(back).toMatch(made);
+    // Every trigger, function and policy 0038 makes, the rollback takes away.
+    const s = sql();
+    for (const [, name] of s.matchAll(/create trigger (\w+)/g)) {
+      if (name !== "follows_count_trigger") expect(back, name).toMatch(new RegExp(`drop trigger if exists ${name} `));
+    }
+    for (const [, name] of s.matchAll(/create or replace function private\.(\w+)\(/g)) {
+      expect(back, name).toMatch(new RegExp(`drop function if exists private\\.${name}\\(\\);`));
+    }
+    for (const [, name] of s.matchAll(/create policy "([^"]+)"/g)) {
+      expect(back, name).toMatch(new RegExp(`drop policy if exists "${name}"`));
+    }
+    // 0001's two functions, word for word.
+    const first = read("supabase/migrations/0001_schema.sql");
+    for (const fn of ["bump_follow_counts", "notify_follow"]) {
+      const body = (text: string) => text.match(new RegExp(`create or replace function public\\.${fn}\\(\\)[\\s\\S]*?\\$\\$;`))?.[0];
+      expect(body(first), fn).toMatch(/^create or replace function/);
+      expect(body(back), fn).toBe(body(first));
+    }
+    // The recount is of every follow, requests included (no status in it), as 0001's trigger counts.
+    const recount = back.slice(back.lastIndexOf("update public.profiles p"));
+    expect(recount).toMatch(/\(select count\(\*\) from public\.follows f where f\.followee_id = pr\.id\)::int as followers/);
+    expect(recount).toMatch(/\(select count\(\*\) from public\.follows f where f\.follower_id = pr\.id\)::int as following/);
+    expect(recount).not.toMatch(/status/);
+    // Applied for real in the harness, then 0038 again over it.
+    const test = read("supabase/tests/17_follows_0038.sql");
+    expect(test.indexOf("\\ir 0038_rollback.sql")).toBeGreaterThan(0);
+    expect(test.lastIndexOf("\\ir ../migrations/0038_follows_respect_private_accounts.sql")).toBeGreaterThan(test.indexOf("\\ir 0038_rollback.sql"));
+  });
+
+  it("is proven on its own, straight after 0022, before 0023-0037", () => {
+    const runner = read("supabase/tests/run.mjs");
+    expect(runner).toMatch(/const alone = "vintage_0038_first";/);
+    expect(runner).toMatch(/\.\.\.migrationFiles\.filter\(\(f\) => f\.split\("\/"\)\.pop\(\) < "0023"\),\s+first,\s+\.\.\.migrationFiles\.filter\(\(f\) => f\.split\("\/"\)\.pop\(\) >= "0023" && f !== first\),/);
+    expect(runner).toMatch(/psqlOn\(alone, \["-U", "vintage_owner", "-f", join\(here, "17_follows_0038\.sql"\)\]/);
+    // So nothing in 0038 may lean on 0023-0037: the schema it uses is made if it is missing.
+    expect(sql()).toMatch(/create schema if not exists private;/);
   });
 
   it("waits five seconds at most for a lock, and the harness runs its test", () => {

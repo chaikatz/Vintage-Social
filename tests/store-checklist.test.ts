@@ -401,11 +401,19 @@ describe("a private account's requests, on the phone", () => {
     const phone = flat(between(doc(), "## 6. On your iPhone", "## 7."));
     expect(phone).toContain("Private accounts (once 0038 is applied, step 4)");
     expect(phone).toContain("the button reads Requested, and its photographs stay hidden");
-    expect(phone).toContain("Settings → Follow requests → Accept");
-    expect(read("supabase/migrations/0038_follows_respect_private_accounts.sql")).toMatch(/create policy "follows: followee accepts"/);
+    // An account that follows already keeps its follow: no request is made.
+    expect(phone).toContain("if you already follow it, unfollow first");
+    // With one request waiting, the row reads "1 request waiting", not "Follow requests" (that is its
+    // label only when nothing waits): the words on screen at that moment.
+    expect(phone).toContain("Settings → 1 request waiting → Accept");
+    expect(phone).not.toContain("Settings → Follow requests → Accept");
+    expect(phone).toContain("The request leaves Activity");
+    const sql = read("supabase/migrations/0038_follows_respect_private_accounts.sql");
+    expect(sql).toMatch(/create policy "follows: followee accepts"/);
+    expect(sql).toMatch(/create trigger follows_request_notice_gone/);
     const settings = read("app/settings.tsx");
     expect(settings).toContain(">Private account<");
-    expect(settings).toContain('"Follow requests"');
+    expect(settings).toMatch(/pending > 0\s+\? `\$\{pending\} \$\{pending === 1 \? "request" : "requests"\} waiting`\s+: "Follow requests"/);
     expect(read("app/user/[username].tsx")).toContain('"Requested"');
     // The steps after it moved down one, and the one that points ahead points at the right one.
     expect(flat(doc())).toContain("Delete this account afterwards in step 20");

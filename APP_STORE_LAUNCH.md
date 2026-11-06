@@ -68,13 +68,17 @@ or anywhere in the repository, and must never be.
   `push` function. Nothing has been applied. See step 4: run every one of them,
   in number order.
 - **Private accounts (read 6 November): apply 0038 before launch.** 7
-  accounts are private, all of them house accounts; their 95 followers
-  are all house accounts, and 0 follows are waiting as requests. Until
+  accounts are private, all of them house accounts; they have 95
+  accepted follows between them, made by 79 accounts, all house
+  accounts, and 0 follows are waiting as requests. Until
   0038 is applied, the database takes a follow's status from the app, so
   any member could make themselves an accepted follower of a private
   account and see its photographs, and a private member's Accept and
   Decline change nothing. 0038 fixes both for every build, the one in
-  TestFlight included.
+  TestFlight included. It needs nothing 0023–0037 make, so if you want
+  the hole closed before you have read the others, apply 0038 by itself
+  first (step 4, item 3); running it again in its turn later does no
+  harm.
 - Edge function `push`: active (version 1). Daily job `vintage-memories`
   at 15:00 UTC: active. Live push tokens: 5.
 - Security advisor: the `SECURITY DEFINER` warnings are the app's RPC
@@ -288,10 +292,16 @@ notice, and how to undo it. If you approve, in the merged branch:
    "Success". Then the next number, and so on: **every file from 0023 up,
    one at a time, in number order**, to the last one in the folder. If
    one fails, stop there and ask Claude; do not skip it.
+   One exception is allowed: `0038_follows_respect_private_accounts.sql`
+   may be run **first, by itself**, to close the private-account hole
+   today (it needs nothing 0023–0037 make; the policy harness applies it
+   straight after 0022 and then 0023–0037, and every check passes). Then
+   the rest from 0023 up in number order as above, 0038 again in its
+   turn (it is safe to run twice).
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false).
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0038 in 45 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0038 in 48 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -312,7 +322,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0035 | A member's own photograph files readable to them whatever their membership, so Delete my account removes them | 36 |
    | 0036 | A phone's push token belongs to whoever signed in on it last | 37 |
    | 0037 | Unread messages counted in the database | 38–39 |
-   | 0038 | Follows that respect private accounts: a follow of a private account is always a request, and the account accepts or declines it | 40–45 |
+   | 0038 | Follows that respect private accounts: a follow of a private account is always a request, the account accepts or declines it, an answered request leaves Activity, an account made public lets its requests in, and only the two members see a request | 40–48 |
 
 5. Redeploy the `push` function, which changed in the sweep. It is now
    **two files**, `index.ts` and `logic.ts` (`index.ts` imports
@@ -747,10 +757,11 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
     View profile, Report member and Block member.
 16. Private accounts (once 0038 is applied, step 4): on the second account,
     Settings → Private account on. From your own account, open its profile
-    → Follow: the button reads Requested, and its photographs stay hidden.
-    On the second account: Activity says you asked to follow; Settings →
-    Follow requests → Accept. Your account now sees its photographs. Then
-    Private account off again.
+    (if you already follow it, unfollow first: a follow made before stays a
+    follow) → Follow: the button reads Requested, and its photographs stay
+    hidden. On the second account: Activity says you asked to follow;
+    Settings → 1 request waiting → Accept. The request leaves Activity, and
+    your account now sees its photographs. Then Private account off again.
 17. Settings shows **Support** with your address (step 1). Tap it: Mail
     opens addressed to you.
 

@@ -3,8 +3,10 @@
 -- Asked as the members it is about, through the same policies, grants
 -- and triggers the app and PostgREST go through: Ada keeps a private
 -- account; Ben, Cleo and Dev ask to follow her; Eli is a member with
--- nothing to do with it; Pia's account is public. Runs in one
--- transaction and rolls back.
+-- nothing to do with it; Pia's account is public; Ivy's is private until
+-- she makes it public; Gus and Hal leave the club with a request
+-- waiting. Then the rollback (0038_rollback.sql), applied for real, and
+-- 0038 again over it. Runs in one transaction and rolls back.
 
 begin;
 
@@ -91,6 +93,9 @@ $fn$;
 \set dev '0a380000-0000-4000-8000-000000000004'
 \set eli '0a380000-0000-4000-8000-000000000005'
 \set pia '0a380000-0000-4000-8000-000000000006'
+\set ivy '0a380000-0000-4000-8000-000000000007'
+\set gus '0a380000-0000-4000-8000-000000000008'
+\set hal '0a380000-0000-4000-8000-000000000009'
 
 insert into auth.users (id, email, raw_user_meta_data) values
   (:'ada',  'ada@follows.test',  '{"username":"f38.ada"}'),
@@ -98,10 +103,13 @@ insert into auth.users (id, email, raw_user_meta_data) values
   (:'cleo', 'cleo@follows.test', '{"username":"f38.cleo"}'),
   (:'dev',  'dev@follows.test',  '{"username":"f38.dev"}'),
   (:'eli',  'eli@follows.test',  '{"username":"f38.eli"}'),
-  (:'pia',  'pia@follows.test',  '{"username":"f38.pia"}');
+  (:'pia',  'pia@follows.test',  '{"username":"f38.pia"}'),
+  (:'ivy',  'ivy@follows.test',  '{"username":"f38.ivy"}'),
+  (:'gus',  'gus@follows.test',  '{"username":"f38.gus"}'),
+  (:'hal',  'hal@follows.test',  '{"username":"f38.hal"}');
 update public.profiles set status = 'approved', approved_at = now()
  where id::text like '0a380000-0000-4000-8000-00000000000_';
-update public.profiles set is_private = true where id = :'ada';
+update public.profiles set is_private = true where id in (:'ada', :'ivy', :'hal');
 
 -- Ada's two photographs and her eras.
 insert into public.posts (author_id, media_type, media_path, filter_id, caption) values
@@ -158,6 +166,17 @@ insert into tests.results (name, expected, actual) values
    tests.f_status(:'ben', :'ada') || ',' || tests.f_status(:'cleo', :'ada'));
 
 -- ---------------------------------------------------------------------------
+-- a request is seen by its two members only
+-- ---------------------------------------------------------------------------
+insert into tests.results (name, expected, actual) values
+  ('Eli cannot list who asked to follow Ada', '0',
+   tests.f_read(:'eli', format('select count(*) from public.follows where followee_id = %L', :'ada'))),
+  ('Ben sees his own request, and not Cleo''s', 'f38.ben',
+   tests.f_read(:'ben', format('select p.username from public.follows f join public.profiles p on p.id = f.follower_id where f.followee_id = %L', :'ada'))),
+  ('Ada sees both, as Requests lists them', '2',
+   tests.f_read(:'ada', format('select count(*) from public.follows where followee_id = %L and status = ''pending''', :'ada')));
+
+-- ---------------------------------------------------------------------------
 -- Ada accepts Ben
 -- ---------------------------------------------------------------------------
 insert into tests.results (name, expected, actual) values
@@ -171,8 +190,10 @@ insert into tests.results (name, expected, actual) values
    tests.f_read(:'ben', format('select count(*) from public.era_edits where author_id = %L', :'ada'))),
   ('the counts move with the accept: Ada 1 follower, Ben 1 following', '1/0,0/1',
    tests.f_counts(:'ada') || ',' || tests.f_counts(:'ben')),
-  ('accepting files no notice for anyone (Ada has only the request; Ben nothing from her)', 'follow_request|-',
+  ('accepting files no notice for anyone, and takes the request''s notice out of Ada''s Activity', '-|-',
    tests.f_notices(:'ada', :'ben') || '|' || tests.f_notices(:'ben', :'ada')),
+  ('an accepted follow is seen by every member, as before', '1',
+   tests.f_read(:'eli', format('select count(*) from public.follows where followee_id = %L', :'ada'))),
   ('Ada cannot turn an accepted follow back into a request', 'OK:0',
    tests.f_as(:'ada', format('update public.follows set status = ''pending'' where follower_id = %L and followee_id = %L', :'ben', :'ada'))),
   ('nor accept Cleo as someone else (only status may be updated)', 'DENIED',
@@ -185,17 +206,21 @@ insert into tests.results (name, expected, actual) values
 -- Ada declines Cleo, Dev withdraws, Ada removes Ben
 -- ---------------------------------------------------------------------------
 insert into tests.results (name, expected, actual) values
+  ('Cleo''s request waits in Ada''s Activity', 'follow_request', tests.f_notices(:'ada', :'cleo')),
   ('Ada declines Cleo', 'OK:1',
    tests.f_as(:'ada', format('delete from public.follows where follower_id = %L and followee_id = %L and status = ''pending'' returning follower_id', :'cleo', :'ada'))),
   ('Cleo''s request is gone', 'none', tests.f_status(:'cleo', :'ada')),
+  ('and so is its notice', '-', tests.f_notices(:'ada', :'cleo')),
   ('Cleo reads none of Ada''s photographs', '0',
    tests.f_read(:'cleo', format('select count(*) from public.posts where author_id = %L', :'ada'))),
   ('a declined request takes nothing from the counts: Ada 1, Cleo 0', '1/0,0/0',
    tests.f_counts(:'ada') || ',' || tests.f_counts(:'cleo')),
   ('Dev asks', 'OK:1',
    tests.f_as(:'dev', format('insert into public.follows (follower_id, followee_id, status) values (%L, %L, ''accepted'')', :'dev', :'ada'))),
+  ('Ada is told', 'follow_request', tests.f_notices(:'ada', :'dev')),
   ('and withdraws his request himself (unfollow as self, as before)', 'OK:1',
    tests.f_as(:'dev', format('delete from public.follows where follower_id = %L and followee_id = %L', :'dev', :'ada'))),
+  ('his request''s notice goes with it', '-', tests.f_notices(:'ada', :'dev')),
   ('the counts did not move: Ada 1, Dev 0', '1/0,0/0',
    tests.f_counts(:'ada') || ',' || tests.f_counts(:'dev')),
   ('Ada removes Ben, a follower', 'OK:1',
@@ -249,19 +274,73 @@ insert into public.follows (follower_id, followee_id, status) values (:'dev', :'
 insert into tests.results (name, expected, actual) values
   ('the owner''s SQL, with no member signed in, files what it says', 'accepted', tests.f_status(:'dev', :'ada')),
   ('and it is counted: Ada 1 follower', '1/0', tests.f_counts(:'ada')),
-  ('the trigger''s function runs as its owner, with an empty search path, in private', 'private,true,true',
-   (select n.nspname || ',' || p.prosecdef || ',' || (p.proconfig @> array['search_path=""'])
-      from pg_proc p join pg_namespace n on n.oid = p.pronamespace where p.proname = 'follow_status_from_followee')),
-  ('nobody may call it: members, signed-out visitors, PUBLIC', 'false,false,false',
-   (select has_function_privilege('authenticated', p.oid, 'execute') || ',' || has_function_privilege('anon', p.oid, 'execute')
-           || ',' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0)
-      from pg_proc p where p.proname = 'follow_status_from_followee')),
+  ('the triggers'' three functions run as their owner, with an empty search path, in private',
+   'accept_requests_when_public:private,true,true;follow_status_from_followee:private,true,true;forget_follow_request:private,true,true',
+   (select string_agg(p.proname || ':' || n.nspname || ',' || p.prosecdef || ',' || (p.proconfig @> array['search_path=""']), ';' order by p.proname)
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where p.proname in ('follow_status_from_followee', 'forget_follow_request', 'accept_requests_when_public'))),
+  ('nobody may call them: members, signed-out visitors, PUBLIC', 'false,false,false;false,false,false;false,false,false',
+   (select string_agg(has_function_privilege('authenticated', p.oid, 'execute') || ',' || has_function_privilege('anon', p.oid, 'execute')
+           || ',' || exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0), ';' order by p.proname)
+      from pg_proc p where p.proname in ('follow_status_from_followee', 'forget_follow_request', 'accept_requests_when_public'))),
   ('members may update the status of a follow and nothing else; visitors nothing', 'false,true,false,false,false',
    has_table_privilege('authenticated', 'public.follows', 'update') || ',' ||
    has_column_privilege('authenticated', 'public.follows', 'status', 'update') || ',' ||
    has_column_privilege('authenticated', 'public.follows', 'follower_id', 'update') || ',' ||
    has_column_privilege('authenticated', 'public.follows', 'followee_id', 'update') || ',' ||
    has_column_privilege('anon', 'public.follows', 'status', 'update'));
+
+-- ---------------------------------------------------------------------------
+-- an account made public lets its requests in
+-- ---------------------------------------------------------------------------
+insert into tests.results (name, expected, actual) values
+  ('Cleo asks to follow Ivy (private)', 'OK:1',
+   tests.f_as(:'cleo', format('insert into public.follows (follower_id, followee_id) values (%L, %L)', :'cleo', :'ivy'))),
+  ('and so does Dev', 'OK:1',
+   tests.f_as(:'dev', format('insert into public.follows (follower_id, followee_id) values (%L, %L)', :'dev', :'ivy'))),
+  ('two requests, two notices, no followers', 'pending,pending|follow_request,follow_request|0/0',
+   tests.f_status(:'cleo', :'ivy') || ',' || tests.f_status(:'dev', :'ivy') || '|'
+   || tests.f_notices(:'ivy', :'cleo') || ',' || tests.f_notices(:'ivy', :'dev') || '|' || tests.f_counts(:'ivy')),
+  ('Eli cannot make Ivy''s account public', 'OK:0',
+   tests.f_as(:'eli', format('update public.profiles set is_private = false where id = %L', :'ivy'))),
+  ('Ivy makes her account public, as Settings does', 'OK:1',
+   tests.f_as(:'ivy', format('update public.profiles set is_private = false where id = %L', :'ivy'))),
+  ('both requests are accepted follows', 'accepted,accepted',
+   tests.f_status(:'cleo', :'ivy') || ',' || tests.f_status(:'dev', :'ivy')),
+  ('and counted: Ivy 2 followers, Cleo 1 following, Dev 2 (Ada, by the owner''s SQL, and Ivy)', '2/0,0/1,0/2',
+   tests.f_counts(:'ivy') || ',' || tests.f_counts(:'cleo') || ',' || tests.f_counts(:'dev')),
+  ('their notices are gone from Ivy''s Activity, and nobody was sent another', '-,-|-,-',
+   tests.f_notices(:'ivy', :'cleo') || ',' || tests.f_notices(:'ivy', :'dev') || '|'
+   || tests.f_notices(:'cleo', :'ivy') || ',' || tests.f_notices(:'dev', :'ivy')),
+  ('Ivy makes it private again: her followers stay followers', 'OK:1',
+   tests.f_as(:'ivy', format('update public.profiles set is_private = true where id = %L', :'ivy'))),
+  ('still accepted, still counted', 'accepted,accepted|2/0',
+   tests.f_status(:'cleo', :'ivy') || ',' || tests.f_status(:'dev', :'ivy') || '|' || tests.f_counts(:'ivy')),
+  ('and a new follow of her is a request again', 'OK:1',
+   tests.f_as(:'ben', format('insert into public.follows (follower_id, followee_id) values (%L, %L)', :'ben', :'ivy'))),
+  ('Ben''s is pending', 'pending', tests.f_status(:'ben', :'ivy')),
+  ('a change to her bio leaves the request alone', 'OK:1',
+   tests.f_as(:'ivy', format('update public.profiles set bio = ''film'' where id = %L', :'ivy'))),
+  ('still pending', 'pending', tests.f_status(:'ben', :'ivy'));
+
+-- ---------------------------------------------------------------------------
+-- a member who leaves with a request waiting, either side of it
+-- ---------------------------------------------------------------------------
+-- Delete my account, or Delete user: the follows go with the profile
+-- (on delete cascade), and the trigger of 6 with them, without an error.
+insert into tests.results (name, expected, actual) values
+  ('Gus asks to follow Ada', 'OK:1',
+   tests.f_as(:'gus', format('insert into public.follows (follower_id, followee_id) values (%L, %L)', :'gus', :'ada'))),
+  ('Ben asks to follow Hal (private)', 'OK:1',
+   tests.f_as(:'ben', format('insert into public.follows (follower_id, followee_id) values (%L, %L)', :'ben', :'hal'))),
+  ('both are requests, each with its notice', 'pending,pending|follow_request,follow_request',
+   tests.f_status(:'gus', :'ada') || ',' || tests.f_status(:'ben', :'hal') || '|'
+   || tests.f_notices(:'ada', :'gus') || ',' || tests.f_notices(:'hal', :'ben'));
+delete from auth.users where id in (:'gus', :'hal');
+insert into tests.results (name, expected, actual) values
+  ('Gus and Hal leave: their requests and notices go with them', 'none,none|-,-',
+   tests.f_status(:'gus', :'ada') || ',' || tests.f_status(:'ben', :'hal') || '|'
+   || tests.f_notices(:'ada', :'gus') || ',' || tests.f_notices(:'hal', :'ben'));
 
 -- ---------------------------------------------------------------------------
 -- the recount, and the file run again
@@ -282,11 +361,73 @@ insert into tests.results (name, expected, actual) values
    (select count(*)::text from public.profiles p
      where p.follower_count <> (select count(*) from public.follows f where f.followee_id = p.id and f.status = 'accepted')
         or p.following_count <> (select count(*) from public.follows f where f.follower_id = p.id and f.status = 'accepted'))),
-  ('run twice, it leaves one of each trigger and policy it makes', '1,1,1,1',
+  ('run twice, it leaves one of each trigger and policy it makes', '1,1,1,1,1,1,1',
    (select count(*)::text from pg_trigger where tgrelid = 'public.follows'::regclass and tgname = 'follows_status_from_followee') || ',' ||
    (select count(*)::text from pg_trigger where tgrelid = 'public.follows'::regclass and tgname = 'follows_count_trigger') || ',' ||
+   (select count(*)::text from pg_trigger where tgrelid = 'public.follows'::regclass and tgname = 'follows_request_notice_gone') || ',' ||
+   (select count(*)::text from pg_trigger where tgrelid = 'public.profiles'::regclass and tgname = 'profiles_public_accepts_requests') || ',' ||
    (select count(*)::text from pg_policies where tablename = 'follows' and policyname = 'follows: followee accepts') || ',' ||
-   (select count(*)::text from pg_policies where tablename = 'follows' and policyname = 'follows: followee removes'));
+   (select count(*)::text from pg_policies where tablename = 'follows' and policyname = 'follows: followee removes') || ',' ||
+   (select count(*)::text from pg_policies where tablename = 'follows' and policyname = 'follows: a request seen by its two members'));
+
+-- ---------------------------------------------------------------------------
+-- the way back (0038_rollback.sql), applied for real, and 0038 again
+-- ---------------------------------------------------------------------------
+-- A request waiting when the rollback runs (Ben's of Ivy): 0001's trigger
+-- will take one away for it when it goes, so the rollback counts it.
+\o /dev/null
+\ir 0038_rollback.sql
+\o
+insert into tests.results (name, expected, actual) values
+  ('after the rollback: none of 0038''s triggers, functions or policies is left', '0,0,0',
+   (select count(*)::text from pg_trigger
+     where tgname in ('follows_status_from_followee', 'follows_request_notice_gone', 'profiles_public_accepts_requests')) || ',' ||
+   (select count(*)::text from pg_proc
+     where proname in ('follow_status_from_followee', 'forget_follow_request', 'accept_requests_when_public')) || ',' ||
+   (select count(*)::text from pg_policies where tablename = 'follows'
+     and policyname in ('follows: followee accepts', 'follows: followee removes', 'follows: a request seen by its two members'))),
+  ('members and visitors may change every column of follows again, as 0037 left them', 'true,true,true',
+   has_table_privilege('authenticated', 'public.follows', 'update') || ',' ||
+   has_table_privilege('anon', 'public.follows', 'update') || ',' ||
+   has_column_privilege('authenticated', 'public.follows', 'follower_id', 'update')),
+  ('the count trigger and both functions are 0001''s again, nobody''s to call', '13,true,true,false,false',
+   (select tgtype::text from pg_trigger where tgrelid = 'public.follows'::regclass and tgname = 'follows_count_trigger') || ',' ||
+   (pg_get_functiondef('public.bump_follow_counts()'::regprocedure)
+      = (select definition from before_0023.functions where signature = 'bump_follow_counts()'))::text || ',' ||
+   (pg_get_functiondef('public.notify_follow()'::regprocedure)
+      = (select definition from before_0023.functions where signature = 'notify_follow()'))::text || ',' ||
+   has_function_privilege('authenticated', 'public.bump_follow_counts()', 'execute') || ',' ||
+   has_function_privilege('authenticated', 'public.notify_follow()', 'execute')),
+  ('every profile is counted as 0001''s trigger counts: every follow, requests included', '0',
+   (select count(*)::text from public.profiles p
+     where p.follower_count <> (select count(*) from public.follows f where f.followee_id = p.id)
+        or p.following_count <> (select count(*) from public.follows f where f.follower_id = p.id))),
+  ('Ivy counts Ben''s request (2 followers and 1 request), Ben counts it too (Pia and Ivy)', '3/0,0/2',
+   tests.f_counts(:'ivy') || ',' || tests.f_counts(:'ben'));
+delete from public.follows where follower_id = :'ben' and followee_id = :'ivy';
+insert into tests.results (name, expected, actual) values
+  ('so the request withdrawn after the rollback leaves her count right, not one low', '2/0,0/1',
+   tests.f_counts(:'ivy') || ',' || tests.f_counts(:'ben'));
+
+\o /dev/null
+\ir ../migrations/0038_follows_respect_private_accounts.sql
+\o
+insert into tests.results (name, expected, actual) values
+  ('0038 applied again over its rollback: every trigger, function and policy it makes', '3,3,3',
+   (select count(*)::text from pg_trigger
+     where tgname in ('follows_status_from_followee', 'follows_request_notice_gone', 'profiles_public_accepts_requests')) || ',' ||
+   (select count(*)::text from pg_proc
+     where proname in ('follow_status_from_followee', 'forget_follow_request', 'accept_requests_when_public')) || ',' ||
+   (select count(*)::text from pg_policies where tablename = 'follows'
+     and policyname in ('follows: followee accepts', 'follows: followee removes', 'follows: a request seen by its two members'))),
+  ('and members may again change the status of a follow and nothing else', 'false,true,false',
+   has_table_privilege('authenticated', 'public.follows', 'update') || ',' ||
+   has_column_privilege('authenticated', 'public.follows', 'status', 'update') || ',' ||
+   has_column_privilege('authenticated', 'public.follows', 'follower_id', 'update')),
+  ('and every profile''s counts are its accepted follows again', '0',
+   (select count(*)::text from public.profiles p
+     where p.follower_count <> (select count(*) from public.follows f where f.followee_id = p.id and f.status = 'accepted')
+        or p.following_count <> (select count(*) from public.follows f where f.follower_id = p.id and f.status = 'accepted')));
 
 \pset border 2
 select r.seq, r.name, r.expected, r.actual,

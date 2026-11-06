@@ -67,38 +67,57 @@
 --    sent to the follower would read "started following you", which
 --    would be untrue; the follower's button reads Following the next
 --    time it is read.
+-- 6. A request that is accepted, declined or withdrawn takes its
+--    'follow_request' notice out of the followee's Activity (as the demo
+--    always has): "asked to follow you." stays only while the request
+--    waits, and never opens an empty Requests.
+-- 7. A private account made public lets its waiting requests in, as
+--    accepted follows (counted, and their notices gone, by 4 and 6).
+--    Until now they stayed requests that nobody could answer: Settings
+--    shows Requests only while the account is private, the asker's
+--    button read "Requested" for good, and their Home left the account
+--    out. Making an account private again changes no follow.
+-- 8. A request is seen by its two members only. "follows: members read"
+--    lets every active member read every follow, so any member could
+--    list who had asked to follow a private account. A restrictive read
+--    policy now keeps a waiting request to the member who asked and the
+--    member asked; an accepted follow reads as before. No read in the
+--    app, the feed or the policies on photographs asks for anyone
+--    else's request.
 --
 -- What members notice: a private member's Accept and Decline work, and a
 -- private account's photographs open only to the members it accepted.
 -- A tap on Follow of a private member in a build that thought the
--- account public (its read failed) files a request, not a follow.
+-- account public (its read failed) files a request, not a follow. A
+-- request answered leaves Activity; an account made public lets its
+-- requests in.
 --
 -- Proven on the policy harness (npm run test:rls):
 -- supabase/tests/17_follows_0038.sql, as a private member and the
--- members who follow or ask to follow them. Checked by verify script 12,
--- rows 40-45.
+-- members who follow or ask to follow them, and the rollback below,
+-- applied for real and then this file again. The harness also applies
+-- this file straight after 0022, before 0023-0037, and runs the same
+-- test there: it depends on nothing 0023-0037 make, so it may be applied
+-- on its own first. Checked by verify script 12, rows 40-48.
 --
 -- 0023's rollback (supabase/tests/0023_rollback.sql) leaves this file's
 -- policies, grants and triggers as they are, and leaves the schema
--- private in place while this file's function is in it.
+-- private in place while this file's functions are in it.
 --
 -- lock_timeout, as in 0023: a lock not granted within five seconds stops
 -- the file and undoes all of it. No begin or commit of its own.
 -- Idempotent.
 --
--- Rollback (as 0037 left things; counts recounted as 0001 counted them):
---   drop trigger if exists follows_status_from_followee on public.follows;
---   drop function if exists private.follow_status_from_followee();
---   drop policy if exists "follows: followee accepts" on public.follows;
---   drop policy if exists "follows: followee removes" on public.follows;
---   grant update on public.follows to anon, authenticated;
---   drop trigger if exists follows_count_trigger on public.follows;
---   create trigger follows_count_trigger after insert or delete on public.follows
---     for each row execute function public.bump_follow_counts();
---   then apply bump_follow_counts() and notify_follow() as
---   0001_schema.sql made them (both still revoked from members, 0018).
---   Rolling back reopens the hole in 1 and stops Accept and Decline
---   working; do it only to undo a fault in this file.
+-- Rollback: supabase/tests/0038_rollback.sql, pasted whole into the SQL
+-- editor (one run, one transaction). It drops this file's three
+-- triggers, three functions and three policies, gives members back
+-- update on every column of follows (as 0037 left it), puts back
+-- bump_follow_counts() and notify_follow() and the count trigger as
+-- 0001_schema.sql made them, and then recounts every profile's two
+-- counts as 0001's trigger counts them, from every follow, requests
+-- included (else a request withdrawn after the rollback would take away
+-- what it never added). Rolling back reopens the hole in 1 and stops
+-- Accept and Decline working; do it only to undo a fault in this file.
 
 set local lock_timeout = '5s';
 
@@ -219,3 +238,78 @@ $$;
 
 -- As 0018 left them: run by their triggers, nobody's to call.
 revoke execute on function public.bump_follow_counts(), public.notify_follow() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 6. a request answered or withdrawn leaves the followee's Activity
+-- ---------------------------------------------------------------------------
+-- As its owner: neither the followee who answers nor the member who
+-- withdraws may remove a notice from Activity themselves.
+create or replace function private.forget_follow_request()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  -- Still a request after the change: its notice stands.
+  if tg_op = 'UPDATE' and new.status = 'pending' then
+    return null;
+  end if;
+  delete from public.activity
+   where recipient_id = old.followee_id
+     and actor_id = old.follower_id
+     and type = 'follow_request';
+  return null;
+end
+$$;
+
+revoke execute on function private.forget_follow_request() from public, anon, authenticated;
+
+-- Only a follow that was a request: an accepted follow had no such notice.
+drop trigger if exists follows_request_notice_gone on public.follows;
+create trigger follows_request_notice_gone
+  after update of status or delete on public.follows
+  for each row
+  when (old.status = 'pending')
+  execute function private.forget_follow_request();
+
+-- ---------------------------------------------------------------------------
+-- 7. a private account made public lets its requests in
+-- ---------------------------------------------------------------------------
+-- As its owner: whoever turned the account public (the member, from
+-- Settings, or the owner's SQL), every request waiting on it is accepted
+-- (follows_pending_idx, 0006, finds them).
+create or replace function private.accept_requests_when_public()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.follows
+     set status = 'accepted'
+   where followee_id = new.id
+     and status = 'pending';
+  return null;
+end
+$$;
+
+revoke execute on function private.accept_requests_when_public() from public, anon, authenticated;
+
+drop trigger if exists profiles_public_accepts_requests on public.profiles;
+create trigger profiles_public_accepts_requests
+  after update of is_private on public.profiles
+  for each row
+  when (old.is_private and not new.is_private)
+  execute function private.accept_requests_when_public();
+
+-- ---------------------------------------------------------------------------
+-- 8. a request is seen by its two members only
+-- ---------------------------------------------------------------------------
+drop policy if exists "follows: a request seen by its two members" on public.follows;
+create policy "follows: a request seen by its two members" on public.follows
+  as restrictive for select using (
+    status = 'accepted'
+    or follower_id = (select auth.uid())
+    or followee_id = (select auth.uid())
+  );

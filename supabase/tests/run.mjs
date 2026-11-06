@@ -60,8 +60,12 @@ function run(cmd, args, opts = {}) {
   return r;
 }
 
+function psqlOn(db, args, opts = {}) {
+  return run(join(pgBin, "psql"), ["-v", "ON_ERROR_STOP=1", "-h", sock, "-d", db, ...args], opts);
+}
+
 function psql(args, opts = {}) {
-  return run(join(pgBin, "psql"), ["-v", "ON_ERROR_STOP=1", "-h", sock, "-d", "vintage", ...args], opts);
+  return psqlOn("vintage", args, opts);
 }
 
 try {
@@ -271,7 +275,7 @@ try {
     const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
     const failing = rows.filter((l) => !l.endsWith("|t"));
     const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l));
-    if (r.status !== 0 || rows.length !== 45 || failing.length > 0 || errors.length > 0) {
+    if (r.status !== 0 || rows.length !== 48 || failing.length > 0 || errors.length > 0) {
       console.log("FAILED");
       process.stdout.write(r.stdout ?? "");
       process.stderr.write(r.stderr ?? "");
@@ -355,6 +359,83 @@ try {
         for (const line of (r.stderr ?? "").split("\n")) {
           if (line.startsWith("NOTICE:")) console.log(line.replace(/^NOTICE:\s{2}/, "  "));
         }
+      }
+    }
+  }
+
+  // 0038 first: the owner may close the private-account hole on its own,
+  // before 0023-0037. In a second database, 0038 is applied straight
+  // after 0022, then 0023-0037 in number order; there 17_follows_0038.sql
+  // must pass as it does above, and the owner's check must read ok on all
+  // its rows.
+  if (process.exitCode !== 1) {
+    console.log("");
+    const alone = "vintage_0038_first";
+    run(join(pgBin, "createdb"), ["-h", sock, "-U", "vintage_owner", alone], { stdio: "ignore" });
+    const migrationFiles = files.filter((f) => f.startsWith(migrations));
+    const first = migrationFiles.find((f) => f.split("/").pop().startsWith("0038_"));
+    // Roles belong to the cluster, made already by the first database's
+    // scaffold: the rest of it, as it is.
+    const scaffold = join(dir, "00_scaffold_second_database.sql");
+    writeFileSync(scaffold, readFileSync(join(here, "00_scaffold.sql"), "utf8").replace(/^create role [^;]+;$/gm, ""));
+    if (runAs) execFileSync("chown", [runAs, scaffold]);
+    const order = [
+      scaffold,
+      ...migrationFiles.filter((f) => f.split("/").pop() < "0023"),
+      first,
+      ...migrationFiles.filter((f) => f.split("/").pop() >= "0023" && f !== first),
+      join(here, "01_fixtures.sql"),
+    ];
+    process.stdout.write(`· ${alone}: 0001-0022, then 0038, then 0023-0037 … `);
+    let ok = true;
+    let snapped = false;
+    for (const f of order) {
+      const name = f.split("/").pop();
+      if (!snapped && f.startsWith(migrations) && name >= "0023") {
+        psqlOn(alone, ["-U", "vintage_owner", "-q", "-f", join(here, "snapshot_before_0023.sql")], { stdio: ["ignore", "ignore", "pipe"] });
+        snapped = true;
+      }
+      const { path: applied } = withStandIns(f, standIns, dir, (copy) => {
+        if (runAs) execFileSync("chown", [runAs, copy]);
+      });
+      const single = f.startsWith(migrations) ? ["-1"] : [];
+      const r = psqlOn(alone, ["-U", "vintage_owner", "-q", ...single, "-f", applied], { allowFail: true, stdio: ["ignore", "ignore", "pipe"] });
+      if (r.status !== 0) {
+        console.log(`FAILED at ${name}`);
+        process.stderr.write(r.stderr ?? "");
+        process.exitCode = 1;
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      console.log("ok");
+      process.stdout.write(`· ${alone}: supabase/tests/17_follows_0038.sql … `);
+      const t = psqlOn(alone, ["-U", "vintage_owner", "-f", join(here, "17_follows_0038.sql")], { allowFail: true });
+      if (t.status !== 0) {
+        console.log("FAILED");
+        process.stdout.write(t.stdout ?? "");
+        process.stderr.write(t.stderr ?? "");
+        process.exitCode = 1;
+      } else {
+        console.log("ok");
+        const note = (t.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+        if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+      }
+    }
+    if (ok && existsSync(verify0023) && process.exitCode !== 1) {
+      process.stdout.write(`· ${alone}: supabase/production/12_policies_read_once_verify.sql … `);
+      const r = psqlOn(alone, ["-U", "vintage_owner", "-A", "-F", "|", "-f", verify0023], { allowFail: true });
+      const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
+      const failing = rows.filter((l) => !l.endsWith("|t"));
+      const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l));
+      if (r.status !== 0 || rows.length !== 48 || failing.length > 0 || errors.length > 0) {
+        console.log("FAILED");
+        process.stdout.write(r.stdout ?? "");
+        process.stderr.write(r.stderr ?? "");
+        process.exitCode = 1;
+      } else {
+        console.log(`ok (${rows.length} checks, every one ok)`);
       }
     }
   }

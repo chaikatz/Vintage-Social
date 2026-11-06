@@ -92,15 +92,18 @@ insert into tests.results (name, expected, actual) values
    (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname in ('public', 'private') and p.proname in ('my_block_partners', 'my_blockers', 'own_profile_unchanged'))),
   -- The schema stays only while a later migration's function is in it
-  -- (0038's trigger function, which the rollback is not about), and then
-  -- holds that and nothing of 0023's.
-  ('and the private schema holds nothing of 0023''s: only what a later migration put there', 'follow_status_from_followee',
+  -- (0038's three trigger functions, which the rollback is not about),
+  -- and then holds those and nothing of 0023's.
+  ('and the private schema holds nothing of 0023''s: only what a later migration put there',
+   'accept_requests_when_public,follow_status_from_followee,forget_follow_request',
    coalesce((select string_agg(p.proname, ',' order by p.proname) from pg_proc p
               join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'private'), 'no schema')),
-  ('and 0038''s trigger still runs it', '1',
+  ('and 0038''s triggers still run them', '3',
    (select count(*)::text from pg_trigger t join pg_proc p on p.oid = t.tgfoid
-     where t.tgrelid = 'public.follows'::regclass and t.tgname = 'follows_status_from_followee'
-       and p.proname = 'follow_status_from_followee'));
+     where (t.tgrelid, t.tgname, p.proname) in (
+       ('public.follows'::regclass, 'follows_status_from_followee', 'follow_status_from_followee'),
+       ('public.follows'::regclass, 'follows_request_notice_gone', 'forget_follow_request'),
+       ('public.profiles'::regclass, 'profiles_public_accepts_requests', 'accept_requests_when_public'))));
 
 -- And forward again, followed, as on the project, by the later migrations
 -- that replace a policy 0023 made: 0035 ("media: read own folder", a

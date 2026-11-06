@@ -112,4 +112,6 @@ redeploy, two files) are worth applying before anyone new joins, not only
 before review: 0038 stops any member making themselves an accepted
 follower of a private account (and so seeing its photographs), and lets
 a private member's Accept and Decline work. Both hold for the build
-already in TestFlight too, because the database decides them.
+already in TestFlight too, because the database decides them. 0038 needs
+nothing the others make, so it may be applied first, by itself, to close
+that today (step 4, item 3).
