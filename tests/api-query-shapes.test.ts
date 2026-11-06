@@ -1038,6 +1038,31 @@ describe("followers and following", () => {
     expect(reads()).toBe(10);
   });
 
+  it("where I stand with a search's results, both ways, read about those members only, past a thousand follows", async () => {
+    // I follow 1,500 members and 1,200 follow me; a search finds thirty.
+    const many = Array.from({ length: 1500 }, (_, i) => id("c1", i));
+    h.tables.follows = [
+      ...many.map((m) => ({ follower_id: ME, followee_id: m, status: "accepted", created_at: at(1) })),
+      ...many.slice(0, 1200).map((m) => ({ follower_id: m, followee_id: ME, status: "accepted", created_at: at(2) })),
+      { follower_id: ME, followee_id: id("c2", 1), status: "pending", created_at: at(3) },
+    ];
+    // Ten I follow from the end of my list (past the first thousand), ten
+    // who follow me only, one I asked to follow, and nine strangers.
+    const found = [...many.slice(1490), ...many.slice(1190, 1200), id("c2", 1), ...Array.from({ length: 9 }, (_, i) => id("c3", i))];
+    const circle = await profiles.fetchFollowsAmong(ME, found);
+    expect(new Set(circle.following)).toEqual(new Set([...many.slice(1490), ...many.slice(1190, 1200)]));
+    expect(new Set(circle.followers)).toEqual(new Set(many.slice(1190, 1200)));
+    expect(h.requests.length).toBe(2);
+    for (const r of h.requests) {
+      expect(r.url.pathname).toBe("/rest/v1/follows");
+      expect(r.url.searchParams.get("status")).toBe("eq.accepted");
+      expect([r.url.searchParams.get("followee_id"), r.url.searchParams.get("follower_id")]).toContain(`eq.${ME}`);
+      expect(r.url.searchParams.get("followee_id")?.startsWith("in.") || r.url.searchParams.get("follower_id")?.startsWith("in.")).toBe(true);
+    }
+    expect(await profiles.fetchFollowsAmong(ME, [])).toEqual({ following: [], followers: [] });
+    expect(h.requests.length).toBe(2);
+  });
+
   it("where I stand with the members on a page, in one read of those rows", async () => {
     const fans = crowd(40);
     h.requests.length = 0;

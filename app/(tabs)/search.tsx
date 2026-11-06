@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebounced } from "@/hooks/useDebounced";
 import { rankSearch } from "@/utils/searchRank";
-import { fetchFollowers, fetchFollowing } from "@/api/profiles";
+import { fetchFollowsAmong } from "@/api/profiles";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
@@ -27,6 +27,10 @@ import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
 // A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
 export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
+/** Where the member stands with a search's results, kept under "follows" so a follow reads it again. */
+const followsAmongKey = (userId: string, ids: string[]) => ["follows", userId, "among", ids.join(",")] as const;
+const FOLLOWS_AMONG_STALE_MS = 60_000;
 
 /**
  * Find people, or look at what the rest of VINTAGE has been shooting.
@@ -51,9 +55,24 @@ export default function Search() {
   // Asked a beat after typing stops, and the last answer stays up while
   // the next one comes, so the list does not blank on every keystroke.
   const settledQ = useDebounced(q, 250);
+  const queryClient = useQueryClient();
   const results = useQuery({
     queryKey: ["search", settledQ],
-    queryFn: () => searchProfiles(settledQ),
+    queryFn: async () => {
+      const found = await searchProfiles(settledQ);
+      // Where the member stands with these results comes with them, so
+      // they are drawn in their order at once (below). A failure there
+      // only leaves them unranked: prefetchQuery does not throw.
+      const ids = found.map((p) => p.id);
+      if (userId && ids.length > 0) {
+        await queryClient.prefetchQuery({
+          queryKey: followsAmongKey(userId, ids),
+          queryFn: () => fetchFollowsAmong(userId, ids),
+          staleTime: FOLLOWS_AMONG_STALE_MS,
+        });
+      }
+      return found;
+    },
     enabled: settledQ.trim().length >= 2,
     placeholderData: keepPreviousData,
   });
@@ -78,17 +97,25 @@ export default function Search() {
   }, []);
 
   // The people closest to you come first in any search: who you were just
-  // looking at, who you follow, who follows you. Read once and kept.
-  const followingQ = useQuery({ queryKey: ["follows", userId, "following"], queryFn: () => fetchFollowing(userId), enabled: Boolean(userId), staleTime: 5 * 60_000 });
-  const followersQ = useQuery({ queryKey: ["follows", userId, "followers"], queryFn: () => fetchFollowers(userId), enabled: Boolean(userId), staleTime: 5 * 60_000 });
+  // looking at, who you follow, who follows you. Asked of the results
+  // alone (fetchFollowsAmong), not read as your whole lists, which stop
+  // at a thousand. Kept under "follows", so following someone reads it
+  // again.
+  const resultIds = useMemo(() => (results.data ?? []).map((p) => p.id), [results.data]);
+  const circleQ = useQuery({
+    queryKey: followsAmongKey(userId, resultIds),
+    queryFn: () => fetchFollowsAmong(userId, resultIds),
+    enabled: Boolean(userId) && resultIds.length > 0,
+    staleTime: FOLLOWS_AMONG_STALE_MS,
+  });
   const ranked = useMemo(
     () =>
       rankSearch(results.data ?? [], {
         recentIds: new Set(recent.map((r) => r.id)),
-        followingIds: new Set((followingQ.data ?? []).map((p) => p.id)),
-        followerIds: new Set((followersQ.data ?? []).map((p) => p.id)),
+        followingIds: new Set(circleQ.data?.following ?? []),
+        followerIds: new Set(circleQ.data?.followers ?? []),
       }),
-    [results.data, recent, followingQ.data, followersQ.data],
+    [results.data, recent, circleQ.data],
   );
 
   const openMember = (member: RecentSearch) => {

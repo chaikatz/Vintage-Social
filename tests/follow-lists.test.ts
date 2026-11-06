@@ -21,6 +21,23 @@ function code(file: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+describe("Search", () => {
+  const src = code("app/(tabs)/search.tsx");
+
+  it("ranks results by where the member stands with them, read for the results only, not the whole lists", () => {
+    // The whole lists stop at PostgREST's thousand: past that, some of
+    // the members followed were ranked as strangers.
+    expect(src).not.toMatch(/fetchFollowers|fetchFollowing\b/);
+    expect(src).toMatch(/const followsAmongKey = \(userId: string, ids: string\[\]\) => \["follows", userId, "among", ids\.join\(","\)\] as const;/);
+    // Read with the results, so they are drawn in their order at once.
+    expect(src).toMatch(
+      /await queryClient\.prefetchQuery\(\{\s*queryKey: followsAmongKey\(userId, ids\),\s*queryFn: \(\) => fetchFollowsAmong\(userId, ids\),/,
+    );
+    expect(src).toMatch(/queryKey: followsAmongKey\(userId, resultIds\),\s*queryFn: \(\) => fetchFollowsAmong\(userId, resultIds\),/);
+    expect(src).toMatch(/followingIds: new Set\(circleQ\.data\?\.following \?\? \[\]\),\s*followerIds: new Set\(circleQ\.data\?\.followers \?\? \[\]\),/);
+  });
+});
+
 describe("Followers and Following", () => {
   const src = code("app/follows.tsx");
 

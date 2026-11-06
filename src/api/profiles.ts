@@ -287,10 +287,62 @@ export async function fetchFollowers(userId: string): Promise<MemberRow[]> {
     .filter((p): p is MemberRow => p != null);
 }
 
+/** Among some members, whom the member follows and who follows them (accepted, both ways). */
+export interface FollowsAmong {
+  following: string[];
+  followers: string[];
+}
+
+/**
+ * Where the member stands with these members, and they with the member:
+ * what ranks a search's results (src/utils/searchRank.ts). Read for the
+ * results alone, never the member's whole lists: those were read in full
+ * for it, and PostgREST stops at a thousand rows without saying so, so a
+ * member following more than a thousand had some of them ranked as
+ * strangers. Two small reads a hundred members at a time (./batch), each
+ * through its own index (who the member follows; who follows them).
+ */
+export async function fetchFollowsAmong(userId: string, memberIds: string[]): Promise<FollowsAmong> {
+  const out: FollowsAmong = { following: [], followers: [] };
+  if (!userId || memberIds.length === 0) return out;
+  if (isDemoMode()) {
+    for (const id of memberIds) {
+      if (demo.demoFollowState(userId, id) === "accepted") out.following.push(id);
+      if (demo.demoFollowState(id, userId) === "accepted") out.followers.push(id);
+    }
+    return out;
+  }
+  const [following, followers] = await Promise.all([
+    readInChunks(memberIds, async (chunk) => {
+      const { data, error } = await supabase
+        .from("follows")
+        .select("followee_id")
+        .eq("follower_id", userId)
+        .eq("status", "accepted")
+        .in("followee_id", chunk);
+      if (error) throw error;
+      return (data ?? []).map((r) => r.followee_id as string);
+    }),
+    readInChunks(memberIds, async (chunk) => {
+      const { data, error } = await supabase
+        .from("follows")
+        .select("follower_id")
+        .eq("followee_id", userId)
+        .eq("status", "accepted")
+        .in("follower_id", chunk);
+      if (error) throw error;
+      return (data ?? []).map((r) => r.follower_id as string);
+    }),
+  ]);
+  out.following = following;
+  out.followers = followers;
+  return out;
+}
+
 /**
  * The members this one follows, up to PostgREST's thousand, with only
- * what a row draws. For ranking search results; a list on screen pages
- * with fetchFollowPage.
+ * what a row draws. Search ranks by fetchFollowsAmong instead; a list on
+ * screen pages with fetchFollowPage.
  */
 export async function fetchFollowing(userId: string): Promise<MemberRow[]> {
   if (isDemoMode()) return demo.demoFetchFollowing(userId);
