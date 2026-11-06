@@ -151,13 +151,19 @@ export default function Settings() {
   const currentAvatar = newAvatarUri ?? mediaUrl("avatars", profile?.avatar_url ?? null);
 
   const pickAvatar = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.9,
-    });
-    if (!result.canceled && result.assets[0]) setNewAvatarUri(result.assets[0].uri);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+      if (!result.canceled && result.assets[0]) setNewAvatarUri(result.assets[0].uri);
+    } catch {
+      // The picker can refuse outright (an iCloud original that would not
+      // come down). The tap used to end in silence.
+      showAlert("Couldn’t open that", "It couldn’t be read here. Try again in a moment, or choose another.");
+    }
   };
 
   const save = async () => {

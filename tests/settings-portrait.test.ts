@@ -40,6 +40,17 @@ describe("Settings' Save with a new portrait", () => {
     );
   });
 
+  it("says so when the picker refuses, in Settings and in the application", () => {
+    // The picker can reject outright (an iCloud original that would not
+    // come down); the tap used to end in silence.
+    for (const file of ["app/settings.tsx", "app/(gate)/apply.tsx"]) {
+      const src = code(file);
+      const pick = src.slice(src.indexOf("const pickAvatar = async"), src.indexOf("\n  };", src.indexOf("const pickAvatar = async")));
+      expect(pick, file).toMatch(/^const pickAvatar = async \(\) => \{\s*try \{\s*const result = await ImagePicker\.launchImageLibraryAsync\(/);
+      expect(pick, file).toMatch(/\} catch \{\s*showAlert\("Couldn’t open that", "[^"]+"\);\s*\}$/);
+    }
+  });
+
   it("sends the file already uploaded when Save is tried again for the same photograph", () => {
     expect(save).toMatch(/if \(uploadedAvatar\.current\?\.uri === newAvatarUri\) \{\s*avatarPath = uploadedAvatar\.current\.path;/);
     expect(save).toMatch(/uploadedAvatar\.current = \{ uri: newAvatarUri, path: avatarPath \};/);
