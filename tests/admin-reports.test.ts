@@ -54,4 +54,11 @@ describe("a queue that could not be read", () => {
     expect(src).toMatch(/reports\.isError \? \(\s*<LoadFailed what="the reports" onRetry=\{\(\) => reports\.refetch\(\)\} \/>/);
     expect(code("app/admin/applications.tsx")).toMatch(/apps\.isError \? \(\s*<LoadFailed what="the applications" onRetry=\{\(\) => apps\.refetch\(\)\} \/>/);
   });
+
+  it("says so in members, where a failed read used to say 'No members found'", () => {
+    const members = code("app/admin/members.tsx");
+    expect(members).toMatch(
+      /ListEmptyComponent=\{\s*members\.isError \? \(\s*<LoadFailed what="the members" onRetry=\{\(\) => members\.refetch\(\)\} \/>\s*\) : members\.isFetched \? \(\s*<EmptyState title="No members found" \/>/,
+    );
+  });
 });
