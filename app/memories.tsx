@@ -14,6 +14,7 @@ import { colors, spacing, type } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
 import { mediaUrl } from "@/api/media";
 import { memoryHeadline, onThisDay } from "@/utils/memories";
+import { memoryPicture } from "@/utils/memoryPicture";
 import { editEras } from "@/utils/eraEdits";
 import { signatureDate } from "@/utils/time";
 import { showAlert } from "@/utils/alert";
@@ -286,15 +287,23 @@ export default function Memories() {
         </View>
       ) : null}
 
-      {memories.map((m) => {
-        // A film's file is a movie, which an <Image> cannot draw; its poster frame can be.
-        const thumb =
-          m.post.media_type === "video"
-            ? mediaUrl("thumbnails", m.post.thumb_path)
-            : mediaUrl("thumbnails", m.post.thumb_path) ?? mediaUrl("media", m.post.media_path);
+      {memories.map((m, i) => {
+        // The photograph itself, the page's width, with its grid square standing in
+        // while it arrives; a film's poster frame, which an <Image> can draw and its
+        // movie cannot (src/utils/memoryPicture.ts).
+        const picture = memoryPicture(m.post, i, mediaUrl);
         return (
           <Pressable key={m.post.id} style={styles.memory} onPress={() => openPost(m.post)}>
-            {thumb ? <Image source={thumb} style={styles.memoryImage} contentFit="cover" cachePolicy="memory-disk" /> : null}
+            {picture.source != null ? (
+              <Image
+                source={picture.source}
+                placeholder={picture.placeholder ?? undefined}
+                placeholderContentFit="cover"
+                style={styles.memoryImage}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            ) : null}
             <View style={styles.memoryText}>
               <Text style={styles.eyebrow}>
                 {m.yearsAgo === 1 ? "One year ago" : `${m.yearsAgo} years ago`}
