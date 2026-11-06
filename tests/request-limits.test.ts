@@ -121,7 +121,7 @@ describe("a limit on each request", () => {
 
 describe("the app's client", () => {
   it("limits its requests", () => {
-    expect(read("src/lib/supabase.ts")).toMatch(/global: \{ fetch: boundedFetch\(\(input, init\) => fetch\(input, init\)\) \}/);
+    expect(read("src/lib/supabase.ts")).toMatch(/global: \{ fetch: noteUnsignedReads\(boundedFetch\(\(input, init\) => fetch\(input, init\)\), supabaseAnonKey\) \}/);
     expect(read("src/lib/queryClient.ts")).toMatch(/retry: \(failures, error\) => onlineManager\.isOnline\(\) && retryRead\(failures, error\),/);
   });
 });

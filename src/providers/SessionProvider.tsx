@@ -10,6 +10,7 @@ import React, {
 import { router } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { readStoredSession, supabase } from "@/lib/supabase";
+import { takeUnsignedRead } from "@/lib/unsignedRead";
 import { queryClient } from "@/lib/queryClient";
 import { isTransient, withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
@@ -159,6 +160,9 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   const authUnreachable = useRef(false);
   // The profile read, for the auth listener, which is made before it.
   const readProfileAgain = useRef<() => Promise<boolean>>(async () => false);
+  // Who is signed in now: for the listener, and for a read that lands
+  // after they have gone.
+  const currentUser = useRef<string | null>(null);
 
   useEffect(() => {
     // Who is signed in, from the phone's own copy at once and from auth
@@ -171,13 +175,20 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       // The first answer of nobody is the launch read's to give (above):
       // auth says it also when a refresh could not reach the server.
       if (event === "INITIAL_SESSION" && !next) return;
-      // What was read while auth could not reach the server went out
-      // without the member's token and came back empty. Once a refresh
-      // goes through, every screen and the profile read again.
-      if (authUnreachable.current && next && (event === "TOKEN_REFRESHED" || event === "SIGNED_IN")) {
-        authUnreachable.current = false;
-        void queryClient.invalidateQueries();
-        void readProfileAgain.current();
+      // What was read without the member's token came back empty: at
+      // launch while auth could not reach the server, and on a return to
+      // the app after the token ran out with no signal, when auth hands
+      // the client no session for a minute (src/lib/unsignedRead.ts).
+      // Once a refresh goes through, every screen reads again, and the
+      // profile of the member already here (one signing in is read as
+      // they arrive, below).
+      if (next && (event === "TOKEN_REFRESHED" || event === "SIGNED_IN")) {
+        const unsigned = takeUnsignedRead();
+        if (authUnreachable.current || unsigned) {
+          authUnreachable.current = false;
+          void queryClient.invalidateQueries();
+          if (next.user?.id === currentUser.current) void readProfileAgain.current();
+        }
       }
       // SIGNED_OUT forgets the Darkroom where the client is made
       // (src/lib/supabase.ts), so that one said during launch is heard.
@@ -218,8 +229,6 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   // One read at a time: a second call while the first is still retrying
   // joins it instead of stacking another behind it.
   const inFlight = useRef<Promise<boolean> | null>(null);
-  // Who is signed in now, for a read that lands after they have gone.
-  const currentUser = useRef(userId);
   currentUser.current = userId;
   const refreshProfile = useCallback(async (): Promise<boolean> => {
     if (!userId) {

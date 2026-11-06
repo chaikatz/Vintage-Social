@@ -277,8 +277,10 @@ describe("the session provider", () => {
 
   it("reads every screen and the profile again once auth, unreachable at launch, gets through", () => {
     expect(provider).toMatch(/openSession\(supabase\.auth, readStoredSession, setSession, \(\) => \{\s*authUnreachable\.current = true;/);
+    // (The same re-read covers a read made unsigned on a return to the
+    // app: tests/unsigned-read.test.ts.)
     expect(provider).toMatch(
-      /if \(authUnreachable\.current && next && \(event === "TOKEN_REFRESHED" \|\| event === "SIGNED_IN"\)\) \{\s*authUnreachable\.current = false;\s*void queryClient\.invalidateQueries\(\);\s*void readProfileAgain\.current\(\);/,
+      /if \(authUnreachable\.current \|\| unsigned\) \{\s*authUnreachable\.current = false;\s*void queryClient\.invalidateQueries\(\);\s*if \(next\.user\?\.id === currentUser\.current\) void readProfileAgain\.current\(\);/,
     );
     expect(provider).toMatch(/readProfileAgain\.current = refreshProfile;/);
   });

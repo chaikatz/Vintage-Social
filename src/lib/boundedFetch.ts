@@ -45,7 +45,8 @@ export function requestTimedOut(): TimeoutError {
   return err;
 }
 
-function urlOf(input: unknown): string {
+/** The address a request goes to, from whatever fetch was handed. */
+export function urlOf(input: unknown): string {
   if (typeof input === "string") return input;
   if (input && typeof input === "object") {
     const o = input as { href?: unknown; url?: unknown };

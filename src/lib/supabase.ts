@@ -7,6 +7,7 @@ import type { Database } from "@/types/db";
 import { forgetDarkroom } from "@/darkroom/forget";
 import { parseStoredSession } from "./storedSession";
 import { boundedFetch } from "./boundedFetch";
+import { noteUnsignedReads } from "./unsignedRead";
 
 /**
  * Session tokens live in the iOS keychain (SecureStore), not AsyncStorage.
@@ -34,8 +35,10 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
   // Every request but a file's has a limit (boundedFetch.ts). The global
-  // fetch is looked up on each call, as the client itself does.
-  global: { fetch: boundedFetch((input, init) => fetch(input, init)) },
+  // fetch is looked up on each call, as the client itself does. A read
+  // that goes out without the member's token is noted (unsignedRead.ts),
+  // so it can be read again once the token goes through.
+  global: { fetch: noteUnsignedReads(boundedFetch((input, init) => fetch(input, init)), supabaseAnonKey) },
 });
 
 /** Where auth keeps the session on this phone: the client's own key, read back rather than worked out again. */
