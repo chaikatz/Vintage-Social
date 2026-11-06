@@ -338,8 +338,8 @@ Open appstoreconnect.apple.com → **Apps** → **Vintage Social**.
      photographs, and the house accounts' photographs, which are **not
      yours**. They are other photographers' work: of the 908, 679 are
      under the Unsplash Licence, 143 public domain, 70 CC0 and 16 marked
-     "no restrictions" (`seed/CREDITS.md` lists every one; its header
-     wrongly says "all public domain or CC0"). Members grant what the app
+     "no restrictions" (`seed/CREDITS.md` lists every one, and its header
+     gives the same counts). Members grant what the app
      needs in the Terms. Answer "Yes, I have the necessary rights" only
      after you have decided the house-accounts question in section 7.
    - **Age Rating** → Edit → answer as in section 4.

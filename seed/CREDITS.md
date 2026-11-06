@@ -1,9 +1,11 @@
 # House photographs — sources
 
-908 photographs, all public domain or CC0, curated from Wikimedia
-Commons by `seed/curate.mjs`. None of these licences requires attribution;
-this list exists so the provenance of anything in the seeded feed can be
-traced back to its source file.
+908 photographs, chosen by `seed/curate.mjs`: 679 from Unsplash, through
+Lorem Picsum, under the Unsplash Licence, and 229 from Wikimedia Commons
+(143 public domain, 70 CC0 and 16 marked "no restrictions"). None of these
+licences requires attribution; this list exists so the provenance of
+anything in the seeded feed can be traced back to its source, and so the
+licence of each is on record.
 
 | File | Licence | Author |
 | --- | --- | --- |

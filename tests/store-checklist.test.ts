@@ -60,6 +60,22 @@ describe("the house accounts, as Apple is told about them", () => {
     expect(decide).toContain(`The other ${pd + cc0 + none} are public domain (${pd}), CC0 (${cc0}) or marked "no restrictions" (${none})`);
   });
 
+  it("seed/CREDITS.md says above its table what the table says: how many, from where, under which licence", () => {
+    const text = credits();
+    const header = flat(text.slice(0, text.indexOf("| File |")));
+    const rows = text.split("\n").filter((l) => /^\| \[/.test(l)).length;
+    const unsplash = count("Unsplash Licence");
+    const pd = count("Public domain");
+    const cc0 = count("CC0");
+    const none = count("No restrictions");
+    expect(header).toContain(`${rows} photographs`);
+    expect(header).toContain(`${unsplash} from Unsplash, through Lorem Picsum, under the Unsplash Licence`);
+    expect(header).toContain(`${pd + cc0 + none} from Wikimedia Commons (${pd} public domain, ${cc0} CC0 and ${none} marked "no restrictions")`);
+    // It used to call all of them public domain or CC0, with 679 Unsplash rows beneath.
+    expect(header).not.toMatch(/all public domain or CC0/);
+    expect(flat(between(doc(), "- Content Rights:", "- **Age Rating**"))).not.toMatch(/header wrongly says/);
+  });
+
   it("the review notes say the accounts the reviewer follows are the club's own, not people", () => {
     expect(read("supabase/migrations/0011_house_accounts.sql")).toMatch(/add column if not exists is_house/);
     const notes = flat(reviewNotes());
