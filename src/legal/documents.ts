@@ -26,7 +26,7 @@ export const PRIVACY_POLICY = `VINTAGE is a small, invitation-only club for phot
 
 Account details. Your email address and a password (stored as a hash by our authentication provider), the name and username you choose, and an optional portrait, bio and city.
 
-Your application. If you apply for membership, the answers you give — who you are, where your photographs live online, what you photograph, who sent you — are read by a person who decides on your membership. Applications are kept while your application is pending or waitlisted.
+Your application. If you apply for membership, the answers you give — who you are, where your photographs live online, what you photograph, who sent you — are read by a person who decides on your membership. Your application is kept with your account as the record of that decision, whatever it was, and is deleted with your account.
 
 What you post. Photographs and short films you publish, the filter you chose, your caption, the place you name and the point on the map it stands for, the members you tag, your likes and comments, who you follow, and the messages you send to other members.
 
@@ -48,13 +48,17 @@ We do not sell your information. We do not show advertising. We do not use your 
 
 VINTAGE is members-only. Your profile and photographs are visible to approved members. A private account is visible only to the members you have accepted. Messages are visible to the two people in the conversation. Admins can see content in order to review reports and keep the club safe.
 
+A link you make with Share outside VINTAGE shows that one photograph or film, with its place, its date and your username, to anyone who has the link, even if your account is private. It works until you turn the link off or delete the photograph.
+
 ## Where it is kept
 
 Data is stored with Supabase (database, authentication and file storage) and delivered through their infrastructure. Push notifications are delivered through Expo’s push service and Apple. Places you type are looked up with Apple’s map service. Invitation pages are hosted on Vercel.
 
 ## Your choices
 
-You can edit your profile, delete any photograph or comment you posted, remove yourself from a tag, turn each kind of notification off, block another member, and delete your account — all from within the app. Deleting your account removes your profile, photographs, comments, likes, follows, tags and messages. Some records may persist in backups for a limited period, and reports you filed are kept for moderation history without your account attached.
+As a member you can edit your profile, delete any photograph or comment you posted, remove yourself from a tag, turn each kind of notification off, block another member, and delete your account — all from within the app. Deleting your account removes your profile, photographs, comments, likes, follows, tags, messages, application and share links, and the reports you filed. The notes about your shares outside VINTAGE are kept without your account attached. Some records may persist in backups for a limited period.
+
+If your application is still waiting or was not accepted, or your membership is suspended, write to the support address from your account’s email and we will delete your account and your application.
 
 ## Children
 
@@ -69,6 +73,8 @@ export const TERMS_OF_USE = `These terms are the agreement between you and VINTA
 ## Membership
 
 VINTAGE is by application or invitation. Membership can be declined, waitlisted, suspended or ended by the club's admins, and you can leave at any time by deleting your account. Each member is issued a permanent membership number; it is never reassigned.
+
+Some accounts are the club's own house accounts. They show public-domain and licensed photographs so that the club is not empty when you arrive. They are not members, and no one answers from them.
 
 ## Your photographs
 
@@ -90,7 +96,7 @@ VINTAGE is provided as it is. We work to keep it available and your photographs 
 
 ## Ending
 
-You may delete your account at any time from Settings. We may end your membership for breaking these terms. Sections about your content, conduct and liability continue to apply to the period you were a member.
+You may delete your account at any time: a member from Settings, anyone else by writing to the support address. We may end your membership for breaking these terms. Sections about your content, conduct and liability continue to apply to the period you were a member.
 
 ## Contact
 
