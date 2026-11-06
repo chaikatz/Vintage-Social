@@ -10,6 +10,7 @@ import {
   TIMELINE_REVEAL_STEP,
   idsAround,
   pictureWindow,
+  rowTops,
   timelineReveal,
 } from "@/media/cardWindow";
 import { isWarm, warmWindow, type WarmWindow } from "@/utils/videoWindow";
@@ -195,12 +196,44 @@ describe("the timeline's pictures", () => {
     expect(timelineReveal({ tops: [], through: 3, scrollY: 0, viewport: 700, blockTop: 0, scale: 1, lift: 0 })).toBe(3);
   });
 
+  it("keep coming in after the posts are read again, with every row where it was", () => {
+    // Sixty rows laid out and reported once. A like, a comment, a refresh or
+    // a return reads the profile's posts again: the same rows in a new
+    // array. None of them moved, so none is laid out again, and none says
+    // where it is a second time.
+    const keys = Array.from({ length: 60 }, (_, i) => `post-${i}`);
+    const known = new Map(keys.map((k, i) => [k, i * 230] as const));
+    const again = rowTops([...keys], known);
+    expect(again).toEqual(keys.map((_, i) => i * 230));
+    // Scrolled to the end of the line after the reading: every row draws its picture.
+    const reach = (tops: readonly (number | undefined)[]) =>
+      timelineReveal({ tops, through: 14, scrollY: 12835, viewport: 844, blockTop: 350, scale: 1, lift: 0 });
+    expect(reach(again)).toBe(60);
+    // What the timeline used to have after a reading: no row placed, and no picture past the ones drawn.
+    expect(reach(new Array<number | undefined>(60))).toBe(14);
+  });
+
+  it("place a row new to the line once it says where it is, and keep the others' places", () => {
+    const known = new Map([
+      ["a", 0],
+      ["b", 230],
+    ]);
+    expect(rowTops(["new", "a", "b"], known)).toEqual([undefined, 0, 230]);
+    expect(rowTops([], known)).toEqual([]);
+  });
+
   it("are drawn only for the rows revealed, by a row that is a memo and reports its top", () => {
     const timeline = code("src/components/Timeline.tsx");
     expect(timeline).toMatch(/const Row = React\.memo\(function Row\(\{/);
     expect(timeline).toMatch(/drawn=\{i < through\}/);
     expect(timeline).toMatch(/\{url && drawn \? \(\s*<Image/);
     expect(timeline.match(/onLayout=\{onLayout\}/g)).toHaveLength(3);
+    // The tops are kept by row across readings of the posts, and each row reports its own key.
+    expect(timeline).toMatch(/const knownTops = useRef\(new Map<string, number>\(\)\)\.current;/);
+    expect(timeline).toMatch(/const tops = useMemo\(\(\) => rowTops\(rows\.map\(\(r\) => r\.key\), knownTops\), \[rows, knownTops\]\);/);
+    expect(timeline).toMatch(/knownTops\.set\(key, top\);/);
+    expect(timeline).toMatch(/onTop\(index, row\.key, e\.nativeEvent\.layout\.y\)/);
+    expect(timeline).not.toMatch(/new Array<number \| undefined>\(rows\.length\)/);
     expect(timeline).toMatch(/scrollY\.current = e\.nativeEvent\.contentOffset\.y;\s*reveal\(\);/);
     expect(timeline).toMatch(/const inspect = useCallback\(/);
   });

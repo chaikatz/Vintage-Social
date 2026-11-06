@@ -27,7 +27,7 @@ import { aspectRatio } from "./PostMedia";
 import { holdTabSwipe, shouldHoldTabSwipe } from "@/utils/tabSwipe";
 import { useIsFocused } from "@react-navigation/native";
 import { PhotoInspector } from "./PhotoInspector";
-import { TIMELINE_FIRST_ROWS, timelineReveal } from "@/media/cardWindow";
+import { TIMELINE_FIRST_ROWS, rowTops, timelineReveal } from "@/media/cardWindow";
 import type { PostRow } from "@/types/db";
 
 interface Props {
@@ -120,8 +120,12 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   // Rows draw their picture as the reader comes within a few screens of
   // them, and keep it (src/media/cardWindow.ts): opened, the timeline
   // fetched every photograph at once. Each row reports its top; the view
-  // its height; the scroll, the pinch and the layout ask again.
-  const tops = useMemo(() => new Array<number | undefined>(rows.length), [rows]);
+  // its height; the scroll, the pinch and the layout ask again. The tops
+  // are kept by row, so a new reading of the posts (a like, a refresh)
+  // keeps every row's place: a row that has not moved is not laid out
+  // again, and never says where it is a second time.
+  const knownTops = useRef(new Map<string, number>()).current;
+  const tops = useMemo(() => rowTops(rows.map((r) => r.key), knownTops), [rows, knownTops]);
   const viewportH = useRef(0);
   const [through, setThrough] = useState(TIMELINE_FIRST_ROWS);
   const throughRef = useRef(through);
@@ -141,11 +145,12 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
     }
   }, [tops, live]);
   const onRowTop = useCallback(
-    (index: number, top: number) => {
+    (index: number, key: string, top: number) => {
+      knownTops.set(key, top);
       tops[index] = top;
       reveal();
     },
-    [tops, reveal],
+    [knownTops, tops, reveal],
   );
 
   // The tab pager reads sideways movement as a swipe to the next tab. Two
@@ -419,14 +424,14 @@ const Row = React.memo(function Row({
   row: TimelineRow;
   index: number;
   drawn: boolean;
-  onTop: (index: number, top: number) => void;
+  onTop: (index: number, key: string, top: number) => void;
   frame: number;
   gap: number;
   onOpenPost: (post: PostRow) => void;
   onInspect: (post: PostRow) => void;
 }) {
   const lastTap = useRef(0);
-  const onLayout = (e: LayoutChangeEvent) => onTop(index, e.nativeEvent.layout.y);
+  const onLayout = (e: LayoutChangeEvent) => onTop(index, row.key, e.nativeEvent.layout.y);
   if (row.kind === "year") {
     return (
       <View style={styles.marker} onLayout={onLayout}>

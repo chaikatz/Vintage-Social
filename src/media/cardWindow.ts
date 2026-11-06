@@ -87,6 +87,24 @@ export function idsAround(ids: readonly string[], focus: number, stretch = ACTIO
  * there, at its size, before that.
  */
 
+/**
+ * Each row's top for a new array of rows, carried over from the tops the
+ * rows last reported, by the row's key.
+ *
+ * A row reports its top when it is laid out, and the platform lays it out
+ * again only when its frame changes (Fabric's view event emitter sends
+ * onLayout only for a new frame; the browser's resize observer is the
+ * same). The profile's posts are read again after a like, a comment, a
+ * pull to refresh or a return to the screen, and every reading is a new
+ * array of rows with every row where it was: the tops began empty again,
+ * none was reported, and the timeline stopped drawing pictures at the
+ * first row it could not place until the view was switched. A row that
+ * did move reports its new top; a row new to the line reports its own.
+ */
+export function rowTops(keys: readonly string[], known: ReadonlyMap<string, number>): (number | undefined)[] {
+  return keys.map((key) => known.get(key));
+}
+
 /** Rows that draw their picture from the start: the first screen or two. */
 export const TIMELINE_FIRST_ROWS = 8;
 /** Screens below the bottom of the view whose rows draw their pictures ahead of the reader. */
