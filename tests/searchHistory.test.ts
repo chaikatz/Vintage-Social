@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The store keeps one small file on the phone; here it is a string.
@@ -73,5 +75,38 @@ describe("recent searches", () => {
     expect(loadRecent().map((m) => m.id)).toEqual(["a"]);
     clearRecent();
     expect(loadRecent()).toEqual([]);
+  });
+});
+
+/**
+ * Who a member looked for is theirs alone: the next member to sign in on
+ * the same phone opens Search to an empty list. Forgotten at "Sign out",
+ * in the demo too, and whenever auth says the session has left the phone
+ * (a refresh token refused, a sign-out made on another device), heard
+ * where the client is made so that one said during launch is not missed.
+ */
+describe("recent searches and the session", () => {
+  const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
+
+  it("go with the member at sign-out, in both providers", () => {
+    const provider = source("src/providers/SessionProvider.tsx");
+    expect(provider).toMatch(/import \{ clearRecent \} from "@\/utils\/searchHistory";/);
+    // The demo: what was read for them goes as well, as it does against Supabase.
+    expect(provider).toMatch(/demoSignOut\(\);[\s\S]*?queryClient\.clear\(\);\s*clearRecent\(\);\s*await leaveToLanding\(\);/);
+    expect(provider).toMatch(
+      /queryClient\.clear\(\);\s*forgetDarkroom\(\);\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*clearRecent\(\);\s*forgetOutbox\(\);\s*forgetMember\(\);\s*await leaveToLanding\(\);\s*\}, \[\]\);/,
+    );
+    expect(provider.match(/clearRecent\(\);/g)).toHaveLength(2);
+  });
+
+  it("go when auth says the session has left the phone", () => {
+    const client = source("src/lib/supabase.ts");
+    expect(client).toMatch(
+      /onAuthStateChange\(\(event\) => \{\s*if \(event === "SIGNED_OUT"\) forgetDarkroom\(\);\s*if \(event === "SIGNED_OUT"\) clearRecent\(\);\s*\}\);/,
+    );
+  });
+
+  it("are read afresh each time Search is drawn for a member", () => {
+    expect(source("app/(tabs)/search.tsx")).toMatch(/useEffect\(\(\) => \{\s*setRecent\(loadRecent\(\)\);\s*\}, \[\]\);/);
   });
 });

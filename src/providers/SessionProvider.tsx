@@ -19,6 +19,7 @@ import type { ProfileRow } from "@/types/db";
 import { forgetPushToken } from "@/utils/push";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 import { forgetOutbox } from "@/uploads";
+import { clearRecent } from "@/utils/searchHistory";
 import { forgetMember, recallMember, rememberMember } from "./rememberedMember";
 import { openSession } from "./launchSession";
 
@@ -130,6 +131,9 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
         // The demo reads the phone's own library too: nothing of this member stays.
         forgetDarkroom();
         forgetOutbox();
+        // Nor what was read for them, nor who they looked for in Search.
+        queryClient.clear();
+        clearRecent();
         await leaveToLanding();
       },
     }),
@@ -309,6 +313,9 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     // Nothing of this member stays for the next one to sign in on this phone.
     queryClient.clear();
     forgetDarkroom();
+    // Who they looked for in Search: also forgotten when auth says SIGNED_OUT
+    // (src/lib/supabase.ts), and here as well in case that is not heard.
+    clearRecent();
     forgetOutbox();
     forgetMember();
     await leaveToLanding();

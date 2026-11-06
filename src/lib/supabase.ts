@@ -6,6 +6,7 @@ import { AppState, Platform } from "react-native";
 import { isDemoMode, requireEnv } from "./env";
 import type { Database } from "@/types/db";
 import { forgetDarkroom } from "@/darkroom/forget";
+import { clearRecent } from "@/utils/searchHistory";
 import { parseStoredSession } from "./storedSession";
 import { boundedFetch } from "./boundedFetch";
 import { noteUnsignedReads } from "./unsignedRead";
@@ -71,13 +72,16 @@ export async function readStoredSession(): Promise<Session | null> {
   }
 }
 
-// The Darkroom's memory on this phone goes with the session. Listened for
-// here, as the client is made, rather than in the session provider: auth
-// starts restoring the session the moment the client exists, and a
+// The Darkroom's memory on this phone goes with the session, and so do
+// the members this one looked for in Search (src/utils/searchHistory.ts):
+// the next member to sign in on the phone sees nothing of either. Listened
+// for here, as the client is made, rather than in the session provider:
+// auth starts restoring the session the moment the client exists, and a
 // refresh the server refuses at launch (a sign-out made on another
 // device) says SIGNED_OUT once, to whoever is listening by then.
 supabase.auth.onAuthStateChange((event) => {
   if (event === "SIGNED_OUT") forgetDarkroom();
+  if (event === "SIGNED_OUT") clearRecent();
 });
 
 // Refresh tokens only while the app is foregrounded. From launch too: iOS
