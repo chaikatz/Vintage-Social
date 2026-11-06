@@ -6,8 +6,9 @@
  * with a way to try again (LoadFailed): the request's limit ran out, a
  * server stumbled, there was no signal. It used to fall through to the
  * empty state, because a failed read counts as fetched, and a member's
- * own profile said "No photographs yet". A read that has answered, and
- * answered with nothing, is empty. A read still on its way is waiting: a
+ * own profile said "No photographs yet". A read that has answered is
+ * "empty" in the one sense asked here: with no rows to draw, the screen
+ * may truly say there are none. A read still on its way is waiting: a
  * skeleton, or nothing.
  *
  * A read that fails again after it has answered keeps that answer on the
