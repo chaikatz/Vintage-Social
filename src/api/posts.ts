@@ -40,14 +40,47 @@ async function followingIds(userId: string): Promise<string[]> {
 }
 
 /**
+ * Until when the database is known to have no feed_page (migration 0025
+ * not yet applied there): the feed is read the old way meanwhile, and the
+ * function is looked for again after.
+ */
+let feedPageMissingUntil = 0;
+const FEED_PAGE_RECHECK_MS = 10 * 60_000;
+
+/** PostgREST's "no such function" (PGRST202), and Postgres's own (42883). */
+function functionMissing(error: { code?: unknown }): boolean {
+  return error.code === "PGRST202" || error.code === "42883";
+}
+
+/** Forget whether feed_page is there (tests). */
+export function forgetFeedPageMissing(): void {
+  feedPageMissingUntil = 0;
+}
+
+/**
  * The home feed: strictly chronological, only accounts the member follows
  * (plus their own posts). No ranking, no suggestions.
+ *
+ * Asked of feed_page (migration 0025), which reads who the member follows
+ * inside the database. The old way, below, puts every member followed
+ * into the request's URL, which a few hundred follows outgrow (./batch):
+ * the most engaged members' home feed stopped loading. The old way stays
+ * for a database that does not have the function yet.
  */
 export async function fetchFeedPage(userId: string, page: number): Promise<PostWithAuthor[]> {
   if (isDemoMode()) return demo.demoFetchFeedPage(userId, page, FEED_PAGE_SIZE);
 
-  const authorIds = [userId, ...(await followingIds(userId))];
   const from = page * FEED_PAGE_SIZE;
+  if (Date.now() >= feedPageMissingUntil) {
+    const { data, error } = await supabase
+      .rpc("feed_page", { p_limit: FEED_PAGE_SIZE, p_offset: from })
+      .select(POST_WITH_AUTHOR);
+    if (!error) return (data ?? []) as unknown as PostWithAuthor[];
+    if (!functionMissing(error)) throw error;
+    feedPageMissingUntil = Date.now() + FEED_PAGE_RECHECK_MS;
+  }
+
+  const authorIds = [userId, ...(await followingIds(userId))];
 
   const { data, error } = await supabase
     .from("posts")

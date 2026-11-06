@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   inFlight: 0,
   maxInFlight: 0,
   tables: {} as Record<string, Record<string, unknown>[]>,
+  /** How feed_page answers: as the database would, as if not there yet, or with a failure. */
+  feedPage: "there" as "there" | "missing" | "broken",
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -109,7 +111,8 @@ function answer(url: URL): Row[] {
   }
   rows = ordered(rows, params.get("order"));
   const limit = params.get("limit");
-  rows = rows.slice(0, Math.min(limit ? Number(limit) : Infinity, 1000));
+  const offset = Number(params.get("offset") ?? 0);
+  rows = rows.slice(offset, offset + Math.min(limit ? Number(limit) : Infinity, 1000));
   return rows.map((row) => {
     const out: Row = select === "*" || select.startsWith("*") ? { ...row } : {};
     for (const column of select.split(",").map((c) => c.trim()).filter((c) => /^\w+$/.test(c))) out[column] = row[column];
@@ -151,7 +154,27 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
   h.inFlight--;
   // The ceiling the gateway sets on a request line.
   if (url.href.length > 8192) return new Response("URI Too Long", { status: 414 });
+  if (url.pathname === "/rest/v1/rpc/feed_page") return feedPage(url, JSON.parse(String(init?.body ?? "{}")));
   return new Response(JSON.stringify(answer(url)), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
+/** feed_page (0025) as the database answers it for the signed-in member, ME. */
+function feedPage(url: URL, args: { p_limit?: number; p_offset?: number }): Response {
+  if (h.feedPage === "missing") {
+    return new Response(JSON.stringify({ code: "PGRST202", message: "Could not find the function public.feed_page" }), { status: 404 });
+  }
+  if (h.feedPage === "broken") {
+    return new Response(JSON.stringify({ code: "57014", message: "canceling statement due to statement timeout" }), { status: 500 });
+  }
+  const followed = new Set((h.tables.follows ?? []).filter((f) => f.follower_id === ME && f.status === "accepted").map((f) => f.followee_id));
+  const mine = (h.tables.posts ?? [])
+    .filter((p) => p.removed_at == null && (p.author_id === ME || followed.has(p.author_id)))
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b.id).localeCompare(String(a.id)));
+  const page = mine.slice(args.p_offset ?? 0, (args.p_offset ?? 0) + Math.min(Math.max(args.p_limit ?? 12, 1), 100));
+  // The select (and its embedded author) applies to the function's rows as to a table's.
+  h.tables.__feed = page;
+  const shaped = answer(new URL(url.href.replace("/rest/v1/rpc/feed_page", "/rest/v1/__feed")));
+  return new Response(JSON.stringify(shaped), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
 vi.mock("@/lib/supabase", async () => {
@@ -178,6 +201,8 @@ beforeEach(() => {
   h.inFlight = 0;
   h.maxInFlight = 0;
   h.tables = {};
+  h.feedPage = "there";
+  (posts as { forgetFeedPageMissing?: () => void }).forgetFeedPageMissing?.();
   // Optional so an older messages.ts (a mutation check) still loads.
   (messages as { forgetSharedPosts?: () => void }).forgetSharedPosts?.();
 });
@@ -421,5 +446,70 @@ describe("a thread", () => {
     // Kept for the next poll: no photograph is read again.
     await messages.fetchMessages(conv);
     expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/posts").length).toBe(1);
+  });
+});
+
+describe("the home feed", () => {
+  function club(followees: number) {
+    const friends = Array.from({ length: followees }, (_, i) => id("f1", i));
+    h.tables.profiles = [ME, ...friends].map((p, i) => ({ id: p, username: `m${i}`, full_name: null, avatar_url: null }));
+    h.tables.follows = friends.map((f, i) => ({ follower_id: ME, followee_id: f, status: i % 10 === 9 ? "pending" : "accepted" }));
+    h.tables.posts = [];
+    let n = 0;
+    for (const author of [ME, ...friends, id("f9", 1)]) {
+      for (let k = 0; k < 3; k++) {
+        n++;
+        h.tables.posts.push({ id: id("f2", n), author_id: author, created_at: at((n * 37) % 500), removed_at: n % 13 === 0 ? at(1) : null });
+      }
+    }
+    posts.forgetFollowingIds(ME);
+  }
+
+  it("is asked of feed_page, with no list of who the member follows in the URL", async () => {
+    club(800);
+    const page = await posts.fetchFeedPage(ME, 2);
+    expect(page.length).toBe(posts.FEED_PAGE_SIZE);
+    expect(h.requests.length).toBe(1);
+    expect(h.requests[0].url.pathname).toBe("/rest/v1/rpc/feed_page");
+    expect(h.requests[0].method).toBe("POST");
+    expect(h.requests[0].url.href.length).toBeLessThan(400);
+    expect(h.requests[0].url.searchParams.get("select")).toBe(
+      "*,author:profiles!posts_author_id_fkey(id,username,full_name,avatar_url)",
+    );
+    expect(page[0].author).toMatchObject({ username: expect.stringMatching(/^m\d+$/) });
+  });
+
+  it("gives the same pages the old read gave, while the old read still worked", async () => {
+    club(60);
+    const viaFunction: string[][] = [];
+    for (let p = 0; p < 6; p++) viaFunction.push((await posts.fetchFeedPage(ME, p)).map((x) => x.id));
+    h.feedPage = "missing";
+    posts.forgetFeedPageMissing();
+    const theOldWay: string[][] = [];
+    for (let p = 0; p < 6; p++) theOldWay.push((await posts.fetchFeedPage(ME, p)).map((x) => x.id));
+    expect(viaFunction).toEqual(theOldWay);
+    expect(viaFunction.flat().length).toBeGreaterThan(posts.FEED_PAGE_SIZE * 5);
+  });
+
+  it("falls back to the old read where the database has no feed_page yet, and does not keep asking", async () => {
+    club(30);
+    h.feedPage = "missing";
+    const first = await posts.fetchFeedPage(ME, 0);
+    expect(first.length).toBe(posts.FEED_PAGE_SIZE);
+    await posts.fetchFeedPage(ME, 1);
+    const asked = h.requests.filter((r) => r.url.pathname === "/rest/v1/rpc/feed_page").length;
+    expect(asked).toBe(1);
+  });
+
+  it("does not hide a real failure behind the fallback", async () => {
+    club(30);
+    h.feedPage = "broken";
+    await expect(posts.fetchFeedPage(ME, 0)).rejects.toMatchObject({ code: "57014" });
+  });
+
+  it("the old read, past a couple of hundred follows, could not be sent at all", async () => {
+    club(800);
+    h.feedPage = "missing";
+    await expect(posts.fetchFeedPage(ME, 0)).rejects.toBeTruthy();
   });
 });

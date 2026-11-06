@@ -116,11 +116,34 @@ describe("0023: every policy reads the caller once", () => {
   it("is proven by the policy harness, which runs the matrix, the plans and the rollback", () => {
     const runner = readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8");
     expect(runner).toMatch(/snapshot_before_0023\.sql/);
-    expect(runner).toMatch(/"08_policy_rewrite\.sql", "09_scale_plans\.sql", "10_rollback_0023\.sql"/);
+    expect(runner).toMatch(/"08_policy_rewrite\.sql",\s*"09_scale_plans\.sql",\s*"10_rollback_0023\.sql"/);
     // And the read-only check the owner runs on production after applying it.
     expect(runner).toMatch(/12_policies_read_once_verify\.sql/);
     const verify = readFileSync(join(root, "supabase", "production", "12_policies_read_once_verify.sql"), "utf8");
     expect(code(verify)).not.toMatch(/\b(insert|update|delete|create|alter|drop|grant|revoke|truncate)\b/i);
+  });
+});
+
+describe("0025: the home feed in one piece", () => {
+  const sql = code(readFileSync(join(migrations, "0025_feed_page.sql"), "utf8"));
+
+  it("runs as the member asking, so every policy on posts and follows applies", () => {
+    expect(sql).toMatch(/security invoker/);
+    expect(sql).not.toMatch(/security definer/);
+  });
+
+  it("is the member's own posts and their accepted follows', live, newest first, a bounded page", () => {
+    expect(sql).toMatch(/p\.removed_at is null/);
+    expect(sql).toMatch(/p\.author_id = \(select auth\.uid\(\)\)/);
+    expect(sql).toMatch(/f\.follower_id = \(select auth\.uid\(\)\)\s*and f\.status = 'accepted'/);
+    expect(sql).toMatch(/order by p\.created_at desc, p\.id desc/);
+    expect(sql).toMatch(/limit least\(greatest\(coalesce\(p_limit, 12\), 1\), 100\)/);
+  });
+
+  it("is for members only, and the harness compares it with the old read page by page", () => {
+    expect(sql).toMatch(/revoke execute on function public\.feed_page\(integer, integer\) from public, anon, authenticated;/);
+    expect(sql).toMatch(/grant execute on function public\.feed_page\(integer, integer\) to authenticated;/);
+    expect(readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8")).toMatch(/"12_feed_page\.sql"/);
   });
 });
 

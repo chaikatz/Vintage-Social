@@ -227,7 +227,13 @@ try {
   // file, applied for real, puts the old policies back exactly before
   // 0023 is applied again (10). 08 and 09 roll back; 10 leaves the
   // database as 0023 made it.
-  for (const file of ["08_policy_rewrite.sql", "09_scale_plans.sql", "10_rollback_0023.sql", "11_block_privacy.sql"]) {
+  for (const file of [
+    "08_policy_rewrite.sql",
+    "09_scale_plans.sql",
+    "10_rollback_0023.sql",
+    "11_block_privacy.sql",
+    "12_feed_page.sql",
+  ]) {
     if (res.status !== 0 || process.exitCode === 1) break;
     if (!existsSync(join(here, file))) continue;
     process.stdout.write(`· supabase/tests/${file} … `);
