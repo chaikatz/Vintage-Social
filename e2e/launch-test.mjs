@@ -973,6 +973,39 @@ check(
   await fresh.close();
 }
 
+// A bar at the door keeps its label clear of its arrow: at the default
+// size in the same place as before, and at a much larger size (drawn here
+// at 60 pixels, wider than the bar less its clearances, as the largest
+// accessibility sizes would draw a longer label) wrapped between the two
+// clearances rather than under the arrow.
+{
+  const fresh = await browser.newContext({ viewport: { width: 375, height: 812 } });
+  const door = await fresh.newPage();
+  door.on("pageerror", (e) => errors.push("door bar: " + e.message));
+  await door.goto(B + "/sign-in", { waitUntil: "networkidle" });
+  await door.waitForTimeout(2400);
+  const measure = (px) =>
+    door.evaluate((size) => {
+      const bar = [...document.querySelectorAll('[role="button"][aria-label="Sign in"]')].find(
+        (el) => el.getBoundingClientRect().width > 200,
+      );
+      const label = bar && [...bar.querySelectorAll('[dir="auto"]')].find((el) => /^sign in$/i.test(el.textContent ?? ""));
+      if (!bar || !label) return null;
+      if (size) label.style.fontSize = `${size}px`;
+      const b = bar.getBoundingClientRect();
+      const l = label.getBoundingClientRect();
+      return { bar: Math.round(b.width), left: Math.round(l.left - b.left), right: Math.round(b.right - l.right), lines: Math.round(l.height / (size ? size : 11)) };
+    }, px);
+  const normal = await measure(0);
+  const large = await measure(60);
+  check(
+    "A bar's label at the door is centred and on one line at the default size, and clear of its arrow at a large size",
+    Boolean(normal && large) && Math.abs(normal.left - normal.right) <= 2 && normal.lines === 1 && large.right >= 44 && large.left >= 44,
+    JSON.stringify({ normal, large }),
+  );
+  await fresh.close();
+}
+
 // An invitation's web address, should it ever open the app, goes to the
 // invitation with its code, not home with the code lost.
 {

@@ -80,13 +80,24 @@ export function GateButton({
   );
 }
 
+/**
+ * Kept clear on both sides of a bar's label: the arrow's 18, its 16 in
+ * from the edge, and 10 between. The label is centred across the whole
+ * bar, and at the larger text sizes it wrapped to the bar's full width and
+ * ran under the arrow ("I HAVE AN INVITATION", "SUBMIT APPLICATION"). At
+ * the default size nothing moves: the longest label at the door is about
+ * 180 points, and on a 375-point phone the bar leaves it 231 between the
+ * two clearances, so it stays on one line in the same place.
+ */
+const ARROW_CLEARANCE = 44;
+
 const styles = StyleSheet.create({
   // At least 44, never fixed: at the larger text sizes a label takes two
   // lines and the bar grows to hold them, where a fixed height cut them off.
   base: { minHeight: 44, alignItems: "center", justifyContent: "center" },
-  solid: { backgroundColor: GATE_BUTTON },
-  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldSoft },
-  outline: { borderWidth: 1, borderColor: colors.ink },
+  solid: { backgroundColor: GATE_BUTTON, paddingHorizontal: ARROW_CLEARANCE },
+  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldSoft, paddingHorizontal: ARROW_CLEARANCE },
+  outline: { borderWidth: 1, borderColor: colors.ink, paddingHorizontal: ARROW_CLEARANCE },
   quiet: { minHeight: 0, paddingVertical: spacing.md },
   pressed: { opacity: 0.75 },
   loading: { opacity: 0.6 },

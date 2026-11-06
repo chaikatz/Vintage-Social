@@ -58,6 +58,11 @@ export function GateLayout({
         {scroll ? (
           <ScrollView
             contentContainerStyle={[styles.scroll, { paddingTop: insets.top + spacing.xxl }]}
+            // Still when it all fits, as the landing is: the waiting screen
+            // moved to this scrolling page (for the largest text sizes) and
+            // rubber-banded on iOS where it used to sit still. It scrolls,
+            // and bounces, whenever its words are taller than the screen.
+            alwaysBounceVertical={false}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
