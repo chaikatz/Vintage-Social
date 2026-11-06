@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import type { ProfileRow } from "@/types/db";
+import { readInChunks } from "./batch";
 
 /**
  * Blocking another member.
@@ -25,9 +26,13 @@ export async function fetchBlockedProfiles(userId: string): Promise<ProfileRow[]
   if (isDemoMode() || !userId) return [];
   const ids = [...(await fetchBlockedIds(userId))];
   if (ids.length === 0) return [];
-  const { data, error } = await supabase.from("profiles").select("*").in("id", ids).order("username");
-  if (error) throw error;
-  return (data ?? []) as ProfileRow[];
+  // A hundred at a time (./batch), then in name order as before.
+  const rows = await readInChunks(ids, async (chunk) => {
+    const { data, error } = await supabase.from("profiles").select("*").in("id", chunk).order("username");
+    if (error) throw error;
+    return (data ?? []) as ProfileRow[];
+  });
+  return rows.sort((a, b) => (a.username < b.username ? -1 : a.username > b.username ? 1 : 0));
 }
 
 export async function blockMember(userId: string): Promise<void> {
