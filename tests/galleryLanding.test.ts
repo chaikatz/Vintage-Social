@@ -509,7 +509,8 @@ describe("the cards drawn only on the way down", () => {
   });
 
   it("hold the grid's small copy near the reader once the gallery shows, so a quick scroll never rests on empty frames", () => {
-    const cell = tags(gallery, "PostCard")[0] ?? "";
+    // The preview branch draws a FeedCard here (PostCard or its Editorial card).
+    const cell = tags(gallery, "PostCard")[0] ?? tags(gallery, "FeedCard")[0] ?? "";
     expect(cell).toMatch(/standIn=\{isWarm\(index, standIns\)\}/);
     expect(gallery).toMatch(
       /const standIns = standInWindow\(\{ ready, startIndex, seenIndex: seenIndex < 0 \? null : seenIndex, count: posts\.length \}\);/,
