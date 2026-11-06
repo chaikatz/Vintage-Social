@@ -27,6 +27,18 @@ describe("Button", () => {
   });
 });
 
+describe("GateButton, the door's bars", () => {
+  const src = code("src/components/gate/GateButton.tsx");
+  it("is a button, named by its title while its spinner stands in for it, with its state", () => {
+    const pressable = src.slice(src.indexOf("<Pressable"), src.indexOf("{loading ? ("));
+    expect(pressable).toMatch(/accessibilityRole="button"/);
+    expect(pressable).toMatch(/accessibilityLabel=\{title\}/);
+    expect(pressable).toMatch(/accessibilityState=\{\{ disabled: loading \|\| disabled, busy: loading \}\}/);
+    // The title is still what is drawn when it is not working.
+    expect(src).toMatch(/\{loading \? \(\s*<ActivityIndicator[^>]*\/>\s*\) : \(\s*<>\s*<Text[^>]*>\s*\{title\}/);
+  });
+});
+
 describe("a member, as VoiceOver reads them", () => {
   it("is their username, then what the row says under it, where it says anything", () => {
     expect(memberLabel("june", "June Nakamura", "Osaka")).toBe("june, June Nakamura, Osaka");

@@ -60,6 +60,10 @@ export function GateButton({
       onPress={onPress}
       disabled={loading || disabled}
       accessibilityRole="button"
+      // Named by its title even while the spinner stands in for it, when
+      // VoiceOver used to read Sign in or Submit application as nothing.
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: loading || disabled, busy: loading }}
       accessibilityHint={accessibilityHint}
     >
       {loading ? (
