@@ -88,6 +88,10 @@ export function GateButton({
  * the default size nothing moves: the longest label at the door is about
  * 180 points, and on a 375-point phone the bar leaves it 231 between the
  * two clearances, so it stays on one line in the same place.
+ *
+ * The card is the Post tab's Memory Room bar, and that page gives both its
+ * bars their size and their own clearance (app/(tabs)/create.tsx, its
+ * `bar` style), which overrides these; the card keeps none of its own.
  */
 const ARROW_CLEARANCE = 44;
 
@@ -96,7 +100,7 @@ const styles = StyleSheet.create({
   // lines and the bar grows to hold them, where a fixed height cut them off.
   base: { minHeight: 44, alignItems: "center", justifyContent: "center" },
   solid: { backgroundColor: GATE_BUTTON, paddingHorizontal: ARROW_CLEARANCE },
-  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldSoft, paddingHorizontal: ARROW_CLEARANCE },
+  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldSoft },
   outline: { borderWidth: 1, borderColor: colors.ink, paddingHorizontal: ARROW_CLEARANCE },
   quiet: { minHeight: 0, paddingVertical: spacing.md },
   pressed: { opacity: 0.75 },
