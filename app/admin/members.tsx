@@ -1,20 +1,27 @@
 import React, { useState } from "react";
-import { FlatList, StyleSheet, TextInput, View } from "react-native";
+import { FlatList, StyleSheet, Text, TextInput, View } from "react-native";
 import { showAlert, showPrompt } from "@/utils/alert";
 import { Redirect, useRouter } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/providers/SessionProvider";
 import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
-import { colors, radii, spacing } from "@/theme";
+import { colors, radii, spacing, type } from "@/theme";
 import { fetchMembers, setInviteQuota, setSuspension, warnMember } from "@/api/moderation";
 import { formatMemberNumber } from "@/utils/membership";
 import { errorMessage } from "@/utils/errorMessage";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { useDebounced } from "@/hooks/useDebounced";
+
+/**
+ * How many members one read brings: fetchMembers (src/api/moderation.ts)
+ * asks for the newest fifty, matching the search when there is one.
+ */
+const MEMBERS_READ = 50;
 
 // A row that breaks this page breaks only this page, with the way back on
 // it as well as in the header: opened from a report's notification (0032)
@@ -43,11 +50,23 @@ export default function AdminMembers() {
   const queryClient = useQueryClient();
   const [q, setQ] = useState("");
 
+  // Asked a beat after typing stops, as Search is, and the last answer
+  // stays up while the next one comes: a read on every keystroke used to
+  // blank the list between letters.
+  const settledQ = useDebounced(q, 250);
   const members = useQuery({
-    queryKey: ["admin-members", q],
-    queryFn: () => fetchMembers(q),
+    queryKey: ["admin-members", settledQ],
+    queryFn: () => fetchMembers(settledQ),
     enabled: isAdmin,
+    placeholderData: keepPreviousData,
   });
+  // A full read may not be everyone: say so, and how to find the rest.
+  const more =
+    (members.data?.length ?? 0) >= MEMBERS_READ
+      ? settledQ.trim()
+        ? `The ${MEMBERS_READ} newest that match. Type more to find anyone else.`
+        : `The ${MEMBERS_READ} newest. Search to find anyone else.`
+      : null;
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-members"] });
 
@@ -140,6 +159,7 @@ export default function AdminMembers() {
       <FlatList
         data={members.data ?? []}
         keyExtractor={(m) => m.id}
+        ListFooterComponent={more ? <Text style={styles.more}>{more}</Text> : null}
         ListEmptyComponent={
           members.isError ? (
             <LoadFailed what="the members" onRetry={() => members.refetch()} />
@@ -186,4 +206,5 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   actions: { flexDirection: "row", gap: spacing.xs },
+  more: { ...type.caption, textAlign: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
 });

@@ -111,6 +111,22 @@ describe("an alert about something that did not happen", () => {
     );
   });
 
+  it("Members asks once typing pauses, and says when the newest fifty may not be everyone", () => {
+    const src = code("app/admin/members.tsx");
+    expect(src).toMatch(/const settledQ = useDebounced\(q, 250\);/);
+    expect(src).toMatch(/queryKey: \["admin-members", settledQ\],\s*queryFn: \(\) => fetchMembers\(settledQ\),\s*enabled: isAdmin,\s*placeholderData: keepPreviousData,/);
+    expect(src).not.toMatch(/fetchMembers\(q\)/);
+    // The page's fifty is the read's fifty.
+    const api = code("src/api/moderation.ts");
+    const fetchMembersBody = api.slice(api.indexOf("export async function fetchMembers("), api.indexOf("export async function fetchDefaultInviteQuota("));
+    const limit = Number(fetchMembersBody.match(/\.limit\((\d+)\)/)?.[1]);
+    expect(Number(src.match(/const MEMBERS_READ = (\d+);/)?.[1])).toBe(limit);
+    expect(src).toContain("(members.data?.length ?? 0) >= MEMBERS_READ");
+    expect(src).toContain("`The ${MEMBERS_READ} newest. Search to find anyone else.`");
+    expect(src).toContain("`The ${MEMBERS_READ} newest that match. Type more to find anyone else.`");
+    expect(src).toContain("ListFooterComponent={more ? <Text style={styles.more}>{more}</Text> : null}");
+  });
+
   it("a list that could not be read says so, with Try again, on every admin page that has one", () => {
     expect(code("app/admin/applications.tsx")).toMatch(/apps\.isError && !apps\.data \? \(\s*<LoadFailed what="the applications" onRetry=\{\(\) => apps\.refetch\(\)\} \/>/);
     expect(code("app/admin/members.tsx")).toMatch(/members\.isError \? \(\s*<LoadFailed what="the members" onRetry=\{\(\) => members\.refetch\(\)\} \/>/);
