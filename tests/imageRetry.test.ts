@@ -99,11 +99,40 @@ const harness = vi.hoisted(() => {
 
 vi.mock("react", () => harness.react);
 
+/** react-query's online manager, as NetInfo drives it on the phone: it tells its listeners of a change only. */
+const online = vi.hoisted(() => {
+  const listeners = new Set<(online: boolean) => void>();
+  let value = true;
+  return {
+    listeners,
+    onlineManager: {
+      isOnline: () => value,
+      subscribe(listener: (online: boolean) => void) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    },
+    set(next: boolean) {
+      if (next === value) return;
+      value = next;
+      for (const listener of [...listeners]) listener(next);
+    },
+    reset() {
+      listeners.clear();
+      value = true;
+    },
+  };
+});
+vi.mock("@tanstack/react-query", () => ({ onlineManager: online.onlineManager }));
+
 import { IMAGE_RETRIES, retryDelayMs, useImageRetry } from "@/media/imageRetry";
 
 beforeEach(() => {
   vi.useFakeTimers();
   harness.reset();
+  online.reset();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -178,6 +207,86 @@ describe("a photograph that failed to load", () => {
     view.current.onError();
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
+    expect(online.listeners.size).toBe(0);
+  });
+});
+
+describe("a photograph that failed to load, when the connection comes back", () => {
+  const spend = (view: { current: { onError: () => void } }) => {
+    for (const wait of [1_500, 4_000, 10_000]) {
+      view.current.onError();
+      vi.advanceTimersByTime(wait);
+    }
+    view.current.onError();
+  };
+
+  it("is asked for again the moment the phone is back online, with its tries afresh, after they were spent", () => {
+    const view = harness.mount(() => useImageRetry("x"));
+    spend(view);
+    expect(view.current.attempt).toBe(3);
+    vi.advanceTimersByTime(120_000);
+    expect(view.current.attempt).toBe(3);
+    // Signal lost for a while, then back.
+    online.set(false);
+    expect(view.current.attempt).toBe(3);
+    online.set(true);
+    expect(view.current.attempt).toBe(4);
+    // Asked for, it listens no longer; failing again, it has its three tries.
+    expect(online.listeners.size).toBe(0);
+    view.current.onError();
+    vi.advanceTimersByTime(1_500);
+    expect(view.current.attempt).toBe(5);
+  });
+
+  it("spends no try while the phone is offline, and is asked for as soon as it is back", () => {
+    online.set(false);
+    const view = harness.mount(() => useImageRetry("x"));
+    view.current.onError();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(60_000);
+    expect(view.current.attempt).toBe(0);
+    online.set(true);
+    expect(view.current.attempt).toBe(1);
+  });
+
+  it("is asked for once, at once, when a retry was still waiting", () => {
+    const view = harness.mount(() => useImageRetry("x"));
+    view.current.onError();
+    online.set(false);
+    online.set(true);
+    expect(view.current.attempt).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(20_000);
+    expect(view.current.attempt).toBe(1);
+  });
+
+  it("is left alone once it has loaded: a picture on screen never blinks for a reconnection", () => {
+    const view = harness.mount(() => useImageRetry("x"));
+    expect(online.listeners.size).toBe(0);
+    online.set(false);
+    online.set(true);
+    expect(view.current.attempt).toBe(0);
+    // Failed once, and the retry loaded it.
+    view.current.onError();
+    vi.advanceTimersByTime(1_500);
+    expect(view.current.attempt).toBe(1);
+    expect(online.listeners.size).toBe(0);
+    online.set(false);
+    online.set(true);
+    expect(view.current.attempt).toBe(1);
+  });
+
+  it("forgets the old picture's failure when it is given a new one", () => {
+    let source = "a";
+    const view = harness.mount(() => useImageRetry(source));
+    spend(view);
+    expect(online.listeners.size).toBe(1);
+    source = "b";
+    view.render();
+    expect(online.listeners.size).toBe(0);
+    online.set(false);
+    online.set(true);
+    expect(view.current.attempt).toBe(0);
   });
 });
 
