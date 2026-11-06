@@ -14,12 +14,12 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { readState } from "@/components/readState";
+import { profileRows } from "@/components/profileRows";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
 import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
 import { colors, spacing } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
-import { sortByTaken } from "@/utils/memories";
 import { seedAuthor, seedPost } from "@/utils/profileSeed";
 import { opensGallery } from "@/utils/profileViews";
 import { clipTiming } from "@/utils/videoTiming";
@@ -57,12 +57,7 @@ export default function OwnProfile() {
     queryFn: () => fetchTaggedPosts(userId),
     enabled: Boolean(userId),
   });
-  const rows: GridPost[] = useMemo(() => {
-    const mine = posts.data ?? [];
-    const theirs = (tagged.data ?? []).map((p) => ({ ...p, tagged_in: true }));
-    const all = [...mine, ...theirs].sort((a, b) => b.created_at.localeCompare(a.created_at));
-    return sort === "taken" ? sortByTaken(all) : all;
-  }, [posts.data, tagged.data, sort]);
+  const rows: GridPost[] = useMemo(() => profileRows(posts.data, tagged.data, sort), [posts.data, tagged.data, sort]);
   // The towns are looked up as the photographs arrive, so "Places" opens placed.
   usePlaceWarmup(posts.data ?? []);
   // Your eras as you arranged them, and, once that has been read, the means to arrange them.

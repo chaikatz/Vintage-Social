@@ -15,6 +15,7 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { readState } from "@/components/readState";
+import { profileRows } from "@/components/profileRows";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
 import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
 import { Timeline } from "@/components/Timeline";
@@ -24,7 +25,6 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
 import { openConversation } from "@/api/messages";
 import { blockMember, fetchBlockedIds, unblockMember } from "@/api/blocks";
-import { sortByTaken } from "@/utils/memories";
 import { seedAuthor, seedPost } from "@/utils/profileSeed";
 import { opensGallery } from "@/utils/profileViews";
 import { clipTiming } from "@/utils/videoTiming";
@@ -87,12 +87,7 @@ export default function UserProfile() {
     queryFn: () => fetchTaggedPosts(profile!.id),
     enabled: Boolean(profile?.id) && !locked,
   });
-  const rows: GridPost[] = useMemo(() => {
-    const theirs = postsQ.data ?? [];
-    const taggedIn = (taggedQ.data ?? []).map((p) => ({ ...p, tagged_in: true }));
-    const all = [...theirs, ...taggedIn].sort((a, b) => b.created_at.localeCompare(a.created_at));
-    return sort === "taken" ? sortByTaken(all) : all;
-  }, [postsQ.data, taggedQ.data, sort]);
+  const rows: GridPost[] = useMemo(() => profileRows(postsQ.data, taggedQ.data, sort), [postsQ.data, taggedQ.data, sort]);
   // The towns are looked up as the photographs arrive, so "Places" opens placed.
   usePlaceWarmup(postsQ.data ?? []);
   // Their eras as they arranged them: read here, changed only on their own page.
