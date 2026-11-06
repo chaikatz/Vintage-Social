@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { useRouter } from "expo-router";
@@ -10,7 +10,8 @@ import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchReports, removeComment, removePost, resolveReport, type ReportWithRefs } from "@/api/moderation";
 import { fetchProfileById } from "@/api/profiles";
-import { withRowBack, withoutRow } from "@/components/decidedRows";
+import { undecided, withIds, withRowBack, withoutIds, withoutRow } from "@/components/decidedRows";
+import { removalTarget, sameTarget } from "@/components/reportTargets";
 import { errorMessage } from "@/utils/errorMessage";
 import { postAge } from "@/utils/time";
 import type { ReportStatus } from "@/types/db";
@@ -40,31 +41,62 @@ export default function AdminReports() {
   // A report leaves the open list the moment it is acted on, so it cannot
   // be acted on twice (a second Remove sent the author a second notice),
   // and a refusal puts that one back and says why. Dismiss used to fail
-  // in silence.
+  // in silence. While an action is on its way its reports stay off the
+  // list whatever a read brings back.
+  //
+  // A removal also closes the other open reports on the same photograph
+  // or comment: their own Remove removed it again and sent its author
+  // another notice. What this screen has removed is remembered, so a
+  // report left open (one of those that failed to close, or one whose
+  // removal went through but whose closing did not) is closed by its
+  // Remove without removing anything again.
+  const removed = useRef(new Set<string>());
+  const [deciding, setDeciding] = useState<ReadonlySet<string>>(() => new Set());
   const openKey = ["admin-reports", "open"];
   const act = useMutation({
-    mutationFn: async ({ report, action }: { report: ReportWithRefs; action: ReportAction }) => {
+    mutationFn: async ({ report, action, also }: { report: ReportWithRefs; action: ReportAction; also: ReportWithRefs[] }) => {
       const note = `Removed after report: ${report.reason}`;
       if (action === "dismiss") {
         await resolveReport(report.id, "dismissed", "No action needed");
         return;
       }
-      if (action === "removePost" && report.post_id) await removePost(report.post_id, note);
-      if (action === "removeComment" && report.comment_id) await removeComment(report.comment_id, note);
+      const target = removalTarget(report);
+      if (target && !removed.current.has(target)) {
+        if (action === "removePost" && report.post_id) await removePost(report.post_id, note);
+        if (action === "removeComment" && report.comment_id) await removeComment(report.comment_id, note);
+        removed.current.add(target);
+      }
       await resolveReport(report.id, "resolved", "Content removed");
+      await Promise.allSettled(also.map((r) => resolveReport(r.id, "resolved", "Content removed")));
     },
-    onMutate: async ({ report }) => {
+    onMutate: async ({ report, also }) => {
+      const ids = [report.id, ...also.map((r) => r.id)];
+      setDeciding((d) => withIds(d, ids));
       await queryClient.cancelQueries({ queryKey: openKey });
       const order = (queryClient.getQueryData<ReportWithRefs[]>(openKey) ?? []).map((r) => r.id);
-      queryClient.setQueryData<ReportWithRefs[]>(openKey, (rows) => withoutRow(rows, report.id));
+      queryClient.setQueryData<ReportWithRefs[]>(openKey, (rows) => ids.reduce((list, id) => withoutRow(list, id), rows));
       return { order };
     },
-    onError: (err, { report }, ctx) => {
-      queryClient.setQueryData<ReportWithRefs[]>(openKey, (rows) => withRowBack(rows, report, ctx?.order));
+    onSuccess: async (_done, { report, also }) => {
+      // Taken: a read that left before it was cannot bring them back.
+      const ids = [report.id, ...also.map((r) => r.id)];
+      await queryClient.cancelQueries({ queryKey: openKey });
+      queryClient.setQueryData<ReportWithRefs[]>(openKey, (rows) => ids.reduce((list, id) => withoutRow(list, id), rows));
+    },
+    onError: (err, { report, also }, ctx) => {
+      queryClient.setQueryData<ReportWithRefs[]>(openKey, (rows) =>
+        [report, ...also].reduce((list, r) => withRowBack(list, r, ctx?.order), rows),
+      );
       showAlert("Action failed", errorMessage(err, "Nothing changed. Try again in a moment."));
     },
-    onSettled: refresh,
+    onSettled: (_done, _err, { report, also }) => {
+      setDeciding((d) => withoutIds(d, [report.id, ...also.map((r) => r.id)]));
+      return refresh();
+    },
   });
+  const shown = undecided(reports.data, deciding);
+  const remove = (report: ReportWithRefs, action: "removePost" | "removeComment") =>
+    act.mutate({ report, action, also: sameTarget(shown, report) });
 
   const openTarget = (report: ReportWithRefs) => {
     if (report.post_id) router.push(`/post/${report.post_id}`);
@@ -98,7 +130,7 @@ export default function AdminReports() {
         ))}
       </View>
       <FlatList
-        data={reports.data ?? []}
+        data={shown}
         keyExtractor={(r) => r.id}
         refreshing={reports.isRefetching}
         onRefresh={() => reports.refetch()}
@@ -129,7 +161,7 @@ export default function AdminReports() {
                       title="Remove content"
                       variant="danger"
                       small
-                      onPress={() => act.mutate({ report: item, action: "removePost" })}
+                      onPress={() => remove(item, "removePost")}
                       style={styles.action}
                     />
                   </>
@@ -138,7 +170,7 @@ export default function AdminReports() {
                     title="Remove comment"
                     variant="danger"
                     small
-                    onPress={() => act.mutate({ report: item, action: "removeComment" })}
+                    onPress={() => remove(item, "removeComment")}
                     style={styles.action}
                   />
                 ) : item.profile_id ? (
@@ -148,7 +180,7 @@ export default function AdminReports() {
                   title="Dismiss"
                   variant="secondary"
                   small
-                  onPress={() => act.mutate({ report: item, action: "dismiss" })}
+                  onPress={() => act.mutate({ report: item, action: "dismiss", also: [] })}
                   style={styles.action}
                 />
               </View>

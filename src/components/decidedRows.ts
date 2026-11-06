@@ -11,6 +11,34 @@
  * had taken.
  */
 
+/**
+ * The rows to draw: any with a decision still on its way are left out.
+ *
+ * Taking a row out of the cached list is not enough on its own. Another
+ * decision that settles first reads the list again, and if that read
+ * reaches the server before this decision does, it brings the row back
+ * with its buttons live, to be decided a second time.
+ */
+export function undecided<T extends { id: string }>(rows: T[] | undefined, deciding: ReadonlySet<string>): T[] {
+  const list = rows ?? [];
+  return deciding.size ? list.filter((r) => !deciding.has(r.id)) : list;
+}
+
+/** The ids with a decision on its way, with these added. */
+export function withIds(deciding: ReadonlySet<string>, ids: readonly string[]): ReadonlySet<string> {
+  const next = new Set(deciding);
+  for (const id of ids) next.add(id);
+  return next;
+}
+
+/** The ids with a decision on its way, without these. */
+export function withoutIds(deciding: ReadonlySet<string>, ids: readonly string[]): ReadonlySet<string> {
+  if (!ids.some((id) => deciding.has(id))) return deciding;
+  const next = new Set(deciding);
+  for (const id of ids) next.delete(id);
+  return next;
+}
+
 /** The list without the row being decided. */
 export function withoutRow<T extends { id: string }>(rows: T[] | undefined, id: string): T[] | undefined {
   return rows?.filter((r) => r.id !== id);

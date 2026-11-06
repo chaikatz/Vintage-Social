@@ -6,6 +6,7 @@ import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
+import { undecided, withIds, withRowBack, withoutIds, withoutRow } from "@/components/decidedRows";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideApplication, fetchApplications } from "@/api/moderation";
 import { postAge } from "@/utils/time";
@@ -26,19 +27,35 @@ export default function AdminApplications() {
   // The card leaves the list the moment the decision is tapped and comes
   // back if the database refused it, with the reason on screen — a tap
   // that failed quietly used to look like a tap that did nothing.
+  // A refusal puts back that card alone: putting back the whole list as
+  // it was before the tap also brought back the cards decided since. And
+  // while a decision is on its way its card stays off whatever a read
+  // brings back, so it cannot be decided twice.
+  const [deciding, setDeciding] = useState<ReadonlySet<string>>(() => new Set());
   const decide = useMutation({
-    mutationFn: ({ id, decision }: { id: string; decision: Exclude<ApplicationStatus, "pending"> }) =>
-      decideApplication(id, decision),
-    onMutate: ({ id }) => {
-      const before = queryClient.getQueryData<ApplicationRow[]>(["admin-apps", tab]);
-      queryClient.setQueryData<ApplicationRow[]>(["admin-apps", tab], (rows) => rows?.filter((r) => r.id !== id));
-      return { before };
+    mutationFn: ({ app, decision }: { app: ApplicationRow; decision: Exclude<ApplicationStatus, "pending"> }) =>
+      decideApplication(app.id, decision),
+    onMutate: async ({ app }) => {
+      setDeciding((ids) => withIds(ids, [app.id]));
+      const key = ["admin-apps", tab];
+      await queryClient.cancelQueries({ queryKey: key });
+      const order = (queryClient.getQueryData<ApplicationRow[]>(key) ?? []).map((r) => r.id);
+      queryClient.setQueryData<ApplicationRow[]>(key, (rows) => withoutRow(rows, app.id));
+      return { key, order };
     },
-    onError: (err, _vars, ctx) => {
-      if (ctx?.before) queryClient.setQueryData(["admin-apps", tab], ctx.before);
+    onSuccess: async (_done, { app }, ctx) => {
+      // Taken: a read that left before it was cannot bring it back.
+      await queryClient.cancelQueries({ queryKey: ctx.key });
+      queryClient.setQueryData<ApplicationRow[]>(ctx.key, (rows) => withoutRow(rows, app.id));
+    },
+    onError: (err, { app }, ctx) => {
+      if (ctx) queryClient.setQueryData<ApplicationRow[]>(ctx.key, (rows) => withRowBack(rows, app, ctx.order));
       showAlert("That decision didn’t take", err instanceof Error ? err.message : String(err));
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["admin-apps"] }),
+    onSettled: (_done, _err, { app }) => {
+      setDeciding((ids) => withoutIds(ids, [app.id]));
+      return queryClient.invalidateQueries({ queryKey: ["admin-apps"] });
+    },
   });
 
   return (
@@ -57,7 +74,7 @@ export default function AdminApplications() {
         ))}
       </View>
       <FlatList
-        data={apps.data ?? []}
+        data={undecided(apps.data, deciding)}
         keyExtractor={(a) => a.id}
         refreshing={apps.isRefetching}
         onRefresh={() => apps.refetch()}
@@ -88,7 +105,7 @@ export default function AdminApplications() {
                 <Button
                   title="Approve"
                   small
-                  onPress={() => decide.mutate({ id: item.id, decision: "approved" })}
+                  onPress={() => decide.mutate({ app: item, decision: "approved" })}
                   style={styles.actionButton}
                 />
                 {tab !== "waitlisted" ? (
@@ -96,7 +113,7 @@ export default function AdminApplications() {
                     title="Waitlist"
                     variant="secondary"
                     small
-                    onPress={() => decide.mutate({ id: item.id, decision: "waitlisted" })}
+                    onPress={() => decide.mutate({ app: item, decision: "waitlisted" })}
                     style={styles.actionButton}
                   />
                 ) : null}
@@ -105,7 +122,7 @@ export default function AdminApplications() {
                     title="Reject"
                     variant="danger"
                     small
-                    onPress={() => decide.mutate({ id: item.id, decision: "rejected" })}
+                    onPress={() => decide.mutate({ app: item, decision: "rejected" })}
                     style={styles.actionButton}
                   />
                 ) : null}

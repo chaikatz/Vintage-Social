@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,7 +6,7 @@ import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
-import { withRowBack, withoutRow } from "@/components/decidedRows";
+import { undecided, withIds, withRowBack, withoutIds, withoutRow } from "@/components/decidedRows";
 import { memberLabel } from "@/components/memberLabel";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideFollowRequest, fetchPendingRequests } from "@/api/profiles";
@@ -34,17 +34,25 @@ export default function Requests() {
   // A request leaves the list the moment it is decided, so it cannot be
   // decided twice (Accept, then Decline before the list was read again,
   // deleted the follow just accepted). A refusal puts that one back.
+  // While its decision is on its way it stays off the list whatever a
+  // read brings back: the read after another decision could reach the
+  // server first and bring it back with both buttons live.
+  const [deciding, setDeciding] = useState<ReadonlySet<string>>(() => new Set());
   const key = ["follow-requests", userId];
   const decide = useMutation({
     mutationFn: ({ follower, accept }: { follower: ProfileRow; accept: boolean }) =>
       decideFollowRequest(follower.id, userId, accept),
     onMutate: async ({ follower }) => {
+      setDeciding((ids) => withIds(ids, [follower.id]));
       await queryClient.cancelQueries({ queryKey: key });
       const order = (queryClient.getQueryData<ProfileRow[]>(key) ?? []).map((r) => r.id);
       queryClient.setQueryData<ProfileRow[]>(key, (rows) => withoutRow(rows, follower.id));
       return { order };
     },
-    onSuccess: () => {
+    onSuccess: async (_done, { follower }) => {
+      // Taken: a read that left before it was cannot bring it back.
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData<ProfileRow[]>(key, (rows) => withoutRow(rows, follower.id));
       queryClient.invalidateQueries({ queryKey: ["activity", userId] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
       queryClient.invalidateQueries({ queryKey: ["follows"] });
@@ -54,7 +62,10 @@ export default function Requests() {
       queryClient.setQueryData<ProfileRow[]>(key, (rows) => withRowBack(rows, follower, ctx?.order));
       showAlert("That didn’t work", err instanceof Error ? err.message : String(err));
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+    onSettled: (_done, _err, { follower }) => {
+      setDeciding((ids) => withoutIds(ids, [follower.id]));
+      return queryClient.invalidateQueries({ queryKey: key });
+    },
   });
 
   if (requests.isError && !requests.data) {
@@ -68,7 +79,7 @@ export default function Requests() {
   return (
     <Screen padded={false}>
       <FlatList
-        data={requests.data ?? []}
+        data={undecided(requests.data, deciding)}
         keyExtractor={(p) => p.id}
         ListEmptyComponent={
           requests.isFetched ? (
