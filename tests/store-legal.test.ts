@@ -67,7 +67,8 @@ describe("the support page", () => {
     expect(read("app/settings.tsx")).toContain("Delete account");
     expect(read("app/settings.tsx")).toContain(">Support<");
     expect(read("app/user/[username].tsx")).toContain('"Block member"');
-    expect(read("app/comments.tsx")).toMatch(/onLongPress=\{\(\) => onCommentLongPress/);
+    // A comment is reported from the menu a long press on it opens.
+    expect(read("app/comments.tsx")).toMatch(/<Pressable[^>]*\bonLongPress=\{/);
     expect(read("app/comments.tsx")).toContain('"Report comment"');
   });
 
