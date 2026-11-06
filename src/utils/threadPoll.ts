@@ -118,15 +118,32 @@ export async function readThread<T extends Message>({
   return { messages: mergeNewer(held, newer), whole: false };
 }
 
-/** The thread with the other member's unread messages marked read at `at`, once the mark has landed. */
-export function markedRead<T extends Pick<MessageWithPost, "sender_id" | "read_at">>(
+/** The other member's messages unread in the thread held: what a mark sent now is for. */
+export function unreadIds(
+  messages: readonly Pick<MessageWithPost, "id" | "sender_id" | "read_at">[] | undefined,
+  readerId: string,
+): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const m of messages ?? []) if (m.sender_id !== readerId && !m.read_at) out.add(m.id);
+  return out;
+}
+
+/**
+ * The thread with the other member's unread messages marked read at `at`,
+ * once the mark has landed: those in `marked`, the ones unread when the
+ * mark was sent (`unreadIds`). A message a poll added while the mark was
+ * on its way may have come in after the server marked the thread, and is
+ * left unread here, so the thread asks for a mark of its own for it.
+ */
+export function markedRead<T extends Pick<MessageWithPost, "id" | "sender_id" | "read_at">>(
   messages: readonly T[],
   readerId: string,
   at: string,
+  marked: ReadonlySet<string>,
 ): T[] {
   let changed = false;
   const out = messages.map((m) => {
-    if (m.sender_id === readerId || m.read_at) return m;
+    if (m.sender_id === readerId || m.read_at || !marked.has(m.id)) return m;
     changed = true;
     return { ...m, read_at: at };
   });

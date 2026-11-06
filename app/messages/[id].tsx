@@ -25,7 +25,7 @@ import {
   markConversationRead,
   sendMessage,
 } from "@/api/messages";
-import { markedRead, readThread } from "@/utils/threadPoll";
+import { markedRead, readThread, unreadIds } from "@/utils/threadPoll";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -100,13 +100,19 @@ export default function Thread() {
   const newestUnread = useMemo(() => newestUnreadFrom(messagesQ.data, userId), [messagesQ.data, userId]);
   useEffect(() => {
     if (!id || !userId || !newestUnread) return;
+    // What this mark is for: the messages unread as it is sent. One a poll
+    // adds while it is on its way may land after the server has marked the
+    // thread, and keeps its own mark (src/utils/threadPoll.ts).
+    const marking = unreadIds(queryClient.getQueryData<MessageWithPost[]>(["messages", id]), userId);
     markConversationRead(id, userId)
       .then(() => {
         // Marked here too: the polls bring only new messages, and these
         // would otherwise stay unread in the thread held, to be marked
         // again the next time it is opened.
         const at = new Date().toISOString();
-        queryClient.setQueryData<MessageWithPost[]>(["messages", id], (held) => (held ? markedRead(held, userId, at) : held));
+        queryClient.setQueryData<MessageWithPost[]>(["messages", id], (held) =>
+          held ? markedRead(held, userId, at, marking) : held,
+        );
         queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
         queryClient.invalidateQueries({ queryKey: ["unread-messages", userId] });
       })

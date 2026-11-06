@@ -11,6 +11,7 @@ import {
   pollFrom,
   readThread,
   readWhole,
+  unreadIds,
 } from "@/utils/threadPoll";
 import { newestUnreadFrom } from "@/utils/messageText";
 
@@ -115,16 +116,45 @@ describe("an open thread, read again every five seconds", () => {
     expect(flooded.messages).toHaveLength(3 + POLL_LIMIT + 5);
   });
 
+  it("finds a message whose insert landed after a poll had seen a newer one", async () => {
+    // b is read at 10 s. A message whose insert began at 9 s (a slow
+    // trigger, both members sending at once) commits only after that poll.
+    const s = server([msg("a", 0), msg("b", 10_000)]);
+    const opened = await readThread({ held: undefined, invalidated: false, lastWholeAt: 0, now: T0, whole: s.whole, since: s.since });
+    s.add(msg("late", 9_000));
+    const polled = await readThread({ held: opened.messages, invalidated: false, lastWholeAt: T0, now: T0 + 5_000, whole: s.whole, since: s.since });
+    expect(polled.whole).toBe(false);
+    expect(polled.messages.map((m) => m.id)).toEqual(["a", "late", "b"]);
+  });
+
   it("keeps the read marks right: a thread marked read asks for no second mark, and a new message asks for one", () => {
     const thread = [msg("a", 0), msg("mine", 500, "me"), msg("b", 1_000)];
     expect(newestUnreadFrom(thread, "me")).toBe("b");
-    const marked = markedRead(thread, "me", at(2_000));
+    const marking = unreadIds(thread, "me");
+    expect([...marking]).toEqual(["a", "b"]);
+    const marked = markedRead(thread, "me", at(2_000), marking);
     expect(newestUnreadFrom(marked, "me")).toBeNull();
     // My own message is not mine to mark.
     expect(marked.find((m) => m.id === "mine")?.read_at).toBeNull();
-    expect(markedRead(marked, "me", at(3_000))).toBe(marked);
+    expect(markedRead(marked, "me", at(3_000), unreadIds(marked, "me"))).toBe(marked);
     // A poll adds a new message of theirs: it is the one to mark next.
     expect(newestUnreadFrom(mergeNewer(marked, [msg("c", 4_000)]), "me")).toBe("c");
+  });
+
+  it("leaves unread a message a poll added while the mark was on its way, so it is marked in turn", () => {
+    // The mark goes out for a; the server marks what is unread as its
+    // update runs. c arrives after that, and a poll brings it before the
+    // first mark's answer is back.
+    const thread = [msg("a", 0)];
+    const marking = unreadIds(thread, "me");
+    const polled = mergeNewer(thread, [msg("c", 6_000)]);
+    const marked = markedRead(polled, "me", at(7_000), marking);
+    expect(marked.find((m) => m.id === "a")?.read_at).toBe(at(7_000));
+    expect(marked.find((m) => m.id === "c")?.read_at).toBeNull();
+    // Still the newest unread: the screen sends a mark for it.
+    expect(newestUnreadFrom(marked, "me")).toBe("c");
+    // Its own mark, once back, leaves nothing unread.
+    expect(newestUnreadFrom(markedRead(marked, "me", at(8_000), unreadIds(polled, "me")), "me")).toBeNull();
   });
 
   it("costs a few rows a poll instead of the whole thread (measured)", async () => {
@@ -182,9 +212,9 @@ describe("the thread screen", () => {
     expect(thread).not.toMatch(/invalidateQueries\(\{ queryKey: \["messages", id\] \}\)/);
   });
 
-  it("marks the thread held read once the mark has landed", () => {
+  it("marks the thread held read once the mark has landed, only what was unread as it was sent", () => {
     expect(thread).toMatch(
-      /markConversationRead\(id, userId\)\s*\.then\(\(\) => \{[\s\S]*?queryClient\.setQueryData<MessageWithPost\[\]>\(\["messages", id\], \(held\) => \(held \? markedRead\(held, userId, at\) : held\)\);/,
+      /const marking = unreadIds\(queryClient\.getQueryData<MessageWithPost\[\]>\(\["messages", id\]\), userId\);\s*markConversationRead\(id, userId\)\s*\.then\(\(\) => \{[\s\S]*?queryClient\.setQueryData<MessageWithPost\[\]>\(\["messages", id\], \(held\) =>\s*held \? markedRead\(held, userId, at, marking\) : held,\s*\);/,
     );
   });
 
