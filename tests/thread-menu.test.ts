@@ -84,7 +84,7 @@ describe("the thread's header", () => {
     expect(block).not.toMatch(/router\./);
     // And it takes the thread itself off its stack, not the screen on top.
     expect(thread).toMatch(
-      /const leaveThread = useCallback\(\(\) => \{\s*const stack = navigation\.getState\(\);\s*if \(stack && stack\.routes\.findIndex\(\(r\) => r\.key === route\.key\) > 0\) \{\s*navigation\.dispatch\(\{ \.\.\.StackActions\.pop\(\), source: route\.key, target: stack\.key \}\);\s*\} else \{\s*router\.replace\("\/"\);\s*\}\s*\}, \[navigation, route\.key, router\]\);/,
+      /const leaveThread = useCallback\(\(\) => \{\s*const stack = navigation\.getState\(\);\s*const at = stack \? stack\.routes\.findIndex\(\(r\) => r\.key === route\.key\) : -1;\s*if \(stack && at > 0\) \{\s*navigation\.dispatch\(\{ \.\.\.StackActions\.pop\(\), source: route\.key, target: stack\.key \}\);\s*\} else if \(stack && at === 0\) \{\s*navigation\.dispatch\(\{ \.\.\.StackActions\.replace\("\(tabs\)"\), source: route\.key, target: stack\.key \}\);\s*\} else \{\s*router\.replace\("\/"\);\s*\}\s*\}, \[navigation, route\.key, router\]\);/,
     );
     expect(thread).toMatch(/const navigation = useNavigation\(\);\s*const route = useRoute\(\);/);
     expect(thread).not.toMatch(/router\.back\(\)/);
@@ -112,6 +112,13 @@ describe("the thread's header", () => {
     expect(keys(router.getStateForAction(at(["tabs", "thread", "profile"]), leave, options))).toEqual(["tabs", "profile"]);
     // What router.back() did instead: it took the profile.
     expect(keys(router.getStateForAction(at(["tabs", "thread", "profile"]), StackActions.pop(), options))).toEqual(["tabs", "thread"]);
+    // A thread opened first (from a link): the tabs take its place, and a profile opened from it stays.
+    const first = { ...StackActions.replace("(tabs)"), source: "thread", target: "root" };
+    const names = (state: unknown) => (state as StackNavigationState<ParamListBase>).routes.map((r) => r.name);
+    expect(names(router.getStateForAction(at(["thread"]), first, options))).toEqual(["(tabs)"]);
+    expect(names(router.getStateForAction(at(["thread", "profile"]), first, options))).toEqual(["(tabs)", "user/[username]"]);
+    // There, a pop has nothing under the thread to go back to.
+    expect(router.getStateForAction(at(["thread", "profile"]), leave, options)).toBeNull();
   });
 
   it("the report screen takes a member as its subject", () => {

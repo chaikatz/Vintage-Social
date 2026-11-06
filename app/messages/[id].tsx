@@ -150,12 +150,17 @@ export default function Thread() {
   // out). And the thread itself is taken off its stack, not whatever is on
   // top: a member who opened the profile or a photograph from the thread
   // while the block was out (a while, with no signal) stays where they are.
+  // A thread opened first (from a link, or the web page reloaded) has
+  // nothing under it: the tabs take its place.
   const navigation = useNavigation();
   const route = useRoute();
   const leaveThread = useCallback(() => {
     const stack = navigation.getState();
-    if (stack && stack.routes.findIndex((r) => r.key === route.key) > 0) {
+    const at = stack ? stack.routes.findIndex((r) => r.key === route.key) : -1;
+    if (stack && at > 0) {
       navigation.dispatch({ ...StackActions.pop(), source: route.key, target: stack.key });
+    } else if (stack && at === 0) {
+      navigation.dispatch({ ...StackActions.replace("(tabs)"), source: route.key, target: stack.key });
     } else {
       router.replace("/");
     }
