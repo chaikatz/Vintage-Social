@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { code as screen } from "./helpers/screenSource";
 
 /**
  * Applying, and joining by invitation, make the account first and then do
@@ -238,6 +239,36 @@ describe("after a first try whose answer never came back (nobody signed in)", ()
     expect(await checkUsernameAvailable("ada.l", { email: application.email, password: application.password })).toBe(false);
     expect(await checkUsernameAvailable("ada.l")).toBe(true);
   });
+
+  it("the invitation's retry, signed out, finds the name its own and takes up the invitation with that account", async () => {
+    made();
+    expect(await checkUsernameAvailable("ada.l", { email: application.email, password: application.password })).toBe(true);
+    await joinWithInvite({ email: application.email, password: application.password, fullName: "Ada", desiredUsername: "ada.l", code: "bo-k" });
+    expect(h.accounts).toHaveLength(1);
+    expect(h.redeemed).toEqual(["u1"]);
+  });
+});
+
+/**
+ * What the two forms at the door ask of the name. Without the email and
+ * password typed beside it, the check above cannot know the name is the
+ * person's own, and the retry stopped at "That username is taken." before
+ * it could carry on. Read from the source (nothing here renders a screen).
+ */
+describe("the forms at the door", () => {
+  for (const [file, send] of [
+    ["app/(gate)/apply.tsx", "submitApplication"],
+    ["app/(gate)/invite.tsx", "joinWithInvite"],
+  ] as const) {
+    it(`${file} checks the name with the email and password it then signs up with`, () => {
+      const src = screen(file);
+      const submit = src.slice(src.indexOf("const submit = async"), src.indexOf("} catch (err)", src.indexOf("const submit = async")));
+      expect(submit.match(/checkUsernameAvailable\(/g)).toHaveLength(1);
+      expect(submit).toContain("const available = await checkUsernameAvailable(username, { email, password });");
+      expect(submit).toMatch(new RegExp(`await ${send}\\(\\{\\s*email,\\s*password,`));
+      expect(submit.indexOf("checkUsernameAvailable(")).toBeLessThan(submit.indexOf(`await ${send}(`));
+    });
+  }
 });
 
 describe("an email whose account is past the door", () => {

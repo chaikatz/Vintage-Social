@@ -34,8 +34,11 @@ const COPY: Record<string, { title: string; body: string }> = {
   },
   // An account with no application of its own: an invitation refused after
   // the account was made, or an application that never reached the admins
-  // (the app closed part-way). An invitation is taken here; an application
-  // starts again from a new account, as this one already holds its username.
+  // (the app closed part-way). An invitation is taken here. To apply, the
+  // words give the clean way: delete this account and apply afresh, under
+  // any name. (Signed out, the Apply form given this account's email and
+  // password also carries on with it, under the name it already has: the
+  // form's check of the name is given them, src/api/membership.ts.)
   none: {
     title: "NO APPLICATION YET",
     body: "Your account is made, but no application or invitation of yours has reached us.\nIf a member invited you, enter the invitation below. To apply instead, delete this account and apply again.",

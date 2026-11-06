@@ -76,7 +76,10 @@ export default function Apply() {
     setTried(true);
     setBusy(true);
     try {
-      const available = await checkUsernameAvailable(username);
+      // With the email and password typed beside it: a try whose account
+      // was made but whose answer never came back (no session was kept)
+      // finds the name is its own account's, and carries on with it.
+      const available = await checkUsernameAvailable(username, { email, password });
       if (!available) {
         setErrors((e) => ({ ...e, username: "That username is taken." }));
         return;
