@@ -215,11 +215,11 @@ export default function Pending() {
       </View>
       <View style={styles.actions}>
         {takesInvitation(status) ? (
-          <GateButton title="I have an invitation" variant="solid" onPress={enterInvitation} loading={redeeming} />
+          <GateButton title="I have an invitation" variant="solid" onPress={enterInvitation} loading={redeeming} disabled={deleting} />
         ) : null}
         {awaitsDecision(status) ? (
           <>
-            <GateButton title="Check status" onPress={checkAgain} loading={checking} style={styles.gap} />
+            <GateButton title="Check status" onPress={checkAgain} loading={checking} disabled={deleting} style={styles.gap} />
             {checkedAt ? (
               <Text style={styles.checked}>
                 {checkFailed
@@ -229,6 +229,7 @@ export default function Pending() {
             ) : null}
           </>
         ) : null}
+        {/* While the account is being deleted, nothing else is asked of it. */}
         <GateButton title="Sign out" variant="quiet" onPress={signOut} disabled={deleting} style={styles.gap} />
         <GateButton title="Delete my account" variant="quiet" onPress={confirmDelete} loading={deleting} style={styles.gap} />
       </View>

@@ -54,6 +54,15 @@ describe("A · the waiting screen deletes the account", () => {
     expect(failure).not.toMatch(/err\.message|String\(err\)/);
   });
 
+  it("while it deletes, no other button on the screen can be pressed", () => {
+    // A redeem or a refresh started mid-deletion would ask about an account that is going.
+    const buttons = src.match(/<GateButton\b[^>]*\/>/g) ?? [];
+    expect(buttons.length).toBeGreaterThanOrEqual(4);
+    for (const button of buttons) {
+      expect(button).toMatch(/\b(disabled|loading)=\{deleting\}/);
+    }
+  });
+
   it("calls every hook before its redirect", () => {
     expect(src).toMatch(/const \[deleting, setDeleting\] = React\.useState\(false\);[\s\S]*if \(session === null\) return <Redirect/);
     expect(hooksAfterFirstReturn(src)).toEqual([]);
