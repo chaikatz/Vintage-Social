@@ -165,7 +165,13 @@ await breakFrame(true);
 await go("/", 3000);
 body = await text();
 check("The app's own recover page stands in for the whole app", /Something went wrong/.test(body) && /VINTAGE/.test(body), body.replace(/\s+/g, " ").slice(0, 120));
-check("…and nothing of the broken frame is left drawn", (await page.locator('[role="tab"]').count()) === 0);
+// Not the tabs themselves: while the frame is broken no element can carry role="tab". What the
+// frame draws besides them: the header's Messages button, and Home's feed below it.
+check(
+  "…and nothing of the broken frame is left drawn",
+  (await page.locator('[aria-label="Messages"]').count()) === 0 && !/elena\.marchetti|tomas\.lindqvist/.test(body),
+  body.replace(/\s+/g, " ").slice(0, 120),
+);
 check("…and says nothing of the runtime", !/broken on purpose|TypeError|undefined/.test(body));
 check("…and nothing escaped to the window", uncaught.length === 0, uncaught.join(" | "));
 await shot("recover-05-app");
@@ -177,6 +183,8 @@ check(
   "Try again opens the app afresh, on the feed",
   /elena\.marchetti|tomas\.lindqvist/.test(body) && !/Something went wrong/.test(body) && (await page.locator('[role="tab"]').count()) >= 5,
 );
+// The same look that found nothing of the frame above finds it once it is back.
+check("…with the frame's header drawn again", (await page.locator('[aria-label="Messages"]').count()) >= 1);
 await shot("recover-06-back");
 
 const failed = results.filter((r) => !r.ok);
