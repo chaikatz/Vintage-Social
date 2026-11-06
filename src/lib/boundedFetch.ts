@@ -19,7 +19,15 @@ import { TimeoutError } from "@/utils/retry";
  * caller has chosen its limit.
  */
 
-/** A read (GET, HEAD) still unanswered after this long is given up. */
+/**
+ * A read (GET, HEAD) still unanswered after this long is given up.
+ *
+ * Answered means arrived whole: React Native's fetch (whatwg-fetch over
+ * XMLHttpRequest) resolves only once the whole body is in, so this limit
+ * covers the download as well as the wait. Ample for the rows the app
+ * reads a page at a time; a read that grows unpaged (a whole thread, a
+ * whole profile) on a slow connection is what would reach it first.
+ */
 export const READ_LIMIT_MS = 15_000;
 /** A write is given longer: one that lands late must not be taken for one that never would. */
 export const WRITE_LIMIT_MS = 30_000;
