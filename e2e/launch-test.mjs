@@ -716,6 +716,31 @@ await go("/search", 2800);
 check("Explore grid populated", (await page.locator("img").count()) > 6);
 await shot("15-explore");
 
+// Search ranks who the member follows above a stranger, read for the
+// results alone (fetchFollowsAmong): "ar" finds clara.reyes before
+// margot.dubois alphabetically, but Elena follows Margot and Margot her.
+await page.getByPlaceholder("Search members").fill("ar");
+await wait(1600);
+{
+  // Where each is drawn in the results, on screen (the tabs behind keep
+  // their own text, drawn out of view).
+  const height = page.viewportSize()?.height ?? 900;
+  const topOf = async (name) => {
+    const all = page.getByText(name, { exact: true });
+    let top = -1;
+    for (let i = 0; i < (await all.count()); i++) {
+      const box = (await all.nth(i).isVisible()) ? await all.nth(i).boundingBox() : null;
+      if (box && box.y >= 0 && box.y < height && (top < 0 || box.y < top)) top = box.y;
+    }
+    return top;
+  };
+  const margot = await topOf("margot.dubois");
+  const clara = await topOf("clara.reyes");
+  check("Search ranks a member followed both ways above one who only follows", margot >= 0 && clara >= 0 && margot < clara, `margot ${margot}, clara ${clara}`);
+}
+await page.getByPlaceholder("Search members").fill("");
+await wait(400);
+
 await go("/messages", 2600);
 check("Messages inbox renders", /tomas|june|arthur/i.test(await text()));
 await shot("16-messages");
