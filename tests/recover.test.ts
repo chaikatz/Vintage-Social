@@ -88,35 +88,44 @@ describe("the recover pages", () => {
     // and its bar, has no page of its own to put back. e2e/recover-test.mjs breaks that frame
     // to see the whole app's page, so it must stay without one.
     const wholeApp = ["app/index.tsx", "app/+not-found.tsx", "app/(tabs)/_layout.tsx"];
-    // Given theirs by this round's door and data work, which guards them with its own checks.
-    const elsewhere = [
-      "app/(gate)/apply.tsx",
-      "app/(gate)/invite.tsx",
-      "app/(gate)/landing.tsx",
-      "app/(gate)/pending.tsx",
-      "app/(gate)/sign-in.tsx",
-      "app/admin/index.tsx",
-      "app/admin/applications.tsx",
-      "app/admin/members.tsx",
-      "app/admin/reports.tsx",
-      "app/invite/[slug].tsx",
-      "app/report.tsx",
-      "app/share.tsx",
-      "app/follows.tsx",
-    ];
+    // Given theirs by this round's door and data work, which guards them with its own checks. Until
+    // that work is merged a group's routes may all be without one; once any of them has ours, every
+    // one of that group must, so the allowance ends by itself when the work comes in.
+    const elsewhere: Record<string, string[]> = {
+      door: [
+        "app/(gate)/apply.tsx",
+        "app/(gate)/invite.tsx",
+        "app/(gate)/landing.tsx",
+        "app/(gate)/pending.tsx",
+        "app/(gate)/sign-in.tsx",
+        "app/admin/index.tsx",
+        "app/admin/applications.tsx",
+        "app/admin/members.tsx",
+        "app/admin/reports.tsx",
+        "app/invite/[slug].tsx",
+      ],
+      data: ["app/report.tsx", "app/share.tsx", "app/follows.tsx"],
+    };
+    for (const [work, group] of Object.entries(elsewhere)) {
+      const given = group.some((route) => ours.test(code(route)));
+      for (const route of group) {
+        if (given) expect(code(route), `${work}: ${route}`).toMatch(ours);
+        else expect(code(route), `${work}: ${route}`).not.toMatch(/ErrorBoundary/);
+      }
+    }
     const routes = (readdirSync(path.resolve(import.meta.dirname, "..", "app"), { recursive: true }) as string[])
       .filter((f) => f.endsWith(".tsx"))
       .map((f) => `app/${f.split(path.sep).join("/")}`)
       .sort();
     expect(routes).toContain("app/era-move.tsx");
     expect(routes.length).toBeGreaterThan(30);
+    const allowed = Object.values(elsewhere).flat();
+    for (const route of allowed) expect(routes, route).toContain(route);
     for (const route of routes) {
       const source = code(route);
       if (wholeApp.includes(route)) {
         expect(source, route).not.toMatch(/ErrorBoundary/);
-      } else if (elsewhere.includes(route)) {
-        if (/ErrorBoundary/.test(source)) expect(source, route).toMatch(ours);
-      } else {
+      } else if (!allowed.includes(route)) {
         expect(source, route).toMatch(ours);
       }
     }
