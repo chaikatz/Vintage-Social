@@ -9,9 +9,12 @@ production (read-only) and from the public web on 5 November, and
 corrected on 6 November after an independent review (the house accounts,
 the Privacy Policy's deletion sentences, the migration list). Nothing here
 was run on an iPhone or a simulator: none can run where this was prepared.
-What only you can do is in section 2, in the order to do it. **Two review
-blockers must be in the merged branch before you build: see "Before you
-build" at the top of section 2.**
+What only you can do is in section 2, in the order to do it. The two
+review blockers found on 5 November (an account that is not a member's
+could not be deleted in the app, and the invitation did not say the
+Terms are agreed to) are fixed in the sweep's second round, on branch
+`r13-door`. **Before you build, check the branch you build has both: see
+"Before you build" at the top of section 2.**
 
 Passwords, keys and the review account's password are **not** in this file
 or anywhere in the repository, and must never be.
@@ -26,7 +29,7 @@ or anywhere in the repository, and must never be.
 | --- | --- |
 | What you test on TestFlight | branch `claude/editorial-feed-preview`: `claude/product-polish` plus the removable "Editorial (Preview)" feed |
 | `claude/product-polish` | `ae28ca6`: classic dark mode (a black page, white type), the Memory Room printed on the app's own page with the signature line under each photograph and CONTENTS as a tab, the invitation card's shadow |
-| Launch sweep | branches `r12-room`, `r12-stability`, `r12-media`, `r12-flows`, `r12-backend`, `r12-store` merge into `claude/product-polish`, then into the preview branch |
+| Launch sweep | branches `r12-room`, `r12-stability`, `r12-media`, `r12-flows`, `r12-backend`, `r12-store` merge into `claude/product-polish`, then into the preview branch. A second round fixes what the first handed on; its door part (the two review blockers, the admin pages, unknown addresses) is branch `r13-door` |
 | App version | `1.0.0` (`app.json`) |
 | Build number | kept by EAS (`appVersionSource: remote`, `autoIncrement: true`); each production build adds one |
 | Bundle ID | `com.vintage.social` |
@@ -131,38 +134,62 @@ support address shown in Settings" points at nothing.
     to anyone who has the link, even from a private account, until it is
     turned off or the photograph deleted.
   - Someone whose application is waiting or was not accepted, or whose
-    membership is suspended, cannot reach Settings, so the policy, the
-    Terms and the support page tell them to write in to have the account
-    deleted. That is a stopgap only: see "Before you build", blocker A.
+    membership is suspended, cannot reach Settings. Their waiting screen
+    now has **Delete my account** (two confirmations, as in Settings), and
+    the Privacy Policy, the Terms and the support page name it, with
+    writing in to the support address kept as a second way. Both
+    documents are dated **November 6, 2026**.
   - The Terms say the house accounts are the club's own, show
     public-domain and licensed photographs, and are not members.
 - **Support page:** `npm run build:legal` can now write
   `public/support.html` (Guideline 1.5: the Support URL must give a way to
   reach a person), once you give it an address.
+- **The door, second round (`r13-door`, 6 November):**
+  - The waiting screen has **Delete my account** (Guideline 5.1.1(v)),
+    and the invitation says "By accepting you agree to the Terms of Use
+    and Privacy Policy" (Guideline 1.2). These were the two review
+    blockers.
+  - The admin pages (Applications, Members, Reports) send a member who
+    is not an admin home when opened by a link; only the dashboard used
+    to (Guideline 2.1).
+  - An address the app does not know goes home, where it used to open
+    Expo's "Unmatched Route" page with a Sitemap of every route, the
+    admin pages among them (Guideline 2.1).
+  - The waiting screen and the landing page scroll when the largest text
+    sizes make them taller than the screen; Sign out, Delete my account,
+    Sign in and Privacy · Terms were below the bottom edge.
+  - An applicant whose account was made but whose application did not
+    reach us goes to the waiting screen, where every retry on the form
+    used to say "That username is taken".
+  - `seed/CREDITS.md` says above its table what the table says: 679
+    Unsplash Licence, 143 public domain, 70 CC0, 16 "no restrictions".
 
 ---
 
 ## 2. What only you can do, in order
 
-### Before you build: two review blockers that must be in the merged branch
+### Before you build: check the two review fixes are in the branch
 
-These are code changes in other parts of the sweep, handed to them with
-the exact patch. They are not in this branch. Before step 8, check that
-the branch you build has both; if not, ask Claude to apply them.
+Both were review blockers on 5 November and are fixed on branch
+`r13-door`, which merges into `claude/product-polish` and then into the
+preview branch you build. Before step 8, check the branch you build has
+both; if either is missing, the merge has not happened yet: ask Claude,
+and do not submit until it has.
 
-- **Review blocker A · Delete account for someone who is not a member
-  yet (Guideline 5.1.1(v)).** An account whose application is waiting or
-  was not accepted, or whose membership is suspended, sees only the
-  waiting screen, which offers no way to delete the account. Apple requires
-  every account the app creates to be deletable inside the app, and the
-  review notes send the reviewer to "Apply for membership", which makes
-  exactly this kind of account. Check: in the merged branch,
+- **Deleting an account that is not a member's (Guideline 5.1.1(v)).**
+  An account whose application is waiting or was not accepted, or whose
+  membership is suspended, sees only the waiting screen and cannot reach
+  Settings, and the review notes send the reviewer to "Apply for
+  membership", which makes exactly this kind of account. Check:
   `app/(gate)/pending.tsx` has a **Delete my account** button under Sign
-  out (search the file for `deleteMyAccount`). Until it does, do not submit.
-- **Review blocker B · The invitation screen says what is agreed to
-  (Guideline 1.2).** The review notes ask Apple to join with the
-  `applereview` invitation, and that screen shows no line about the Terms.
-  Check: `app/(gate)/invite.tsx` contains "By accepting you agree to the".
+  out (search the file for `deleteMyAccount`). Step 4 of section 6 tries it
+  on the phone.
+- **The invitation says what is agreed to (Guideline 1.2).** The review
+  notes ask Apple to join with the `applereview` invitation. Check:
+  `app/(gate)/invite.tsx` contains "By accepting you agree to the". Step 5
+  of section 6 looks for it on the phone.
+
+`npm test` checks both as well (`tests/review-blockers.test.ts`).
 
 Then do these in this order. Steps 1 and 2 must happen **before** the
 build, because the app reads those values when it is built.
@@ -220,12 +247,14 @@ npx vercel --prod
 
 Then open, in Safari:
 
-- `https://vintagesocial.app/privacy` → "Last updated November 5, 2026",
-  and it says "Memory Room", not "Darkroom".
+- `https://vintagesocial.app/privacy` → "Last updated November 6, 2026",
+  it says "Memory Room", not "Darkroom", and it names "Delete my account"
+  for an application that is waiting.
 - `https://vintagesocial.app/terms` → "no tolerance for objectionable
   content".
 - `https://vintagesocial.app/support.html` → "Support", your address as
-  a link, and the Delete your account section. If it shows the app's
+  a link, and the Delete your account section, which names both Settings →
+  Delete account and Delete my account on the waiting screen. If it shows the app's
   landing page instead, `public/support.html` was not committed (step 1).
 
 ### Step 4 · Database changes from the sweep (only after you approve them)
@@ -487,9 +516,10 @@ same age. If you would rather keep 17, accept what Apple calculates as
 long as it is 16+ or higher. Never set it lower than Apple calculates. If
 your screen still offers 17+, choose 17+ and change nothing.
 
-**App Review notes (paste):** (the sentence about deleting an account
-that has applied is true only once review blocker A is in the build; do
-not submit before it is)
+**App Review notes (paste):** (the sentences about Delete my account and
+the invitation's agreement line are true of a build made from a branch
+that has `r13-door` merged in; "Before you build" in section 2 says how
+to check)
 
 > VINTAGE is a private, invitation-based club for photographs. New members
 > join with an invitation from a member, or apply and are approved by a
@@ -537,9 +567,10 @@ not submit before it is)
 >
 > To test joining: Settings → Sign out → "I have an invitation" → enter
 > the invitation applereview, a name, a new username, any new email and a
-> password → "Accept the invitation". That account is approved at once.
-> "Apply for membership" shows the other path: the application waits for a
-> person, and the screen says so.
+> password → "Accept the invitation" (the line beneath it says that
+> accepting agrees to the Terms of Use and Privacy Policy, both links).
+> That account is approved at once. "Apply for membership" shows the other
+> path: the application waits for a person, and the screen says so.
 >
 > Permissions: photo library (the Memory Room and choosing a photograph),
 > camera (taking a photograph), notifications (asked after the first
@@ -576,15 +607,15 @@ If you want six, drop 6 and 8.
 
 ---
 
-## 6. On your iPhone, on the final TestFlight build (40 minutes)
+## 6. On your iPhone, on the final TestFlight build (45 minutes)
 
-Have a second account (or a second phone) for steps 9–13.
+Have a second account (or a second phone) for steps 9–13 and 17.
 
 **First open**
 1. Delete the app, install from TestFlight, open. The landing page shows
    the V and three ways in, and Privacy · Terms at the foot. No flash of
    the wrong colour, in Light and in Dark.
-2. Privacy, then Terms: both open, dated November 5, 2026, and come back.
+2. Privacy, then Terms: both open, dated November 6, 2026, and come back.
 
 **Joining**
 3. Apply for membership with a throwaway email. It lands on Application
@@ -594,15 +625,18 @@ Have a second account (or a second phone) for steps 9–13.
    applicant: within 30 seconds (or on Check status) it goes in.
 
    Then sign out, apply once more with a second throwaway email, and on
-   Application received tap **Delete my account** → two confirmations →
-   back at the landing page. Signing in with that email now fails (review
-   blocker A). Nothing is approved, so no number is spent.
-5. Sign out. I have an invitation → an invitation → new email. The screen
-   says "By accepting you agree to the Terms of Use and Privacy Policy"
-   (review blocker B) → Accept the invitation. Straight into Home, with the
+   Application received tap **Delete my account**. "Delete your account?"
+   → Delete account → "Are you sure?" → first tap **Keep my account**: you
+   stay on Application received. Tap Delete my account again and answer
+   Delete account, then Yes, delete everything → back at the landing page. Signing in with that email now fails
+   (Guideline 5.1.1(v)). Nothing is approved, so no number is spent.
+5. Sign out. I have an invitation → an invitation → new email. Under
+   Accept the invitation the screen says "By accepting you agree to the
+   Terms of Use and Privacy Policy"; tap Terms of Use, it opens, come back
+   (Guideline 1.2) → Accept the invitation. Straight into Home, with the
    next member number. This spends one of the inviter's invitations and a
    permanent membership number, which is never reissued, whichever
-   invitation you use. Delete this account afterwards in step 17 if you
+   invitation you use. Delete this account afterwards in step 19 if you
    like; its number stays spent.
 
 **Every day**
@@ -634,8 +668,19 @@ Have a second account (or a second phone) for steps 9–13.
 16. Settings shows **Support** with your address (step 1). Tap it: Mail
     opens addressed to you.
 
+**Addresses and text size**
+17. On the second account (not an admin), type `vintage://admin/members`
+    into Safari's address bar and open it in VINTAGE: it goes to Home,
+    with no Suspend or Warn buttons. Then `vintage://no-such-page`: Home
+    again, never a page titled "Unmatched Route" or a list of routes.
+18. Settings (the phone's) → Accessibility → Display & Text Size → Larger
+    Text → turn on Larger Accessibility Sizes and drag the slider all the
+    way. Sign out: the landing scrolls to Sign in and Privacy · Terms.
+    Apply with a throwaway email: Application received scrolls to Sign
+    out and Delete my account (delete it there). Set the text size back.
+
 **Leaving**
-17. On the throwaway account: Settings → Delete account → two
+19. On the throwaway account: Settings → Delete account → two
     confirmations → back at the landing page. Signing in with that email
     now fails.
 
@@ -702,9 +747,6 @@ choose:
 - The location purpose sentences stay in the app although it never asks
   for location: the linked map and location code is checked by Apple at
   upload for a sentence for each, and they say the app does not track.
-- The app opens Expo's plain "Unmatched Route" page for an address it does
-  not know (a mistyped `vintage://` link). A fix was handed to the
-  stability area.
 - There is no automatic content filter. The review notes say how content
   is filtered: by admission (invitation or an application a person
   reads), then by people (reports, admin removal, blocking). A photograph a

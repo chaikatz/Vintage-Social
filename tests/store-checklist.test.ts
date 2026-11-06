@@ -106,7 +106,7 @@ describe("how objectionable content is filtered, as the review notes say it", ()
   });
 });
 
-describe("review blockers that live in other parts of the code", () => {
+describe("the two review blockers of 5 November", () => {
   it("are listed before the build for as long as they are missing", () => {
     const before = flat(between(doc(), "### Before you build", "### Step 1"));
     if (!/deleteMyAccount/.test(read("app/(gate)/pending.tsx"))) {
@@ -117,6 +117,41 @@ describe("review blockers that live in other parts of the code", () => {
     if (!read("app/(gate)/invite.tsx").includes("By accepting you agree to the")) {
       expect(before).toContain("Review blocker B · The invitation screen says what is agreed to (Guideline 1.2)");
     }
+  });
+
+  it("once in the code, are no longer called missing, and the checklist says how to check the branch you build", () => {
+    if (!/deleteMyAccount/.test(read("app/(gate)/pending.tsx"))) return;
+    if (!read("app/(gate)/invite.tsx").includes("By accepting you agree to the")) return;
+    const before = flat(between(doc(), "### Before you build", "### Step 1"));
+    expect(before).toContain("search the file for `deleteMyAccount`");
+    expect(before).toContain('`app/(gate)/invite.tsx` contains "By accepting you agree to the"');
+    for (const missing of [
+      /Two review blockers must be in the merged branch/,
+      /They are not in this branch/,
+      /do not submit before it is/,
+      /That is a stopgap only/,
+      /review blocker [AB]\)/,
+    ]) {
+      expect(flat(doc())).not.toMatch(missing);
+    }
+    const testflight = flat(read("TESTFLIGHT.md"));
+    expect(testflight).not.toMatch(/Two review blockers remain|has no way to delete itself yet|does not yet say/);
+    expect(testflight).toContain("Delete my account");
+    // The phone steps try both, as the reviewer will.
+    const phone = flat(between(doc(), "## 6. On your iPhone", "## 7."));
+    expect(phone).toContain("tap **Delete my account**");
+    expect(phone).toContain("Keep my account");
+    expect(phone).toContain('"By accepting you agree to the Terms of Use and Privacy Policy"');
+    const notes = flat(reviewNotes());
+    expect(notes).toContain("Delete my account, then two confirmations");
+    expect(notes).toContain("accepting agrees to the Terms of Use and Privacy Policy");
+  });
+
+  it("and the documents' date is the one the checklist gives", async () => {
+    const { LEGAL_UPDATED } = await import("@/legal/documents");
+    const phone = flat(between(doc(), "## 6. On your iPhone", "## 7."));
+    expect(phone).toContain(`dated ${LEGAL_UPDATED}`);
+    expect(flat(between(doc(), "### Step 3", "### Step 4"))).toContain(`"Last updated ${LEGAL_UPDATED}"`);
   });
 });
 
