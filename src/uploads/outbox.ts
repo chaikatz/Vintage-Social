@@ -23,6 +23,7 @@ import * as disk from "./jobFiles";
 import { setPendingPosts } from "./store";
 import { confirmedRow, markPostDeleted, placeConfirmedPost } from "./feedCache";
 import { failureWords, type FailureReason } from "./words";
+import { thumbLongSide } from "./thumbSize";
 import type { JobStep, OutboxJob, PendingPost, PendingState, PostDraft } from "./types";
 
 /**
@@ -59,7 +60,6 @@ import type { JobStep, OutboxJob, PendingPost, PendingState, PostDraft } from ".
  */
 
 const FEED_MAX = 1440;
-const THUMB_SIDE = 480;
 const PHOTO_QUALITY = 0.9;
 const POSTER_QUALITY = 0.85;
 /** What the storage project is assumed to accept; a larger file would fail only after the whole upload. */
@@ -614,7 +614,12 @@ async function preparePhoto(live: Live): Promise<void> {
   const final = d.filterBaked && sourceLong <= FEED_MAX && /\.jpe?g$/i.test(source.split("?")[0]);
   const out = final
     ? { uri: source, width: d.sourceWidth as number, height: d.sourceHeight as number, thumb: undefined, via: "as-baked" }
-    : await prepareImage(source, { maxSide: FEED_MAX, quality: PHOTO_QUALITY, thumbSide: THUMB_SIDE });
+    : await prepareImage(source, {
+        maxSide: FEED_MAX,
+        quality: PHOTO_QUALITY,
+        // Its short side at THUMB_SHORT, so a grid square is sharp (./thumbSize.ts).
+        thumbSide: thumbLongSide(d.sourceWidth, d.sourceHeight),
+      });
   // Discarded or forgotten meanwhile: no copy of the photograph is kept.
   const made = (uri: string | undefined) => (uri && uri !== source ? uri : null);
   if (live.gone) {
@@ -622,7 +627,7 @@ async function preparePhoto(live: Live): Promise<void> {
     removeLoose(made(out.thumb?.uri));
     return;
   }
-  const thumb = out.thumb ?? (await prepareImage(out.uri, { maxSide: THUMB_SIDE, quality: 0.8 }));
+  const thumb = out.thumb ?? (await prepareImage(out.uri, { maxSide: thumbLongSide(out.width, out.height), quality: 0.8 }));
   if (live.gone) {
     removeLoose(made(out.uri));
     removeLoose(made(thumb.uri));

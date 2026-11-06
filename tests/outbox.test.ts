@@ -650,6 +650,30 @@ describe("a photograph, start to finish", () => {
   });
 });
 
+describe("a photograph's thumbnail", () => {
+  it("is cut with its short side at 540, from the photograph prepared for the feed", async () => {
+    const { prepareImage } = await import("@/media/nativeMedia");
+    // A 4:3 photograph from the camera, larger than the feed's 1440.
+    const draft = photoDraft({ sourceWidth: 4032, sourceHeight: 3024 });
+    await enqueuePost(draft);
+    await idle();
+    const call = vi.mocked(prepareImage).mock.calls.find(([uri]) => uri === jobPath(draft.id, "source.jpg"));
+    // The feed's photograph as before (1440, quality 0.9); only the thumbnail is larger.
+    expect(call?.[1]).toEqual({ maxSide: 1440, quality: 0.9, thumbSide: 720 });
+  });
+
+  it("is made the same way from a photograph baked in the editor that goes up as it is", async () => {
+    const { prepareImage } = await import("@/media/nativeMedia");
+    const draft = photoDraft({ sourceWidth: 1440, sourceHeight: 960 });
+    await enqueuePost(draft);
+    await idle();
+    const calls = vi.mocked(prepareImage).mock.calls;
+    // The photograph itself is not encoded again: only its thumbnail is made.
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1]).toEqual({ maxSide: 810, quality: 0.8 });
+  });
+});
+
 describe("a clip, start to finish", () => {
   it("develops with progress, uploads with progress, and posts the developed clip", async () => {
     const seen: [string, number | null][] = [];

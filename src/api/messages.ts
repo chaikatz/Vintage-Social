@@ -163,14 +163,51 @@ export async function fetchMessages(conversationId: string): Promise<MessageWith
     .limit(ROWS_PER_READ);
   if (error) throw error;
 
-  const rows = ((data ?? []) as MessageRow[]).reverse();
-  // Shared photographs are rare enough that reading them on their own is
-  // cheaper than joining every message against posts — and a thread is
-  // re-read every few seconds while open, so each is read once and kept
-  // for a while rather than fetched again on every poll. The ones not
-  // already kept are read together, a hundred a request, rather than one
-  // request each: a thread of shared photographs used to open with one
-  // round trip per photograph.
+  return withSharedPosts(((data ?? []) as MessageRow[]).reverse());
+}
+
+/**
+ * A thread's messages from `from` on (at or after it), oldest first, at
+ * most `limit`, with the photographs they carry: what a poll of an open
+ * thread asks for, rather than the whole thread again (see
+ * src/utils/threadPoll.ts). Read along the thread's own index
+ * (conversation_id, created_at).
+ */
+export async function fetchMessagesSince(
+  conversationId: string,
+  from: string,
+  limit: number,
+): Promise<MessageWithPost[]> {
+  if (isDemoMode()) {
+    const since = Date.parse(from);
+    return demo
+      .demoFetchMessages(conversationId)
+      .filter((m) => Date.parse(m.created_at) >= since)
+      .slice(0, limit);
+  }
+
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .gte("created_at", from)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return withSharedPosts((data ?? []) as MessageRow[]);
+}
+
+/**
+ * The messages with the photographs they carry. Shared photographs are
+ * rare enough that reading them on their own is cheaper than joining every
+ * message against posts — and a thread is re-read every few seconds while
+ * open, so each is read once and kept for a while rather than fetched
+ * again on every poll. The ones not already kept are read together, a
+ * hundred a request, rather than one request each: a thread of shared
+ * photographs used to open with one round trip per photograph.
+ */
+async function withSharedPosts(rows: MessageRow[]): Promise<MessageWithPost[]> {
   const shared = await sharedPostsFor(rows.map((m) => m.post_id).filter((id): id is string => Boolean(id)));
   return rows.map((m) => ({ ...m, post: m.post_id ? shared.get(m.post_id) : null }));
 }

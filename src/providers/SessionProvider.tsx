@@ -19,6 +19,7 @@ import type { ProfileRow } from "@/types/db";
 import { forgetPushToken } from "@/utils/push";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 import { forgetOutbox } from "@/uploads";
+import { clearRecent } from "@/utils/searchHistory";
 import { forgetMember, recallMember, rememberMember } from "./rememberedMember";
 import { openSession } from "./launchSession";
 
@@ -130,6 +131,9 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
         // The demo reads the phone's own library too: nothing of this member stays.
         forgetDarkroom();
         forgetOutbox();
+        // Nor what was read for them, nor who they looked for in Search.
+        queryClient.clear();
+        clearRecent();
         await leaveToLanding();
       },
     }),
@@ -190,8 +194,9 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
           if (next.user?.id === currentUser.current) void readProfileAgain.current();
         }
       }
-      // SIGNED_OUT forgets the Darkroom where the client is made
-      // (src/lib/supabase.ts), so that one said during launch is heard.
+      // SIGNED_OUT forgets the Darkroom, the recent searches and the
+      // phone's push token where the client is made (src/lib/supabase.ts),
+      // so that one said during launch is heard.
       // auth-js says it only once it has removed the session from this
       // phone: a sign-out, or a refresh token the server refused; a
       // refresh that failed for want of a network keeps the session.
@@ -203,10 +208,15 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       // this run costs nothing.
       //
       // Posts still going up go with the session: their uploads are made
-      // as the member who has just left.
+      // as the member who has just left. So does what was read for them,
+      // as at "Sign out": a session ended on another device leaves the app
+      // running, and the next member to sign in on this phone would
+      // otherwise be shown the last one's posts, comments and threads
+      // from the cache (many of its keys do not name the reader).
       if (event === "SIGNED_OUT") {
         forgetOutbox();
         forgetMember();
+        queryClient.clear();
       }
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
@@ -309,6 +319,9 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     // Nothing of this member stays for the next one to sign in on this phone.
     queryClient.clear();
     forgetDarkroom();
+    // Who they looked for in Search: also forgotten when auth says SIGNED_OUT
+    // (src/lib/supabase.ts), and here as well in case that is not heard.
+    clearRecent();
     forgetOutbox();
     forgetMember();
     await leaveToLanding();

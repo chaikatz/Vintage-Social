@@ -9,6 +9,7 @@ import { registerPushToken, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
 import { tapFollower, tokenFiler } from "./pushRoute";
 import { onReturnFromBackground } from "./appReturn";
+import { noteToken, pushSupported, stopReceiving, takeToken, tokenRemoved } from "./pushKept";
 
 /**
  * The phone's side of notifications.
@@ -24,6 +25,10 @@ import { onReturnFromBackground } from "./appReturn";
  * remembers its answer and `getPermissionsAsync` reads it back.
  */
 
+// The token kept on the phone, and what a session ended elsewhere does
+// with it, live in pushKept.ts, which the auth client's own listener uses.
+export { parseKeptToken, pushAfterSignedOut, pushSupported } from "./pushKept";
+
 // A notice arriving while the app is open: show it, softly.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -34,17 +39,9 @@ Notifications.setNotificationHandler({
   }),
 });
 
-/** The one token this phone holds, once known, so sign-out can drop it. */
-let currentToken: string | null = null;
-
 function projectId(): string | undefined {
   const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
   return extra?.eas?.projectId ?? (Constants.easConfig as { projectId?: string } | undefined)?.projectId;
-}
-
-/** Whether this phone can be pushed to at all. */
-export function pushSupported(): boolean {
-  return Platform.OS !== "web" && !isDemoMode() && Device.isDevice;
 }
 
 /**
@@ -68,7 +65,7 @@ export async function registerForPush(userId: string): Promise<string | null> {
     // Known before it is filed: a filing that fails (no signal, a token
     // that had run out) leaves the row an earlier launch filed, and
     // signing out must still be able to take it away.
-    currentToken = token;
+    noteToken(token);
     await registerPushToken(userId, token, platform, device);
     return token;
   } catch (err) {
@@ -79,16 +76,29 @@ export async function registerForPush(userId: string): Promise<string | null> {
   }
 }
 
-/** On sign out: this phone stops speaking for the member who just left. */
+/**
+ * On sign out, while still signed in: this phone stops speaking for the
+ * member who is leaving. Its token's row is removed, the token this
+ * launch filed or, failing that, the one an earlier launch kept.
+ *
+ * When the row cannot be removed (no signal, the server refusing), or no
+ * token is known while the phone may receive notifications, the phone
+ * itself stops receiving them: it unregisters from Apple's push service,
+ * so a phone left signed out is never told about the last member's likes
+ * and messages. The next member to sign in registers it again.
+ */
 export async function forgetPushToken(): Promise<void> {
-  const token = currentToken;
-  currentToken = null;
-  if (!token) return;
-  try {
-    await unregisterPushToken(token);
-  } catch {
-    // Already gone, or offline. The function retires dead tokens on its own.
+  const token = takeToken();
+  if (token) {
+    try {
+      await unregisterPushToken(token);
+      tokenRemoved();
+      return;
+    } catch {
+      // Offline, or refused: the row stays. The phone stops receiving instead.
+    }
   }
+  await stopReceiving(token != null);
 }
 
 /**

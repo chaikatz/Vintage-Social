@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Keyboard,
@@ -21,9 +21,11 @@ import { mediaUrl } from "@/api/media";
 import {
   fetchConversationPeer,
   fetchMessages,
+  fetchMessagesSince,
   markConversationRead,
   sendMessage,
 } from "@/api/messages";
+import { markedRead, readThread, unreadIds } from "@/utils/threadPoll";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -33,6 +35,7 @@ import { useMinute } from "@/utils/useMinute";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { useImageRetry } from "@/media/imageRetry";
 
 // A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
 export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
@@ -60,9 +63,25 @@ export default function Thread() {
     queryFn: () => fetchConversationPeer(id ?? "", userId),
     enabled: Boolean(id && userId),
   });
+  // When this screen last read the whole thread: it reads it whole as it
+  // opens, and then only what is new (src/utils/threadPoll.ts).
+  const lastWholeAt = useRef(0);
   const messagesQ = useQuery({
     queryKey: ["messages", id],
-    queryFn: () => fetchMessages(id ?? ""),
+    queryFn: async () => {
+      const key = ["messages", id];
+      const read = await readThread({
+        held: queryClient.getQueryData<MessageWithPost[]>(key),
+        // Something said the thread changed, or the last read failed.
+        invalidated: queryClient.getQueryState(key)?.isInvalidated ?? false,
+        lastWholeAt: lastWholeAt.current,
+        now: Date.now(),
+        whole: () => fetchMessages(id ?? ""),
+        since: (from, limit) => fetchMessagesSince(id ?? "", from, limit),
+      });
+      if (read.whole) lastWholeAt.current = Date.now();
+      return read.messages;
+    },
     enabled: Boolean(id),
     // A reply that arrives while the thread is open shows up on its own —
     // only while it is the screen on view.
@@ -81,8 +100,19 @@ export default function Thread() {
   const newestUnread = useMemo(() => newestUnreadFrom(messagesQ.data, userId), [messagesQ.data, userId]);
   useEffect(() => {
     if (!id || !userId || !newestUnread) return;
+    // What this mark is for: the messages unread as it is sent. One a poll
+    // adds while it is on its way may land after the server has marked the
+    // thread, and keeps its own mark (src/utils/threadPoll.ts).
+    const marking = unreadIds(queryClient.getQueryData<MessageWithPost[]>(["messages", id]), userId);
     markConversationRead(id, userId)
       .then(() => {
+        // Marked here too: the polls bring only new messages, and these
+        // would otherwise stay unread in the thread held, to be marked
+        // again the next time it is opened.
+        const at = new Date().toISOString();
+        queryClient.setQueryData<MessageWithPost[]>(["messages", id], (held) =>
+          held ? markedRead(held, userId, at, marking) : held,
+        );
         queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
         queryClient.invalidateQueries({ queryKey: ["unread-messages", userId] });
       })
@@ -104,7 +134,8 @@ export default function Thread() {
     mutationFn: () => sendMessage(id ?? "", userId, draft),
     onSuccess: () => {
       setDraft("");
-      queryClient.invalidateQueries({ queryKey: ["messages", id] });
+      // What is new, the message just sent with it: read now, not whole.
+      void queryClient.refetchQueries({ queryKey: ["messages", id] });
       queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
     },
     onError: (err) => showAlert("Couldn’t send", errorMessage(err, "Your words are still here. Try again in a moment.")),
@@ -170,13 +201,26 @@ const Bubble = React.memo(function Bubble({
   const thumb = shared
     ? mediaUrl("thumbnails", shared.thumb_path) ?? mediaUrl("media", shared.media_path)
     : null;
+  // A photograph that fails to load is asked for again (src/media/imageRetry.ts).
+  const retry = useImageRetry(thumb);
 
   return (
     <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
       <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
         {shared ? (
           <Pressable style={styles.shared} onPress={() => onOpenPost(shared.id)}>
-            {thumb ? <Image source={thumb} style={styles.sharedImage} contentFit="cover" /> : null}
+            {thumb ? (
+              <Image
+                source={thumb}
+                style={styles.sharedImage}
+                contentFit="cover"
+                // In memory as well as on disk: a bubble scrolled back to
+                // was read from disk and decoded again each time.
+                cachePolicy="memory-disk"
+                key={retry.attempt}
+                onError={retry.onError}
+              />
+            ) : null}
             {/* A photograph whose author the reader may not see comes without one. */}
             {shared.author ? (
               <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
