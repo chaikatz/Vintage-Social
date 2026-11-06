@@ -2,7 +2,7 @@ import React from "react";
 import { Animated, Easing, PanResponder, Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from "react-native";
 import { useEvent } from "expo";
 import { File } from "expo-file-system";
-import { holdTabSwipe } from "@/utils/tabSwipe";
+import { gestureHold } from "@/utils/tabSwipe";
 import { Image } from "expo-image";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Feather from "@expo/vector-icons/Feather";
@@ -227,7 +227,11 @@ export function PostMedia({
   const focus = React.useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   // Where the fingers have moved since the pinch began: the picture follows them.
   const drift = React.useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const pinchRef = React.useRef({ distance: 0, x0: 0, y0: 0, release: null as null | (() => void) });
+  const pinchRef = React.useRef({ distance: 0, x0: 0, y0: 0 });
+  // The pinch's hold on the tab pager. A card that leaves the screen
+  // mid-pinch lets go of it as it goes, so the tabs swipe again.
+  const [swipeHold] = React.useState(gestureHold);
+  React.useEffect(() => () => swipeHold.release(), [swipeHold]);
   const box = React.useRef({ w: 1, h: 1 });
   const frameRef = React.useRef<View>(null);
   const [pinching, setPinching] = React.useState(false);
@@ -249,7 +253,7 @@ export function PostMedia({
         pinchRef.current.distance = t.d;
         pinchRef.current.x0 = t.x;
         pinchRef.current.y0 = t.y;
-        pinchRef.current.release = holdTabSwipe();
+        swipeHold.take();
         drift.setValue({ x: 0, y: 0 });
         setPinching(true);
         // Scale about the fingers: move the picture's origin to the pinch,
@@ -265,23 +269,21 @@ export function PostMedia({
         drift.setValue({ x: t.x - pinchRef.current.x0, y: t.y - pinchRef.current.y0 });
       },
       onPanResponderRelease: () => {
-        pinchRef.current.release?.();
-        pinchRef.current.release = null;
+        swipeHold.release();
         Animated.parallel([
           Animated.spring(zoom, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220 }),
           Animated.spring(drift, { toValue: { x: 0, y: 0 }, useNativeDriver: true, damping: 18, stiffness: 220 }),
         ]).start(() => setPinching(false));
       },
       onPanResponderTerminate: () => {
-        pinchRef.current.release?.();
-        pinchRef.current.release = null;
+        swipeHold.release();
         Animated.parallel([
           Animated.spring(zoom, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 220 }),
           Animated.spring(drift, { toValue: { x: 0, y: 0 }, useNativeDriver: true, damping: 18, stiffness: 220 }),
         ]).start(() => setPinching(false));
       },
     });
-  }, [zoom, focus, drift]);
+  }, [zoom, focus, drift, swipeHold]);
   const zoomStyle = {
     transform: [
       { translateX: Animated.add(focus.x, drift.x) },
