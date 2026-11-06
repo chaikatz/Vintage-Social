@@ -62,8 +62,15 @@ function toPhoto(asset: MediaLibrary.Asset): LibraryPhoto {
 
 /** How much one read of the library asks for at a time. */
 const PAGE = 200;
-/** Years read at once, so a long library is not read one year behind another. */
-const YEARS_AT_ONCE = 4;
+/**
+ * Years read at once. Expo answers every module's async calls one at a
+ * time on one shared queue, so two keep that queue busy as well as four
+ * do — one is read while the next waits — and a call from anywhere else
+ * in the app (the session's keychain, the outbox's files) waits behind
+ * two library reads rather than four. The Memory Room's own reads are
+ * bounded the same way (`MAX_IN_FLIGHT`).
+ */
+export const YEARS_AT_ONCE = 2;
 /** As the Memory Room has it: a date before 1900 is a lost date, not an old photograph. */
 const EARLIEST_YEAR = 1900;
 
@@ -177,7 +184,7 @@ async function inTurn<T, R>(items: readonly T[], width: number, task: (item: T) 
  * recent year first, each year's newest first. The oldest photograph
  * says how far back to look, so a run of empty years is looked through,
  * not taken for the start of the library. One question a year, its
- * photographs read a page at a time, a few years at once. Photographs
+ * photographs read a page at a time, two years at once. Photographs
  * only: a film taken that day is not among them.
  */
 export async function photosOnThisDay(today: Date = new Date()): Promise<LibraryDay[]> {
