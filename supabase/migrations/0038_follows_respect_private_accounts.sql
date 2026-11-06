@@ -153,17 +153,25 @@ begin
   -- takes no lock here first, so it keeps that order and cannot deadlock
   -- with Block, an unfollow, or a member following back at the same moment.
   -- No key update, not share: two requesters who both held a share lock
-  -- and then both changed the row would deadlock. Not when the request is
-  -- already there (filed again from a second phone): this one is refused as
-  -- a duplicate anyway, and holding the row would have it wait on, and
-  -- deadlock with, an Accept of the first.
-  if coalesce(v_private, false)
-     and not exists (select 1 from public.follows f
-                      where f.follower_id = new.follower_id and f.followee_id = new.followee_id) then
-    select p.is_private into v_private
-      from public.profiles p
-     where p.id = new.followee_id
-       for no key update;
+  -- and then both changed the row would deadlock.
+  -- Not when the pair's follow is already there (a request filed again from
+  -- a second phone): this one is refused as a duplicate anyway, and holding
+  -- the followee's row would have it wait on, and deadlock with, an Accept
+  -- of the first. That follow is read with a key share lock, which an
+  -- Accept does not wait for and which waits for a delete of it (an
+  -- unfollow, a withdrawn or declined request): once that is done the
+  -- follow is gone, and the followee's row is held as above.
+  if coalesce(v_private, false) then
+    perform 1
+       from public.follows f
+      where f.follower_id = new.follower_id and f.followee_id = new.followee_id
+        for key share;
+    if not found then
+      select p.is_private into v_private
+        from public.profiles p
+       where p.id = new.followee_id
+         for no key update;
+    end if;
   end if;
   new.status := case when coalesce(v_private, false) then 'pending' else 'accepted' end;
   return new;
