@@ -156,6 +156,11 @@ check("The waiting screen offers Delete my account", (await byText("Delete my ac
     asked.join(" → ") === "Delete your account? → Are you sure?" && /Application received/i.test(await text()) && /\/pending/.test(page.url()),
     asked.join(" → ") || "no dialog",
   );
+  check(
+    "…and its first question says what stays, as the Privacy Policy does: the reports filed",
+    /removed for good\. The reports you filed are kept without your account attached\. This cannot be undone\./.test(dialogs[before] ?? ""),
+    (dialogs[before] ?? "no dialog").split("\n").slice(1).join(" "),
+  );
 }
 
 // 2. the founder approves

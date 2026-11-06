@@ -14,6 +14,7 @@ import { showAlert, showPrompt } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
 import { awaitsDecision, takesInvitation, waitingRoomState } from "@/components/gate/waitingRoom";
+import { DELETION_KEEPS_REPORTS } from "@/legal/documents";
 
 // A page at the door that breaks breaks only itself, not the whole app.
 // There is no header and no tab bar here, so the way back is on the page
@@ -151,10 +152,12 @@ export default function Pending() {
 
   // The same two questions as Settings → Delete account. An admin is never
   // here (approved goes in), so there is no only-admin question to ask.
+  // What stays is said as Settings says it: a suspended member here may
+  // have filed reports, and those are kept (0031).
   const confirmDelete = () =>
     showAlert(
       "Delete your account?",
-      "Your account, your application, and anything you posted or sent are removed for good. This cannot be undone.",
+      `Your account, your application, and anything you posted or sent are removed for good. ${DELETION_KEEPS_REPORTS} This cannot be undone.`,
       [
         {
           text: "Delete account",

@@ -105,3 +105,14 @@ Questions about these terms go to the support address shown in Settings.`;
 export function legalText(doc: LegalDoc): string {
   return doc === "privacy" ? PRIVACY_POLICY : TERMS_OF_USE;
 }
+
+/**
+ * What deleting an account keeps, in the Privacy Policy's own words, said
+ * by both screens that delete one (Settings → Delete account, and Delete
+ * my account on the waiting screen) before they ask. A report is sent,
+ * and migration 0031 keeps it, with no reporter, so that it can still be
+ * acted on: "anything you posted or sent is removed" was no longer so.
+ * tests/store-legal.test.ts holds this sentence to the policy and to what
+ * the reports table does when its reporter goes.
+ */
+export const DELETION_KEEPS_REPORTS = "The reports you filed are kept without your account attached.";
