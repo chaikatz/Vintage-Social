@@ -9,6 +9,12 @@ import { MarkStage } from "@/components/MarkStage";
 import { Wordmark } from "@/components/Wordmark";
 import { isDemoMode } from "@/lib/env";
 
+// A page at the door that breaks breaks only itself, not the whole app.
+// There is no header and no tab bar here, so the way back is on the page
+// (src/navigation/Recover.tsx): to the page before, or to Home, whose
+// guard sends anyone not yet let in to the door or the waiting room.
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * The front door — the same page as vintagesocial.app (public/home.html).
  *

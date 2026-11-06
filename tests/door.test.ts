@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { backFromDoor, shouldGoIn } from "@/components/gate/door";
@@ -96,5 +96,43 @@ describe("the screens use them", () => {
     expect(layout).toMatch(/onPress=\{\(\) => backFromDoor\(router\)\}/);
     expect(invite).not.toMatch(/router\.back\(\)/);
     expect(layout).not.toMatch(/router\.back\(\)/);
+  });
+});
+
+/**
+ * A page at the door that breaks while it is drawn. Without a boundary of
+ * its own, the whole app's took over (RecoverApp), and its Try again
+ * opened the app afresh. Now only the page is replaced, in the app's own
+ * words; with no header and no tab bar at the door, its way back is drawn
+ * on the page: to the page before, or to Home, whose guard sends anyone
+ * not let in yet to the door or the waiting room.
+ */
+describe("a page at the door that breaks", () => {
+  const door = readdirSync(path.join(root, "app/(gate)"))
+    .filter((f) => f.endsWith(".tsx"))
+    .map((f) => `app/(gate)/${f}`);
+
+  it("is every page there, and the link that opens the invitation", () => {
+    expect(door.sort()).toEqual([
+      "app/(gate)/apply.tsx",
+      "app/(gate)/invite.tsx",
+      "app/(gate)/landing.tsx",
+      "app/(gate)/pending.tsx",
+      "app/(gate)/sign-in.tsx",
+    ]);
+  });
+
+  for (const file of [...door, "app/invite/[slug].tsx"]) {
+    it(`${file} breaks alone, with the way back on the page`, () => {
+      expect(code(file)).toMatch(/^export \{ RecoverPageWithBack as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
+    });
+  }
+
+  it("and the way back leads somewhere for someone signed out: Home's guard sends them to the door", () => {
+    const recover = code("src/navigation/Recover.tsx");
+    expect(recover).toMatch(/function leave\(\) \{\s*if \(router\.canGoBack\(\)\) router\.back\(\);\s*else router\.replace\("\/\(tabs\)"\);\s*\}/);
+    const tabs = code("app/(tabs)/_layout.tsx");
+    expect(tabs).toContain('if (session === null) return <Redirect href="/(gate)/landing" />;');
+    expect(tabs).toMatch(/if \(profileLoaded && profile\?\.status !== "approved"\) \{\s*return <Redirect href="\/\(gate\)\/pending" \/>;/);
   });
 });

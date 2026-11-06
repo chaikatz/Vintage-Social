@@ -17,6 +17,12 @@ import { postAge } from "@/utils/time";
 import type { ApplicationRow, ApplicationStatus } from "@/types/db";
 import { showAlert } from "@/utils/alert";
 
+// A row that breaks this page breaks only this page, with the way back on
+// it as well as in the header: opened from a report's notification (0032)
+// or a link, an admin page is the first in its stack and has no back
+// button (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 const TABS: ApplicationStatus[] = ["pending", "waitlisted", "approved", "rejected"];
 
 export default function AdminApplications() {

@@ -43,6 +43,10 @@ describe("every admin page", () => {
       it("calls every hook before that", () => {
         expect(hooksAfterFirstReturn(src)).toEqual([]);
       });
+
+      it("breaks alone if a row breaks it, with the way back on the page (opened from a notification, it has no back button)", () => {
+        expect(src).toMatch(/^export \{ RecoverPageWithBack as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
+      });
     });
   }
 });

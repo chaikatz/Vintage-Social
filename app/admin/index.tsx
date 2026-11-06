@@ -10,6 +10,12 @@ import { countApplications, countReports, fetchDefaultInviteQuota, setDefaultInv
 import { useSession } from "@/providers/SessionProvider";
 import { errorMessage } from "@/utils/errorMessage";
 
+// A row that breaks this page breaks only this page, with the way back on
+// it as well as in the header: opened from a report's notification (0032)
+// or a link, an admin page is the first in its stack and has no back
+// button (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * A queue's count as its row says it. A count that could not be read said
  * "0 open", and an admin with a report waiting was told there was none;

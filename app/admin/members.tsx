@@ -16,6 +16,12 @@ import { errorMessage } from "@/utils/errorMessage";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
+// A row that breaks this page breaks only this page, with the way back on
+// it as well as in the header: opened from a report's notification (0032)
+// or a link, an admin page is the first in its stack and has no back
+// button (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /** Status, number and output — what a suspension decision is made against. */
 function memberSubtitle(member: ProfileRow): string {
   const parts: string[] = [member.status];

@@ -15,6 +15,12 @@ import { errorMessage } from "@/utils/errorMessage";
 import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
 import { awaitsDecision, takesInvitation, waitingRoomState } from "@/components/gate/waitingRoom";
 
+// A page at the door that breaks breaks only itself, not the whole app.
+// There is no header and no tab bar here, so the way back is on the page
+// (src/navigation/Recover.tsx): to the page before, or to Home, whose
+// guard sends anyone not yet let in to the door or the waiting room.
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 const COPY: Record<string, { title: string; body: string }> = {
   applied: {
     title: "APPLICATION RECEIVED",
