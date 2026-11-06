@@ -871,7 +871,7 @@ describe("the home feed", () => {
     expect(first.length).toBe(posts.FEED_PAGE_SIZE);
     expect(first.every((p) => p.author != null)).toBe(true);
     expect(h.requests.length).toBeLessThanOrEqual(posts.FEED_FILL_READS);
-    expect(posts.withAuthors([{ author: null }, { author: { id: "a" } }, {}])).toEqual([{ author: { id: "a" } }]);
+
   });
 
   it("the old read, past a couple of hundred follows, could not be sent at all", async () => {

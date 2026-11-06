@@ -11,6 +11,10 @@ import { REPORT_REASONS, submitReport } from "@/api/moderation";
 import { useSession } from "@/providers/SessionProvider";
 import { removePostEverywhere } from "@/utils/postCache";
 import type { ReportTargetType } from "@/types/db";
+import { errorMessage } from "@/utils/errorMessage";
+
+// A sheet has no back button: its recover page carries one (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * Reporting goes to human admins. Nothing here is automated — reports feed
@@ -69,7 +73,7 @@ export default function Report() {
       ]);
     } catch (err) {
       sending.current = false;
-      showAlert("Couldn’t send report", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t send report", errorMessage(err, "Your report isn’t sent yet. Try again in a moment."));
     } finally {
       setBusy(false);
     }

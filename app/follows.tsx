@@ -15,6 +15,11 @@ import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import type { FollowStatus } from "@/types/db";
 
+// A row that breaks this list breaks only this list, and the way back is
+// on its page: a list opened from a link is the first in its stack
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Who follows a member, and who they follow.
  *

@@ -7,6 +7,7 @@ import { withTimeout } from "@/utils/retry";
 import { readInChunks } from "./batch";
 import { pageAfter, type Cursor } from "./keyset";
 import { functionMissing } from "./rpcMissing";
+import { withAuthors } from "@/components/hiddenAuthors";
 
 export const FEED_PAGE_SIZE = 12;
 
@@ -107,21 +108,16 @@ export async function fetchFeedPage(userId: string, before: FeedCursor | null): 
 /** Reads, at most, to make up one page of the feed (fetchFeedPage). */
 export const FEED_FILL_READS = 4;
 
-/**
- * The rows that came with their author. A photograph stays readable while
- * its author's profile may not be (an author outside the club: the posts
- * read policy asks only that the photograph be live and not private to
- * the reader, the profiles policy that the profile be a member's), and
- * such a row arrives with `author` null: a card with no name, no face
- * and nowhere to go. Not shown at all instead. Asking the database to
- * leave them out (the posts policy requiring a visible author) would read
- * every member's profile once for every read of photographs (a hashed
- * subplan over all of profiles, planned at 1,000 members), so it is done
- * here, on the page.
- */
-export function withAuthors<T extends { author?: unknown }>(rows: T[]): T[] {
-  return rows.filter((p) => p.author != null);
-}
+// A photograph stays readable while its author's profile may not be (an
+// author outside the club: the posts read policy asks only that the
+// photograph be live and not private to the reader, the profiles policy
+// that the profile be a member's), and such a row arrives with `author`
+// null: a card with no name, no face and nowhere to go
+// (src/components/hiddenAuthors.ts). It is not shown at all instead.
+// Asking the database to leave them out (the posts policy requiring a
+// visible author) would read every member's profile once for every read
+// of photographs (a hashed subplan over all of profiles, planned at
+// 1,000 members), so it is done here, on the page.
 
 /** One read of the feed's rows after `before`, authors and all. */
 async function readFeedRows(userId: string, before: FeedCursor | null): Promise<PostWithAuthor[]> {
