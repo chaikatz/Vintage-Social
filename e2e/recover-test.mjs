@@ -18,16 +18,28 @@ const page = await ctx.newPage();
 const uncaught = [];
 page.on("pageerror", (e) => uncaught.push(e.message));
 
-// Reading a day of the month throws while the tab's storage says so.
+// Reading a day of the month throws while the tab's storage says so. So does
+// drawing one of the tab bar's tabs, under a switch of its own: the tabs' frame
+// (app/(tabs)/_layout.tsx) is the one place a member is ever on that has no
+// boundary of its own, so it is what shows the whole app's page.
 await ctx.addInitScript(() => {
   const real = Date.prototype.getDate;
   Date.prototype.getDate = function getDate() {
     if (sessionStorage.getItem("vintage-break") === "1") throw new Error("broken on purpose");
     return real.call(this);
   };
+  const setAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (name, value) {
+    if (name === "role" && value === "tab" && sessionStorage.getItem("vintage-break-frame") === "1") {
+      throw new Error("frame broken on purpose");
+    }
+    return setAttribute.call(this, name, value);
+  };
 });
 const breakDates = (on) =>
   page.evaluate((v) => (v ? sessionStorage.setItem("vintage-break", "1") : sessionStorage.removeItem("vintage-break")), on);
+const breakFrame = (on) =>
+  page.evaluate((v) => (v ? sessionStorage.setItem("vintage-break-frame", "1") : sessionStorage.removeItem("vintage-break-frame")), on);
 
 const results = [];
 const check = (name, ok, detail = "") => {
@@ -116,21 +128,56 @@ check(
   body.replace(/\s+/g, " ").slice(0, 160),
 );
 
-// 4. Something with no screen boundary of its own breaks: the whole app's page.
-// "Add to an era" is a sheet drawn without a boundary of its own.
+// 4. "Add to an era", a sheet that draws its own head, breaks: only that sheet, with the
+// way back on it. It used to have no boundary of its own and take the whole app down.
 await breakDates(true);
 await go("/era-move?postId=demo-post-01", 3000);
 body = await text();
-check("The app's own recover page stands in for the whole app", /Something went wrong/.test(body) && /VINTAGE/.test(body), body.slice(0, 120));
+check(
+  "A broken era sheet shows its own recover page, not the whole app's",
+  /This page didn’t open/.test(body) && !/Something went wrong/.test(body),
+  body.replace(/\s+/g, " ").slice(0, 160),
+);
+check("…with the way back on the page", (await byText("Go back").count()) === 1);
 check("…and says nothing of the runtime", !/broken on purpose|TypeError|undefined/.test(body));
 check("…and nothing escaped to the window", uncaught.length === 0, uncaught.join(" | "));
-await shot("recover-04-app");
+await shot("recover-04-era");
 await breakDates(false);
+await byText("Try again").first().click();
+await wait(2600);
+body = await text();
+check("Try again brings the sheet back", /Move to/.test(body) && /New era…/.test(body) && !/This page didn’t open/.test(body), body.replace(/\s+/g, " ").slice(0, 160));
+await breakDates(true);
+await go("/era-move?postId=demo-post-01", 3000);
+await breakDates(false);
+await byText("Go back").first().click();
+await wait(2600);
+body = await text();
+check(
+  "Go back from the sheet, with nothing before it, goes Home",
+  /elena\.marchetti|tomas\.lindqvist/.test(body) && !/This page didn’t open/.test(body) && (await page.locator('[role="tab"]').count()) >= 5,
+  body.replace(/\s+/g, " ").slice(0, 160),
+);
+
+// 5. Something with no screen boundary of its own breaks: the whole app's page. The tabs'
+// frame, their shared header and the tab bar, has none: only the root's stands over it.
+await breakFrame(true);
+await go("/", 3000);
+body = await text();
+check("The app's own recover page stands in for the whole app", /Something went wrong/.test(body) && /VINTAGE/.test(body), body.replace(/\s+/g, " ").slice(0, 120));
+check("…and nothing of the broken frame is left drawn", (await page.locator('[role="tab"]').count()) === 0);
+check("…and says nothing of the runtime", !/broken on purpose|TypeError|undefined/.test(body));
+check("…and nothing escaped to the window", uncaught.length === 0, uncaught.join(" | "));
+await shot("recover-05-app");
+await breakFrame(false);
 await byText("Try again").first().click();
 await wait(3200);
 body = await text();
-check("Try again opens the app afresh, on the feed", /elena\.marchetti|tomas\.lindqvist/.test(body) && !/Something went wrong/.test(body));
-await shot("recover-05-back");
+check(
+  "Try again opens the app afresh, on the feed",
+  /elena\.marchetti|tomas\.lindqvist/.test(body) && !/Something went wrong/.test(body) && (await page.locator('[role="tab"]').count()) >= 5,
+);
+await shot("recover-06-back");
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

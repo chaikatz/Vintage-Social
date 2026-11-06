@@ -12,6 +12,10 @@ import { MAX_CAPTION_LENGTH } from "@/utils/validation";
 import { rewritePostEverywhere } from "@/utils/postCache";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
+// A row that breaks this sheet breaks only this sheet, with the way back on its
+// page: a sheet has no back button (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Change the words under your own photograph.
  *

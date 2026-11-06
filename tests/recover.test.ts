@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
@@ -58,6 +58,12 @@ describe("the recover pages", () => {
       "app/likes.tsx",
       "app/compose.tsx",
       "app/export.tsx",
+      // Two sheets, Edit caption and Add to an era (which draws its own head), and the privacy
+      // policy and terms, which a link can open first in their stack. Without a boundary of their
+      // own, one that broke took the member out to the whole app's page.
+      "app/edit-caption.tsx",
+      "app/era-move.tsx",
+      "app/legal/[doc].tsx",
     ]) {
       expect(read(screen), screen).toMatch(/^export \{ RecoverPageWithBack as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
     }
@@ -73,6 +79,47 @@ describe("the recover pages", () => {
     expect(recover).toMatch(/<Pressable onPress=\{leave\}[^>]*accessibilityRole="button">\s*<Text style=\{styles\.retryText\}>Go back<\/Text>/);
     // Clear of the status bar where there is no header to start under.
     expect(recover).toMatch(/style=\{\[styles\.screen, top > 0 && \{ paddingTop: top \+ PAGE_TOP \}\]\}/);
+  });
+
+  it("stand over every route, but the few that only send a member on and the tabs' own frame", () => {
+    const ours = /^export \{ (RecoverApp|RecoverPage|RecoverPageWithBack|RecoverRoom) as ErrorBoundary \} from "@\/navigation\/Recover";$/m;
+    // Left to the whole app's page: the root only sends each person on (to the door, the
+    // waiting room or the tabs), as an unknown address does; and the tabs' frame, its header
+    // and its bar, has no page of its own to put back. e2e/recover-test.mjs breaks that frame
+    // to see the whole app's page, so it must stay without one.
+    const wholeApp = ["app/index.tsx", "app/+not-found.tsx", "app/(tabs)/_layout.tsx"];
+    // Given theirs by this round's door and data work, which guards them with its own checks.
+    const elsewhere = [
+      "app/(gate)/apply.tsx",
+      "app/(gate)/invite.tsx",
+      "app/(gate)/landing.tsx",
+      "app/(gate)/pending.tsx",
+      "app/(gate)/sign-in.tsx",
+      "app/admin/index.tsx",
+      "app/admin/applications.tsx",
+      "app/admin/members.tsx",
+      "app/admin/reports.tsx",
+      "app/invite/[slug].tsx",
+      "app/report.tsx",
+      "app/share.tsx",
+      "app/follows.tsx",
+    ];
+    const routes = (readdirSync(path.resolve(import.meta.dirname, "..", "app"), { recursive: true }) as string[])
+      .filter((f) => f.endsWith(".tsx"))
+      .map((f) => `app/${f.split(path.sep).join("/")}`)
+      .sort();
+    expect(routes).toContain("app/era-move.tsx");
+    expect(routes.length).toBeGreaterThan(30);
+    for (const route of routes) {
+      const source = code(route);
+      if (wholeApp.includes(route)) {
+        expect(source, route).not.toMatch(/ErrorBoundary/);
+      } else if (elsewhere.includes(route)) {
+        if (/ErrorBoundary/.test(source)) expect(source, route).toMatch(ours);
+      } else {
+        expect(source, route).toMatch(ours);
+      }
+    }
   });
 
   it("say it in our words, never the runtime's, and offer one thing to do", () => {

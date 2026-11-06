@@ -5,6 +5,12 @@ import { Screen } from "@/components/Screen";
 import { colors, spacing, type } from "@/theme";
 import { LEGAL_TITLES, LEGAL_UPDATED, legalText, type LegalDoc } from "@/legal/documents";
 
+// A page that breaks breaks only itself, with the way back on it as well as in
+// its header: opened from a link it is the first in its stack and has no back
+// button. With nothing before it, Go back goes Home, whose guard sends anyone
+// not signed in to the door (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * The privacy policy and the terms, set in the app's own type. Always
  * reachable from Settings and from the door, whether or not the web copy
