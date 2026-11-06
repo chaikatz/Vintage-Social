@@ -33,7 +33,8 @@ export const queryClient = new QueryClient({
       // full request limit (src/lib/boundedFetch.ts) behind a skeleton.
       // With no signal at all it is not tried again: the signal's return
       // reads it again (above), and the screen need not sit on its
-      // skeleton for ten seconds to say it could not load.
+      // skeleton through three more tries (5.6 s of waits) to say it
+      // could not load.
       retry: (failures, error) => onlineManager.isOnline() && retryRead(failures, error),
       retryDelay: (attempt) => Math.min(800 * 2 ** attempt, 5000),
     },
