@@ -191,11 +191,11 @@ export default function Apply() {
       </Text>
       <Text style={styles.footnote}>
         By applying you agree to the{" "}
-        <Text style={styles.footLink} onPress={() => router.push("/legal/terms")}>
+        <Text style={styles.footLink} onPress={() => router.push("/legal/terms")} accessibilityRole="link">
           Terms of Use
         </Text>{" "}
         and{" "}
-        <Text style={styles.footLink} onPress={() => router.push("/legal/privacy")}>
+        <Text style={styles.footLink} onPress={() => router.push("/legal/privacy")} accessibilityRole="link">
           Privacy Policy
         </Text>
         .

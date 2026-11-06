@@ -82,6 +82,15 @@ describe("B · the invitation says what is agreed to", () => {
     expect(apply).toContain('router.push("/legal/terms")');
   });
 
+  it("every Terms and Privacy link at the door is announced as a link", () => {
+    // VoiceOver reads a Text with onPress as plain words unless it is told it is a link.
+    for (const file of ["app/(gate)/apply.tsx", "app/(gate)/invite.tsx", "app/(gate)/landing.tsx"]) {
+      const links = code(file).match(/<(?:Text|Pressable)\b.*router\.push\("\/legal\/(?:terms|privacy)"\).*$/gm) ?? [];
+      expect(links.length, file).toBe(2);
+      for (const link of links) expect(link, file).toContain('accessibilityRole="link"');
+    }
+  });
+
   it("in the application's own type", () => {
     const style = (s: string, name: string) => s.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0].replace(/\s+/g, " ").replace(`${name}:`, "") ?? "";
     expect(style(src, "agree")).toBe(style(apply, "footnote"));
