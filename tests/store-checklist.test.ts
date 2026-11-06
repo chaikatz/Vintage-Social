@@ -320,3 +320,95 @@ describe("the checklist on reports", () => {
     }
   });
 });
+
+/**
+ * The owner's own steps after review: redeploying the push function,
+ * deleting an account by hand, and what the review notes and the support
+ * page say about the house accounts and about reporting from a thread.
+ */
+describe("the push function's redeploy", () => {
+  it("names both of its files, and how to see both were deployed", () => {
+    const folder = readdirSync(path.join(root, "supabase/functions/push")).filter((f) => f.endsWith(".ts")).sort();
+    expect(folder).toEqual(["index.ts", "logic.ts"]);
+    expect(read("supabase/functions/push/index.ts")).toMatch(/from "\.\/logic\.ts"/);
+    const step = flat(between(doc(), "### Step 4", "### Step 5"));
+    expect(step).toContain("It is now **two files**, `index.ts` and `logic.ts`");
+    expect(step).toContain("`npx supabase functions deploy push --project-ref scfwowqsqrnzpknzurmm` which uploads both");
+    expect(step).toContain("add a second file named `logic.ts` with the contents of `supabase/functions/push/logic.ts`");
+    expect(step).toContain("must show **version 2 or higher, with both files**");
+    // It used to offer the dashboard as if the function were one file.
+    expect(step).not.toMatch(/push` → deploy the new code\)/);
+  });
+});
+
+describe("deleting an account by hand", () => {
+  it("removes the files in all three buckets before the user, whatever the account's status", () => {
+    const step10 = flat(between(doc(), "### Step 10", "\n---\n"));
+    const from = step10.indexOf("If someone writes to the support address asking you to delete");
+    expect(from).toBeGreaterThanOrEqual(0);
+    const bullet = step10.slice(from, step10.indexOf("- Apple's reviewer", from));
+    // The app's own way first: it removes the files itself.
+    expect(bullet.indexOf("**Delete my account**")).toBeLessThan(bullet.indexOf("1. Check the message"));
+    expect(bullet).toContain("**whatever the account's status**");
+    expect(bullet).toContain("**each of the three buckets, `avatars`, `media` and `thumbnails`**");
+    expect(bullet.indexOf("`thumbnails`")).toBeLessThan(bullet.indexOf("**Delete user**"));
+    expect(bullet).toContain("Use the Storage screen, not SQL");
+    // It used to name only avatars, and only for a portrait on an application.
+    expect(bullet).not.toMatch(/If they added a portrait to their application/);
+    // The three are the buckets Delete my account empties.
+    const buckets = read("src/api/account.ts").match(/const BUCKETS: Bucket\[\] = \[([^\]]+)\]/)?.[1];
+    expect(buckets?.split(",").map((b) => b.trim().replace(/"/g, "")).sort()).toEqual(["avatars", "media", "thumbnails"]);
+  });
+});
+
+describe("the house accounts' likes and comments", () => {
+  it("are disclosed wherever the house accounts are, for as long as the seed makes them", async () => {
+    const seed = read("supabase/production/08_house_accounts.sql");
+    const graph = seed.slice(seed.indexOf("do $graph$"), seed.indexOf("$graph$;"));
+    const scripted = /insert into public\.likes[\s\S]*m\.is_house/.test(graph) && /insert into public\.comments[\s\S]*m\.is_house/.test(graph);
+    expect(scripted, "the house seed still likes and comments between house accounts").toBe(true);
+    const { TERMS_OF_USE } = await import("@/legal/documents");
+    expect(TERMS_OF_USE).toContain(
+      "They also follow, like and comment on one another's photographs: those likes and comments were made by script, not written by people.",
+    );
+    expect(read("public/terms.html")).toContain("They also follow, like and comment on one another");
+    const notes = flat(reviewNotes());
+    expect(notes).toContain("They also follow, like and comment on one another's photographs: those likes and comments");
+    expect(notes).toContain("were made by script when the accounts were made, not written by people");
+    const decide = flat(between(doc(), "## 7. Decide before you submit: the house accounts", "## 8."));
+    expect(decide).toContain("1,778 follows, 11,138 likes and 4,182 comments, all between house accounts");
+    expect(decide).toContain("Nothing was deleted");
+  });
+});
+
+describe("reporting from a message thread", () => {
+  it("is in the review notes and on the support page, and the checklist says to check the branch until the thread has it", () => {
+    const notes = flat(reviewNotes());
+    expect(notes).toContain('A message thread\'s "…" menu shows the other member\'s profile and lets you report or block them.');
+    const support = read("scripts/build-legal.mjs");
+    expect(support).toContain("In a message thread, the “…” at the top shows the other member’s profile and lets you report or block them.");
+    if (!/Report/.test(read("app/messages/[id].tsx"))) {
+      const before = flat(between(doc(), "### Before you build", "### Step 1"));
+      expect(before).toContain("Also check the message thread's **\"…\"** menu is in the branch");
+    }
+  });
+});
+
+describe("a private account's requests, on the phone", () => {
+  it("are tried once 0038 is applied, in the app's own words", () => {
+    const phone = flat(between(doc(), "## 6. On your iPhone", "## 7."));
+    expect(phone).toContain("Private accounts (once 0038 is applied, step 4)");
+    expect(phone).toContain("the button reads Requested, and its photographs stay hidden");
+    expect(phone).toContain("Settings → Follow requests → Accept");
+    expect(read("supabase/migrations/0038_follows_respect_private_accounts.sql")).toMatch(/create policy "follows: followee accepts"/);
+    const settings = read("app/settings.tsx");
+    expect(settings).toContain(">Private account<");
+    expect(settings).toContain('"Follow requests"');
+    expect(read("app/user/[username].tsx")).toContain('"Requested"');
+    // The steps after it moved down one, and the one that points ahead points at the right one.
+    expect(flat(doc())).toContain("Delete this account afterwards in step 20");
+    expect(flat(doc())).toContain("Have a second account (or a second phone) for steps 9–13, 16 and 18.");
+    expect(phone).toMatch(/18\. On the second account \(not an admin\), type `vintage:\/\/admin\/members`/);
+    expect(phone).toMatch(/20\. On the throwaway account: Settings → Delete account/);
+  });
+});
