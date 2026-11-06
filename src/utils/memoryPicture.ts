@@ -1,3 +1,6 @@
+import { getFilter } from "@/filters/presets";
+import type { FilterSpec } from "@/filters/types";
+import { needsDisplayFilter } from "@/utils/displayFilter";
 import type { PostRow } from "@/types/db";
 
 /**
@@ -26,6 +29,12 @@ import type { PostRow } from "@/types/db";
  *
  * A film's file is a movie, which an image cannot draw: it keeps its
  * poster frame, the thumbnail, and nothing stands in for it.
+ *
+ * A picture that was not baked with its film (needsDisplayFilter: a
+ * photograph the darkroom could not bake, a film from before films were
+ * baked, the demo's and the house's photographs) has its look laid over
+ * it on screen, by the same rule the feed, the grid and the photograph's
+ * own page follow, so a memory looks like the photograph it opens.
  */
 export const SHARP_MEMORIES = 6;
 
@@ -34,6 +43,8 @@ export interface MemoryPicture<U> {
   source: U | null;
   /** What stands in while `source` arrives, or null for nothing. */
   placeholder: U | null;
+  /** The film's look, to lay over a picture not baked with it; null when it is in the pixels already. */
+  look: FilterSpec | null;
 }
 
 /**
@@ -41,13 +52,14 @@ export interface MemoryPicture<U> {
  * `url` is mediaUrl, passed in so this stays free of the storage client.
  */
 export function memoryPicture<U>(
-  post: Pick<PostRow, "media_type" | "media_path" | "thumb_path">,
+  post: Pick<PostRow, "media_type" | "media_path" | "thumb_path" | "filter_id" | "filter_baked">,
   index: number,
   url: (bucket: "media" | "thumbnails", path: string | null) => U | null,
 ): MemoryPicture<U> {
+  const look = needsDisplayFilter(post) ? getFilter(post.filter_id) : null;
   const small = url("thumbnails", post.thumb_path);
-  if (post.media_type === "video") return { source: small, placeholder: null };
+  if (post.media_type === "video") return { source: small, placeholder: null, look };
   const photo = index < SHARP_MEMORIES ? url("media", post.media_path) : null;
-  if (photo == null) return { source: small ?? url("media", post.media_path), placeholder: null };
-  return { source: photo, placeholder: small != null && small !== photo ? small : null };
+  if (photo == null) return { source: small ?? url("media", post.media_path), placeholder: null, look };
+  return { source: photo, placeholder: small != null && small !== photo ? small : null, look };
 }

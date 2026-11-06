@@ -6,6 +6,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
+import { FilterOverlay } from "@/components/FilterOverlay";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { readState } from "@/components/readState";
@@ -13,6 +14,8 @@ import { Bone } from "@/components/Skeleton";
 import { colors, spacing, type } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
 import { mediaUrl } from "@/api/media";
+import { cssFilterFor } from "@/filters/cssFilter";
+import { useImageRetry } from "@/media/imageRetry";
 import { memoryHeadline, onThisDay } from "@/utils/memories";
 import { memoryPicture } from "@/utils/memoryPicture";
 import { editEras } from "@/utils/eraEdits";
@@ -287,37 +290,23 @@ export default function Memories() {
         </View>
       ) : null}
 
-      {memories.map((m, i) => {
-        // The photograph itself, the page's width, with its grid square standing in
-        // while it arrives; a film's poster frame, which an <Image> can draw and its
-        // movie cannot (src/utils/memoryPicture.ts).
-        const picture = memoryPicture(m.post, i, mediaUrl);
-        return (
-          <Pressable key={m.post.id} style={styles.memory} onPress={() => openPost(m.post)}>
-            {picture.source != null ? (
-              <Image
-                source={picture.source}
-                placeholder={picture.placeholder ?? undefined}
-                placeholderContentFit="cover"
-                style={styles.memoryImage}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-              />
-            ) : null}
-            <View style={styles.memoryText}>
-              <Text style={styles.eyebrow}>
-                {m.yearsAgo === 1 ? "One year ago" : `${m.yearsAgo} years ago`}
+      {memories.map((m, i) => (
+        <Pressable key={m.post.id} style={styles.memory} onPress={() => openPost(m.post)}>
+          {/* Its place on the page decides whether the photograph itself is asked for. */}
+          <MemoryPrint post={m.post} index={i} />
+          <View style={styles.memoryText}>
+            <Text style={styles.eyebrow}>
+              {m.yearsAgo === 1 ? "One year ago" : `${m.yearsAgo} years ago`}
+            </Text>
+            <Text style={styles.headline}>{memoryHeadline(m)}</Text>
+            {m.post.caption ? (
+              <Text style={styles.captionLine} numberOfLines={2}>
+                {m.post.caption}
               </Text>
-              <Text style={styles.headline}>{memoryHeadline(m)}</Text>
-              {m.post.caption ? (
-                <Text style={styles.captionLine} numberOfLines={2}>
-                  {m.post.caption}
-                </Text>
-              ) : null}
-            </View>
-          </Pressable>
-        );
-      })}
+            ) : null}
+          </View>
+        </Pressable>
+      ))}
 
       {/* The phone's own copies of this day — only ever read, never sent. */}
       {showLibrary ? (
@@ -452,6 +441,37 @@ export default function Memories() {
 /** Photographs to a row of the contact sheet. */
 const PER_ROW = 4;
 const SHEET_GAP = 2;
+
+/**
+ * One memory's picture, the page's width at 4:5: the photograph itself, with
+ * its grid square standing in while it arrives, or a film's poster frame,
+ * which an <Image> can draw and its movie cannot (src/utils/memoryPicture.ts).
+ * A picture not baked with its film wears the film's look on screen, as it
+ * does in the feed and on the photograph's own page: the filter where the
+ * platform draws it (the browser), and the blended layers where it does not
+ * (src/components/FilterOverlay.tsx). One that fails to load is asked for
+ * again, its grid square still standing in meanwhile (src/media/imageRetry.ts).
+ */
+const MemoryPrint = React.memo(function MemoryPrint({ post, index }: { post: PostRow; index: number }) {
+  const picture = memoryPicture(post, index, mediaUrl);
+  const retry = useImageRetry(picture.source);
+  if (picture.source == null) return null;
+  return (
+    <View style={styles.memoryImage}>
+      <Image
+        source={picture.source}
+        placeholder={picture.placeholder ?? undefined}
+        placeholderContentFit="cover"
+        style={[StyleSheet.absoluteFill, picture.look ? ({ filter: cssFilterFor(picture.look).filter } as object) : null]}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        key={retry.attempt}
+        onError={retry.onError}
+      />
+      {picture.look ? <FilterOverlay filter={picture.look} /> : null}
+    </View>
+  );
+});
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
