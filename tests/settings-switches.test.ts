@@ -121,7 +121,10 @@ describe("the Settings screen", () => {
   it("writes the private account switch as it is flipped, and puts it back if refused", () => {
     expect(settings).toMatch(/onValueChange=\{togglePrivate\}/);
     expect(settings).toMatch(/setIsPrivate\(on\);\s*privacyWriter\.set\(on\);/);
-    expect(settings).toMatch(/await updateOwnProfile\(userIdRef\.current, \{ is_private: on \}\);/);
+    // What the server has taken is what a later refusal goes back to: without
+    // this, a flip that landed and then one refused put the switch back to
+    // what it was when Settings opened.
+    expect(settings).toMatch(/await updateOwnProfile\(userIdRef\.current, \{ is_private: on \}\);\s*savedPrivate\.current = on;/);
     expect(settings).toMatch(/onFailed: \(err\) => \{\s*setIsPrivate\(savedPrivate\.current\);/);
     // Save no longer carries it: the switch is its one writer.
     const save = settings.slice(settings.indexOf("const save = async"), settings.indexOf("const openDoc"));
