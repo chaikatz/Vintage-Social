@@ -1,15 +1,17 @@
 import React from "react";
 import { AppState, Linking, StyleSheet, Text, View } from "react-native";
 import { Redirect } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GateLayout } from "@/components/gate/GateLayout";
 import { GateButton } from "@/components/gate/GateButton";
 import { Wordmark } from "@/components/Wordmark";
 import { colors, spacing, type } from "@/theme";
 import { enterApp, useSession } from "@/providers/SessionProvider";
 import { describeRedeem, fetchMyApplication, redeemInviteLink } from "@/api/membership";
+import { deleteMyAccount } from "@/api/account";
 import { slugFromInput } from "@/utils/inviteLink";
 import { showAlert, showPrompt } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
 import { awaitsDecision, takesInvitation, waitingRoomState } from "@/components/gate/waitingRoom";
 
@@ -69,6 +71,12 @@ export default function Pending() {
   const [checking, setChecking] = React.useState(false);
   const [checkedAt, setCheckedAt] = React.useState<Date | null>(null);
   const [checkFailed, setCheckFailed] = React.useState(false);
+  // Settings is out of reach from here, so an account that is waiting, was
+  // not accepted or is suspended is deleted from this screen (App Review
+  // Guideline 5.1.1(v): every account the app makes can be deleted in it).
+  // Above the redirect below, with the other hooks.
+  const queryClient = useQueryClient();
+  const [deleting, setDeleting] = React.useState(false);
   const approved = profile?.status === "approved";
   React.useEffect(() => {
     if (approved) enterApp();
@@ -130,6 +138,51 @@ export default function Pending() {
       },
     );
 
+  // The same two questions as Settings → Delete account. An admin is never
+  // here (approved goes in), so there is no only-admin question to ask.
+  const confirmDelete = () =>
+    showAlert(
+      "Delete your account?",
+      "Your account, your application, and anything you posted or sent are removed for good. This cannot be undone.",
+      [
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: () =>
+            showAlert("Are you sure?", "This is the last step. Everything is deleted now.", [
+              {
+                text: "Yes, delete everything",
+                style: "destructive",
+                onPress: async () => {
+                  const userId = session?.user?.id;
+                  if (!userId) return;
+                  setDeleting(true);
+                  try {
+                    await deleteMyAccount(userId);
+                    queryClient.clear();
+                    await signOut();
+                  } catch (err) {
+                    setDeleting(false);
+                    // deleteMyAccount removes the files before it asks the
+                    // database to close the account, so a failure can come
+                    // after the portrait has gone. A second try finishes it.
+                    showAlert(
+                      "Couldn’t delete the account",
+                      errorMessage(
+                        err,
+                        "Your account is still here, but your portrait or photographs may already have been removed. Try again to finish deleting it.",
+                      ),
+                    );
+                  }
+                },
+              },
+              { text: "Keep my account", style: "cancel" },
+            ]),
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+
   return (
     <GateLayout back={false} scroll={false}>
       <View style={styles.center}>
@@ -172,7 +225,8 @@ export default function Pending() {
             ) : null}
           </>
         ) : null}
-        <GateButton title="Sign out" variant="quiet" onPress={signOut} style={styles.gap} />
+        <GateButton title="Sign out" variant="quiet" onPress={signOut} disabled={deleting} style={styles.gap} />
+        <GateButton title="Delete my account" variant="quiet" onPress={confirmDelete} loading={deleting} style={styles.gap} />
       </View>
     </GateLayout>
   );
