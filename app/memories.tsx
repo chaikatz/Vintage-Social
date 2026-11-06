@@ -59,8 +59,9 @@ export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
  * given, it offers the Darkroom's On this day instead, and the Darkroom's
  * own first page is the one place that asks. When only some photographs
  * were shared, it says so, with a way to share more. The library's
- * thumbnails are kept in memory only, so no copy of a photograph from the
- * library is written to the phone's disk by this screen.
+ * thumbnails are kept by their cells alone: no copy of a photograph from
+ * the library is written to the phone's disk by this screen, nor left in
+ * the image memory cache the whole app shares.
  */
 export default function Memories() {
   const router = useRouter();
@@ -250,7 +251,13 @@ export default function Memories() {
               source={p.uri}
               style={styles.sheetImage}
               contentFit="cover"
-              cachePolicy="memory"
+              // Kept by its cell alone, as in the library picker: never
+              // written to the app's disk, and never left in the memory
+              // cache all images share, which keeps every one it is handed
+              // after the cell is reused and after the page has closed.
+              // Photos keeps its own thumbnails, so one scrolled back to
+              // costs little.
+              cachePolicy="none"
               recyclingKey={p.id}
               accessibilityIgnoresInvertColors
             />
