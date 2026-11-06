@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { code, root } from "./helpers/screenSource";
 
@@ -20,7 +21,7 @@ describe("an unknown address", () => {
   it("which goes home and shows nothing of its own", () => {
     const src = code("app/+not-found.tsx");
     expect(src).toMatch(/export default function NotFound\(\)/);
-    expect(src).toContain('<Redirect href="/" />');
+    expect(src).toContain('slug ? <Redirect href={{ pathname: "/(gate)/invite", params: { slug } }} /> : <Redirect href="/" />');
     // No header titled "+not-found" for the moment before it goes.
     expect(src).toContain("<Stack.Screen options={{ headerShown: false }} />");
     // Nothing to read, nothing to tap: no text, no link, never the sitemap.
@@ -38,5 +39,32 @@ describe("an unknown address", () => {
     };
     walk(path.join(root, "app"));
     expect(found).toEqual(["app/+not-found.tsx"]);
+  });
+});
+
+/**
+ * One unknown address is an invitation: /i/<code> is the web address a
+ * member shares (inviteUrl). Should it open the app (universal links are
+ * not in 1.0), it goes to the invitation with its code rather than home
+ * with the code lost. The screen's own reader, run as written.
+ */
+describe("an invitation's web address", () => {
+  const src = code("app/+not-found.tsx");
+  const fn = src.slice(src.indexOf("function invitationIn("));
+  const js = ts.transpileModule(fn.slice(0, fn.indexOf("\n}\n") + 2), {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  const invitationIn = new Function(`${js}; return invitationIn;`)() as (p: string | undefined) => string | null;
+
+  it("carries its code to the invitation", () => {
+    expect(invitationIn("/i/applereview")).toBe("applereview");
+    expect(invitationIn("/i/Chai-Katz-Photographs/")).toBe("chai-katz-photographs");
+    expect(invitationIn("/i/someone-invitation")).toBe("someone-invitation");
+  });
+
+  it("and nothing else is taken for one", () => {
+    for (const p of ["/no-such-page", "/i", "/i/", "/i/a/b", "/x/i/abc", "/i/abc?x=1", "/invite", "", undefined]) {
+      expect(invitationIn(p), String(p)).toBeNull();
+    }
   });
 });

@@ -897,6 +897,28 @@ check(
   await fresh.close();
 }
 
+// An invitation's web address, should it ever open the app, goes to the
+// invitation with its code, not home with the code lost.
+{
+  const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const link = await fresh.newPage();
+  link.on("pageerror", (e) => errors.push("invitation address: " + e.message));
+  await link.goto(B + "/i/someone-invitation", { waitUntil: "networkidle" });
+  await link.waitForTimeout(2600);
+  const filled = await link
+    .locator("input:not([type=checkbox])")
+    .locator("visible=true")
+    .first()
+    .inputValue()
+    .catch(() => "");
+  check(
+    "An invitation's web address opens the invitation with its code in it",
+    /By invitation/.test((await link.textContent("body")) ?? "") && filled === "someone-invitation",
+    `${link.url()} · ${filled || "empty"}`,
+  );
+  await fresh.close();
+}
+
 console.log("\nJS errors:", errors.length ? errors.slice(0, 10) : "none");
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
