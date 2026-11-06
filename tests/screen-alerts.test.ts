@@ -36,6 +36,9 @@ const SCREENS = [
   "app/darkroom.tsx",
   "app/library-picker.tsx",
   "app/memories.tsx",
+  "app/edit-caption.tsx",
+  "app/comments.tsx",
+  "app/messages/[id].tsx",
   "src/components/PostCard.tsx",
 ];
 
@@ -58,6 +61,8 @@ describe("the screens' alerts", () => {
       ["app/export.tsx", /showAlert\("That didn’t work", errorMessage\(err, "The link is still on\. Try again in a moment\."\)\)/],
       ["app/export.tsx", /showAlert\("Couldn’t export", errorMessage\(err, "Nothing was shared\. Try again in a moment\."\)\)/],
       ["app/invites.tsx", /showAlert\("That didn’t work", errorMessage\(err, "Nothing changed\. Try again in a moment\."\)\)/],
+      // The draft stays on the page when a save fails, as a comment's and a message's do.
+      ["app/edit-caption.tsx", /onError: \(err\) => showAlert\("Couldn’t save", errorMessage\(err, "Your words are still here\. Try again in a moment\."\)\)/],
     ];
     for (const [file, alert] of cases) expect(code(file), file).toMatch(alert);
     // The follow and the block on a member's page.
@@ -75,5 +80,19 @@ describe("the screens' alerts", () => {
     expect(errorMessage(native, "Nothing was shared. Try again in a moment.")).toBe("Nothing was shared. Try again in a moment.");
     // Our own words, thrown by the export itself, are shown.
     expect(errorMessage(new Error("Sharing is not available on this device"), "x")).toBe("Sharing is not available on this device");
+  });
+
+  it("Edit caption: says our refusal as it is, and never the database's text or an object printed as text", () => {
+    const kept = "Your words are still here. Try again in a moment.";
+    // updateCaption's own sentence, when the update came back with no row: shown.
+    expect(code("src/api/posts.ts")).toContain('throw new Error("Only the author can change a caption.");');
+    expect(errorMessage(new Error("Only the author can change a caption."), kept)).toBe("Only the author can change a caption.");
+    // A refusal as supabase-js hands it back, a plain object: this used to read "[object Object]".
+    const refused = { code: "42501", message: 'new row violates row-level security policy for table "posts"', details: null, hint: null };
+    expect(String(refused)).toBe("[object Object]");
+    expect(errorMessage(refused, kept)).toBe(kept);
+    // The caption's length check, as the database words it.
+    const tooLong = { code: "23514", message: 'new row for relation "posts" violates check constraint "posts_caption_check"', details: null, hint: null };
+    expect(errorMessage(tooLong, kept)).toBe(kept);
   });
 });
