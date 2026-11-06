@@ -7,7 +7,7 @@ export interface EndingAuth {
   admin: { signOut(jwt: string, scope: "global"): Promise<unknown> };
 }
 
-/** How long each step that needs the network is waited for. */
+/** How long the member's own step, which needs the network, is waited for. */
 export const SIGN_OUT_STEP_MS = 4000;
 /** How long auth's sign-out on this phone is waited for: storage only, unless auth is still opening. */
 export const SIGN_OUT_HERE_MS = 1500;
@@ -49,8 +49,13 @@ function atMost<T>(ms: number, work: () => Promise<T>): Promise<T | undefined> {
  *    member's own token: no key of the server's). Made after this phone
  *    has let go, so an answer that comes late changes nothing here: auth's
  *    own sign-out everywhere, landing late, would have removed whatever
- *    the phone then held, a new member's session among them. With no
- *    signal, or no token, the other phones stay signed in, as before.
+ *    the phone then held, a new member's session among them. Sent and not
+ *    waited for: it touches nothing on this phone, which has already let
+ *    go (the session provider has forgotten the member at SIGNED_OUT),
+ *    and waiting on it kept the member looking at Settings, signed out
+ *    underneath, for up to a further SIGN_OUT_STEP_MS on a slow network.
+ *    With no signal, or no token, the other phones stay signed in, as
+ *    before.
  */
 export async function endSession({
   auth,
@@ -78,5 +83,5 @@ export async function endSession({
   await atMost(hereMs, () => auth.signOut({ scope: "local" }));
 
   const token = held.token;
-  if (token) await atMost(stepMs, () => auth.admin.signOut(token, "global"));
+  if (token) void auth.admin.signOut(token, "global").catch(() => undefined);
 }

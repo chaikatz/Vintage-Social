@@ -19,6 +19,8 @@ const h = vi.hoisted(() => ({
   /** What the network was asked, in order: method, path and the token it carried. */
   sent: [] as { method: string; path: string; auth: string | null; online: boolean }[],
   signedOutHeard: 0,
+  /** A slow network: the sign-out of the other phones has not been answered yet. */
+  logoutHangs: false,
 }));
 
 vi.mock("react-native", () => ({
@@ -67,7 +69,7 @@ async function network(input: unknown, init?: RequestInit): Promise<Response> {
   if (url.pathname === "/auth/v1/token") {
     return json(200, { ...storedSession("fresh", Math.floor(Date.now() / 1000) + 3600), refresh_token: "r2" });
   }
-  if (url.pathname === "/auth/v1/logout") return json(204, null);
+  if (url.pathname === "/auth/v1/logout") return h.logoutHangs ? new Promise<Response>(() => undefined) : json(204, null);
   return json(200, []);
 }
 
@@ -114,6 +116,7 @@ beforeEach(() => {
   h.online = false;
   h.sent = [];
   h.signedOutHeard = 0;
+  h.logoutHangs = false;
   // Auth warns about a refresh that could not reach the server.
   quiet = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
@@ -240,6 +243,32 @@ describe("Sign out (endSession)", () => {
       expect(h.keychain.has(KEY)).toBe(false);
       expect(events.filter((e) => e === "SIGNED_OUT")).toHaveLength(1);
       expect(h.signedOutHeard).toBe(1);
+    } finally {
+      stop();
+    }
+  });
+});
+
+describe("Sign out, on a slow network", () => {
+  it("does not wait for the member's other phones: this phone has let go, and the request is sent", async () => {
+    h.online = true;
+    const { supabase, forgetStoredSession, events, stop } = await openApp();
+    const { endSession, SIGN_OUT_HERE_MS } = await import("@/providers/endSession");
+    try {
+      h.logoutHangs = true;
+      h.sent = [];
+      const out = await run(endSession({ auth: supabase.auth, asMember: pushRows(supabase), forgetStored: forgetStoredSession }), 10_000);
+      expect(out.done).toBe(true);
+      // Storage, and the push rows that answered: nothing near the step's
+      // few seconds, which it used to wait again for the other phones.
+      expect(out.took).toBeLessThan(SIGN_OUT_HERE_MS);
+      expect(h.keychain.has(KEY)).toBe(false);
+      expect(events.filter((e) => e === "SIGNED_OUT")).toHaveLength(1);
+      // The sign-out everywhere went out all the same, with the member's own token, after this phone let go.
+      expect(h.sent.map((r) => `${r.method} ${r.path.split("?")[0]} ${r.auth}`)).toEqual([
+        "DELETE /rest/v1/push_tokens Bearer fresh",
+        "POST /auth/v1/logout Bearer fresh",
+      ]);
     } finally {
       stop();
     }
