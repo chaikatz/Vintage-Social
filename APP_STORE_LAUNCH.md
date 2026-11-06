@@ -64,9 +64,8 @@ or anywhere in the repository, and must never be.
   in the SQL editor (0009, 0010, 0012, 0019–0022) are not listed there, and
   that is harmless.
 - **Pending your approval:** the launch sweep's backend work adds new
-  migrations numbered from **0023 up** (0023 to 0034 when this was
-  written, with more from the sweep's last round) and changes the `push`
-  function. Nothing has been applied. See step 4: run every one of them,
+  migrations numbered from **0023 up** (0023 to 0037) and changes the
+  `push` function. Nothing has been applied. See step 4: run every one of them,
   in number order.
 - Edge function `push`: active (version 1). Daily job `vintage-memories`
   at 15:00 UTC: active. Live push tokens: 5.
@@ -278,7 +277,7 @@ notice, and how to undo it. If you approve, in the merged branch:
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false).
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0034 in 34 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0037 in 39 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -295,7 +294,10 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0031 | A report outlives the member who filed it | 30 |
    | 0032 | A new report reaches the admins' phones (needs item 5) | 31 |
    | 0033 | A photograph a member reports leaves their own view | 32 |
-   | 0034 | The house photographs' grid squares at 500 pixels, not full size | 33–34 |
+   | 0034 | The house photographs' grid squares at a grid's size: Wikimedia's at 500 pixels, Picsum's with a 540-pixel short side | 33–35 |
+   | 0035 | A member's own photograph files readable to them whatever their membership, so Delete my account removes them | 36 |
+   | 0036 | A phone's push token belongs to whoever signed in on it last | 37 |
+   | 0037 | Unread messages counted in the database | 38–39 |
 
 5. Redeploy the `push` function, which changed in the sweep:
    `npx supabase functions deploy push --project-ref scfwowqsqrnzpknzurmm`
