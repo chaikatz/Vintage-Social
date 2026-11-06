@@ -110,3 +110,29 @@ describe("a row whose member the reader may not see", () => {
     expect(actions).not.toMatch(/post\.author\.username/);
   });
 });
+
+describe("a list whose read failed", () => {
+  // A failed read counts as fetched; these lists used to take it for an
+  // answer and say they were empty ("No messages", "Nothing yet").
+  const lists: [file: string, query: string, what: string][] = [
+    ["app/messages/index.tsx", "conversations", "your messages"],
+    ["app/(tabs)/activity.tsx", "activity", "your activity"],
+    ["app/comments.tsx", "commentsQ", "the comments"],
+    ["app/(tabs)/search.tsx", "explore", "the latest photographs"],
+  ];
+  for (const [file, query, what] of lists) {
+    it(`${file} says it could not load, not that it is empty`, () => {
+      const source = read(file);
+      const failed = new RegExp(
+        `${query}\\.isError \\? \\(\\s*<LoadFailed what="${what}" onRetry=\\{\\(\\) => ${query}\\.refetch\\(\\)\\} />\\s*\\) : ${query}\\.isFetched \\? \\(\\s*<EmptyState`,
+      );
+      expect(source).toMatch(failed);
+    });
+  }
+
+  it("and a search that failed is not 'Nobody by that name'", () => {
+    expect(read("app/(tabs)/search.tsx")).toMatch(
+      /results\.isError && settledQ\.trim\(\) === q\.trim\(\) \? \(\s*<LoadFailed what="the search" onRetry=\{\(\) => results\.refetch\(\)\} \/>\s*\) : results\.isFetched/,
+    );
+  });
+});

@@ -191,7 +191,10 @@ export default function Comments() {
           ) : null
         }
         ListEmptyComponent={
-          commentsQ.isFetched ? (
+          // A read that failed is no answer: "No comments yet" would not be true.
+          commentsQ.isError ? (
+            <LoadFailed what="the comments" onRetry={() => commentsQ.refetch()} />
+          ) : commentsQ.isFetched ? (
             <EmptyState title="No comments yet" body="Be the first to say something." />
           ) : null
         }

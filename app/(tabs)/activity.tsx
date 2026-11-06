@@ -7,6 +7,7 @@ import { Image } from "expo-image";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, spacing } from "@/theme";
 import { fetchActivity, markActivityRead } from "@/api/activity";
 import { decideTag, fetchMyTagStatus } from "@/api/tags";
@@ -92,7 +93,10 @@ export default function Activity() {
         refreshing={activity.isRefetching}
         onRefresh={() => activity.refetch()}
         ListEmptyComponent={
-          activity.isFetched ? (
+          // A read that failed is no answer: "Nothing yet" would not be true.
+          activity.isError ? (
+            <LoadFailed what="your activity" onRetry={() => activity.refetch()} />
+          ) : activity.isFetched ? (
             <EmptyState title="Nothing yet" body="Likes, comments and new followers appear here." />
           ) : null
         }

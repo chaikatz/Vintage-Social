@@ -10,6 +10,7 @@ import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { PhotoGrid } from "@/components/PhotoGrid";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing, type } from "@/theme";
 import { searchProfiles } from "@/api/profiles";
 import { fetchExplore } from "@/api/posts";
@@ -131,7 +132,10 @@ export default function Search() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           ListEmptyComponent={
-            results.isFetched && settledQ.trim() === q.trim() && !results.isPlaceholderData ? (
+            // A search that failed is no answer: "Nobody by that name" would not be true.
+            results.isError && settledQ.trim() === q.trim() ? (
+              <LoadFailed what="the search" onRetry={() => results.refetch()} />
+            ) : results.isFetched && settledQ.trim() === q.trim() && !results.isPlaceholderData ? (
               <EmptyState title="Nobody by that name" body="Try a different spelling." />
             ) : null
           }
@@ -201,7 +205,10 @@ export default function Search() {
         onRefresh={reshuffle}
         header={<Text style={styles.sectionLabel}>Recently on VINTAGE</Text>}
         empty={
-          explore.isFetched ? (
+          // A read that failed is no answer: "Nothing to explore yet" would not be true.
+          explore.isError ? (
+            <LoadFailed what="the latest photographs" onRetry={() => explore.refetch()} />
+          ) : explore.isFetched ? (
             <EmptyState
               title="Nothing to explore yet"
               body="As members post, their photographs collect here."
