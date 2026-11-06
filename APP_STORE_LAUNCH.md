@@ -574,8 +574,8 @@ to check)
 > in, either by a member's invitation (each member has only a few, and an
 > invitation is tied to the member who sent it) or by an application that
 > a person reads and approves. After that, by people: every report goes to
-> a human queue, admins remove content and warn, suspend or remove
-> members, and any member can block another. A photograph a member
+> a human queue, admins remove content and warn or suspend members, and
+> any member can block another. A photograph a member
 > reports leaves their own feed, Explore and grids the moment the report is
 > sent, and does not come back for them. There is no automatic content
 > filter. Members accept the Terms of Use, which say there is no tolerance

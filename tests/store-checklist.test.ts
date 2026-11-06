@@ -172,6 +172,21 @@ describe("how objectionable content is filtered, as the review notes say it", ()
     // Location on the label, never the phone's position (tests/store-permissions.test.ts holds the code to it).
     expect(notes).toContain("the phone's own position is never read");
   });
+
+  it("names only what an admin can do: remove content, warn and suspend, never remove a member", () => {
+    const notes = flat(reviewNotes());
+    expect(notes).toContain("admins remove content and warn or suspend members");
+    expect(notes).not.toMatch(/remove (a )?members?\b/);
+    // The admin pages: Remove on a reported photograph or comment, Warn and Suspend on a member, and nothing that deletes one.
+    const members = read("app/admin/members.tsx");
+    expect(members).toMatch(/<Button title="Warn"/);
+    expect(members).toMatch(/"Reinstate" : "Suspend"/);
+    expect(read("app/admin/reports.tsx")).toMatch(/removePost|removeComment/);
+    const api = read("src/api/moderation.ts");
+    expect(api).toMatch(/export async function warnMember\(/);
+    expect(api).toMatch(/export async function setSuspension\(/);
+    expect(api).not.toMatch(/export async function (remove|delete|ban)Member/);
+  });
 });
 
 describe("the two review blockers of 5 November", () => {
