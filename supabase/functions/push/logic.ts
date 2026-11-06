@@ -54,9 +54,64 @@ export interface SendResult {
   failed: number;
   /** Tokens Expo says no longer reach a device: to be forgotten. */
   dead: string[];
+  /**
+   * Each notice Expo took, by its ticket: whether it reached the device is
+   * known only later, from its receipt (checkReceipts).
+   */
+  tickets: Ticket[];
+}
+
+/** A notice Expo has taken: its ticket id, and the token it was for. */
+export interface Ticket {
+  id: string;
+  token: string;
 }
 
 type Fetch = (input: string, init: RequestInit) => Promise<Response>;
+
+/**
+ * A fetch that gives up after `ms`: the request is aborted and the promise
+ * rejects, as a dropped connection would. A signal the caller passes is
+ * still honoured. For the database client, whose requests had none.
+ */
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export function withDeadline(fetch: FetchLike, ms: number): FetchLike {
+  return async (input, init = {}) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    const outer = init.signal;
+    const onAbort = () => controller.abort();
+    if (outer) {
+      if (outer.aborted) controller.abort();
+      else outer.addEventListener("abort", onAbort, { once: true });
+    }
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+      outer?.removeEventListener("abort", onAbort);
+    }
+  };
+}
+
+/** POST JSON with a deadline; null when it fails or the deadline passes. */
+async function postJson(fetch: Fetch, url: string, body: unknown, timeoutMs: number): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Hand the notices to Expo, a hundred a request, a few requests at once.
@@ -77,26 +132,11 @@ export async function sendToExpo(
     retryAfterMs = 1_000,
   }: { fetch: Fetch; url?: string; timeoutMs?: number; batch?: number; atOnce?: number; retryAfterMs?: number },
 ): Promise<SendResult> {
-  const result: SendResult = { sent: 0, failed: 0, dead: [] };
+  const result: SendResult = { sent: 0, failed: 0, dead: [], tickets: [] };
   const batches: Message[][] = [];
   for (let i = 0; i < messages.length; i += batch) batches.push(messages.slice(i, i + batch));
 
-  const post = async (body: Message[]): Promise<Response | null> => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
+  const post = (body: Message[]) => postJson(fetch, url, body, timeoutMs);
 
   await eachChunk(batches, atOnce, async (body) => {
     let res = await post(body);
@@ -108,7 +148,7 @@ export async function sendToExpo(
       result.failed += body.length;
       return;
     }
-    let tickets: { status?: string; details?: { error?: string } }[] = [];
+    let tickets: { status?: string; id?: string; details?: { error?: string } }[] = [];
     try {
       const parsed = (await res.json()) as { data?: typeof tickets };
       tickets = Array.isArray(parsed?.data) ? parsed.data : [];
@@ -119,6 +159,7 @@ export async function sendToExpo(
       const ticket = tickets[index];
       if (ticket?.status === "ok") {
         result.sent++;
+        if (typeof ticket.id === "string" && ticket.id) result.tickets.push({ id: ticket.id, token: message.to });
         return;
       }
       result.failed++;
@@ -126,6 +167,91 @@ export async function sendToExpo(
     });
   });
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// receipts: which devices turned out to be gone
+// ---------------------------------------------------------------------------
+
+/** Expo answers at most this many receipt ids a request (its own SDK's chunk). */
+export const RECEIPTS_PER_REQUEST = 300;
+
+export interface ReceiptResult {
+  /** Ticket ids Expo answered for, whatever the answer. */
+  answered: string[];
+  /** Ticket ids whose device Apple or Google says is gone (DeviceNotRegistered). */
+  dead: string[];
+}
+
+/**
+ * Ask Expo how the notices behind these tickets went. A ticket says only
+ * that Expo took a notice; whether Apple or Google could deliver it comes
+ * later, in its receipt (Expo keeps them for a day and suggests asking
+ * fifteen minutes on), and that is where a device that has gone away is
+ * first reported. Three hundred ids a request, a few at once, each with a
+ * deadline. Never throws: a receipt that cannot be read is simply not
+ * answered, and the token it was for is kept.
+ */
+export async function checkReceipts(
+  ids: string[],
+  {
+    fetch,
+    url = "https://exp.host/--/api/v2/push/getReceipts",
+    timeoutMs = EXPO_TIMEOUT_MS,
+    batch = RECEIPTS_PER_REQUEST,
+    atOnce = EXPO_AT_ONCE,
+  }: { fetch: Fetch; url?: string; timeoutMs?: number; batch?: number; atOnce?: number },
+): Promise<ReceiptResult> {
+  const result: ReceiptResult = { answered: [], dead: [] };
+  await eachChunk(chunk(ids, batch), atOnce, async (part) => {
+    const res = await postJson(fetch, url, { ids: part }, timeoutMs);
+    if (!res || !res.ok) return;
+    let receipts: Record<string, { status?: string; details?: { error?: string } }> = {};
+    try {
+      const parsed = (await res.json()) as { data?: typeof receipts };
+      receipts = parsed?.data && typeof parsed.data === "object" && !Array.isArray(parsed.data) ? parsed.data : {};
+    } catch {
+      receipts = {};
+    }
+    for (const id of part) {
+      const receipt = receipts[id];
+      if (!receipt) continue;
+      result.answered.push(id);
+      if (receipt.status === "error" && receipt.details?.error === "DeviceNotRegistered") result.dead.push(id);
+    }
+  });
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// long lists, a page at a time
+// ---------------------------------------------------------------------------
+
+/**
+ * Every key of a long list, a page at a time, each page asked for as "the
+ * next `size` after the last key of the page before" (keyset paging), so
+ * no page re-reads the ones before it as an offset would. Each page is
+ * handed to `onPage` before the next is read, so memory stays one page
+ * deep. Stops at a short page, at a page that could not be read (null),
+ * or after `max` keys.
+ */
+export async function eachPageByKey<K>(
+  readPage: (after: K | null, size: number) => Promise<K[] | null>,
+  onPage: (keys: K[]) => Promise<void>,
+  { size, max }: { size: number; max: number },
+): Promise<{ read: number; complete: boolean }> {
+  let after: K | null = null;
+  let read = 0;
+  for (;;) {
+    const want = Math.min(size, max - read);
+    if (want <= 0) return { read, complete: false };
+    const keys = await readPage(after, want);
+    if (keys === null) return { read, complete: false };
+    read += keys.length;
+    if (keys.length > 0) await onPage(keys);
+    if (keys.length < want) return { read, complete: true };
+    after = keys[keys.length - 1];
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -209,3 +209,31 @@ describe("0024: who has blocked whom answers only for the caller", () => {
     expect(runner).toMatch(/"11_block_privacy\.sql"/);
   });
 });
+
+describe("0026 and 0027: the push function's own reads and writes", () => {
+  const followers = code(readFileSync(join(migrations, "0026_followers_in_order.sql"), "utf8"));
+  const tickets = code(readFileSync(join(migrations, "0027_push_tickets.sql"), "utf8"));
+
+  it("0026 keeps an author's accepted followers in follower order, for keyset pages", () => {
+    expect(followers).toMatch(
+      /create index if not exists follows_followers_by_id_idx on public\.follows \(followee_id, follower_id\)\s+where status = 'accepted';/,
+    );
+    expect(followers).not.toMatch(/\bdrop\b|\bdelete\b|\btruncate\b/i);
+  });
+
+  it("0027 keeps Expo's tickets where only the service role can reach them", () => {
+    expect(tickets).toMatch(/create table if not exists public\.push_tickets/);
+    expect(tickets).toMatch(/references public\.push_tokens \(token\) on delete cascade/);
+    expect(tickets).toMatch(/alter table public\.push_tickets enable row level security;/);
+    expect(tickets).toMatch(/revoke all on public\.push_tickets from public, anon, authenticated;/);
+    expect(tickets).not.toMatch(/create policy/i);
+    // The foreign key's lookup has its index (every foreign key does, 0023).
+    expect(tickets).toMatch(/create index if not exists push_tickets_token_idx on public\.push_tickets \(token\);/);
+  });
+
+  it("both wait at most five seconds for a lock, like 0023", () => {
+    for (const sql of [followers, tickets]) {
+      expect(sql.split(";").map((st) => st.trim()).find(Boolean)).toBe("set local lock_timeout = '5s'");
+    }
+  });
+});

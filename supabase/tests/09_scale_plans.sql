@@ -121,6 +121,14 @@ insert into plans values
 -- What deleting a photograph and a member look up, as the database runs
 -- them (no policies on these: the foreign keys' own queries).
 create temp table lookups (label text primary key, plan json);
+
+-- A member the whole club follows, for the push function's pages.
+select id as popular from public.profiles where id::text like '5ca1e000-%' and not is_private
+order by id offset 3 limit 1 \gset
+insert into public.follows (follower_id, followee_id, status)
+select id, :'popular', 'accepted' from public.profiles where id::text like '5ca1e000-%' and id <> :'popular'
+on conflict (follower_id, followee_id) do update set status = 'accepted';
+analyze public.follows;
 create or replace function tests.plan_owner(p_sql text) returns json language plpgsql as $fn$
 declare v json;
 begin
@@ -140,7 +148,18 @@ insert into lookups values
      'select id, author_id from public.posts where removed_at is null and taken_at is not null
         and taken_at >= ''2021-11-05'' and taken_at < ''2021-11-06''')),
   ('unread Activity', tests.plan_owner(format(
-     'select 1 from public.activity where recipient_id = %L and read_at is null', :'author')));
+     'select 1 from public.activity where recipient_id = %L and read_at is null', :'author'))),
+  -- The push function (service role, no policies): the next page of a
+  -- photograph's followers after the last one told (0026), for a member
+  -- the whole club follows, and whether a like was pushed to this member
+  -- in the last half hour.
+  ('the next page of followers to tell', tests.plan_owner(format(
+     'select follower_id from public.follows where followee_id = %L and status = ''accepted''
+        and follower_id > %L order by follower_id limit 100', :'popular', '5ca1e000-0000-4000-8000-000000000100'))),
+  ('a like pushed in the last half hour', tests.plan_owner(format(
+     'select id from public.activity where recipient_id = %L and created_at >= now() - interval ''1 hour''
+        and type = ''like'' and id <> %L and pushed_at >= now() - interval ''30 minutes'' limit 1',
+     :'author', gen_random_uuid())));
 
 -- ---------------------------------------------------------------------------
 -- what must hold
@@ -180,7 +199,9 @@ from (values
   ('Activity', 'activity_recipient_idx'),
   ('comments on a photograph', 'comments_post_idx'),
   ('who liked it', 'likes_post_recent_idx'),
-  ('their followers', 'follows_followers_idx'),
+  -- Few followers each here, so either index of an author's followers will do;
+  -- for a member with thousands, the newest-first one saves the sort.
+  ('their followers', 'follows_followers_idx or follows_followers_by_id_idx'),
   ('a thread', 'messages_conversation_idx'),
   ('who I follow', 'follows_pkey'),
   ('did I like these', 'likes_pkey or likes_user_idx')
@@ -201,9 +222,20 @@ from (
     ('messages by a deleted member', 'messages_sender_idx'),
     ('members they invited', 'profiles_invited_by_idx'),
     ('photographs taken on a day', 'posts_taken_idx'),
-    ('unread Activity', 'activity_unread_idx')
+    ('unread Activity', 'activity_unread_idx'),
+    ('the next page of followers to tell', 'follows_followers_by_id_idx'),
+    ('a like pushed in the last half hour', 'activity_recipient_idx')
   ) v(label, want) on v.label = k.label
 ) l;
+
+-- Keyset, not offset: the followers come out of the index in order, so the
+-- page stops at its thousand rather than sorting all of them first.
+insert into tests.results (name, expected, actual) values
+  ('scale: the next page of followers needs no sort', 'false',
+   ((select plan::text from lookups where label = 'the next page of followers to tell') ~ '"Node Type": "Sort"')::text),
+  ('scale: the like check reads only the last hour of the member''s Activity', 'true',
+   ((select plan::text from lookups where label = 'a like pushed in the last half hour')
+     ~ '"Index Cond": "\(\(recipient_id = [^"]*AND \(created_at >= ')::text);
 
 -- ---------------------------------------------------------------------------
 -- the home feed (0025): about the photographs it could show, never the club's

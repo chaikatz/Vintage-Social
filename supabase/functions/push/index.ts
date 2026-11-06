@@ -28,8 +28,15 @@
 //     that comes back registers again.
 //   * Every `in` filter (preferences, tokens) goes a hundred ids a read,
 //     because it rides in the URL; followers are read a thousand at a
-//     time (PostgREST's max_rows) until there are no more, up to
-//     MAX_FOLLOWERS_TOLD, so one post's fan-out is bounded.
+//     time (PostgREST's max_rows), each page "the next thousand after the
+//     last follower told" (follows_followers_by_id_idx, 0026), until there
+//     are no more, up to MAX_FOLLOWERS_TOLD, so one post's fan-out is
+//     bounded and no page re-reads the ones before it.
+//   * Whether a notice reached the device is reported later, in Expo's
+//     receipts, and that is where Apple or Google first says a device is
+//     gone. Each notice Expo takes is noted (push_tickets, 0027); once a
+//     day, after the memories, the receipts are asked for and the tokens
+//     of devices that are gone are deleted.
 //   * On This Day asks for photographs taken on today's date in each
 //     earlier year (an index range each, posts_taken_idx in 0023) rather
 //     than every dated photograph in the club, which past a thousand
@@ -37,12 +44,15 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  checkReceipts,
   chunk,
   eachChunk,
+  eachPageByKey,
   IDS_PER_READ,
   memoryDays,
   pickMemories,
   sendToExpo,
+  withDeadline,
   type MemoryPost,
   type Message,
 } from "./logic.ts";
@@ -52,6 +62,14 @@ const LIKE_QUIET_MINUTES = 30;
 const ROWS_PER_READ = 1000;
 /** The most followers one new photograph is announced to. */
 const MAX_FOLLOWERS_TOLD = 50_000;
+/** Receipts are asked for this long after sending, as Expo suggests. */
+const RECEIPT_DELAY_MINUTES = 15;
+/** The most receipts asked for in one daily run, so the run stays bounded. */
+const MAX_RECEIPTS_A_RUN = 30_000;
+/** Ticket rows written per insert. */
+const TICKETS_PER_WRITE = 500;
+/** How long one database request may take before it is given up on. */
+const DB_TIMEOUT_MS = 10_000;
 
 type Kind = "activity" | "post" | "memories";
 
@@ -75,10 +93,14 @@ const DEFAULT_PREFS: Prefs = {
   memories: true,
 };
 
+// Every read and write of the database has a deadline too: one that hangs
+// is given up on (supabase-js returns it as an error, which each caller
+// already treats as nothing found), rather than holding the function
+// until the platform stops it.
 const admin = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-  { auth: { persistSession: false } },
+  { auth: { persistSession: false }, global: { fetch: withDeadline((url, init) => fetch(url, init), DB_TIMEOUT_MS) } },
 );
 
 Deno.serve(async (req) => {
@@ -187,11 +209,19 @@ async function handleActivity(id: string): Promise<unknown> {
       // in the last half hour, the rest wait for them in Activity.
       // One such row is enough to know: no exact count of a popular
       // member's likes, just whether there is one.
+      // Bounded by when the rows were made, too, so the read is a range
+      // of activity_recipient_idx (recipient, newest first) that ends an
+      // hour back, rather than every Activity row the member has ever
+      // had, which is what it read whenever no recent like was found (the
+      // usual case). A like is pushed seconds after it is made; the hour
+      // leaves room for one whose push was held up for half an hour.
       const since = new Date(Date.now() - LIKE_QUIET_MINUTES * 60_000).toISOString();
+      const madeSince = new Date(Date.now() - 2 * LIKE_QUIET_MINUTES * 60_000).toISOString();
       const { data: recent } = await admin
         .from("activity")
         .select("id")
         .eq("recipient_id", recipient)
+        .gte("created_at", madeSince)
         .eq("type", "like")
         .neq("id", id)
         .gte("pushed_at", since)
@@ -272,21 +302,25 @@ async function handlePost(id: string): Promise<unknown> {
   const body = place ? `${author.username} posted ${what} from ${place}.` : `${author.username} posted ${what}.`;
 
   // Followers a page at a time (PostgREST stops at max_rows), each page
-  // told before the next is read, so memory stays one page deep. Ordered
-  // by follower so the pages neither overlap nor skip.
+  // told before the next is read, so memory stays one page deep. Each
+  // page is the next thousand after the last follower told, in follower
+  // order (keyset, follows_followers_by_id_idx): pages neither overlap
+  // nor skip, and none re-reads the ones before it, as an offset did.
   const total = { sent: 0, failed: 0, followers: 0 };
-  for (let from = 0; from < MAX_FOLLOWERS_TOLD; from += ROWS_PER_READ) {
-    const { data: page, error } = await admin
-      .from("follows")
-      .select("follower_id")
-      .eq("followee_id", post.author_id)
-      .eq("status", "accepted")
-      .order("follower_id", { ascending: true })
-      .range(from, from + ROWS_PER_READ - 1);
-    if (error) break;
-    const ids = (page ?? []).map((f) => f.follower_id as string);
-    total.followers += ids.length;
-    if (ids.length > 0) {
+  const { complete } = await eachPageByKey<string>(
+    async (after, size) => {
+      let query = admin
+        .from("follows")
+        .select("follower_id")
+        .eq("followee_id", post.author_id)
+        .eq("status", "accepted");
+      if (after !== null) query = query.gt("follower_id", after);
+      const { data: page, error } = await query.order("follower_id", { ascending: true }).limit(size);
+      if (error) return null;
+      return (page ?? []).map((f) => f.follower_id as string);
+    },
+    async (ids) => {
+      total.followers += ids.length;
       const prefs = await prefsFor(ids);
       const wanted = ids.filter((uid) => (prefs.get(uid) ?? DEFAULT_PREFS).posts);
       const tokens = await tokensFor(wanted);
@@ -299,11 +333,11 @@ async function handlePost(id: string): Promise<unknown> {
       const result = await send(messages);
       total.sent += result.sent;
       total.failed += result.failed;
-    }
-    if (ids.length < ROWS_PER_READ) break;
-    if (from + ROWS_PER_READ >= MAX_FOLLOWERS_TOLD) {
-      console.warn(`post ${post.id}: told the first ${MAX_FOLLOWERS_TOLD} followers and stopped`);
-    }
+    },
+    { size: ROWS_PER_READ, max: MAX_FOLLOWERS_TOLD },
+  );
+  if (!complete && total.followers >= MAX_FOLLOWERS_TOLD) {
+    console.warn(`post ${post.id}: told the first ${MAX_FOLLOWERS_TOLD} followers and stopped`);
   }
   if (total.followers === 0) return { sent: 0, reason: "no followers" };
   return { sent: total.sent, failed: total.failed };
@@ -326,6 +360,18 @@ async function handleMemories(): Promise<unknown> {
     .select("key");
   if (!guard || guard.length === 0) return { sent: 0, reason: "already ran today" };
 
+  const memories = await sendMemories(today);
+  // Once a day, after the day's memories are out, whether or not there
+  // were any: which devices turned out to be gone.
+  const receipts = await settleReceipts().catch((err) => {
+    console.error("receipts", err);
+    return { asked: 0, gone: 0 };
+  });
+  return { ...memories, receipts };
+}
+
+/** Today's memories, one per member, to those who want them. */
+async function sendMemories(today: Date): Promise<Record<string, unknown>> {
   // Posts whose capture date falls on this month/day in an earlier year:
   // one small range read per year (posts_taken_idx), back to the oldest
   // dated photograph in the club, each paged past max_rows. It used to
@@ -378,17 +424,58 @@ async function handleMemories(): Promise<unknown> {
   return send(messages);
 }
 
+/**
+ * Ask Expo for the receipts of the notices sent since the last run (at
+ * least fifteen minutes ago), delete the tokens of devices Apple or
+ * Google says are gone, and let go of the tickets. Expo keeps receipts
+ * for a day, and this runs once a day, so a ticket older than that is let
+ * go unread; at most MAX_RECEIPTS_A_RUN are asked for, by ticket id.
+ */
+async function settleReceipts(): Promise<{ asked: number; gone: number }> {
+  const before = new Date(Date.now() - RECEIPT_DELAY_MINUTES * 60_000).toISOString();
+  let asked = 0;
+  let gone = 0;
+  await eachPageByKey<{ id: string; token: string }>(
+    async (after, size) => {
+      let query = admin.from("push_tickets").select("id, token").lt("created_at", before);
+      if (after !== null) query = query.gt("id", after.id);
+      const { data, error } = await query.order("id", { ascending: true }).limit(size);
+      if (error) return null;
+      return (data ?? []) as { id: string; token: string }[];
+    },
+    async (tickets) => {
+      asked += tickets.length;
+      const { dead } = await checkReceipts(tickets.map((t) => t.id), { fetch: (url, init) => fetch(url, init) });
+      const deadIds = new Set(dead);
+      const tokens = tickets.filter((t) => deadIds.has(t.id)).map((t) => t.token);
+      for (const part of chunk(tokens, IDS_PER_READ)) {
+        await admin.from("push_tokens").delete().in("token", part);
+        gone += part.length;
+      }
+    },
+    { size: ROWS_PER_READ, max: MAX_RECEIPTS_A_RUN },
+  );
+  // Read or not, a ticket older than the delay has had its one chance.
+  await admin.from("push_tickets").delete().lt("created_at", before);
+  return { asked, gone };
+}
+
 // ---------------------------------------------------------------------------
 // through Expo, in chunks; dead devices are forgotten
 // ---------------------------------------------------------------------------
 
 async function send(messages: Message[]): Promise<{ sent: number; failed: number }> {
   if (messages.length === 0) return { sent: 0, failed: 0 };
-  const { sent, failed, dead } = await sendToExpo(messages, { fetch: (url, init) => fetch(url, init) });
+  const { sent, failed, dead, tickets } = await sendToExpo(messages, { fetch: (url, init) => fetch(url, init) });
   // A device that is gone will not come back under this token; the row
   // goes, a hundred tokens a delete (they ride in the URL).
   for (const tokens of chunk(dead, IDS_PER_READ)) {
     await admin.from("push_tokens").delete().in("token", tokens);
+  }
+  // Each notice Expo took, for its receipt at the next daily run
+  // (settleReceipts). Best effort: a ticket not kept is a receipt unread.
+  for (let i = 0; i < tickets.length; i += TICKETS_PER_WRITE) {
+    await admin.from("push_tickets").insert(tickets.slice(i, i + TICKETS_PER_WRITE));
   }
   return { sent, failed };
 }
