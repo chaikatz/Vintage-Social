@@ -202,8 +202,8 @@ and do not submit until it has.
 Also check the message thread's **"…"** menu is in the branch: the
 review notes and the support page say a thread's "…" shows the other
 member's profile and lets you report or block them. It is added on branch
-`r16-client`. Check: `app/messages/[id].tsx` has a "…" menu with
-Report and Block; on the phone, open any thread and tap "…" at the top.
+`r16-client`. Check: `app/messages/[id].tsx` contains "Report member"
+and "Block member"; on the phone, open any thread and tap "…" at the top.
 
 Then do these in this order. Steps 1 and 2 must happen **before** the
 build, because the app reads those values when it is built.
@@ -743,8 +743,8 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
     leave Home and Search. Settings → Blocked members → Unblock.
 15. On any photograph: … → Report → a reason → sent. Press and hold a
     comment → Report comment. Both appear in Profile → shield → Reports.
-    In the thread with the second account (step 10), "…" at the top opens
-    their profile and has Report and Block.
+    In the thread with the second account (step 10), "…" at the top has
+    View profile, Report member and Block member.
 16. Private accounts (once 0038 is applied, step 4): on the second account,
     Settings → Private account on. From your own account, open its profile
     → Follow: the button reads Requested, and its photographs stay hidden.

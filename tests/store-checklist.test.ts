@@ -387,7 +387,9 @@ describe("reporting from a message thread", () => {
     expect(notes).toContain('A message thread\'s "…" menu shows the other member\'s profile and lets you report or block them.');
     const support = read("scripts/build-legal.mjs");
     expect(support).toContain("In a message thread, the “…” at the top shows the other member’s profile and lets you report or block them.");
-    if (!/Report/.test(read("app/messages/[id].tsx"))) {
+    // The phone step names the menu's own words (r16-client's thread menu).
+    expect(flat(between(doc(), "## 6. On your iPhone", "## 7."))).toContain('"…" at the top has View profile, Report member and Block member.');
+    if (!/"Report member"/.test(read("app/messages/[id].tsx"))) {
       const before = flat(between(doc(), "### Before you build", "### Step 1"));
       expect(before).toContain("Also check the message thread's **\"…\"** menu is in the branch");
     }
