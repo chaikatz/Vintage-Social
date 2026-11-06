@@ -162,3 +162,17 @@ describe("Home", () => {
     expect(home).toMatch(/const stale = refreshOnReturn\(\{/);
   });
 });
+
+describe("the notes on how the feed pages", () => {
+  const raw = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
+
+  it("say it pages by cursor, as it does, never by offset", () => {
+    // The feed pages after the last post held (src/api/posts.ts, 0025).
+    for (const file of ["src/media/feedPages.ts", "src/uploads/feedCache.ts"]) {
+      expect(raw(file), file).not.toMatch(/by offset/);
+    }
+    expect(raw("src/uploads/feedCache.ts")).toMatch(
+      /Each page starts after the last post of the\s+\* one before \(a cursor, src\/api\/posts\.ts\), so the prepended row moves no\s+\* page/,
+    );
+  });
+});
