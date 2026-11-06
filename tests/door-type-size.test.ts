@@ -45,7 +45,7 @@ describe("at the door", () => {
     expect(button).toMatch(/<Feather name="arrow-right" size=\{18\}[^>]*style=\{styles\.arrow\} \/>/);
     expect(style(button, "arrow")).toMatch(/position: "absolute", right: 16/);
     const clearance = Number(button.match(/const ARROW_CLEARANCE = (\d+);/)?.[1]);
-    expect(clearance).toBeGreaterThanOrEqual(16 + 18 + 8);
+    expect(clearance).toBeGreaterThanOrEqual(16 + 18 + 6);
     for (const bar of ["solid", "outline"]) expect(style(button, bar), bar).toContain("paddingHorizontal: ARROW_CLEARANCE");
     // Symmetric, so the centred label does not move; the quiet way has no arrow and no padding.
     expect(style(button, "quiet")).not.toMatch(/padding(Horizontal|Left|Right)/);
@@ -56,10 +56,12 @@ describe("at the door", () => {
     expect(Number(create.match(/const BAR_INSET = (\d+);/)?.[1])).toBeGreaterThanOrEqual(16 + 18);
     expect(style(create, "bar")).toMatch(/paddingHorizontal: BAR_INSET/);
     // At the default size the longest label at the door still fits on one line between the clearances
-    // of the narrowest phone's bar (375 points less the page's two margins): Courier New is 0.6 em wide.
+    // of the narrowest phone's bar: 320 points (the first iPhone SE, on iOS 15, inside Expo SDK 54's
+    // 15.1 minimum; or a mini or an SE with Display Zoom) less the page's two margins. Courier New is 0.6 em
+    // wide. At a clearance of 44 "I HAVE AN INVITATION" took two lines on the waiting screen there.
     const layout = read("src/components/gate/GateLayout.tsx");
     expect(layout).toMatch(/body: \{ flex: 1, paddingHorizontal: spacing\.xl \+ spacing\.xs \}/);
-    const bar = 375 - 2 * (24 + 4);
+    const bar = 320 - 2 * (24 + 4);
     const longest = Math.max(
       ...["I have an invitation", "Submit application", "Check status", "Sign in"].map((t) => t.length * (11 * 0.6 + 2.4) - 2.4),
     );

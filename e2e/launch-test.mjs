@@ -977,15 +977,17 @@ check(
 // size in the same place as before, and at a much larger size (drawn here
 // at 60 pixels, wider than the bar less its clearances, as the largest
 // accessibility sizes would draw a longer label) wrapped between the two
-// clearances rather than under the arrow.
+// clearances rather than under the arrow. On the narrowest phone (320
+// wide) the door's longest bar label, "I have an invitation" on the
+// waiting screen, still takes one line at the default size.
 {
   const fresh = await browser.newContext({ viewport: { width: 375, height: 812 } });
   const door = await fresh.newPage();
   door.on("pageerror", (e) => errors.push("door bar: " + e.message));
   await door.goto(B + "/sign-in", { waitUntil: "networkidle" });
   await door.waitForTimeout(2400);
-  const measure = (px) =>
-    door.evaluate((size) => {
+  const measure = (px, words) =>
+    door.evaluate(([size, text]) => {
       const bar = [...document.querySelectorAll('[role="button"][aria-label="Sign in"]')].find(
         (el) => el.getBoundingClientRect().width > 200,
       );
@@ -993,6 +995,7 @@ check(
       const arrow = bar && [...bar.children].find((el) => el !== label && !el.contains(label));
       if (!bar || !label || !arrow) return null;
       if (size) label.style.fontSize = `${size}px`;
+      if (text) label.textContent = text;
       const b = bar.getBoundingClientRect();
       const l = label.getBoundingClientRect();
       const a = arrow.getBoundingClientRect();
@@ -1003,18 +1006,22 @@ check(
         arrow: Math.round(b.right - a.left),
         lines: Math.round(l.height / (size ? size : 11)),
       };
-    }, px);
+    }, [px, words]);
   const normal = await measure(0);
   const large = await measure(60);
+  await door.setViewportSize({ width: 320, height: 640 });
+  await door.waitForTimeout(400);
+  const narrow = await measure(0, "I have an invitation");
   check(
-    "A bar's label at the door is centred and on one line at the default size, and clear of its arrow at a large size",
-    Boolean(normal && large) &&
+    "A bar's label at the door is centred and on one line at the default size, even 320 wide, and clear of its arrow at a large size",
+    Boolean(normal && large && narrow) &&
       Math.abs(normal.left - normal.right) <= 3 &&
       normal.lines === 1 &&
+      narrow.lines === 1 &&
       large.lines > 1 &&
-      large.right >= large.arrow + 4 &&
+      large.right >= large.arrow + 2 &&
       large.left >= large.arrow,
-    JSON.stringify({ normal, large }),
+    JSON.stringify({ normal, large, narrow }),
   );
   await fresh.close();
 }

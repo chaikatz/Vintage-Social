@@ -82,18 +82,21 @@ export function GateButton({
 
 /**
  * Kept clear on both sides of a bar's label: the arrow's 18, its 16 in
- * from the edge, and 10 between. The label is centred across the whole
+ * from the edge, and 6 between (more to the eye: the arrow's glyph has
+ * its own margin inside those 18). The label is centred across the whole
  * bar, and at the larger text sizes it wrapped to the bar's full width and
  * ran under the arrow ("I HAVE AN INVITATION", "SUBMIT APPLICATION"). At
  * the default size nothing moves: the longest label at the door is about
- * 180 points, and on a 375-point phone the bar leaves it 231 between the
- * two clearances, so it stays on one line in the same place.
+ * 180 points, and on the narrowest phone this build runs on, 320 points
+ * (the first iPhone SE, or a mini or an SE with Display Zoom), the bar
+ * leaves it 184 between the two clearances, so it stays on one line in
+ * the same place. At 44 it took two lines there.
  *
  * The card is the Post tab's Memory Room bar, and that page gives both its
  * bars their size and their own clearance (app/(tabs)/create.tsx, its
  * `bar` style), which overrides these; the card keeps none of its own.
  */
-const ARROW_CLEARANCE = 44;
+const ARROW_CLEARANCE = 40;
 
 const styles = StyleSheet.create({
   // At least 44, never fixed: at the larger text sizes a label takes two
