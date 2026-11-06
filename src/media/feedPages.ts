@@ -1,4 +1,4 @@
-import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query";
+import { onlineManager, type InfiniteData, type QueryClient, type QueryKey } from "@tanstack/react-query";
 
 /**
  * Refreshing Home: from its newest page, in one request.
@@ -26,17 +26,26 @@ export function firstPageOnly<T, P>(data: InfiniteData<T, P> | undefined): Infin
 
 /**
  * A refresh from the newest page: every page but the first let go, that
- * one read again. Should the reading fail (offline, the server not
- * answering), the pages the reader had are put back as they were, and
+ * one read again. Should the reading fail (the server not answering, or
+ * no signal), the pages the reader had are put back as they were, and
  * as old as they were, so a refresh that could not happen costs nothing:
  * left alone, the reader was down to the first page until they scrolled
  * the rest back in, online.
+ *
+ * With no signal a read neither fails nor lands: it is tried once, and
+ * its further tries wait for the signal (src/lib/queryClient.ts). So
+ * while the phone says it has none, nothing is let go and nothing asked
+ * for (null); Home refreshes a reader at the top once it is back. And a
+ * read the signal drops once it is out, which then waits, is taken for
+ * one that failed: the pages are put back and the read called off, and
+ * the signal's return finds the feed as stale as it was.
  */
 export async function refreshFromFirstPage<R extends { isError: boolean }>(
-  client: Pick<QueryClient, "getQueryData" | "getQueryState" | "setQueryData">,
+  client: Pick<QueryClient, "getQueryData" | "getQueryState" | "setQueryData" | "getQueryCache" | "cancelQueries">,
   key: QueryKey,
   refetch: () => Promise<R>,
-): Promise<R> {
+): Promise<R | null> {
+  if (!onlineManager.isOnline()) return null;
   const before = client.getQueryData<InfiniteData<unknown, unknown>>(key);
   const updatedAt = client.getQueryState(key)?.dataUpdatedAt;
   const trimmed = firstPageOnly(before);
@@ -44,10 +53,27 @@ export async function refreshFromFirstPage<R extends { isError: boolean }>(
   client.setQueryData(key, trimmed);
   // As the cache holds it (it shares what it can with what it held before).
   const placed = client.getQueryData(key);
-  const result = await refetch();
   // Put back only over the trimmed feed itself, never over anything newer.
-  if (result.isError && client.getQueryData(key) === placed) client.setQueryData(key, before, { updatedAt });
-  return result;
+  const putBack = () => {
+    if (client.getQueryData(key) === placed) client.setQueryData(key, before, { updatedAt });
+  };
+  const query = client.getQueryCache().find({ queryKey: key, exact: true });
+  let waiting = false;
+  const stop = client.getQueryCache().subscribe((event) => {
+    if (waiting || event.query !== query || event.type !== "updated" || event.action.type !== "pause") return;
+    waiting = true;
+    // Put back first: the read, called off, returns the feed to what it
+    // held last, and that is now the pages.
+    putBack();
+    void client.cancelQueries({ queryKey: key, exact: true });
+  });
+  try {
+    const result = await refetch();
+    if (result.isError) putBack();
+    return result;
+  } finally {
+    stop();
+  }
 }
 
 /** How far down the feed, in cards, a reader still counts as at the top. */
