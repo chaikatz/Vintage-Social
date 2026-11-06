@@ -1221,6 +1221,57 @@ await go("/messages", 2600);
 check("Messages inbox renders", /tomas|june|arthur/i.test(await text()));
 await shot("16-messages");
 
+// A thread reaches the member it is with (App Review Guideline 1.2): the
+// "…" beside the title reports or blocks them, and the title opens their
+// profile. The report is opened, not sent; the block is asked, not made.
+{
+  await byText("tomas.lindqvist").first().click();
+  await wait(2600);
+  const threadPath = new URL(page.url()).pathname;
+  const more = byLabel("More");
+  const hasMore = (await more.count()) > 0;
+  const asked = dialogs.length;
+  promptChoice = "Report member";
+  if (hasMore) await more.last().click();
+  await wait(2200);
+  promptChoice = null;
+  const menu = dialogs[asked] ?? "";
+  const reporting = new URL(page.url());
+  check(
+    "A thread's … offers View profile, Report member and Block member, and reports the member it is with",
+    hasMore &&
+      /^tomas\.lindqvist/.test(menu) &&
+      /View profile/.test(menu) &&
+      /Report member/.test(menu) &&
+      /Block member/.test(menu) &&
+      reporting.pathname === "/report" &&
+      reporting.searchParams.get("targetType") === "profile" &&
+      Boolean(reporting.searchParams.get("profileId")),
+    `${threadPath}: ${hasMore ? "…" : "no …"} → ${reporting.pathname}${reporting.search}`,
+  );
+  await back(2200);
+  const blockAsked = dialogs.length;
+  promptChoice = "Block member";
+  answers.push(false);
+  if (hasMore) await byLabel("More").last().click();
+  await wait(1600);
+  promptChoice = null;
+  check(
+    "Blocking from a thread asks first, in the profile's words, and Cancel leaves the thread as it was",
+    /^Block tomas\.lindqvist\?/.test(dialogs[blockAsked + 1] ?? "") &&
+      /Neither of you is told\. You can unblock from Settings\./.test(dialogs[blockAsked + 1] ?? "") &&
+      new URL(page.url()).pathname === threadPath,
+    (dialogs[blockAsked + 1] ?? "no dialog").split("\n")[0],
+  );
+  await seen(page.getByRole("link", { name: "tomas.lindqvist" })).first().click();
+  await wait(2600);
+  check(
+    "A thread's title opens the profile of the member it is with",
+    new URL(page.url()).pathname === "/user/tomas.lindqvist" && /tomas\.lindqvist/.test(await text()),
+    new URL(page.url()).pathname,
+  );
+}
+
 // posting: filter, place, date stamp
 await go("/compose?" + new URLSearchParams({
   uri: B + "/sample.jpg", mediaType: "photo", width: "1200", height: "1500", duration: "0",

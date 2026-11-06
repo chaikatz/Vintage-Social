@@ -131,6 +131,7 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `tests/video-playback.test.ts` | the Home and gallery playback guards accept either card |
 | `tests/galleryLanding.test.ts` | its gallery guard reads whichever card the gallery's seam draws |
 | `tests/stableCards.test.ts` | its Home and gallery card-props guard accepts either card |
+| `tests/thread-menu.test.ts` | its guard on the thread's title link accepts the title style as well as the stack's |
 | `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face, weight, colour and spacing on Home, in the comments, in Activity and in the inbox (an unread thread's name semibold, a read one's medium), and a profile's and a gallery's title (the stack's serif, ink and size, regular, beside a bar titled with other words), and that Original sets the names and those titles back to the stack's own weight and otherwise exactly as Editorial drew them |
 
 `src/components/PostCard.tsx` (drawn only under Original, so its names are
@@ -153,7 +154,7 @@ From the repository root, on the branch to clean:
 
 ```bash
 git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts EDITORIAL_FEED_PREVIEW.md
-git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx "app/user/[username].tsx" src/components/UserRow.tsx src/components/TagPicker.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts e2e/launch-test.mjs
+git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx "app/user/[username].tsx" src/components/UserRow.tsx src/components/TagPicker.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/thread-menu.test.ts e2e/launch-test.mjs
 npx tsc --noEmit && npx vitest run
 git commit -m "Remove the Editorial feed preview"
 ```
@@ -170,7 +171,10 @@ the `Screen`, `headerStyle: paper …` in the `Stack.Screen` options, and
 `<FeedCard`, which goes back to `<PostCard`; and, as in `app/messages/[id].tsx`
 and `app/user/[username].tsx`, the import from `@/utils/nameFace`, the
 `const titleStyle = useNameTitleStyle(…);` line with the comment above it,
-and `, headerTitleStyle: titleStyle` in each `Stack.Screen`'s options. In
+and `, headerTitleStyle: titleStyle` in each `Stack.Screen`'s options (in
+`app/messages/[id].tsx` the `headerTitleStyle: titleStyle,` line, and the
+title link's `[titleStyle, { maxWidth: … }]`, which goes back to
+`[styles.title, { maxWidth: … }]`). In
 every file the names' face touches, they are the import from
 `@/utils/nameFace` (`useNameFace`), the
 `const face = useNameFace();` line with the comment above it, and each place

@@ -88,25 +88,44 @@ export async function isFollowing(followerId: string, followeeId: string): Promi
  * Follow a member. Following a private member files a request instead —
  * the returned status says which happened, so the button can read
  * "Requested" rather than pretending it worked.
+ *
+ * The database decides the status from the followee (migration 0038),
+ * whatever is sent; the status sent here is for a database without it.
+ * So a read of the followee that fails stops the follow, rather than
+ * filing it as accepted (a private account's photographs opened to
+ * someone it never let in), and the button is labelled with the status
+ * the database stored: the row the insert returns, or, when the follow
+ * was there already, a read of it.
  */
 export async function follow(followerId: string, followeeId: string): Promise<FollowStatus> {
   if (isDemoMode()) return demo.demoFollow(followerId, followeeId);
 
-  const { data: target } = await supabase
+  const { data: target, error: readError } = await supabase
     .from("profiles")
     .select("is_private")
     .eq("id", followeeId)
     .maybeSingle();
-  const status: FollowStatus = target?.is_private ? "pending" : "accepted";
-  const { error } = await supabase
+  if (readError) throw readError;
+  const asked: FollowStatus = target?.is_private ? "pending" : "accepted";
+  const { data: stored, error } = await supabase
     .from("follows")
-    .insert({ follower_id: followerId, followee_id: followeeId, status });
+    .insert({ follower_id: followerId, followee_id: followeeId, status: asked })
+    .select("status")
+    .maybeSingle();
   if (error && error.code !== "23505") throw error;
   forgetFollowingIds(followerId);
-  return status;
+  if (stored?.status) return stored.status as FollowStatus;
+  return (await followState(followerId, followeeId)) ?? asked;
 }
 
-/** A private member accepting or declining a request that is waiting on them. */
+/**
+ * A private member accepting or declining a request that is waiting on
+ * them. Each asks for the row it changed back: row-level security turns
+ * a change it does not allow into a change of nothing, with no error,
+ * and the database before migration 0038 allowed the followee neither,
+ * so a decision that changed no row is said to have failed (the request
+ * goes back on the list) rather than taken for done.
+ */
 export async function decideFollowRequest(
   followerId: string,
   followeeId: string,
@@ -119,14 +138,25 @@ export async function decideFollowRequest(
   // Declining removes the row outright rather than leaving a rejected
   // record around — a request that was turned down can simply be made again.
   const rows = supabase.from("follows");
-  const { error } = accept
+  const { data, error } = accept
     ? await rows
         .update({ status: "accepted" })
         .eq("follower_id", followerId)
         .eq("followee_id", followeeId)
-    : await rows.delete().eq("follower_id", followerId).eq("followee_id", followeeId);
+        .eq("status", "pending")
+        .select("follower_id")
+    : await rows
+        .delete()
+        .eq("follower_id", followerId)
+        .eq("followee_id", followeeId)
+        .eq("status", "pending")
+        .select("follower_id");
   if (error) throw error;
+  if (!data || data.length === 0) throw new Error(REQUEST_NOT_DECIDED);
 }
+
+/** What a decision that changed nothing says (the request is put back on the list): the screen's own words for a refusal. */
+export const REQUEST_NOT_DECIDED = "Nothing changed. Try again in a moment.";
 
 /**
  * Members waiting on you to let them in, the newest request first. A

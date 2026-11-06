@@ -67,8 +67,9 @@ describe("the waiting room screen", () => {
     expect(src).toMatch(/const application = useQuery\(\{\s*queryKey: \["my-application", session\?\.user\?\.id\]/);
     expect(src).toMatch(/const status = waitingRoomState\(profile\?\.status, application\.isSuccess \? application\.data : undefined\);/);
     expect(src).toMatch(/none: \{\s*title: "[^"]+",\s*body: "[^"]+",\s*\}/);
-    // Check status looks at the application again too.
-    expect(src).toMatch(/const \[ok\] = await Promise\.all\(\[refreshProfile\(\), application\.refetch\(\)\]\);/);
+    // Check status looks at the application again too, without waiting on
+    // it (tests/check-status.test.ts: offline it waits for the signal).
+    expect(src).toMatch(/const ok = await checkStatus\(refreshProfile, application\.refetch\);/);
   });
 
   it("offers the invitation and Check status by the same rules", () => {

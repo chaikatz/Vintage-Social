@@ -5,7 +5,7 @@
  * (https://w.wiki/GHai) and refuses any other with HTTP 400 ("Use
  * thumbnail sizes listed on https://w.wiki/GHai"); 400, 480, 501, 640, 800
  * and 1024 were refused when migration 0034 checked on 6 November 2026,
- * and 500 was served for every seed address tried. Asked for 1400, the API
+ * and 960 was served for the seed addresses tried. Asked for 1400, the API
  * now answers with its 1920 rendering (or the original, when that is no
  * wider), so seed/curate.mjs's old rewrite of "/1400px-" to "/480px-"
  * never matched, and 229 house photographs went into the seed with the
@@ -19,8 +19,15 @@ export const WIKIMEDIA_WIDTHS = [20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920
 /** The picture itself: what the API answers a request for 1400 with today, and what production's rows hold. */
 export const PICTURE_WIDTH = 1920;
 
-/** The grid square: the standard width 0034 gives the house photographs' Commons squares on production, the nearest to the 480 the seed first asked for. */
-export const THUMB_WIDTH = 500;
+/**
+ * The grid square: the standard width 0034 gives the house photographs'
+ * Commons squares on production. The smallest Commons serves whose short
+ * side is at least the app's thumbnail short side (src/uploads/thumbSize.ts,
+ * THUMB_SHORT, 540) for every shape up to 16:9 (960 by 540); 500, the
+ * nearest to the 480 the seed first asked for, gave a landscape a short
+ * side of 271 to 386, drawn soft in a 436-pixel grid square.
+ */
+export const THUMB_WIDTH = 960;
 
 /**
  * A Commons file's address at another standard width.

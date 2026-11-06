@@ -22,9 +22,11 @@ describe("Wikimedia's widths", () => {
     expect(WIKIMEDIA_WIDTHS).toEqual([20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840]);
     expect(WIKIMEDIA_WIDTHS).toContain(PICTURE_WIDTH);
     expect(WIKIMEDIA_WIDTHS).toContain(THUMB_WIDTH);
-    // 0034 chose 500 for the squares on production; a regenerated seed agrees with it.
-    expect(read("supabase/migrations/0034_seed_thumbnails_at_a_standard_width.sql")).toContain("/500px-");
-    expect(THUMB_WIDTH).toBe(500);
+    // 0034 chose 960 for the squares on production; a regenerated seed agrees with it.
+    const sql = read("supabase/migrations/0034_seed_thumbnails_at_a_standard_width.sql").replace(/--[^\n]*/g, "");
+    expect(sql).toContain("/960px-");
+    expect(sql).not.toMatch(/\/500px-/);
+    expect(THUMB_WIDTH).toBe(960);
     for (const refused of [400, 480, 501, 640, 800, 1024, 1400]) {
       expect(() => at("https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/A.jpg/1920px-A.jpg", refused)).toThrow(/no \d+px thumbnail/);
     }
@@ -32,36 +34,46 @@ describe("Wikimedia's widths", () => {
 });
 
 describe("a house photograph's grid square", () => {
-  it("from Commons' rendering: the same file at 500", () => {
-    expect(at("https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Children_at_Kosciusko_pool.jpg/1920px-Children_at_Kosciusko_pool.jpg", 500, 4000)).toBe(
-      "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Children_at_Kosciusko_pool.jpg/500px-Children_at_Kosciusko_pool.jpg",
+  it("is as sharp as a member's: the smallest standard width whose short side is the app's for shapes up to 16:9", () => {
+    // A landscape's short side at Commons' width w is w * 9 / 16 at 16:9;
+    // the app cuts a member's thumbnail with a short side of THUMB_SHORT.
+    expect(Math.floor((THUMB_WIDTH * 9) / 16)).toBeGreaterThanOrEqual(THUMB_SHORT);
+    const smaller = WIKIMEDIA_WIDTHS.filter((w) => w < THUMB_WIDTH);
+    for (const w of smaller) expect(Math.floor((w * 9) / 16), `${w}`).toBeLessThan(THUMB_SHORT);
+    // A portrait's short side is the width itself.
+    expect(THUMB_WIDTH).toBeGreaterThanOrEqual(THUMB_SHORT);
+  });
+
+  it("from Commons' rendering: the same file at 960", () => {
+    expect(at("https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Children_at_Kosciusko_pool.jpg/1920px-Children_at_Kosciusko_pool.jpg", 960, 4000)).toBe(
+      "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Children_at_Kosciusko_pool.jpg/960px-Children_at_Kosciusko_pool.jpg",
     );
   });
 
-  it("from an original JPEG or PNG wider than 500: its thumbnail address, as 0034 wrote it", () => {
-    expect(at("https://upload.wikimedia.org/wikipedia/commons/1/1b/RR3112_Swimming_a.jpg", 500, 1400)).toBe(
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/RR3112_Swimming_a.jpg/500px-RR3112_Swimming_a.jpg",
+  it("from an original JPEG or PNG wider than 960: its thumbnail address, as 0034 writes it", () => {
+    expect(at("https://upload.wikimedia.org/wikipedia/commons/1/1b/RR3112_Swimming_a.jpg", 960, 1400)).toBe(
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/RR3112_Swimming_a.jpg/960px-RR3112_Swimming_a.jpg",
     );
-    expect(at("https://upload.wikimedia.org/wikipedia/commons/a/ab/Pier.PNG", 500, 1600)).toBe(
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Pier.PNG/500px-Pier.PNG",
+    expect(at("https://upload.wikimedia.org/wikipedia/commons/a/ab/Pier.PNG", 960, 1600)).toBe(
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Pier.PNG/960px-Pier.PNG",
     );
   });
 
   it("left as it is where Commons would not render one: an original no wider, or a format it renames", () => {
-    expect(at("https://upload.wikimedia.org/wikipedia/commons/1/1b/Small.jpg", 500, 480)).toBe("https://upload.wikimedia.org/wikipedia/commons/1/1b/Small.jpg");
-    expect(at("https://upload.wikimedia.org/wikipedia/commons/1/1b/Moving.webp", 500, 1400)).toBe("https://upload.wikimedia.org/wikipedia/commons/1/1b/Moving.webp");
-    expect(at("https://picsum.photos/id/764/1200/900", 500)).toBe("https://picsum.photos/id/764/1200/900");
+    expect(at("https://upload.wikimedia.org/wikipedia/commons/1/1b/Small.jpg", 960, 900)).toBe("https://upload.wikimedia.org/wikipedia/commons/1/1b/Small.jpg");
+    expect(at("https://upload.wikimedia.org/wikipedia/commons/1/1b/Moving.webp", 960, 1400)).toBe("https://upload.wikimedia.org/wikipedia/commons/1/1b/Moving.webp");
+    expect(at("https://picsum.photos/id/764/1200/900", 960)).toBe("https://picsum.photos/id/764/1200/900");
   });
 
-  it("for every Commons photograph the seed holds, at 500 or the file itself, never 480", () => {
+  it("for every Commons photograph the seed holds, at 960 or the file itself, never 480 or 500", () => {
     const { photos } = JSON.parse(read("seed/photos.json")) as { photos: { url: string; width: number }[] };
     const commons = photos.filter((p) => /wikimedia\.org/.test(p.url));
     expect(commons.length).toBeGreaterThan(1000);
     const squares = commons.map((p) => at(p.url, THUMB_WIDTH, p.width));
-    for (const s of squares) expect(s).not.toMatch(/\/(480|1400)px-/);
+    for (const s of squares) expect(s).not.toMatch(/\/(480|500|1400)px-/);
     // All but the handful of WebP and GIF originals get a square of their own.
     expect(squares.filter((s, i) => s !== commons[i].url).length).toBeGreaterThan(commons.length - 10);
-    for (const s of squares.filter((s, i) => s !== commons[i].url)) expect(s).toMatch(/\/500px-[^/]+$/);
+    for (const s of squares.filter((s, i) => s !== commons[i].url)) expect(s).toMatch(/\/960px-[^/]+$/);
   });
 });
 

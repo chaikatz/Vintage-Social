@@ -429,8 +429,31 @@ export function demoSearchProfiles(q: string): ProfileRow[] {
 
 export function demoUpdateProfile(userId: string, edits: Partial<ProfileRow>): void {
   const p = state.profiles.find((x) => x.id === userId);
+  const wasPrivate = Boolean(p?.is_private);
   if (p) Object.assign(p, edits);
+  // As the database does (0038): an account made public lets its waiting
+  // requests in, and their notices leave Activity.
+  if (p && wasPrivate && !p.is_private) {
+    for (const f of state.follows) {
+      if (f.followee_id === userId && f.status === "pending") {
+        f.status = "accepted";
+        forgetFollowRequest(f.follower_id, userId);
+      }
+    }
+    recomputeCounts(state);
+  }
   emit();
+}
+
+/**
+ * A request answered or withdrawn takes its "asked to follow you." out of
+ * the followee's Activity, as the database does (0038).
+ */
+function forgetFollowRequest(followerId: string, followeeId: string): void {
+  state.activity = state.activity.filter(
+    (a) =>
+      !(a.type === "follow_request" && a.actor_id === followerId && a.recipient_id === followeeId),
+  );
 }
 
 export function demoFollowState(followerId: string, followeeId: string): FollowStatus | null {
@@ -488,10 +511,7 @@ export function demoDecideFollowRequest(
   } else {
     state.follows = state.follows.filter((x) => x !== f);
   }
-  state.activity = state.activity.filter(
-    (a) =>
-      !(a.type === "follow_request" && a.actor_id === followerId && a.recipient_id === followeeId),
-  );
+  forgetFollowRequest(followerId, followeeId);
   recomputeCounts(state);
   emit();
 }
@@ -602,9 +622,12 @@ export function demoSaveEraEdits(authorId: string, edits: EraEdits): void {
 }
 
 export function demoUnfollow(followerId: string, followeeId: string): void {
+  const wasRequest = demoFollowState(followerId, followeeId) === "pending";
   state.follows = state.follows.filter(
     (f) => !(f.follower_id === followerId && f.followee_id === followeeId),
   );
+  // A request withdrawn: its notice goes with it (0038).
+  if (wasRequest) forgetFollowRequest(followerId, followeeId);
   recomputeCounts(state);
   emit();
 }

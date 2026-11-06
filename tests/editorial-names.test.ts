@@ -173,11 +173,12 @@ describe("a bar titled with a username", () => {
   it("is given the title style wherever a bar is titled with a username, and nowhere else", () => {
     const titled: string[] = [];
     for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
-      for (const [, options] of code(file).matchAll(/<Stack\.Screen options=\{\{(.*?)\}\} \/>/g)) {
+      // One line, or (the thread, whose title is a link once the member is known) several.
+      for (const [, options] of code(file).matchAll(/<Stack\.Screen\s+options=\{\{([\s\S]*?)\}\}\s*\/>/g)) {
         if (!/\btitle: [^,]*username/.test(options)) continue;
         titled.push(file);
         // The style itself, never undefined, at the end of the options.
-        expect(options, file).toMatch(/, headerTitleStyle: titleStyle $/);
+        expect(options, file).toMatch(/,\s+headerTitleStyle: titleStyle,?\s*$/);
       }
     }
     // The scan finds what it is meant to: a member's profile (while it loads and once it has), their gallery, a message thread.
@@ -185,7 +186,8 @@ describe("a bar titled with a username", () => {
     for (const [file, hook] of Object.entries(TITLE_READERS)) {
       expect(code(file).match(/const titleStyle = useNameTitleStyle\([^)]*\);/g), file).toHaveLength(1);
       expect(code(file), file).toMatch(hook);
-      expect(code(file).match(/\btitleStyle\b/g)?.length, file).toBe(file === "app/user/[username].tsx" ? 3 : 2);
+      // The hook and the bar's style; the profile has two bars, and the thread's title link draws it too.
+      expect(code(file).match(/\btitleStyle\b/g)?.length, file).toBe(file === "app/gallery.tsx" ? 2 : 3);
     }
     // No other screen sets a title style of its own.
     expect(sources().filter((f) => f !== "app/_layout.tsx" && /headerTitleStyle/.test(code(f))).sort()).toEqual(Object.keys(TITLE_READERS).sort());
@@ -360,6 +362,8 @@ describe("every username the app draws", () => {
       "app/requests.tsx": [/^`Accept \$\{item\.username\}`$/, /^`Decline \$\{item\.username\}`$/],
       // The public web page, written on the server: the preference is kept on the phone.
       "src/share/publicPage.ts": [/^`A photograph from \$\{p\.username\}’s archive · VINTAGE`$/],
+      // The Block dialog from a message thread's "…": the system draws it.
+      "app/messages/[id].tsx": [/^`Block \$\{peer\.username\}\?`$/],
       // A private profile's line, in its regular caption (below), and the Block dialog.
       "app/user/[username].tsx": [
         /^`Block \$\{profile\.username\}\?`$/,
@@ -618,6 +622,7 @@ describe("the trial still comes out cleanly", () => {
         "tests/video-playback.test.ts",
         "tests/galleryLanding.test.ts",
         "tests/stableCards.test.ts",
+        "tests/thread-menu.test.ts",
         "e2e/launch-test.mjs",
       ].sort(),
     );

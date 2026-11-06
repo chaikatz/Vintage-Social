@@ -121,7 +121,11 @@ export default function Home() {
   // their groups keep their keys, so nothing else would, and a friend's
   // new comment stayed out of the preview while the count beside it went
   // up (src/utils/postCache.ts).
+  // With no signal nothing is let go and nothing asked for: the reader
+  // keeps every page, and the signal's return refreshes a reader at the
+  // top (below).
   const refreshFromTop = useCallback(() => {
+    if (!onlineManager.isOnline()) return Promise.resolve(null);
     void rereadActions();
     return refreshFromFirstPage(queryClient, ["feed", userId], feedRefetch);
   }, [queryClient, userId, feedRefetch, rereadActions]);

@@ -684,6 +684,25 @@ describe("a thread", () => {
     await messages.fetchMessages(conv);
     expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/posts").length).toBe(1);
   });
+
+  it("keeps nothing it read for one member for the next to sign in on the phone", async () => {
+    const conv = id("e1", 3);
+    const shared = id("e3", 99);
+    h.tables.profiles = [{ id: ME, username: "me", full_name: null, avatar_url: null }];
+    // The member signed in may see it; it is in the thread.
+    h.tables.posts = [{ id: shared, author_id: ME, removed_at: null }];
+    h.tables.messages = [
+      { id: id("e4", 99), conversation_id: conv, sender_id: ME, body: "", post_id: shared, created_at: at(1), read_at: null },
+    ];
+    expect((await messages.fetchMessages(conv))[0].post?.author?.username).toBe("me");
+
+    // Signed out, and the next member, whom the server does not show it, opens a thread that carries it.
+    messages.forgetSharedPosts();
+    h.tables.posts = [];
+    const next = await messages.fetchMessages(conv);
+    expect(next[0].post).toBeNull();
+    expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/posts").length).toBe(2);
+  });
 });
 
 describe("the home feed", () => {

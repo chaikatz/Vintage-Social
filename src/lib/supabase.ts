@@ -73,6 +73,32 @@ export async function readStoredSession(): Promise<Session | null> {
   }
 }
 
+/**
+ * Take the session auth has kept off this phone, by hand: the keychain's
+ * copy (the browser's storage on the web), under the client's own key.
+ *
+ * Auth removes it at a sign-out only once it has loaded it, and it cannot
+ * load one whose access token has run out while a refresh cannot get
+ * through (no signal, or the minute auth waits after a refresh that
+ * failed): its sign-out then answers with why, and leaves the session on
+ * the phone for the next person to open the app on. With nothing stored,
+ * auth's own sign-out on this phone goes through, forgets the session it
+ * holds and says SIGNED_OUT (src/providers/endSession.ts).
+ */
+export async function forgetStoredSession(): Promise<void> {
+  if (isDemoMode() || !sessionKey) return;
+  try {
+    if (Platform.OS === "web") {
+      if (typeof localStorage !== "undefined") localStorage.removeItem(sessionKey);
+    } else {
+      await SecureStore.deleteItemAsync(sessionKey);
+    }
+  } catch {
+    // The keychain would not let it go. The session provider forgets the
+    // member all the same, and auth's sign-out below is still asked.
+  }
+}
+
 // The Darkroom's memory on this phone goes with the session, and so do
 // the members this one looked for in Search (src/utils/searchHistory.ts):
 // the next member to sign in on the phone sees nothing of either. And a

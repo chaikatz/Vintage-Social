@@ -18,17 +18,36 @@
 -- 500, 960, 1280, 1920 and 3840 pixels (https://w.wiki/GHai); any other
 -- width is refused (HTTP 400, "Use thumbnail sizes listed on
 -- https://w.wiki/GHai"), as 400, 480, 501, 640, 800 and 1024 were when
--- checked on 6 November 2026. 500 is the standard width nearest the
--- other house thumbnails' 480, and was served for every seed URL tried
--- (thumb.wikimedia.org and upload.wikimedia.org, JPEG and PNG), 55 to 105
--- KB a JPEG where the 1920-pixel picture is several times that.
+-- checked on 6 November 2026.
 --
--- So each such thumbnail becomes the 500-pixel rendering of the same
--- file: on thumb.wikimedia.org, /1920px- becomes /500px-; an original
+-- The width is chosen as the picsum part below chooses its size: the app
+-- cuts a member's thumbnail with its short side at 540 pixels
+-- (src/uploads/thumbSize.ts, THUMB_SHORT), because a grid square is about
+-- 436 pixels on a 3x phone, a Timeline frame about 525 and a photograph
+-- in a thread 540, and they are drawn from the short side. Wikimedia's
+-- width is the long side of a landscape, so 500 gave 500 by 271 to 500
+-- by 386 for these (a grid square enlarged up to 1.6 times, a thread's
+-- photograph up to 2: soft). 960 is the smallest standard width whose
+-- short side is at least 540 for every shape up to 16:9 (960 by 540), and
+-- at least 505 for the widest the seed keeps (1.9:1); a portrait's short
+-- side is its width, 960. Every one of these files is larger than that
+-- (the thumb.wikimedia.org ones have a 1920-pixel rendering, the
+-- originals are 1400 pixels wide or more), so Wikimedia serves it. When
+-- checked on 6 November 2026, 960 was served for every seed URL tried
+-- (five thumb.wikimedia.org renderings and four upload.wikimedia.org
+-- originals, JPEG and PNG): 960 by 639 to 960 by 1412, 86 to 404 KB, where
+-- the 1920-pixel picture each square downloads today is about three
+-- times that.
+--
+-- So each such thumbnail becomes the 960-pixel rendering of the same
+-- file: on thumb.wikimedia.org, /1920px- becomes /960px-; an original
 -- upload.wikimedia.org/wikipedia/commons/<a>/<ab>/<name> becomes
--- upload.wikimedia.org/wikipedia/commons/thumb/<a>/<ab>/<name>/500px-<name>
+-- upload.wikimedia.org/wikipedia/commons/thumb/<a>/<ab>/<name>/960px-<name>
 -- (Wikimedia's thumbnail address for that file; PNGs stay PNG). The
--- photograph itself (media_path) is not touched.
+-- photograph itself (media_path) is not touched. (This file was edited
+-- in place on 6 November 2026, from 500 to 960, before it was applied
+-- anywhere; a project that ran the 500 version: see the end of the
+-- rollback notes.)
 --
 -- Picsum. The other 679 house photographs (picsum.photos, 1200 pixels
 -- wide and 800 to 1500 high on production) have thumbnails 480 pixels
@@ -68,7 +87,7 @@
 --   where a.id = p.author_id and a.is_house
 --     and p.thumb_path <> p.media_path
 --     and p.media_path ~ '^https://(thumb|upload)\.wikimedia\.org/wikipedia/commons/'
---     and p.thumb_path ~ '/500px-[^/]+$';
+--     and p.thumb_path ~ '/960px-[^/]+$';
 --   update public.posts p
 --   set thumb_path = regexp_replace(p.media_path, '/([0-9]+)/([0-9]+)$', '')
 --     || '/480/' || round(480.0 * split_part(p.media_path, '/', 7)::int / split_part(p.media_path, '/', 6)::int)
@@ -76,10 +95,17 @@
 --   where a.id = p.author_id and a.is_house
 --     and p.media_path ~ '^https://picsum\.photos/id/[0-9]+/[0-9]+/[0-9]+$'
 --     and p.thumb_path ~ '^https://picsum\.photos/id/[0-9]+/[0-9]+/[0-9]+$';
+--
+-- A project that ran the 500-pixel version of this file (none had when
+-- it was changed) moves those thumbnails to 960 with:
+--   update public.posts p set thumb_path = replace(p.thumb_path, '/500px-', '/960px-')
+--   from public.profiles a
+--   where a.id = p.author_id and a.is_house
+--     and p.thumb_path ~ '^https://(thumb|upload)\.wikimedia\.org/wikipedia/commons/thumb/.*/500px-[^/]+$';
 
 -- thumb.wikimedia.org's 1920-pixel renderings.
 update public.posts p
-set thumb_path = regexp_replace(p.media_path, '/1920px-([^/]+)$', '/500px-\1')
+set thumb_path = regexp_replace(p.media_path, '/1920px-([^/]+)$', '/960px-\1')
 from public.profiles a
 where a.id = p.author_id
   and a.is_house
@@ -91,7 +117,7 @@ update public.posts p
 set thumb_path = regexp_replace(
   p.media_path,
   '^https://upload\.wikimedia\.org/wikipedia/commons/([0-9a-f])/([0-9a-f]{2})/([^/]+)$',
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/\1/\2/\3/500px-\3')
+  'https://upload.wikimedia.org/wikipedia/commons/thumb/\1/\2/\3/960px-\3')
 from public.profiles a
 where a.id = p.author_id
   and a.is_house
