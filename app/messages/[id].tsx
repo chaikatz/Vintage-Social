@@ -9,10 +9,12 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
+import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useHeaderHeight } from "@react-navigation/elements";
+import { HeaderTitle, useHeaderHeight } from "@react-navigation/elements";
 import { useIsFocused } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,6 +27,7 @@ import {
   markConversationRead,
   sendMessage,
 } from "@/api/messages";
+import { blockMember } from "@/api/blocks";
 import { markedRead, readThread, unreadIds } from "@/utils/threadPoll";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
@@ -132,6 +135,59 @@ export default function Thread() {
     [userId, openPost],
   );
 
+  // Who the thread is with: their profile from the title, and Report and
+  // Block from the "…" beside it, as on their profile (App Review
+  // Guideline 1.2). A member sent something unwelcome had to leave the
+  // thread, find the sender in Search and open their profile to do either.
+  const peer = peerQ.data ?? null;
+  const { width } = useWindowDimensions();
+  const openProfile = useCallback(() => {
+    if (peer) router.push(`/user/${peer.username}`);
+  }, [peer, router]);
+  const block = useMutation({
+    mutationFn: (peerId: string) => blockMember(peerId),
+    onSuccess: (_done, peerId) => {
+      // As at Block on their profile: neither sees the other's anything now.
+      queryClient.invalidateQueries({ queryKey: ["blocked-ids", userId] });
+      queryClient.invalidateQueries({ queryKey: ["blocked", userId] });
+      queryClient.invalidateQueries({ queryKey: ["follow-state", userId, peerId] });
+      queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
+      queryClient.invalidateQueries({ queryKey: ["unread-messages", userId] });
+      queryClient.invalidateQueries({ queryKey: ["feed"] });
+      queryClient.invalidateQueries({ queryKey: ["explore"] });
+      queryClient.invalidateQueries({ queryKey: ["activity"] });
+      // Out of the thread, which shows nothing of theirs now.
+      if (router.canGoBack()) router.back();
+      else router.replace("/");
+    },
+    onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
+  });
+  const threadMenu = useCallback(() => {
+    if (!peer) return;
+    showAlert(peer.username, undefined, [
+      { text: "View profile", onPress: openProfile },
+      {
+        text: "Report member",
+        style: "destructive",
+        onPress: () => router.push({ pathname: "/report", params: { targetType: "profile", profileId: peer.id } }),
+      },
+      {
+        text: "Block member",
+        style: "destructive",
+        onPress: () =>
+          showAlert(
+            `Block ${peer.username}?`,
+            "They won't see your photographs or profile, and you won't see theirs. Neither of you is told. You can unblock from Settings.",
+            [
+              { text: "Block", style: "destructive", onPress: () => block.mutate(peer.id) },
+              { text: "Cancel", style: "cancel" },
+            ],
+          ),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [peer, openProfile, router, block]);
+
   const send = useMutation({
     mutationFn: () => sendMessage(id ?? "", userId, draft),
     onSuccess: () => {
@@ -149,7 +205,28 @@ export default function Thread() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={headerHeight}
     >
-      <Stack.Screen options={{ title: peerQ.data?.username ?? "" }} />
+      <Stack.Screen
+        options={{
+          title: peerQ.data?.username ?? "",
+          // Once they are known: the title drawn as the stack draws it (app/_layout.tsx), and a link.
+          headerTitle: peer
+            ? ({ children, tintColor }) => (
+                <Pressable onPress={openProfile} hitSlop={8} accessibilityRole="link" accessibilityHint="Opens their profile">
+                  <HeaderTitle tintColor={tintColor} style={[styles.title, { maxWidth: Math.max(120, width - 150) }]}>
+                    {children}
+                  </HeaderTitle>
+                </Pressable>
+              )
+            : undefined,
+          headerRight: peer
+            ? () => (
+                <Pressable onPress={threadMenu} hitSlop={10} accessibilityLabel="More">
+                  <Feather name="more-horizontal" size={20} color={colors.ink} />
+                </Pressable>
+              )
+            : undefined,
+        }}
+      />
       <FlatList
         data={newestFirst}
         inverted
@@ -264,6 +341,8 @@ function useKeyboardShown(): boolean {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  // The stack's title style (app/_layout.tsx), over the same bold the stack lays under it.
+  title: { fontFamily: type.serif, fontSize: 17 },
   listContent: { paddingVertical: spacing.md },
   bubbleRow: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   rowMine: { alignItems: "flex-end" },
