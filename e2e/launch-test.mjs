@@ -786,6 +786,40 @@ check(
   ferryBefore > 0 && onReport && /An admin will take a look/.test(dialogs.at(-1) ?? "") && (await ferryCards()) === 0,
   `${ferryBefore} before, ${await ferryCards()} after`,
 );
+
+// Reported from its own page (opened here from a thread), Done closes that
+// page too, back to the thread: the page beneath the report used to show
+// the photograph she had just reported, as if nothing had happened. Gone
+// to by tapping, not by address: a reload would forget the reports above.
+await tab("home");
+await byLabel("Messages").first().click();
+await wait(2400);
+await byText("tomas.lindqvist").first().click();
+await wait(2600);
+const sharedAt = await page.evaluate(() => {
+  for (const img of document.querySelectorAll("img")) {
+    if (!/sthlm-ice/.test(img.getAttribute("src") ?? "")) continue;
+    const r = img.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }
+  return null;
+});
+if (sharedAt) await page.mouse.click(sharedAt.x, sharedAt.y);
+await wait(2600);
+const onItsPage = /\/post\/demo-post-06$/.test(new URL(page.url()).pathname);
+promptChoice = "Report post";
+await seen(page.getByLabel("Post options", { exact: true })).last().click();
+await wait(2200);
+promptChoice = null;
+const reportingIt = /\/report/.test(page.url());
+await tap("Spam or scam", 600);
+await tap("Send report", 2600);
+check(
+  "Reported from its own page, the photograph's page closes too, back to where it was opened",
+  Boolean(sharedAt) && onItsPage && reportingIt && /An admin will take a look/.test(dialogs.at(-1) ?? "") &&
+    new URL(page.url()).pathname === "/messages/demo-convo-01",
+  `${sharedAt ? "opened" : "no shared photograph"}; ${onItsPage}; ${reportingIt}; now ${new URL(page.url()).pathname}`,
+);
 await signOutFromSettings();
 await signInAs("admin@vintage.club");
 await tab("profile");

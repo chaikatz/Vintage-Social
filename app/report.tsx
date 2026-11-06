@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
@@ -21,9 +21,16 @@ import type { ReportTargetType } from "@/types/db";
  * of what is on screen here, and kept out of every read after by the
  * database (0033), from the member's own reports. Nobody else's view
  * changes. Admins see everything, as they must to act on it.
+ *
+ * Reported from its own page, the photograph would be there again the
+ * moment this screen closed: that page keeps what it shows while it is
+ * on screen. So Done closes the page too, back to wherever it was opened
+ * from (a thread, Activity, a member's photographs), or, when the page
+ * was the first screen (opened from a link), to Home.
  */
 export default function Report() {
   const router = useRouter();
+  const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { session, isAdmin } = useSession();
   const params = useLocalSearchParams<{
@@ -55,15 +62,34 @@ export default function Report() {
         details,
       });
       const targetType = params.targetType ?? "post";
-      if (targetType === "post" && params.postId && !isAdmin) void removePostEverywhere(queryClient, params.postId);
+      const hidden = targetType === "post" && params.postId && !isAdmin ? params.postId : null;
+      if (hidden) void removePostEverywhere(queryClient, hidden);
       showAlert("Thank you", "An admin will take a look.", [
-        { text: "Done", onPress: () => router.back() },
+        { text: "Done", onPress: () => leave(hidden) },
       ]);
     } catch (err) {
       sending.current = false;
       showAlert("Couldn’t send report", err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Back to the screen beneath, unless it is the page of the photograph
+  // just reported (see above): then that page goes too.
+  const leave = (hidden: string | null) => {
+    const state = navigation.getState();
+    const index = state?.index ?? 0;
+    const below = state?.routes[index - 1];
+    const ownPage =
+      hidden != null && below?.name === "post/[id]" && (below.params as { id?: string } | undefined)?.id === hidden;
+    if (!ownPage) {
+      router.back();
+    } else if (index >= 2) {
+      router.dismiss(2);
+    } else {
+      router.dismissAll();
+      router.replace("/");
     }
   };
 

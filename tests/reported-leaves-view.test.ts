@@ -34,8 +34,22 @@ describe("the report screen", () => {
   it("takes a reported photograph off every list on screen once the report is in, before the thank-you", () => {
     const submit = src.slice(src.indexOf("const submit = async"), src.indexOf("return (", src.indexOf("const submit = async")));
     expect(submit).toMatch(
-      /await submitReport\(\{[\s\S]*?\}\);\s+const targetType = params\.targetType \?\? "post";\s+if \(targetType === "post" && params\.postId && !isAdmin\) void removePostEverywhere\(queryClient, params\.postId\);\s+showAlert\("Thank you"/,
+      /await submitReport\(\{[\s\S]*?\}\);\s+const targetType = params\.targetType \?\? "post";\s+const hidden = targetType === "post" && params\.postId && !isAdmin \? params\.postId : null;\s+if \(hidden\) void removePostEverywhere\(queryClient, hidden\);\s+showAlert\("Thank you", "An admin will take a look\.", \[\s+\{ text: "Done", onPress: \(\) => leave\(hidden\) \},/,
     );
+  });
+
+  it("reported from the photograph's own page, Done closes that page too, which would show it again", () => {
+    const leave = src.slice(src.indexOf("const leave = (hidden"), src.indexOf("return (", src.indexOf("const leave = (hidden")));
+    // The page beneath is that photograph's own.
+    expect(leave).toMatch(/const state = navigation\.getState\(\);/);
+    expect(leave).toMatch(/const below = state\?\.routes\[index - 1\];/);
+    expect(leave).toMatch(
+      /hidden != null && below\?\.name === "post\/\[id\]" && \(below\.params as \{ id\?: string \} \| undefined\)\?\.id === hidden/,
+    );
+    // Not it: back, as before. It: the report and the page, or Home when the page was the first screen.
+    expect(leave).toMatch(/if \(!ownPage\) \{\s+router\.back\(\);\s+\} else if \(index >= 2\) \{\s+router\.dismiss\(2\);\s+\} else \{\s+router\.dismissAll\(\);\s+router\.replace\("\/"\);\s+\}/);
+    // The route name it looks for is the post page's, as the root stack names it.
+    expect(readFileSync(path.join(root, "app/_layout.tsx"), "utf8")).toMatch(/<Stack\.Screen name="post\/\[id\]"/);
   });
 
   it("only after the report is in: a report that failed leaves the photograph where it was", () => {
