@@ -293,7 +293,7 @@ describe("the session provider", () => {
 
   it("lets go of what was read for the member when the session ends on another device, as at Sign out", () => {
     expect(provider).toMatch(/if \(event === "SIGNED_OUT"\) \{\s*forgetOutbox\(\);\s*forgetMember\(\);\s*queryClient\.clear\(\);\s*\}/);
-    expect(provider).toMatch(/const \{ error \} = await supabase\.auth\.signOut\(\);[\s\S]*?queryClient\.clear\(\);/);
+    expect(provider).toMatch(/await endSession\(\{[\s\S]*?\}\);[\s\S]*?queryClient\.clear\(\);/);
   });
 
   it("forgets the remembered profile wherever the session ends", () => {

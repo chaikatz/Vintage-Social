@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import { router } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
-import { readStoredSession, supabase } from "@/lib/supabase";
+import { forgetStoredSession, readStoredSession, supabase } from "@/lib/supabase";
 import { memberSignedIn, takeUnsignedRead } from "@/lib/unsignedRead";
 import { queryClient } from "@/lib/queryClient";
 import { isTransient, withRetry } from "@/utils/retry";
@@ -22,6 +22,7 @@ import { forgetOutbox } from "@/uploads";
 import { clearRecent } from "@/utils/searchHistory";
 import { forgetMember, recallMember, rememberMember } from "./rememberedMember";
 import { openSession } from "./launchSession";
+import { endSession } from "./endSession";
 
 interface SessionState {
   /** undefined while restoring the persisted session on launch. */
@@ -310,15 +311,25 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   }, [userId, profileLoaded, refreshProfile]);
 
   const signOut = useCallback(async () => {
-    // While still signed in, so the rows can be deleted under RLS. Sign
-    // out ends the member's sessions on every phone (the default scope,
-    // below), so every phone of theirs stops being sent their notices
-    // now, not when its app next runs: this one's token and the others'.
-    await forgetPushTokensEverywhere(currentUser.current);
-    // Signing out everywhere needs the network; without it, the session
-    // must still leave this phone, or "Sign out" leaves you signed in.
-    const { error } = await supabase.auth.signOut();
-    if (error) await supabase.auth.signOut({ scope: "local" });
+    // The session leaves this phone whatever the network says, in a few
+    // seconds at most (endSession.ts). First, while still signed in so the
+    // rows can be deleted under RLS, the push tokens: sign out ends the
+    // member's sessions on every phone, so every phone of theirs stops
+    // being sent their notices now, not when its app next runs: this
+    // one's token and the others'. Without a signal the rows stay, and
+    // the session must still leave this phone, or "Sign out" leaves you
+    // signed in.
+    await endSession({
+      auth: supabase.auth,
+      asMember: () => forgetPushTokensEverywhere(currentUser.current),
+      forgetStored: forgetStoredSession,
+    });
+    // Gone from here too before the door is shown, whether or not auth has
+    // said SIGNED_OUT yet: the door lets a session it sees straight in, and
+    // would let the next person into this member's account.
+    currentUser.current = null;
+    setSession(null);
+    setProfile(null);
     // Nothing of this member stays for the next one to sign in on this phone.
     queryClient.clear();
     forgetDarkroom();

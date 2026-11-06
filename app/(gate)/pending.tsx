@@ -89,6 +89,11 @@ export default function Pending() {
   // Above the redirect below, with the other hooks.
   const queryClient = useQueryClient();
   const [deleting, setDeleting] = React.useState(false);
+  // Signing out can wait a few seconds on the network (src/providers/
+  // endSession.ts): the button shows it is at work, and a second tap,
+  // checked and set in the tap itself, asks nothing more.
+  const [signingOut, setSigningOut] = React.useState(false);
+  const leaving = React.useRef(false);
   const approved = profile?.status === "approved";
   React.useEffect(() => {
     if (approved) enterApp();
@@ -122,6 +127,18 @@ export default function Pending() {
       setCheckedAt(new Date());
     } finally {
       setChecking(false);
+    }
+  };
+
+  const leave = async () => {
+    if (leaving.current) return;
+    leaving.current = true;
+    setSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      leaving.current = false;
+      setSigningOut(false);
     }
   };
 
@@ -244,8 +261,8 @@ export default function Pending() {
           </>
         ) : null}
         {/* While the account is being deleted, nothing else is asked of it. */}
-        <GateButton title="Sign out" variant="quiet" onPress={signOut} disabled={deleting} style={styles.gap} />
-        <GateButton title="Delete my account" variant="quiet" onPress={confirmDelete} loading={deleting} style={styles.gap} />
+        <GateButton title="Sign out" variant="quiet" onPress={leave} loading={signingOut} disabled={deleting} style={styles.gap} />
+        <GateButton title="Delete my account" variant="quiet" onPress={confirmDelete} loading={deleting} disabled={signingOut} style={styles.gap} />
       </View>
     </GateLayout>
   );

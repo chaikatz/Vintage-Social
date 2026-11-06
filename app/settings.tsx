@@ -60,6 +60,22 @@ export default function Settings() {
   const queryClient = useQueryClient();
   const { session, profile, isAdmin, refreshProfile, signOut } = useSession();
   const [deleting, setDeleting] = useState(false);
+  // Signing out can wait a few seconds on the network (src/providers/
+  // endSession.ts): the button shows it is at work, and a second tap,
+  // checked and set in the tap itself, asks nothing more.
+  const [signingOut, setSigningOut] = useState(false);
+  const leaving = useRef(false);
+  const leave = async () => {
+    if (leaving.current) return;
+    leaving.current = true;
+    setSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      leaving.current = false;
+      setSigningOut(false);
+    }
+  };
 
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
@@ -473,9 +489,11 @@ export default function Settings() {
       <Button
         title="Sign out"
         variant="secondary"
+        loading={signingOut}
+        disabled={deleting}
         onPress={() =>
           showAlert("Sign out?", undefined, [
-            { text: "Sign out", style: "destructive", onPress: signOut },
+            { text: "Sign out", style: "destructive", onPress: leave },
             { text: "Cancel", style: "cancel" },
           ])
         }
