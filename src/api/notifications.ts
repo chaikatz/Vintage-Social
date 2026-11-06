@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import type { NotificationPrefsRow } from "@/types/db";
+import { functionMissing, noteRpcMissing, rpcKnownMissing } from "./rpcMissing";
 
 /**
  * Where a member can be reached, and what they want to hear about.
@@ -41,7 +42,18 @@ export function parsePrefs(row: Partial<Record<string, unknown>> | null | undefi
   return out;
 }
 
-/** Remember this phone. Idempotent: the token is the key. */
+/**
+ * Remember this phone, under the member signed in on it. Idempotent: the
+ * token is the key.
+ *
+ * Filed through claim_push_token (migration 0036), which moves the row
+ * from whoever held it. A phone's token outlives a member on it: when the
+ * member before could not take it away (no signal at their sign-out, the
+ * app deleted and installed again), an upsert of it met their row, was
+ * refused under row-level security (the row was not this member's), and
+ * the phone went on being told about the member before. Where the
+ * database does not have the function yet, the upsert, as before.
+ */
 export async function registerPushToken(
   userId: string,
   token: string,
@@ -49,6 +61,12 @@ export async function registerPushToken(
   device: string | null,
 ): Promise<void> {
   if (isDemoMode()) return;
+  if (!rpcKnownMissing("claim_push_token")) {
+    const { error } = await supabase.rpc("claim_push_token", { p_token: token, p_platform: platform, p_device: device });
+    if (!error) return;
+    if (!functionMissing(error)) throw error;
+    noteRpcMissing("claim_push_token");
+  }
   const { error } = await supabase.from("push_tokens").upsert(
     {
       token,
@@ -64,11 +82,32 @@ export async function registerPushToken(
   if (error) throw error;
 }
 
-/** Forget this phone — on sign out, so the next member in isn't told about the last. */
-export async function unregisterPushToken(token: string): Promise<void> {
-  if (isDemoMode()) return;
-  const { error } = await supabase.from("push_tokens").delete().eq("token", token);
+/**
+ * Forget this phone — on sign out, so the next member in isn't told about
+ * the last. Resolves to how many rows went: none when the row was gone
+ * already, or was another member's (row-level security lets a member
+ * remove only their own, and says nothing of the rest), which the caller
+ * must not take for the phone having been let go (src/utils/push.ts).
+ */
+export async function unregisterPushToken(token: string): Promise<number> {
+  if (isDemoMode()) return 0;
+  const { error, count } = await supabase.from("push_tokens").delete({ count: "exact" }).eq("token", token);
   if (error) throw error;
+  return count ?? 0;
+}
+
+/**
+ * Forget every phone of the member's — on a sign-out that ends their
+ * sessions on all of them (src/providers/SessionProvider.tsx), while
+ * still signed in: a phone whose session has ended elsewhere is not told
+ * so until its app next runs, and would be sent the member's notices
+ * until then. Resolves to how many rows went.
+ */
+export async function unregisterAllPushTokens(userId: string): Promise<number> {
+  if (isDemoMode()) return 0;
+  const { error, count } = await supabase.from("push_tokens").delete({ count: "exact" }).eq("user_id", userId);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 export async function fetchNotificationPrefs(userId: string): Promise<NotificationPrefs> {

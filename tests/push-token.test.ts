@@ -15,8 +15,13 @@ const h = vi.hoisted(() => ({
   tokenFails: false,
   fileFails: false,
   deleteFails: false,
+  /** Rows a delete of the token removes: 0 when the row is another member's (RLS removes nothing and says nothing). */
+  rowsRemoved: 1,
   filed: [] as string[],
   deleted: [] as string[],
+  /** The members every row of whom was removed (signing out everywhere). */
+  deletedAllOf: [] as string[],
+  deleteAllFails: false,
   unregistered: 0,
   // The keychain auth keeps the session in, and what the auth server says to a refresh.
   keychain: new Map<string, string>(),
@@ -109,7 +114,13 @@ vi.mock("@/api/notifications", () => ({
   },
   unregisterPushToken: async (token: string) => {
     if (h.deleteFails) throw new Error("no signal");
-    h.deleted.push(token);
+    if (h.rowsRemoved > 0) h.deleted.push(token);
+    return h.rowsRemoved;
+  },
+  unregisterAllPushTokens: async (userId: string) => {
+    if (h.deleteAllFails) throw new Error("no signal");
+    h.deletedAllOf.push(userId);
+    return 2;
   },
 }));
 // The phone's cache folder, kept across launches here.
@@ -137,8 +148,11 @@ beforeEach(() => {
   h.tokenFails = false;
   h.fileFails = false;
   h.deleteFails = false;
+  h.rowsRemoved = 1;
   h.filed = [];
   h.deleted = [];
+  h.deletedAllOf = [];
+  h.deleteAllFails = false;
   h.unregistered = 0;
 });
 
@@ -184,6 +198,18 @@ describe("signing out on this phone", () => {
     expect(h.deleted).toEqual([]);
     expect(h.unregistered).toBe(1);
     // And no word of the token is left for anyone to act on.
+    expect(h.disk.size).toBe(0);
+  });
+
+  it("stops the phone receiving when the removal takes nothing: the row is another member's, or gone", async () => {
+    const push = await launch();
+    await push.registerForPush("u1");
+    // Row-level security lets a member remove only their own row, and a
+    // delete of anyone else's removes nothing and says nothing.
+    h.rowsRemoved = 0;
+    await push.forgetPushToken();
+    expect(h.deleted).toEqual([]);
+    expect(h.unregistered).toBe(1);
     expect(h.disk.size).toBe(0);
   });
 
@@ -269,9 +295,41 @@ describe("a session that ended elsewhere", () => {
     }
   });
 
-  it("sign-out removes the token while still signed in, before auth lets go", () => {
+  it("sign-out removes the tokens while still signed in, before auth lets go", () => {
     const provider = readFileSync(path.resolve(import.meta.dirname, "..", "src/providers/SessionProvider.tsx"), "utf8");
-    expect(provider).toMatch(/await forgetPushToken\(\);[\s\S]*?const \{ error \} = await supabase\.auth\.signOut\(\);/);
+    expect(provider).toMatch(/await forgetPushTokensEverywhere\(currentUser\.current\);[\s\S]*?const \{ error \} = await supabase\.auth\.signOut\(\);/);
+    // The sign-out is everywhere (the default scope) unless that cannot
+    // be done: then this phone only, whose other phones keep their rows.
+    expect(provider).toMatch(/const \{ error \} = await supabase\.auth\.signOut\(\);\s+if \(error\) await supabase\.auth\.signOut\(\{ scope: "local" \}\);/);
+  });
+});
+
+describe("signing out everywhere", () => {
+  it("removes this phone's token, then every other phone's row of the member's", async () => {
+    const push = await launch();
+    await push.registerForPush("u1");
+    await push.forgetPushTokensEverywhere("u1");
+    expect(h.deleted).toEqual(["ExponentPushToken[phone]"]);
+    expect(h.deletedAllOf).toEqual(["u1"]);
+    expect(h.unregistered).toBe(0);
+  });
+
+  it("without a signal, this phone stops receiving and the other phones' rows stay", async () => {
+    const push = await launch();
+    await push.registerForPush("u1");
+    h.deleteFails = true;
+    h.deleteAllFails = true;
+    await expect(push.forgetPushTokensEverywhere("u1")).resolves.toBeUndefined();
+    expect(h.unregistered).toBe(1);
+    expect(h.deletedAllOf).toEqual([]);
+  });
+
+  it("with nobody known, does only what signing out on this phone does", async () => {
+    const push = await launch();
+    await push.registerForPush("u1");
+    await push.forgetPushTokensEverywhere(null);
+    expect(h.deleted).toEqual(["ExponentPushToken[phone]"]);
+    expect(h.deletedAllOf).toEqual([]);
   });
 });
 

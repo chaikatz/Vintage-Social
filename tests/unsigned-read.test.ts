@@ -162,7 +162,10 @@ describe("a read that goes out without the member's token", () => {
   });
 
   it("names the read-only functions one by one, never every POST", () => {
-    expect(READ_ONLY_RPCS).toEqual(["feed_page", "default_invite_quota"]);
+    expect(READ_ONLY_RPCS).toEqual(["feed_page", "default_invite_quota", "unread_message_counts"]);
+    expect(isScreenRead("POST", `${URL_}/rest/v1/rpc/unread_message_counts`)).toBe(true);
+    // Filing a phone's push token writes: it goes out.
+    expect(isScreenRead("POST", `${URL_}/rest/v1/rpc/claim_push_token`)).toBe(false);
     expect(rpcName(`${URL_}/rest/v1/rpc/feed_page?select=*&order=created_at.desc`)).toBe("feed_page");
     expect(rpcName(`${URL_}/rest/v1/posts?id=eq.p1`)).toBeNull();
     expect(isScreenRead("POST", `${URL_}/rest/v1/rpc/feed_page?select=*`)).toBe(true);
@@ -185,6 +188,8 @@ describe("a read that goes out without the member's token", () => {
     const sorted: Record<string, "member read" | "anyone" | "writes"> = {
       feed_page: "member read",
       default_invite_quota: "member read",
+      unread_message_counts: "member read",
+      claim_push_token: "writes",
       username_available: "anyone",
       invite_link_owner: "anyone",
       delete_my_account: "writes",

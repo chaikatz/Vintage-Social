@@ -3,6 +3,7 @@ import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import { POST_WITH_AUTHOR } from "./posts";
 import { readInChunks } from "./batch";
+import { functionMissing, noteRpcMissing, rpcKnownMissing } from "./rpcMissing";
 import { ROWS_PER_READ } from "@/utils/eraEdits";
 import type {
   ConversationRow,
@@ -33,8 +34,7 @@ import type {
  * messages the "newest" message shown was an old one and new messages
  * were not counted as unread. Now each thread brings only its newest
  * message (an embedded resource's order and limit apply per thread), and
- * the unread count reads only the unread messages, a hundred threads a
- * request (./batch).
+ * the unread counts are counted by the database (unreadCounts).
  */
 export async function fetchConversations(userId: string): Promise<ConversationWithPeer[]> {
   if (isDemoMode()) return demo.demoFetchConversations(userId);
@@ -61,28 +61,18 @@ export async function fetchConversations(userId: string): Promise<ConversationWi
       if (peersError) throw peersError;
       return (found ?? []) as ConversationWithPeer["peer"][];
     }).catch(() => [] as ConversationWithPeer["peer"][]),
-    readInChunks(rows.map((c) => c.id), async (chunk) => {
-      const { data: waiting, error: unreadError } = await supabase
-        .from("messages")
-        .select("conversation_id")
-        .in("conversation_id", chunk)
-        .is("read_at", null)
-        .neq("sender_id", userId);
-      if (unreadError) throw unreadError;
-      return (waiting ?? []) as { conversation_id: string }[];
-    }).catch(() => [] as { conversation_id: string }[]),
+    // Counts that cannot be read leave the inbox showing, unmarked.
+    unreadCounts(userId, rows.map((c) => c.id)).catch(() => new Map<string, number>()),
   ]);
 
   const byId = new Map(peers.map((p) => [p.id, p]));
-  const unreadIn = new Map<string, number>();
-  for (const m of unread) unreadIn.set(m.conversation_id, (unreadIn.get(m.conversation_id) ?? 0) + 1);
   return rows.map(({ messages, ...c }) => {
     const peerId = c.user_a === userId ? c.user_b : c.user_a;
     return {
       ...c,
       peer: byId.get(peerId) ?? { id: peerId, username: "someone", full_name: null, avatar_url: null },
       last_message: messages?.[0] ?? null,
-      unread_count: unreadIn.get(c.id) ?? 0,
+      unread_count: unread.get(c.id) ?? 0,
     };
   });
 }
@@ -90,13 +80,20 @@ export async function fetchConversations(userId: string): Promise<ConversationWi
 /**
  * How many unread messages are waiting, for the badge on the tab bar.
  *
- * Only what the badge needs: the member's threads, by id, and the unread
- * messages others sent in them - the same count the inbox adds up, without
- * the inbox's newest message per thread and every peer's profile, which
- * the badge never shows and refreshes far more often than the inbox.
+ * Only what the badge needs: the same counts the inbox shows, added up,
+ * without the inbox's newest message per thread and every peer's
+ * profile, which the badge never shows and refreshes far more often than
+ * the inbox. One request.
  */
 export async function fetchUnreadMessageCount(userId: string): Promise<number> {
   if (isDemoMode()) return demo.demoUnreadMessageCount(userId);
+  const counted = await countedUnread();
+  if (counted) {
+    let total = 0;
+    for (const n of counted.values()) total += n;
+    return total;
+  }
+  // The database has no unread_message_counts yet: the old way.
   const { data, error } = await supabase
     .from("conversations")
     .select("id")
@@ -104,17 +101,58 @@ export async function fetchUnreadMessageCount(userId: string): Promise<number> {
   if (error) throw error;
   const ids = (data ?? []).map((c) => c.id as string);
   if (ids.length === 0) return 0;
-  const waiting = await readInChunks(ids, async (chunk) => {
-    const { data: rows, error: unreadError } = await supabase
+  const waiting = await downloadedUnread(userId, ids).catch(() => new Map<string, number>());
+  let total = 0;
+  for (const n of waiting.values()) total += n;
+  return total;
+}
+
+/**
+ * Each of the member's threads with unread messages from the other
+ * member, and how many: counted by the database (unread_message_counts,
+ * migration 0037), one row a thread, as the member, through the same
+ * policies as reading the messages would. It used to download every such
+ * message to count them, a row each, and PostgREST stops at a thousand
+ * rows without saying so: past that the counts fell short.
+ *
+ * Null where the database has no such function yet.
+ */
+async function countedUnread(): Promise<Map<string, number> | null> {
+  if (rpcKnownMissing("unread_message_counts")) return null;
+  const { data, error } = await supabase.rpc("unread_message_counts");
+  if (error) {
+    if (!functionMissing(error)) throw error;
+    noteRpcMissing("unread_message_counts");
+    return null;
+  }
+  const out = new Map<string, number>();
+  for (const row of (data ?? []) as { conversation_id: string; unread: number | string }[]) {
+    const n = Number(row.unread);
+    if (row.conversation_id && Number.isFinite(n) && n > 0) out.set(row.conversation_id, n);
+  }
+  return out;
+}
+
+/** The old way, for a database without the function: the unread messages themselves, a hundred threads a request. */
+async function downloadedUnread(userId: string, threadIds: string[]): Promise<Map<string, number>> {
+  const rows = await readInChunks(threadIds, async (chunk) => {
+    const { data, error } = await supabase
       .from("messages")
       .select("conversation_id")
       .in("conversation_id", chunk)
       .is("read_at", null)
       .neq("sender_id", userId);
-    if (unreadError) throw unreadError;
-    return (rows ?? []) as { conversation_id: string }[];
-  }).catch(() => [] as { conversation_id: string }[]);
-  return waiting.length;
+    if (error) throw error;
+    return (data ?? []) as { conversation_id: string }[];
+  });
+  const out = new Map<string, number>();
+  for (const m of rows) out.set(m.conversation_id, (out.get(m.conversation_id) ?? 0) + 1);
+  return out;
+}
+
+/** The unread counts of these threads, by the database where it can, else the old way. */
+async function unreadCounts(userId: string, threadIds: string[]): Promise<Map<string, number>> {
+  return (await countedUnread()) ?? downloadedUnread(userId, threadIds);
 }
 
 /**

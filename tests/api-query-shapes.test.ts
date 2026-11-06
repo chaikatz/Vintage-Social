@@ -31,6 +31,11 @@ const h = vi.hoisted(() => ({
    * PostgREST wraps around it to join the author).
    */
   feedPage: "there" as "there" | "missing" | "broken" | "unordered",
+  /** How unread_message_counts (0037) answers: as the database would, as if not there yet, or with a failure. */
+  unreadCounts: "there" as "there" | "missing" | "broken",
+  /** How claim_push_token (0036) answers, and what it was sent. */
+  claimToken: "there" as "there" | "missing",
+  claims: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -231,6 +236,24 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
   // The ceiling the gateway sets on a request line.
   if (url.href.length > 8192) return new Response("URI Too Long", { status: 414 });
   if (url.pathname === "/rest/v1/rpc/feed_page") return feedPage(url, JSON.parse(String(init?.body ?? "{}")));
+  if (url.pathname === "/rest/v1/rpc/unread_message_counts") return unreadMessageCounts();
+  if (url.pathname === "/rest/v1/rpc/claim_push_token") {
+    if (h.claimToken === "missing") {
+      return new Response(JSON.stringify({ code: "PGRST202", message: "Could not find the function public.claim_push_token" }), { status: 404 });
+    }
+    h.claims.push(JSON.parse(String(init?.body ?? "{}")));
+    return new Response(null, { status: 204 });
+  }
+  // A delete: the rows it matches go, and with count=exact the number
+  // comes back in Content-Range (row-level security is the table's here:
+  // what the test leaves in it is what the member may remove).
+  if (init?.method === "DELETE") {
+    const table = url.pathname.replace("/rest/v1/", "");
+    const filters = [...url.searchParams].filter(([k]) => k !== "select");
+    const gone = (h.tables[table] ?? []).filter((r) => filters.every(([k, v]) => matches(r, k, v)));
+    h.tables[table] = (h.tables[table] ?? []).filter((r) => !gone.includes(r));
+    return new Response(null, { status: 204, headers: { "Content-Range": `*/${gone.length}` } });
+  }
   // A count with no rows (select(…, { count: "exact", head: true })): the
   // number comes back in Content-Range, and no row does.
   if (init?.method === "HEAD") {
@@ -243,6 +266,23 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
     return new Response(null, { status: 200, headers: { "Content-Range": `*/${n}` } });
   }
   return new Response(JSON.stringify(answer(url)), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
+/** unread_message_counts (0037) as the database answers it for ME: a row a thread with unread messages from the other member, newest thread first, max_rows at most. */
+function unreadMessageCounts(): Response {
+  if (h.unreadCounts === "missing") {
+    return new Response(JSON.stringify({ code: "PGRST202", message: "Could not find the function public.unread_message_counts" }), { status: 404 });
+  }
+  if (h.unreadCounts === "broken") {
+    return new Response(JSON.stringify({ code: "57014", message: "canceling statement due to statement timeout" }), { status: 500 });
+  }
+  const mine = ordered((h.tables.conversations ?? []).filter((c) => c.user_a === ME || c.user_b === ME), "last_message_at.desc");
+  const rows: Row[] = [];
+  for (const c of mine) {
+    const n = (h.tables.messages ?? []).filter((m) => m.conversation_id === c.id && m.read_at == null && m.sender_id !== ME).length;
+    if (n > 0) rows.push({ conversation_id: c.id, unread: n });
+  }
+  return new Response(JSON.stringify(rows.slice(0, 1000)), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
 /** feed_page (0025) as the database answers it for the signed-in member, ME. */
@@ -289,6 +329,8 @@ const messages = await import("@/api/messages");
 const profiles = await import("@/api/profiles");
 const moderation = await import("@/api/moderation");
 const { readInChunks, chunked, IDS_PER_REQUEST } = await import("@/api/batch");
+const notifications = await import("@/api/notifications");
+const { forgetRpcMissing } = await import("@/api/rpcMissing");
 
 const ME = "00000000-0000-4000-8000-000000000001";
 const id = (prefix: string, n: number) => `${prefix}000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -300,6 +342,10 @@ beforeEach(() => {
   h.maxInFlight = 0;
   h.tables = {};
   h.feedPage = "there";
+  h.unreadCounts = "there";
+  h.claimToken = "there";
+  h.claims = [];
+  forgetRpcMissing();
   (posts as { forgetFeedPageMissing?: () => void }).forgetFeedPageMissing?.();
   // Optional so an older messages.ts (a mutation check) still loads.
   (messages as { forgetSharedPosts?: () => void }).forgetSharedPosts?.();
@@ -484,18 +530,62 @@ describe("the inbox", () => {
     expect(list[0].peer.username).toBe("peer139");
   });
 
-  it("no longer reads every message of every thread to do it", async () => {
+  it("no longer reads every message of every thread to do it, nor any message to count them", async () => {
     inbox();
     await messages.fetchConversations(ME);
     const conversationsRead = h.requests.find((r) => r.url.pathname === "/rest/v1/conversations")!;
     expect(conversationsRead.url.searchParams.get("messages.order")).toBe("created_at.desc");
     expect(conversationsRead.url.searchParams.get("messages.limit")).toBe("1");
-    const messageReads = h.requests.filter((r) => r.url.pathname === "/rest/v1/messages");
-    for (const r of messageReads) {
+    // The unread counts are counted by the database (0037), in one request.
+    expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/messages")).toEqual([]);
+    expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/rpc/unread_message_counts").length).toBe(1);
+    for (const r of h.requests) expect(r.url.href.length).toBeLessThan(8192 / 2);
+  });
+
+  it("counts every unread message, past the thousand rows a read of them stopped at", async () => {
+    inbox();
+    // Forty unread from the other member in each thread: 5,600 in all,
+    // 4,000 in the first hundred threads alone.
+    let n = 10_000;
+    for (const c of h.tables.conversations) {
+      const peer = c.user_a === ME ? c.user_b : c.user_a;
+      for (let k = 0; k < 40; k++) {
+        n++;
+        h.tables.messages.push({ id: id("d3", n), conversation_id: c.id, sender_id: peer, body: "", post_id: null, created_at: at(n), read_at: null });
+      }
+    }
+    const truth = oldWay().reduce((t, c) => t + c.unread, 0);
+    expect(truth).toBeGreaterThan(5000);
+    expect(await messages.fetchUnreadMessageCount(ME)).toBe(truth);
+    const inboxCount = (await messages.fetchConversations(ME)).reduce((t, c) => t + c.unread_count, 0);
+    expect(inboxCount).toBe(truth);
+    // Read the old way, a hundred threads a request, each cut at a thousand rows.
+    h.unreadCounts = "missing";
+    forgetRpcMissing();
+    expect(await messages.fetchUnreadMessageCount(ME)).toBeLessThan(truth);
+  });
+
+  it("reads the unread messages the old way where the database has no unread_message_counts yet, and does not keep asking", async () => {
+    inbox();
+    const truth = oldWay();
+    h.unreadCounts = "missing";
+    const list = await messages.fetchConversations(ME);
+    expect(list.map((c) => ({ id: c.id, last: c.last_message?.id ?? null, unread: c.unread_count }))).toEqual(truth);
+    expect(await messages.fetchUnreadMessageCount(ME)).toBe(truth.reduce((t, c) => t + c.unread, 0));
+    expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/rpc/unread_message_counts").length).toBe(1);
+    for (const r of h.requests.filter((q) => q.url.pathname === "/rest/v1/messages")) {
       expect(r.url.searchParams.get("read_at")).toBe("is.null");
       expect(r.url.searchParams.get("sender_id")).toBe(`neq.${ME}`);
     }
-    for (const r of h.requests) expect(r.url.href.length).toBeLessThan(8192 / 2);
+  });
+
+  it("a count that fails is not taken for none: the badge keeps what it had, the inbox shows unmarked", async () => {
+    inbox();
+    h.unreadCounts = "broken";
+    await expect(messages.fetchUnreadMessageCount(ME)).rejects.toMatchObject({ code: "57014" });
+    const list = await messages.fetchConversations(ME);
+    expect(list.length).toBe(140);
+    expect(list.every((c) => c.unread_count === 0)).toBe(true);
   });
 
   it("was wrong past a thousand messages, and is right now", async () => {
@@ -515,18 +605,10 @@ describe("the inbox", () => {
     expect(inboxCount).toBe(unread);
   });
 
-  it("counts the badge without reading anyone's profile or any thread's newest message", async () => {
+  it("counts the badge in one request, without reading anyone's profile, any thread or any message", async () => {
     inbox();
     await messages.fetchUnreadMessageCount(ME);
-    expect(h.requests.some((r) => r.url.pathname === "/rest/v1/profiles")).toBe(false);
-    const threads = h.requests.filter((r) => r.url.pathname === "/rest/v1/conversations");
-    expect(threads.length).toBe(1);
-    expect(threads[0].url.searchParams.get("select")).toBe("id");
-    for (const r of h.requests.filter((q) => q.url.pathname === "/rest/v1/messages")) {
-      expect(r.url.searchParams.get("select")).toBe("conversation_id");
-      expect(r.url.searchParams.get("read_at")).toBe("is.null");
-      expect(r.url.searchParams.get("sender_id")).toBe(`neq.${ME}`);
-    }
+    expect(h.requests.map((r) => `${r.method} ${r.url.pathname}`)).toEqual(["POST /rest/v1/rpc/unread_message_counts"]);
   });
 
   it("counts no badge for a member with no threads, in one read", async () => {
@@ -761,10 +843,88 @@ describe("the home feed", () => {
     await expect(posts.fetchFeedPage(ME, null)).rejects.toMatchObject({ code: "57014" });
   });
 
+  it("leaves out photographs whose author the reader may not see, and still pages to the end", async () => {
+    club(60);
+    // Two members the reader follows whose profiles the reader may not
+    // read (outside the club): their photographs come with author null.
+    const hidden = new Set([id("f1", 2), id("f1", 5)]);
+    h.tables.profiles = h.tables.profiles.filter((p) => !hidden.has(String(p.id)));
+    const shown = truth().filter((pid) => !hidden.has(String(h.tables.posts.find((p) => p.id === pid)!.author_id)));
+    expect(shown.length).toBeLessThan(truth().length);
+    for (const mode of ["there", "missing"] as const) {
+      h.feedPage = mode;
+      posts.forgetFeedPageMissing();
+      const pages = await walk();
+      expect(pages.flat(), mode).toEqual(shown);
+      // Every page but the last is a whole page: none is taken for the end.
+      expect(pages.slice(0, -1).every((p) => p.length === posts.FEED_PAGE_SIZE), mode).toBe(true);
+    }
+  });
+
+  it("makes a page up from the rows after one whose photographs it left out, a few reads at most", async () => {
+    club(10);
+    // The newest thirty in the feed are by a member the reader may not see.
+    const hidden = id("f1", 0);
+    h.tables.profiles = h.tables.profiles.filter((p) => p.id !== hidden);
+    for (let k = 0; k < 30; k++) h.tables.posts.push({ id: id("f5", k), author_id: hidden, created_at: at(10_000 + k), removed_at: null });
+    const first = await posts.fetchFeedPage(ME, null);
+    expect(first.length).toBe(posts.FEED_PAGE_SIZE);
+    expect(first.every((p) => p.author != null)).toBe(true);
+    expect(h.requests.length).toBeLessThanOrEqual(posts.FEED_FILL_READS);
+    expect(posts.withAuthors([{ author: null }, { author: { id: "a" } }, {}])).toEqual([{ author: { id: "a" } }]);
+  });
+
   it("the old read, past a couple of hundred follows, could not be sent at all", async () => {
     club(800);
     h.feedPage = "missing";
     await expect(posts.fetchFeedPage(ME, null)).rejects.toBeTruthy();
+  });
+});
+
+describe("a photograph on its own", () => {
+  it("whose author the reader may not see is, for them, not there", async () => {
+    const hidden = id("f6", 1);
+    h.tables.profiles = [{ id: ME, username: "me", full_name: null, avatar_url: null }];
+    h.tables.posts = [
+      { id: id("f7", 1), author_id: ME, created_at: at(1), removed_at: null },
+      { id: id("f7", 2), author_id: hidden, created_at: at(2), removed_at: null },
+    ];
+    expect((await posts.fetchPost(id("f7", 1)))?.author?.username).toBe("me");
+    expect(await posts.fetchPost(id("f7", 2))).toBeNull();
+    expect(await posts.fetchPost(id("f7", 3))).toBeNull();
+  });
+});
+
+describe("this phone's push token", () => {
+  it("is filed through claim_push_token, which moves it from whoever held it", async () => {
+    await notifications.registerPushToken(ME, "ExponentPushToken[x]", "ios", "Apple iPhone");
+    expect(h.claims).toEqual([{ p_token: "ExponentPushToken[x]", p_platform: "ios", p_device: "Apple iPhone" }]);
+    expect(h.requests.some((r) => r.url.pathname === "/rest/v1/push_tokens")).toBe(false);
+  });
+
+  it("is filed the old way where the database has no claim_push_token yet, and the function is not asked again", async () => {
+    h.claimToken = "missing";
+    await notifications.registerPushToken(ME, "ExponentPushToken[x]", "ios", null);
+    await notifications.registerPushToken(ME, "ExponentPushToken[x]", "ios", null);
+    expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/rpc/claim_push_token").length).toBe(1);
+    const upserts = h.requests.filter((r) => r.url.pathname === "/rest/v1/push_tokens");
+    expect(upserts.length).toBe(2);
+    expect(upserts[0].method).toBe("POST");
+    expect(upserts[0].url.searchParams.get("on_conflict")).toBe("token");
+  });
+
+  it("says how many rows its removal took: none when the row was another member's", async () => {
+    h.tables.push_tokens = [
+      { token: "ExponentPushToken[mine]", user_id: ME },
+      { token: "ExponentPushToken[second-phone]", user_id: ME },
+    ];
+    expect(await notifications.unregisterPushToken("ExponentPushToken[mine]")).toBe(1);
+    // A row row-level security does not let this member see: not in the table they are shown.
+    expect(await notifications.unregisterPushToken("ExponentPushToken[someone-else]")).toBe(0);
+    expect(await notifications.unregisterAllPushTokens(ME)).toBe(1);
+    expect(h.tables.push_tokens).toEqual([]);
+    const all = h.requests.filter((r) => r.method === "DELETE").at(-1)!;
+    expect(all.url.searchParams.get("user_id")).toBe(`eq.${ME}`);
   });
 });
 

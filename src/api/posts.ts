@@ -6,6 +6,7 @@ import { ROWS_PER_READ } from "@/utils/eraEdits";
 import { withTimeout } from "@/utils/retry";
 import { readInChunks } from "./batch";
 import { pageAfter, type Cursor } from "./keyset";
+import { functionMissing } from "./rpcMissing";
 
 export const FEED_PAGE_SIZE = 12;
 
@@ -48,11 +49,6 @@ async function followingIds(userId: string): Promise<string[]> {
 let feedPageMissingUntil = 0;
 const FEED_PAGE_RECHECK_MS = 10 * 60_000;
 
-/** PostgREST's "no such function" (PGRST202), and Postgres's own (42883). */
-function functionMissing(error: { code?: unknown }): boolean {
-  return error.code === "PGRST202" || error.code === "42883";
-}
-
 /** Forget whether feed_page is there (tests). */
 export function forgetFeedPageMissing(): void {
   feedPageMissingUntil = 0;
@@ -89,6 +85,46 @@ export function nextFeedCursor(page: Pick<PostRow, "id" | "created_at">[]): Feed
 export async function fetchFeedPage(userId: string, before: FeedCursor | null): Promise<PostWithAuthor[]> {
   if (isDemoMode()) return demo.demoFetchFeedPage(userId, before, FEED_PAGE_SIZE);
 
+  // A page is twelve photographs with their authors. A photograph whose
+  // author the reader may not see comes without one (withAuthors) and is
+  // left out; the page is then made up from the rows after it, so that a
+  // page of fewer than twelve still means the feed has ended
+  // (nextFeedCursor). A few reads at most: rows whose author is hidden
+  // are rare (none on production in November 2026), and a run of them
+  // longer than that ends the page early rather than reading on.
+  const shown: PostWithAuthor[] = [];
+  let after = before;
+  for (let read = 0; read < FEED_FILL_READS; read++) {
+    const rows = await readFeedRows(userId, after);
+    shown.push(...withAuthors(rows));
+    if (rows.length < FEED_PAGE_SIZE || shown.length >= FEED_PAGE_SIZE) break;
+    const last = rows[rows.length - 1];
+    after = { at: last.created_at, id: last.id };
+  }
+  return shown.slice(0, FEED_PAGE_SIZE);
+}
+
+/** Reads, at most, to make up one page of the feed (fetchFeedPage). */
+export const FEED_FILL_READS = 4;
+
+/**
+ * The rows that came with their author. A photograph stays readable while
+ * its author's profile may not be (an author outside the club: the posts
+ * read policy asks only that the photograph be live and not private to
+ * the reader, the profiles policy that the profile be a member's), and
+ * such a row arrives with `author` null: a card with no name, no face
+ * and nowhere to go. Not shown at all instead. Asking the database to
+ * leave them out (the posts policy requiring a visible author) would read
+ * every member's profile once for every read of photographs (a hashed
+ * subplan over all of profiles, planned at 1,000 members), so it is done
+ * here, on the page.
+ */
+export function withAuthors<T extends { author?: unknown }>(rows: T[]): T[] {
+  return rows.filter((p) => p.author != null);
+}
+
+/** One read of the feed's rows after `before`, authors and all. */
+async function readFeedRows(userId: string, before: FeedCursor | null): Promise<PostWithAuthor[]> {
   if (Date.now() >= feedPageMissingUntil) {
     // The order is asked of PostgREST too: the function's own order is
     // not promised to survive the query PostgREST wraps around it to join
@@ -170,7 +206,10 @@ export async function fetchPost(postId: string): Promise<PostWithAuthor | null> 
     .eq("id", postId)
     .maybeSingle();
   if (error) throw error;
-  return (data as unknown as PostWithAuthor) ?? null;
+  const post = (data as unknown as PostWithAuthor | null) ?? null;
+  // A photograph whose author the reader may not see (withAuthors) is,
+  // for them, not there: the screen says so, as for one deleted.
+  return post && post.author != null ? post : null;
 }
 
 export interface NewPost {

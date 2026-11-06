@@ -16,7 +16,7 @@ import { isTransient, withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
-import { forgetPushToken } from "@/utils/push";
+import { forgetPushTokensEverywhere } from "@/utils/push";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 import { forgetOutbox } from "@/uploads";
 import { clearRecent } from "@/utils/searchHistory";
@@ -310,8 +310,11 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   }, [userId, profileLoaded, refreshProfile]);
 
   const signOut = useCallback(async () => {
-    // While still signed in, so the row can be deleted under RLS.
-    await forgetPushToken();
+    // While still signed in, so the rows can be deleted under RLS. Sign
+    // out ends the member's sessions on every phone (the default scope,
+    // below), so every phone of theirs stops being sent their notices
+    // now, not when its app next runs: this one's token and the others'.
+    await forgetPushTokensEverywhere(currentUser.current);
     // Signing out everywhere needs the network; without it, the session
     // must still leave this phone, or "Sign out" leaves you signed in.
     const { error } = await supabase.auth.signOut();
