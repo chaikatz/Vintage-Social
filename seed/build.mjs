@@ -221,7 +221,8 @@ for (let i = 1; i <= MEMBERS; i++) {
     const theme = pick(interests);
     const photo = nextPhoto(theme);
     if (!photo) break; // the pool is spent; this member simply posts less
-    if (!member.avatar) member.avatar = photo.thumb;
+    // The portrait curate.mjs drew for a Picsum photograph (480 wide, as production's), else the square.
+    if (!member.avatar) member.avatar = photo.avatar ?? photo.thumb;
     const posted = joined + Math.floor(rand() * (now - joined));
     posts.push({
       id: postUuid(i, j),

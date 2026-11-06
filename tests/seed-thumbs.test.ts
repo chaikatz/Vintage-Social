@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { PICTURE_WIDTH, THUMB_WIDTH, WIKIMEDIA_WIDTHS, commonsAt } from "../seed/wikimediaThumb.mjs";
-import { PICSUM_THUMB_LONG_MAX, PICSUM_THUMB_SHORT, picsumThumb } from "../seed/picsumThumb.mjs";
+import { PICSUM_THUMB_LONG_MAX, PICSUM_THUMB_SHORT, picsumAvatar, picsumThumb } from "../seed/picsumThumb.mjs";
 import { THUMB_LONG_MAX, THUMB_SHORT, thumbLongSide } from "../src/uploads/thumbSize";
 
 /**
@@ -102,11 +102,38 @@ describe("a Picsum house photograph's grid square", () => {
   });
 });
 
+describe("a Picsum house member's portrait", () => {
+  const avatar = picsumAvatar as (id: string | number, width: number, height: number) => string;
+  const thumb = picsumThumb as (id: string | number, width: number, height: number) => string;
+  const size = (url: string) => url.match(/^https:\/\/picsum\.photos\/id\/(\d+)\/(\d+)\/(\d+)$/)?.slice(1).map(Number) ?? [];
+
+  it("stays 480 wide, as production's portraits are, smaller than the grid square and sharp at 80 points", () => {
+    expect(avatar(764, 1200, 900)).toBe("https://picsum.photos/id/764/480/360");
+    // The largest portrait (ProfileHeader) is 80 points: 240 pixels on a 3x phone.
+    expect(read("src/components/ProfileHeader.tsx")).toMatch(/<Avatar [^>]*size=\{80\}/);
+    const { photos } = JSON.parse(read("seed/photos.json")) as { photos: { url: string }[] };
+    for (const p of photos.filter((p) => /picsum\.photos/.test(p.url))) {
+      const [id, w, h] = size(p.url);
+      const [aid, aw, ah] = size(avatar(id, w, h));
+      const [, tw, th] = size(thumb(id, w, h));
+      expect(aid).toBe(id);
+      expect(Math.min(aw, ah)).toBeGreaterThanOrEqual(240);
+      expect(aw * ah).toBeLessThan(tw * th);
+    }
+  });
+
+  it("is what seed/build.mjs makes a member's face, where curate.mjs drew one", () => {
+    const build = read("seed/build.mjs").replace(/\/\/.*$/gm, "");
+    expect(build).toContain("if (!member.avatar) member.avatar = photo.avatar ?? photo.thumb;");
+    expect(read("seed/curate.mjs").replace(/\/\/.*$/gm, "")).toContain("avatar: picsumAvatar(item.id, w, h),");
+  });
+});
+
 describe("seed/curate.mjs", () => {
   const src = read("seed/curate.mjs").replace(/\/\/.*$/gm, "");
 
   it("asks Picsum for the grid square at the app's size, not 480 wide", () => {
-    expect(src).toContain('import { picsumThumb } from "./picsumThumb.mjs";');
+    expect(src).toContain('import { picsumAvatar, picsumThumb } from "./picsumThumb.mjs";');
     expect(src).toContain("thumb: picsumThumb(item.id, w, h),");
     expect(src).not.toMatch(/\/480\//);
   });

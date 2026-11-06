@@ -39,3 +39,17 @@ export function picsumThumb(id, width, height) {
   const [tw, th] = w >= h ? [longSide, shortSide] : [shortSide, longSide];
   return `https://picsum.photos/id/${id}/${tw}/${th}`;
 }
+
+/**
+ * A house member's portrait, when it is a Picsum photograph: 480 pixels
+ * wide, as the seed has always drawn them and production's profiles hold
+ * them (0034 changes the photographs' squares, not the portraits). The
+ * largest portrait is 80 points, 240 pixels on a 3x phone, so a short
+ * side of 320 is sharp there; the grid square's 810 by 540 would only
+ * cost every list of faces more to download and hold.
+ */
+export function picsumAvatar(id, width, height) {
+  const w = Number(width);
+  const h = Number(height);
+  return `https://picsum.photos/id/${id}/480/${Math.round((480 * h) / w)}`;
+}
