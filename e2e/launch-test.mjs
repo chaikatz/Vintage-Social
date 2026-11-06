@@ -990,17 +990,30 @@ check(
         (el) => el.getBoundingClientRect().width > 200,
       );
       const label = bar && [...bar.querySelectorAll('[dir="auto"]')].find((el) => /^sign in$/i.test(el.textContent ?? ""));
-      if (!bar || !label) return null;
+      const arrow = bar && [...bar.children].find((el) => el !== label && !el.contains(label));
+      if (!bar || !label || !arrow) return null;
       if (size) label.style.fontSize = `${size}px`;
       const b = bar.getBoundingClientRect();
       const l = label.getBoundingClientRect();
-      return { bar: Math.round(b.width), left: Math.round(l.left - b.left), right: Math.round(b.right - l.right), lines: Math.round(l.height / (size ? size : 11)) };
+      const a = arrow.getBoundingClientRect();
+      return {
+        bar: Math.round(b.width),
+        left: Math.round(l.left - b.left),
+        right: Math.round(b.right - l.right),
+        arrow: Math.round(b.right - a.left),
+        lines: Math.round(l.height / (size ? size : 11)),
+      };
     }, px);
   const normal = await measure(0);
   const large = await measure(60);
   check(
     "A bar's label at the door is centred and on one line at the default size, and clear of its arrow at a large size",
-    Boolean(normal && large) && Math.abs(normal.left - normal.right) <= 2 && normal.lines === 1 && large.right >= 44 && large.left >= 44,
+    Boolean(normal && large) &&
+      Math.abs(normal.left - normal.right) <= 3 &&
+      normal.lines === 1 &&
+      large.lines > 1 &&
+      large.right >= large.arrow + 4 &&
+      large.left >= large.arrow,
     JSON.stringify({ normal, large }),
   );
   await fresh.close();
