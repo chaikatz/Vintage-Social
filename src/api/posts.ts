@@ -90,23 +90,40 @@ export async function fetchFeedPage(userId: string, before: FeedCursor | null): 
   // author the reader may not see comes without one (withAuthors) and is
   // left out; the page is then made up from the rows after it, so that a
   // page of fewer than twelve still means the feed has ended
-  // (nextFeedCursor). A few reads at most: rows whose author is hidden
-  // are rare (none on production in November 2026), and a run of them
-  // longer than that ends the page early rather than reading on.
+  // (nextFeedCursor). Read on until the page is whole or a read comes
+  // back short (the end): rows whose author is hidden are rare (none on
+  // production in November 2026), so this is nearly always one read, and
+  // a long run of them is crossed in reads that grow (feedFillSize)
+  // rather than taken for the end of the feed. It used to stop after
+  // four reads of twelve, and a run of thirty-seven or more such rows
+  // ended the reader's feed there, without a word.
   const shown: PostWithAuthor[] = [];
   let after = before;
-  for (let read = 0; read < FEED_FILL_READS; read++) {
-    const rows = await readFeedRows(userId, after);
+  for (let read = 0; ; read++) {
+    const size = feedFillSize(read);
+    const rows = await readFeedRows(userId, after, size);
     shown.push(...withAuthors(rows));
-    if (rows.length < FEED_PAGE_SIZE || shown.length >= FEED_PAGE_SIZE) break;
+    if (rows.length < size || shown.length >= FEED_PAGE_SIZE) break;
     const last = rows[rows.length - 1];
+    // A read that ends where the one before did has not moved on (it
+    // never should, by the cursor): the page stops rather than ask again.
+    if (after && last.id === after.id && last.created_at === after.at) break;
     after = { at: last.created_at, id: last.id };
   }
   return shown.slice(0, FEED_PAGE_SIZE);
 }
 
-/** Reads, at most, to make up one page of the feed (fetchFeedPage). */
-export const FEED_FILL_READS = 4;
+/**
+ * The most rows one read of the feed asks for: feed_page's own ceiling
+ * (0025, least(..., 100)). Asking for more would bring back a hundred,
+ * which would be taken for a short read, the end of the feed.
+ */
+export const FEED_FILL_MAX = 100;
+
+/** How many rows read number `read` (from 0) of one page asks for: a page, a page again, then twice as many each time, up to FEED_FILL_MAX. */
+export function feedFillSize(read: number): number {
+  return Math.min(FEED_FILL_MAX, FEED_PAGE_SIZE * 2 ** Math.max(0, read - 1));
+}
 
 // A photograph stays readable while its author's profile may not be (an
 // author outside the club: the posts read policy asks only that the
@@ -119,8 +136,8 @@ export const FEED_FILL_READS = 4;
 // of photographs (a hashed subplan over all of profiles, planned at
 // 1,000 members), so it is done here, on the page.
 
-/** One read of the feed's rows after `before`, authors and all. */
-async function readFeedRows(userId: string, before: FeedCursor | null): Promise<PostWithAuthor[]> {
+/** One read of the feed's rows after `before`, `size` of them at most, authors and all. */
+async function readFeedRows(userId: string, before: FeedCursor | null, size: number): Promise<PostWithAuthor[]> {
   if (Date.now() >= feedPageMissingUntil) {
     // The order is asked of PostgREST too: the function's own order is
     // not promised to survive the query PostgREST wraps around it to join
@@ -128,7 +145,7 @@ async function readFeedRows(userId: string, before: FeedCursor | null): Promise<
     const { data, error } = await supabase
       .rpc(
         "feed_page",
-        before ? { p_limit: FEED_PAGE_SIZE, p_before_at: before.at, p_before_id: before.id } : { p_limit: FEED_PAGE_SIZE },
+        before ? { p_limit: size, p_before_at: before.at, p_before_id: before.id } : { p_limit: size },
       )
       .select(POST_WITH_AUTHOR)
       .order("created_at", { ascending: false })
@@ -148,7 +165,7 @@ async function readFeedRows(userId: string, before: FeedCursor | null): Promise<
   const { data, error } = await pageAfter(query, "created_at", "id", before)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
-    .limit(FEED_PAGE_SIZE);
+    .limit(size);
   if (error) throw error;
   return (data ?? []) as unknown as PostWithAuthor[];
 }

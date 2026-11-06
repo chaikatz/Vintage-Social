@@ -30,7 +30,7 @@ const h = vi.hoisted(() => ({
    * function's (nothing promises the function's order survives the query
    * PostgREST wraps around it to join the author).
    */
-  feedPage: "there" as "there" | "missing" | "broken" | "unordered",
+  feedPage: "there" as "there" | "missing" | "broken" | "unordered" | "stuck",
   /** How unread_message_counts (0037) answers: as the database would, as if not there yet, or with a failure. */
   unreadCounts: "there" as "there" | "missing" | "broken",
   /** How claim_push_token (0036) answers, and what it was sent. */
@@ -307,7 +307,8 @@ function feedPage(url: URL, args: { p_limit?: number; p_before_at?: string | nul
   const mine = (h.tables.posts ?? [])
     .filter((p) => p.removed_at == null && (p.author_id === ME || followed.has(p.author_id)))
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b.id).localeCompare(String(a.id)));
-  const at = args.p_before_at;
+  // "stuck": a function that pays no heed to the cursor, the same rows every time.
+  const at = h.feedPage === "stuck" ? null : args.p_before_at;
   const after = at
     ? mine.filter((p) => String(p.created_at) < at || (String(p.created_at) === at && args.p_before_id != null && String(p.id) < args.p_before_id))
     : mine;
@@ -894,7 +895,7 @@ describe("the home feed", () => {
     }
   });
 
-  it("makes a page up from the rows after one whose photographs it left out, a few reads at most", async () => {
+  it("makes a page up from the rows after one whose photographs it left out, in a few reads", async () => {
     club(10);
     // The newest thirty in the feed are by a member the reader may not see.
     const hidden = id("f1", 0);
@@ -903,8 +904,55 @@ describe("the home feed", () => {
     const first = await posts.fetchFeedPage(ME, null);
     expect(first.length).toBe(posts.FEED_PAGE_SIZE);
     expect(first.every((p) => p.author != null)).toBe(true);
-    expect(h.requests.length).toBeLessThanOrEqual(posts.FEED_FILL_READS);
+    // Twelve, twelve, then twenty-four: three reads.
+    expect(h.requests.map((r) => JSON.parse(r.body ?? "{}").p_limit)).toEqual([12, 12, 24]);
+  });
 
+  it("never takes a long run of such photographs for the end of the feed", async () => {
+    club(10);
+    // Three hundred in a row by a member the reader may not see, just
+    // after the newest photograph: four reads of twelve used to end the feed there.
+    const hidden = id("f1", 0);
+    h.tables.profiles = h.tables.profiles.filter((p) => p.id !== hidden);
+    const newest = Math.max(...h.tables.posts.map((p) => Date.parse(String(p.created_at))));
+    for (let k = 0; k < 300; k++) {
+      h.tables.posts.push({ id: id("f8", k), author_id: hidden, created_at: new Date(newest - 1 - k).toISOString(), removed_at: null });
+    }
+    const shown = truth().filter((pid) => h.tables.posts.find((p) => p.id === pid)!.author_id !== hidden);
+    for (const mode of ["there", "missing"] as const) {
+      h.feedPage = mode;
+      posts.forgetFeedPageMissing();
+      h.requests.length = 0;
+      const pages = await walk();
+      expect(pages.flat(), mode).toEqual(shown);
+      expect(pages.slice(0, -1).every((p) => p.length === posts.FEED_PAGE_SIZE), mode).toBe(true);
+      // Crossed in reads that grow, none larger than feed_page answers.
+      const sizes = h.requests
+        .filter((r) => r.url.pathname === (mode === "there" ? "/rest/v1/rpc/feed_page" : "/rest/v1/posts"))
+        .map((r) => (mode === "there" ? Number(JSON.parse(r.body ?? "{}").p_limit) : Number(r.url.searchParams.get("limit"))));
+      expect(sizes.length, mode).toBeGreaterThan(0);
+      expect(Math.max(...sizes), mode).toBe(posts.FEED_FILL_MAX);
+      expect(sizes.length, mode).toBeLessThan(20);
+    }
+  });
+
+  it("stops reading for a page when a read has not moved past the one before", async () => {
+    club(10);
+    // Every photograph by a member the reader may not see, and a function
+    // that answers the same rows whatever the cursor: no endless reading.
+    h.tables.profiles = h.tables.profiles.filter((p) => p.id === ME);
+    h.tables.posts = h.tables.posts.filter((p) => p.author_id !== ME);
+    h.feedPage = "stuck";
+    expect(await posts.fetchFeedPage(ME, null)).toEqual([]);
+    expect(h.requests.length).toBe(2);
+  });
+
+  it("asks for no more rows a read than feed_page gives, so a full read is never taken for the end", () => {
+    const sql = readFileSync(join(__dirname, "..", "supabase", "migrations", "0025_feed_page.sql"), "utf8");
+    const ceiling = Number(sql.match(/least\(greatest\(coalesce\(p_limit, 12\), 1\), (\d+)\)/)?.[1]);
+    expect(ceiling).toBeGreaterThan(0);
+    expect(posts.FEED_FILL_MAX).toBeLessThanOrEqual(ceiling);
+    expect([0, 1, 2, 3, 4, 5, 6, 20].map(posts.feedFillSize)).toEqual([12, 12, 24, 48, 96, 100, 100, 100]);
   });
 
   it("the old read, past a couple of hundred follows, could not be sent at all", async () => {
