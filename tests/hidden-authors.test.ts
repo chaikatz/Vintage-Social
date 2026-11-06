@@ -65,4 +65,13 @@ describe("the card and the photograph's page", () => {
     expect(page).toMatch(/const preview = withAuthors\(commentsFor\(post\)\)\.slice\(-INLINE_COMMENTS\);/);
     expect(page).toMatch(/const shownTags = withMembers\(tagsQ\.data \?\? \[\]\)\.filter\(/);
   });
+
+  it("Share outside draws no print for a post naming nobody: its label names the member", () => {
+    const sheet = code("app/export.tsx");
+    expect(sheet).toMatch(/const postRow = postQ\.data;\s*const post = postRow && authorShown\(postRow\) \? postRow : undefined;/);
+    // The row as read is used for nothing else: every print, label and share goes through `post`.
+    expect(sheet.match(/\bpostRow\b/g)).toHaveLength(4);
+    // Then it is gone, as on its own page.
+    expect(sheet).toMatch(/\) : readState\(postQ\) === "empty" \? \(\s*<EmptyState title="This photograph is gone" \/>/);
+  });
 });

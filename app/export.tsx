@@ -11,6 +11,7 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { readState } from "@/components/readState";
+import { authorShown } from "@/components/hiddenAuthors";
 import { ExportCard } from "@/components/ExportCard";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
@@ -67,7 +68,11 @@ export default function Export() {
     queryFn: () => fetchPost(postId ?? ""),
     enabled: Boolean(postId),
   });
-  const post = postQ.data;
+  // A photograph whose author the reader may not see comes back naming
+  // nobody (src/components/hiddenAuthors.ts): to the reader it is gone, as on
+  // its own page, and the print, whose label names its member, is not drawn.
+  const postRow = postQ.data;
+  const post = postRow && authorShown(postRow) ? postRow : undefined;
   const isVideo = post?.media_type === "video";
   const mine = Boolean(post && post.author_id === userId);
 
