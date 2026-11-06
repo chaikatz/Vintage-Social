@@ -126,7 +126,10 @@ export default function Invitations() {
       message:
         `You're invited to VINTAGE — a members' club for photographs.\n\n` +
         `Your invitation code is ${slug}. Install VINTAGE, choose "I have an invitation" and enter it — or open:\n${url}`,
-    });
+    }).catch(() =>
+      // A share sheet that could not open used to end in silence.
+      showAlert("Couldn’t open sharing", "Copy the link or the code and send it yourself."),
+    );
 
   const confirmRotate = () =>
     showAlert(

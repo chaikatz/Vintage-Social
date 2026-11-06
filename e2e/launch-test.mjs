@@ -183,6 +183,17 @@ const codes = (await text()).match(/vintage:\/\/invite\/([a-z0-9-]+)|\/i\/([a-z0
 const code = codes?.[1] ?? codes?.[2] ?? "";
 check("An invitation code is shown", code.length > 0, code || "none");
 await shot("07-invitations");
+// This browser has no share sheet, as a phone may fail to open one: the
+// tap says so and points at Copy, where it used to end in silence.
+{
+  const before = dialogs.length;
+  await tap("Send invitation", 1400);
+  check(
+    "Send invitation that cannot open sharing says so",
+    dialogs.length > before && /Couldn’t open sharing/.test(dialogs.at(-1) ?? ""),
+    dialogs.length > before ? dialogs.at(-1) : "no dialog",
+  );
+}
 
 // 4. the invitation is taken up
 await back();

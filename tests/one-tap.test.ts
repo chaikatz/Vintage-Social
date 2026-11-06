@@ -70,3 +70,12 @@ describe("Report", () => {
     expect(report).toMatch(/accessibilityRole="radio"\s*accessibilityState=\{\{ checked: reason === r \}\}/);
   });
 });
+
+describe("Send invitation", () => {
+  const invites = code("app/invites.tsx");
+
+  it("says so when the share sheet cannot open, rather than ending in silence", () => {
+    const send = invites.slice(invites.indexOf("const send = () =>"), invites.indexOf("const confirmRotate"));
+    expect(send).toMatch(/Share\.share\(\{[\s\S]*?\}\)\.catch\(\(\) =>\s*showAlert\("Couldn’t open sharing", "[^"]+"\),?\s*\);/);
+  });
+});
