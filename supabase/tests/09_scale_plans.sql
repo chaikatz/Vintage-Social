@@ -205,6 +205,90 @@ from (
   ) v(label, want) on v.label = k.label
 ) l;
 
+-- ---------------------------------------------------------------------------
+-- the home feed (0025): about the photographs it could show, never the club's
+-- ---------------------------------------------------------------------------
+-- feed_page plans its query inside the function, so EXPLAIN of the call
+-- shows only "Function Scan". What it read is counted instead: the rows
+-- fetched from posts and its indexes in this transaction, before and
+-- after the call, as the member.
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('feed5ca1-0000-4000-8000-000000000001', 'new@scale.test', '{"username":"scale.newcomer"}'),
+  ('feed5ca1-0000-4000-8000-000000000002', 'all@scale.test', '{"username":"scale.follows_all"}');
+update public.profiles set status = 'approved', approved_at = now() where id::text like 'feed5ca1-%';
+insert into public.follows (follower_id, followee_id, status)
+select 'feed5ca1-0000-4000-8000-000000000002', id, 'accepted' from public.profiles where id::text like '5ca1e000-%';
+analyze public.follows;
+analyze public.profiles;
+
+create or replace function tests.posts_read(p_uid uuid, p_sql text)
+returns table (rows_read bigint, ids text, ms numeric)
+language plpgsql
+as $fn$
+declare
+  v_before bigint;
+  v_t0 timestamptz;
+begin
+  select sum(pg_stat_get_xact_tuples_fetched(o)) + pg_stat_get_xact_tuples_returned('public.posts'::regclass)
+    into v_before
+  from (select 'public.posts'::regclass::oid as o union all
+        select indexrelid from pg_index where indrelid = 'public.posts'::regclass) r;
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  v_t0 := clock_timestamp();
+  execute 'select coalesce(string_agg(id::text, '','' order by ord), ''-'')
+             from (select id, row_number() over () as ord from (' || p_sql || ') q) r' into ids;
+  ms := round((extract(epoch from clock_timestamp() - v_t0) * 1000)::numeric, 2);
+  execute 'reset role';
+  select sum(pg_stat_get_xact_tuples_fetched(o)) + pg_stat_get_xact_tuples_returned('public.posts'::regclass) - v_before
+    into rows_read
+  from (select 'public.posts'::regclass::oid as o union all
+        select indexrelid from pg_index where indrelid = 'public.posts'::regclass) r;
+  return next;
+end
+$fn$;
+
+-- The read the app made before 0025, for comparison (old_feed_sql in 12).
+create temp table feed_reads (label text primary key, rows_read bigint, ids text, ms numeric, old_ids text);
+insert into feed_reads
+select v.label, f.rows_read, f.ids, f.ms, o.ids
+from (values
+  ('a member who follows nobody', 'feed5ca1-0000-4000-8000-000000000001'::uuid, 0),
+  ('a typical member, first page', :'me'::uuid, 0),
+  ('past the end of a typical feed', :'me'::uuid, 100000),
+  ('a member who follows the whole club', 'feed5ca1-0000-4000-8000-000000000002'::uuid, 0),
+  ('the whole club, twenty pages in', 'feed5ca1-0000-4000-8000-000000000002'::uuid, 240)
+) v(label, uid, off)
+cross join lateral tests.posts_read(v.uid, format('select id from public.feed_page(12, %s)', v.off)) f
+cross join lateral tests.posts_read(v.uid, format(
+  'select p.id from public.posts p
+    where p.author_id = any (array[%L::uuid] || array(select f.followee_id from public.follows f
+                                                      where f.follower_id = %L and f.status = ''accepted''))
+      and p.removed_at is null
+    order by p.created_at desc, p.id desc limit 12 offset %s', v.uid, v.uid, v.off)) o;
+
+insert into tests.results (name, expected, actual)
+select 'scale: feed_page, ' || label || ', is the page the old read gave', 'true', (ids = old_ids)::text
+from feed_reads;
+
+insert into tests.results (name, expected, actual) values
+  ('scale: feed_page for a member who follows nobody reads their own photographs, not the club''s', 'true',
+   ((select rows_read from feed_reads where label = 'a member who follows nobody') <= 12)::text),
+  ('scale: feed_page past the end of a feed reads only its authors'' photographs', 'true',
+   ((select rows_read from feed_reads where label = 'past the end of a typical feed')
+     <= (select count(*) from public.posts
+          where author_id = :'me' or author_id in (select followee_id from public.follows
+                                                    where follower_id = :'me' and status = 'accepted')))::text),
+  ('scale: and that is a small part of the club', 'true',
+   ((select rows_read from feed_reads where label = 'past the end of a typical feed')
+     < (select count(*) / 10 from public.posts))::text),
+  ('scale: feed_page for a member who follows everyone walks newest first and stops at the page', 'true',
+   ((select rows_read from feed_reads where label = 'a member who follows the whole club') <= 60)::text);
+
+select 'time: feed_page, ' || label || ' ' || ms || ' ms, ' || rows_read || ' photographs read' as note
+from feed_reads order by label;
+
 -- For the record.
 select 'time: ' || label || ' ' || round((plan -> 0 ->> 'Execution Time')::numeric, 2) || ' ms' as note
 from plans order by label;

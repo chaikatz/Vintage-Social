@@ -21,8 +21,13 @@ const h = vi.hoisted(() => ({
   inFlight: 0,
   maxInFlight: 0,
   tables: {} as Record<string, Record<string, unknown>[]>,
-  /** How feed_page answers: as the database would, as if not there yet, or with a failure. */
-  feedPage: "there" as "there" | "missing" | "broken",
+  /**
+   * How feed_page answers: as the database would, as if not there yet,
+   * with a failure, or with its rows in some other order than the
+   * function's (nothing promises the function's order survives the query
+   * PostgREST wraps around it to join the author).
+   */
+  feedPage: "there" as "there" | "missing" | "broken" | "unordered",
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -54,10 +59,13 @@ function matches(row: Row, column: string, filter: string): boolean {
 
 function ordered(rows: Row[], spec: string | null): Row[] {
   if (!spec) return rows;
-  const [column, direction] = spec.split(".");
+  const keys = spec.split(",").map((k) => k.split("."));
   return [...rows].sort((a, b) => {
-    const c = String(a[column]).localeCompare(String(b[column]));
-    return direction === "desc" ? -c : c;
+    for (const [column, direction] of keys) {
+      const c = String(a[column]).localeCompare(String(b[column]));
+      if (c !== 0) return direction === "desc" ? -c : c;
+    }
+    return 0;
   });
 }
 
@@ -170,7 +178,8 @@ function feedPage(url: URL, args: { p_limit?: number; p_offset?: number }): Resp
   const mine = (h.tables.posts ?? [])
     .filter((p) => p.removed_at == null && (p.author_id === ME || followed.has(p.author_id)))
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b.id).localeCompare(String(a.id)));
-  const page = mine.slice(args.p_offset ?? 0, (args.p_offset ?? 0) + Math.min(Math.max(args.p_limit ?? 12, 1), 100));
+  let page = mine.slice(args.p_offset ?? 0, (args.p_offset ?? 0) + Math.min(Math.max(args.p_limit ?? 12, 1), 100));
+  if (h.feedPage === "unordered") page = [...page.filter((_, i) => i % 2 === 1), ...page.filter((_, i) => i % 2 === 0)];
   // The select (and its embedded author) applies to the function's rows as to a table's.
   h.tables.__feed = page;
   const shaped = answer(new URL(url.href.replace("/rest/v1/rpc/feed_page", "/rest/v1/__feed")));
@@ -477,6 +486,18 @@ describe("the home feed", () => {
       "*,author:profiles!posts_author_id_fkey(id,username,full_name,avatar_url)",
     );
     expect(page[0].author).toMatchObject({ username: expect.stringMatching(/^m\d+$/) });
+  });
+
+  it("asks PostgREST for the order too, so a page is newest first whatever order the rows come in", async () => {
+    club(60);
+    const expected = (await posts.fetchFeedPage(ME, 1)).map((x) => x.id);
+    h.feedPage = "unordered";
+    h.requests.length = 0;
+    const page = await posts.fetchFeedPage(ME, 1);
+    expect(h.requests[0].url.searchParams.get("order")).toBe("created_at.desc,id.desc");
+    expect(page.map((x) => x.id)).toEqual(expected);
+    const times = page.map((x) => String(x.created_at));
+    expect(times).toEqual([...times].sort().reverse());
   });
 
   it("gives the same pages the old read gave, while the old read still worked", async () => {

@@ -72,9 +72,14 @@ export async function fetchFeedPage(userId: string, page: number): Promise<PostW
 
   const from = page * FEED_PAGE_SIZE;
   if (Date.now() >= feedPageMissingUntil) {
+    // The order is asked of PostgREST too: the function's own order is
+    // not promised to survive the query PostgREST wraps around it to join
+    // the author, and sorting a page of twelve costs nothing.
     const { data, error } = await supabase
       .rpc("feed_page", { p_limit: FEED_PAGE_SIZE, p_offset: from })
-      .select(POST_WITH_AUTHOR);
+      .select(POST_WITH_AUTHOR)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
     if (!error) return (data ?? []) as unknown as PostWithAuthor[];
     if (!functionMissing(error)) throw error;
     feedPageMissingUntil = Date.now() + FEED_PAGE_RECHECK_MS;

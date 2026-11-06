@@ -158,11 +158,27 @@ describe("0025: the home feed in one piece", () => {
   });
 
   it("is the member's own posts and their accepted follows', live, newest first, a bounded page", () => {
+    expect(sql).toMatch(/v_me\s+uuid := auth\.uid\(\);/);
+    expect(sql).toMatch(/if v_me is null then\s+return;/);
+    expect(sql).toMatch(/coalesce\(array_agg\(f\.followee_id\), '\{\}'::uuid\[\]\) \|\| v_me/);
+    expect(sql).toMatch(/f\.follower_id = v_me\s+and f\.status = 'accepted'/);
     expect(sql).toMatch(/p\.removed_at is null/);
-    expect(sql).toMatch(/p\.author_id = \(select auth\.uid\(\)\)/);
-    expect(sql).toMatch(/f\.follower_id = \(select auth\.uid\(\)\)\s*and f\.status = 'accepted'/);
     expect(sql).toMatch(/order by p\.created_at desc, p\.id desc/);
-    expect(sql).toMatch(/limit least\(greatest\(coalesce\(p_limit, 12\), 1\), 100\)/);
+    expect(sql).toMatch(/least\(greatest\(coalesce\(p_limit, 12\), 1\), 100\)/);
+    expect(sql).toMatch(/greatest\(coalesce\(p_offset, 0\), 0\)/);
+  });
+
+  // Asked as one statement with the follows as a subquery, the planner
+  // cannot see how many authors there are and walks every live post in
+  // the club for a sparse feed (6,611 posts read for a member following
+  // nobody, at 1,000 members). The posts query is planned with the list.
+  it("plans the posts query with the author list in hand, not as a subquery", () => {
+    expect(sql).toMatch(/language plpgsql/);
+    expect(sql).toMatch(/return query execute\s+'select p\.\* from public\.posts p[\s\S]*?p\.author_id = any \(\$1\)[\s\S]*?limit \$2 offset \$3'\s+using v_authors,/);
+    expect(sql).not.toMatch(/author_id in \(\s*select/);
+    expect(readFileSync(join(root, "supabase", "tests", "09_scale_plans.sql"), "utf8")).toMatch(
+      /feed_page for a member who follows nobody reads their own photographs, not the club''s/,
+    );
   });
 
   it("is for members only, and the harness compares it with the old read page by page", () => {
