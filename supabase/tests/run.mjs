@@ -265,7 +265,7 @@ try {
     const result = (r.stderr ?? "").split("RESULT")[1] ?? "";
     const answers = result.split("\n").filter((l) => /:\s+(yes|NO)\s*$/.test(l));
     const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l) && !/RESULT/.test(l) && !/^\s*$/.test(l));
-    if (rows.length !== 12 || failing.length > 0 || answers.length !== 4 || answers.some((l) => /NO\s*$/.test(l)) || errors.length > 1) {
+    if (rows.length !== 15 || failing.length > 0 || answers.length !== 4 || answers.some((l) => /NO\s*$/.test(l)) || errors.length > 1) {
       console.log("FAILED");
       process.stdout.write(r.stdout ?? "");
       process.stderr.write(r.stderr ?? "");

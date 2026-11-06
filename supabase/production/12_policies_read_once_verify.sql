@@ -1,13 +1,20 @@
--- VINTAGE · production · verify 0023 (policies read the caller once)
+-- VINTAGE · production · verify 0023-0025 (policies read the caller once;
+-- block checks answer only for the caller; the home feed in one piece)
 --
--- Run after applying supabase/migrations/0023_policies_read_once.sql.
--- Read-only: every statement is a SELECT, and the one block at the end
--- only plans a query (EXPLAIN without ANALYZE runs nothing) and then
--- raises, so even its role change is rolled back. Nothing is written.
+-- Run after applying, in order, supabase/migrations/
+-- 0023_policies_read_once.sql, 0024_block_checks_answer_for_the_caller.sql
+-- and 0025_feed_page.sql. Read-only: every statement is a SELECT, and the
+-- one block at the end only plans a query (EXPLAIN without ANALYZE runs
+-- nothing) and then raises, so even its role change is rolled back.
+-- Nothing is written. The same script runs on the policy harness at the
+-- end of npm run test:rls, so its expectations are tested too.
 --
 -- Each row says what it checked, what it found and what it should be.
--- Every `ok` must read true. If any does not, do not ship; the rollback
--- is supabase/tests/0023_rollback.sql, and it changes no data.
+-- Every `ok` must read true. If any does not, do not ship the build that
+-- relies on them; the rollbacks are supabase/tests/0023_rollback.sql and
+-- the notes at the top of 0024 and 0025, and none changes any data.
+-- (Rows 7-9 name functions 0023 makes: before 0023, row 8 and 9 stop the
+-- script with "function does not exist", which is itself the answer.)
 
 with checks as (
   -- 1. No policy reads the caller, or asks is_admin / is_active_member,
@@ -96,6 +103,23 @@ with checks as (
   select 12, 'public tables without row-level security', count(*)::text, '0'
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity
+  union all
+  -- 8. 0024: the block checks answer only about the caller.
+  select 13, '0024: blocked_between / blocked_by ask who is calling', count(*)::text, '2'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname in ('blocked_between', 'blocked_by')
+    and p.prosrc ~ 'auth\.uid\(\)' and p.prosecdef
+  union all
+  -- 9. 0025: the home feed function, run as the caller, members only.
+  select 14, '0025: feed_page runs as the caller', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'feed_page' and not p.prosecdef
+  union all
+  select 15, '0025: feed_page callable by members, not by signed-out visitors', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'feed_page'
+    and has_function_privilege('authenticated', p.oid, 'execute')
+    and not has_function_privilege('anon', p.oid, 'execute')
 )
 select n, what, found, expected, found = expected as ok
 from checks
