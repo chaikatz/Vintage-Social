@@ -10,7 +10,17 @@ vi.mock("@/darkroom/session", () => ({ keepChapter: () => undefined, recallChapt
 vi.mock("@/darkroom/setAside", () => ({ isSetAside: () => false, setAsidePrints: () => [] }));
 
 import { Drawn, RELEASE_AFTER } from "@/components/darkroom/drawn";
-import { DISSOLVE, photographRequest, PLATE_STALL_MS, progressOf, SILENT_TRIES, stallCheck } from "@/components/darkroom/plateImage";
+import {
+  DISSOLVE,
+  photographRequest,
+  PLATE_PATIENCE_MS,
+  PLATE_STALL_MS,
+  PlateStall,
+  progressOf,
+  quietAllowed,
+  SILENT_TRIES,
+  stallCheck,
+} from "@/components/darkroom/plateImage";
 import { Visit } from "@/components/darkroom/visit";
 import { gated, inBackground, onThisDay, Surprise, yearIndex } from "@/darkroom/discovery";
 import { MAX_IN_FLIGHT } from "@/darkroom/eligibility";
@@ -352,68 +362,168 @@ describe("a plate's photograph", () => {
     expect(page).toMatch(/progress=\{props\.progress \?\? \(current \? cloud\.shown : null\)\}/);
     expect(full).toMatch(/onProgress=\{\(e\) => \{\s*const fraction = progressOf\(e\);/);
     // Drawn or failed, the line is the signature line again.
-    expect(photograph).toMatch(/onLoad=\{\(\) => \{\s*silent\.current = 0;\s*onCloud\(null\);/);
-    expect(photograph).toMatch(/onError=\{\(e: ImageErrorEventData\) => \{\s*onCloud\(null\);/);
+    expect(photograph).toMatch(/onLoad=\{\(\) => \{\s*stall\.drew\(\);\s*onCloud\(null\);/);
+    expect(photograph).toMatch(/onError=\{\(e: ImageErrorEventData\) => \{\s*stall\.failed\(\);\s*onCloud\(null\);/);
   });
 });
 
 /**
- * One plate in front of the member whose photograph Photos never answers,
- * run the way the plate's effect runs `stallCheck`: it waits, asks once
- * more, then says why. `progressEvery` is iCloud's progress, which keeps it
- * waiting for as long as the download moves.
+ * One plate in front of the member, watched by its own `PlateStall` on a
+ * fake clock, the way the plate's effect watches it: on `again` the plate
+ * is asked for afresh and watched again; on `trouble` it says why.
+ * `progress` is when iCloud reports, in milliseconds from the start.
  */
-function stalledPlate(online: boolean, progressEvery: number | null, until: number) {
-  let t = 0;
-  let heard = 0;
-  let silent = 0;
-  let attempts = 1;
+function watchedPlate(online: boolean, progress: (t: number) => boolean, until: number) {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  const stall = new PlateStall();
+  const againAt: number[] = [];
   let trouble: string | null = null;
-  let next = PLATE_STALL_MS;
-  while (t < until && trouble == null) {
-    const progressAt = progressEvery == null ? Infinity : (Math.floor(t / progressEvery) + 1) * progressEvery;
-    if (progressAt < next) {
-      t = progressAt;
-      heard = t;
-      continue;
-    }
-    t = next;
-    const step = stallCheck(heard, t, silent, online);
-    if ("wait" in step) next = t + step.wait;
-    else if ("again" in step) {
-      silent += 1;
-      attempts += 1;
-      heard = t;
-      next = t + PLATE_STALL_MS;
-    } else trouble = step.trouble;
+  let troubleAt: number | null = null;
+  let stop = () => undefined as void;
+  const watch = () => {
+    stop = stall.watch(online, {
+      again: () => {
+        againAt.push(Date.now());
+        watch();
+      },
+      trouble: (why) => {
+        trouble = why;
+        troubleAt = Date.now();
+      },
+    });
+  };
+  watch();
+  for (let t = 1_000; t <= until && trouble == null; t += 1_000) {
+    vi.advanceTimersByTime(1_000);
+    if (progress(t)) stall.heard();
   }
-  return { attempts, trouble, at: Math.min(t, until) };
+  stop();
+  return { stall, attempts: 1 + againAt.length, againAt, trouble, troubleAt };
 }
 
+const never = () => false;
+
 describe("a plate that hears nothing of its photograph", () => {
-  it("asks once more, then says why, instead of leaving its soft proof in place", () => {
-    expect(SILENT_TRIES).toBe(1);
-    expect(stalledPlate(true, null, 120_000)).toEqual({ attempts: 2, trouble: "other", at: 2 * PLATE_STALL_MS });
-    expect(stalledPlate(false, null, 120_000)).toEqual({ attempts: 2, trouble: "offline", at: 2 * PLATE_STALL_MS });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it("waits for as long as iCloud's download is moving", () => {
-    expect(stalledPlate(true, 5_000, 120_000)).toEqual({ attempts: 1, trouble: null, at: 120_000 });
+  it("asks once more, then says why, instead of leaving its soft proof in place", () => {
+    expect(SILENT_TRIES).toBe(1);
+    // Online, the last try is given the patience a slow download needs.
+    expect(watchedPlate(true, never, 120_000)).toMatchObject({
+      attempts: 2,
+      againAt: [PLATE_STALL_MS],
+      trouble: "other",
+      troubleAt: PLATE_STALL_MS + PLATE_PATIENCE_MS,
+    });
+    // Offline nothing can be on its way: IN ICLOUD, soon.
+    expect(watchedPlate(false, never, 120_000)).toMatchObject({
+      attempts: 2,
+      againAt: [PLATE_STALL_MS],
+      trouble: "offline",
+      troubleAt: 2 * PLATE_STALL_MS,
+    });
+  });
+
+  it("never cancels a download iCloud is still sending, however seldom Photos reports it", () => {
+    // Progress first at 2 s, then every 20 s: longer than the first stall, inside the patience.
+    const seldom = (t: number) => t === 2_000 || (t > 2_000 && (t - 2_000) % 20_000 === 0);
+    expect(PLATE_PATIENCE_MS).toBeGreaterThan(20_000);
+    expect(PLATE_STALL_MS).toBeLessThan(20_000);
+    expect(watchedPlate(true, seldom, 180_000)).toMatchObject({ attempts: 1, trouble: null });
+    // And a quick one as before.
+    expect(watchedPlate(true, (t) => t % 5_000 === 0, 180_000)).toMatchObject({ attempts: 1, trouble: null });
+  });
+
+  it("gives up on a download that stops, after the patience, twice", () => {
+    const stops = (t: number) => t === 2_000 || t === 4_000;
+    expect(watchedPlate(true, stops, 180_000)).toMatchObject({
+      attempts: 2,
+      againAt: [4_000 + PLATE_PATIENCE_MS],
+      trouble: "other",
+      troubleAt: 4_000 + 2 * PLATE_PATIENCE_MS,
+    });
+  });
+
+  it("asks again when the member turns back to a plate that gave up for hearing nothing, not one Photos refused", () => {
+    const gaveUp = watchedPlate(true, never, 120_000).stall;
+    expect(gaveUp.turnedTo("other")).toBe(true);
+    // IN ICLOUD is asked again as the phone comes back online (asksAgain), not by turning to it.
+    expect(gaveUp.turnedTo("offline")).toBe(false);
+    expect(gaveUp.turnedTo("missing")).toBe(false);
+    expect(gaveUp.turnedTo(null)).toBe(false);
+    gaveUp.fresh();
+    expect(gaveUp.turnedTo("other")).toBe(false);
+    const refused = watchedPlate(true, never, 120_000).stall;
+    refused.failed();
+    expect(refused.turnedTo("other")).toBe(false);
+    // A plate that is still waiting has nothing to ask again for.
+    expect(new PlateStall().turnedTo("other")).toBe(false);
+  });
+
+  it("starts its count again once a photograph draws, or it is asked for afresh", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    for (const reset of ["drew", "fresh"] as const) {
+      const stall = new PlateStall();
+      const said: string[] = [];
+      const act = { again: () => said.push("again"), trouble: (why: string) => said.push(why) };
+      let stop = stall.watch(true, act);
+      vi.advanceTimersByTime(PLATE_STALL_MS);
+      expect(said).toEqual(["again"]);
+      stop();
+      stall[reset]();
+      stop = stall.watch(true, act);
+      vi.advanceTimersByTime(PLATE_STALL_MS);
+      // A first try again: asked once more after the short stall, not given up on.
+      expect(said).toEqual(["again", "again"]);
+      stop();
+    }
+  });
+
+  it("does nothing once the plate stops waiting", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const stall = new PlateStall();
+    const said: string[] = [];
+    const stop = stall.watch(true, { again: () => said.push("again"), trouble: (why) => said.push(why) });
+    vi.advanceTimersByTime(PLATE_STALL_MS - 1);
+    stop();
+    vi.advanceTimersByTime(10 * PLATE_PATIENCE_MS);
+    expect(said).toEqual([]);
   });
 
   it("waits the whole stall from the last thing it heard", () => {
     expect(stallCheck(0, 5_000, 0, true)).toEqual({ wait: PLATE_STALL_MS - 5_000 });
     expect(stallCheck(0, PLATE_STALL_MS, 0, true)).toEqual({ again: true });
-    expect(stallCheck(0, PLATE_STALL_MS, 1, true)).toEqual({ trouble: "other" });
+    expect(stallCheck(0, PLATE_STALL_MS, 0, true, true)).toEqual({ wait: PLATE_PATIENCE_MS - PLATE_STALL_MS });
+    expect(stallCheck(0, PLATE_STALL_MS, 1, true)).toEqual({ wait: PLATE_PATIENCE_MS - PLATE_STALL_MS });
+    expect(stallCheck(0, PLATE_PATIENCE_MS, 1, true)).toEqual({ trouble: "other" });
     expect(stallCheck(0, PLATE_STALL_MS, 1, false)).toEqual({ trouble: "offline" });
+    expect(quietAllowed(0, false, true)).toBe(PLATE_STALL_MS);
   });
 
   it("is watched only in front of the member, while it is still waiting for its picture", () => {
     const page = read("src/components/darkroom/PrintPage.tsx");
-    expect(page).toMatch(/const waiting = current && images && !drawn && trouble == null && !gone && source != null;/);
-    expect(page).toMatch(/const next = stallCheck\(heard\.current, Date\.now\(\), silent\.current, online\);/);
-    // iCloud's progress counts as hearing something.
-    expect(page).toMatch(/onProgress=\{\(fraction\) => \{\s*heard\.current = Date\.now\(\);/);
+    const photograph = page.slice(page.indexOf("function Photograph("), page.indexOf("function Full("));
+    expect(photograph).toMatch(/const waiting = current && images && !drawn && trouble == null && !gone && source != null;/);
+    expect(photograph).toMatch(/const \[stall\] = useState\(\(\) => new PlateStall\(\)\);/);
+    // Asking again is a new view; giving up says why.
+    expect(photograph).toMatch(
+      /if \(!waiting\) return;\s*return stall\.watch\(online, \{\s*again: \(\) => \{\s*onCloud\(null\);\s*setAttempt\(\(a\) => a \+ 1\);\s*\},\s*trouble: \(why\) => \{\s*onCloud\(null\);\s*setTrouble\(why\);\s*\},\s*\}\);\s*\}, \[waiting, attempt, online, onCloud, stall\]\);/,
+    );
+    // Turned back to, a plate that gave up for hearing nothing asks again.
+    expect(photograph).toMatch(
+      /const turnedTo = current && !wasCurrent\.current;\s*wasCurrent\.current = current;\s*if \(turnedTo && stall\.turnedTo\(trouble\)\) \{\s*stall\.fresh\(\);\s*setTrouble\(null\);\s*setAttempt\(\(a\) => a \+ 1\);/,
+    );
+    // iCloud's progress counts as hearing something; a picture or Photos' own failure ends the watch's say.
+    expect(photograph).toMatch(/onProgress=\{\(fraction\) => \{\s*stall\.heard\(\);/);
+    expect(photograph).toMatch(/onLoad=\{\(\) => \{\s*stall\.drew\(\);/);
+    expect(photograph).toMatch(/onError=\{\(e: ImageErrorEventData\) => \{\s*stall\.failed\(\);/);
+    // Every other way of asking again starts the count afresh.
+    expect(photograph.match(/stall\.fresh\(\);\s*setTrouble\(null\);\s*setAttempt\(\(a\) => a \+ 1\);/g)?.length).toBe(3);
   });
 });
 

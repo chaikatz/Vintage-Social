@@ -30,7 +30,7 @@ import {
   underPlate,
 } from "./geometry";
 import { useLook } from "./look";
-import { photographRequest, PLATE_STALL_MS, progressOf, stallCheck } from "./plateImage";
+import { photographRequest, PlateStall, progressOf } from "./plateImage";
 import { RoomText } from "./Type";
 import { placeholderWords, type PlateTrouble } from "./words";
 
@@ -82,7 +82,9 @@ const CLOUD_STEP_MS = 120;
  * from iCloud, the plate in front draws the download along its signature
  * line, as DOWNLOAD AND DEVELOP's does; and a plate in front that hears
  * nothing at all asks again once, then says why it has no photograph,
- * rather than leaving its soft proof in place for good.
+ * rather than leaving its soft proof in place for good — patiently while
+ * iCloud is heard sending it, and asking again when the member turns back
+ * to a plate that gave up only for hearing nothing (`PlateStall`).
  *
  * The plate zooms under a pinch, 1–2×, inside its own box (PhotoInspector's
  * ZoomablePhoto, with no double-tap, so a single tap has no delay), and
@@ -344,10 +346,8 @@ function Photograph(
   const [attempt, setAttempt] = useState(0);
   const [drawn, setDrawn] = useState(false);
   const source = printSource(print.uri);
-  /** When this plate last heard anything of its photograph: the request, or iCloud's progress. */
-  const heard = useRef(0);
-  /** Tries since the last answer that heard nothing at all. */
-  const silent = useRef(0);
+  /** What this plate has heard of its photograph, and whether its trouble came from hearing nothing (plateImage.ts). */
+  const [stall] = useState(() => new PlateStall());
 
   // The library changed, or the phone came back online: a print that
   // could not be drawn is asked for again. Never because it failed while
@@ -357,11 +357,23 @@ function Photograph(
     if (seenRevision.current === revision) return;
     seenRevision.current = revision;
     if (trouble) {
-      silent.current = 0;
+      stall.fresh();
       setTrouble(null);
       setAttempt((a) => a + 1);
     }
-  }, [revision, trouble]);
+  }, [revision, trouble, stall]);
+  // Turned back to, a plate that gave up only for hearing nothing asks
+  // again: its photograph may simply have been slow to come from iCloud.
+  const wasCurrent = useRef(current);
+  useEffect(() => {
+    const turnedTo = current && !wasCurrent.current;
+    wasCurrent.current = current;
+    if (turnedTo && stall.turnedTo(trouble)) {
+      stall.fresh();
+      setTrouble(null);
+      setAttempt((a) => a + 1);
+    }
+  }, [current, trouble, stall]);
   const wasOnline = useRef(online);
   useEffect(() => {
     const recast = troubleOffline(trouble, wasOnline.current, online);
@@ -372,11 +384,11 @@ function Photograph(
       return;
     }
     if (again) {
-      silent.current = 0;
+      stall.fresh();
       setTrouble(null);
       setAttempt((a) => a + 1);
     }
-  }, [online, trouble]);
+  }, [online, trouble, stall]);
 
   // In front of the member, with neither a picture nor a failure: a
   // request Photos could not answer says nothing, so after a while of
@@ -384,28 +396,17 @@ function Photograph(
   const waiting = current && images && !drawn && trouble == null && !gone && source != null;
   useEffect(() => {
     if (!waiting) return;
-    heard.current = Math.max(heard.current, Date.now());
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const check = () => {
-      timer = null;
-      const next = stallCheck(heard.current, Date.now(), silent.current, online);
-      if ("wait" in next) {
-        timer = setTimeout(check, next.wait);
-      } else if ("again" in next) {
-        silent.current += 1;
-        heard.current = Date.now();
+    return stall.watch(online, {
+      again: () => {
         onCloud(null);
         setAttempt((a) => a + 1);
-      } else {
+      },
+      trouble: (why) => {
         onCloud(null);
-        setTrouble(next.trouble);
-      }
-    };
-    timer = setTimeout(check, PLATE_STALL_MS);
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [waiting, attempt, online, onCloud]);
+        setTrouble(why);
+      },
+    });
+  }, [waiting, attempt, online, onCloud, stall]);
 
   if (trouble || gone) {
     const why: PlateTrouble = gone ? "missing" : (trouble ?? "missing");
@@ -447,16 +448,17 @@ function Photograph(
           source={source}
           dissolve={dissolve}
           onProgress={(fraction) => {
-            heard.current = Date.now();
+            stall.heard();
             onCloud(fraction);
           }}
           onLoad={() => {
-            silent.current = 0;
+            stall.drew();
             onCloud(null);
             setDrawn(true);
             onLoad(print.id);
           }}
           onError={(e: ImageErrorEventData) => {
+            stall.failed();
             onCloud(null);
             const why = plateTrouble(e?.error, online);
             setTrouble(why);

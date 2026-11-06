@@ -28,17 +28,28 @@ import type { PlateTrouble } from "./words";
  * 3. A request the Photos loader cannot answer (iCloud would not send it)
  *    reaches expo-image as no image and no error, so the plate hears
  *    nothing, and its soft proof would stay in place for good. A plate in
- *    front of the member that has heard nothing for `PLATE_STALL_MS` —
- *    no picture, no failure, no download progress — asks once more, and
- *    then says why it has no photograph (`stallCheck`), as a plate that
- *    failed outright does, and asks again by the same rules.
+ *    front of the member that has heard nothing for a while — no picture,
+ *    no failure, no download progress — asks once more, and then says why
+ *    it has no photograph (`stallCheck`, run by `PlateStall`), as a plate
+ *    that failed outright does, and asks again by the same rules. Asking
+ *    again cancels what Photos was doing, and Photos does not promise how
+ *    often it reports a download's progress (Low Data Mode, or iCloud busy
+ *    with a sync, can leave long gaps), so a plate is patient
+ *    (`PLATE_PATIENCE_MS`) once iCloud has been heard sending its
+ *    photograph, and before it gives up on its last try while online. And
+ *    one that gave up only for hearing nothing asks again as soon as the
+ *    member turns back to it, where one that Photos refused waits, as
+ *    before, for the phone to come back online or the library to change.
  */
 
 /** The full image dissolves in over this; a print already drawn this visit comes from memory and does not. */
 export const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" } as const;
 
-/** Heard nothing for this long while in front of the member — no picture, no failure, no progress — a plate asks again. */
+/** Heard nothing at all of a first try for this long while in front of the member — no picture, no failure, no progress — a plate asks again; and, offline, says why. */
 export const PLATE_STALL_MS = 12_000;
+
+/** Online, the quiet a plate bears once iCloud has been heard sending its photograph, and on its last try before it says why. */
+export const PLATE_PATIENCE_MS = 30_000;
 
 /** Silent tries a plate makes before it says why it has no photograph. */
 export const SILENT_TRIES = 1;
@@ -88,14 +99,114 @@ export function progressOf(event: unknown): number | null {
  * something lately — the request itself, or iCloud's progress — then ask
  * once more (`again`), and after that say why there is no photograph:
  * IN ICLOUD while offline, COULDN’T SHOW THIS ONE while online. Either
- * is then asked for again by the plate's own rules (`asksAgain`).
+ * is then asked for again by the plate's own rules (`asksAgain`, and
+ * `PlateStall.turnedTo`).
  */
-export function stallCheck(heardAt: number, now: number, silentTries: number, online: boolean):
+export function stallCheck(heardAt: number, now: number, silentTries: number, online: boolean, downloading = false):
   | { wait: number }
   | { again: true }
   | { trouble: PlateTrouble } {
+  const allowed = quietAllowed(silentTries, online, downloading);
   const quiet = now - heardAt;
-  if (quiet < PLATE_STALL_MS) return { wait: PLATE_STALL_MS - quiet };
+  if (quiet < allowed) return { wait: allowed - quiet };
   if (silentTries < SILENT_TRIES) return { again: true };
   return { trouble: online ? "other" : "offline" };
+}
+
+/**
+ * How long a plate in front may hear nothing before it acts. Offline,
+ * nothing can be on its way, so not long. Online, `PLATE_STALL_MS` for a
+ * first try that has heard nothing at all; `PLATE_PATIENCE_MS` once
+ * iCloud has been heard sending the photograph, whose progress may come
+ * seldom, and on the last try, after which the plate gives up.
+ */
+export function quietAllowed(silentTries: number, online: boolean, downloading: boolean): number {
+  if (!online) return PLATE_STALL_MS;
+  return downloading || silentTries >= SILENT_TRIES ? PLATE_PATIENCE_MS : PLATE_STALL_MS;
+}
+
+/** What a plate does when its stall watch acts: ask for its photograph again, or say why there is none. */
+export interface StallActions {
+  again: () => void;
+  trouble: (why: PlateTrouble) => void;
+}
+
+/**
+ * One plate's watch on a photograph that may never answer, for the life
+ * of the plate: when it last heard anything, how many silent tries it
+ * has made, whether iCloud has been heard sending this try, and whether
+ * the trouble it shows came from hearing nothing rather than from Photos
+ * saying no.
+ */
+export class PlateStall {
+  private heardAt = 0;
+  private tries = 0;
+  private downloading = false;
+  private gaveUp = false;
+
+  constructor(private readonly clock: () => number = Date.now) {}
+
+  /**
+   * Watch while the plate waits in front of the member; returns the way
+   * to stop. The quiet is counted from now, or from the last thing heard
+   * if that is later.
+   */
+  watch(online: boolean, act: StallActions): () => void {
+    this.heardAt = Math.max(this.heardAt, this.clock());
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const check = () => {
+      timer = null;
+      const next = stallCheck(this.heardAt, this.clock(), this.tries, online, this.downloading);
+      if ("wait" in next) {
+        timer = setTimeout(check, next.wait);
+      } else if ("again" in next) {
+        this.tries += 1;
+        this.heardAt = this.clock();
+        this.downloading = false;
+        act.again();
+      } else {
+        this.gaveUp = true;
+        act.trouble(next.trouble);
+      }
+    };
+    check();
+    return () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+  }
+
+  /** iCloud's progress on this try: something is coming. */
+  heard(): void {
+    this.heardAt = this.clock();
+    this.downloading = true;
+  }
+
+  /** The photograph drew. */
+  drew(): void {
+    this.fresh();
+  }
+
+  /** Photos said no (expo-image's error): the plate's trouble is Photos' own, not a silence. */
+  failed(): void {
+    this.gaveUp = false;
+    this.downloading = false;
+  }
+
+  /** Asked for again from the start: the library changed, the phone came back online, or the member turned back to it. */
+  fresh(): void {
+    this.tries = 0;
+    this.downloading = false;
+    this.gaveUp = false;
+  }
+
+  /**
+   * The member has turned back to the plate: whether it asks again. Only
+   * a plate that gave up for hearing nothing while online does. One that
+   * says IN ICLOUD is asked again as the phone comes back online, and one
+   * Photos refused as the phone does or the library changes (`asksAgain`).
+   */
+  turnedTo(trouble: PlateTrouble | null): boolean {
+    return trouble === "other" && this.gaveUp;
+  }
 }
