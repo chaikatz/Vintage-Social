@@ -219,12 +219,16 @@ describe("0038", () => {
       /create or replace function private\.follow_status_from_followee\(\)\s+returns trigger\s+language plpgsql\s+security definer\s+set search_path = ''/,
     );
     expect(s).toMatch(/if \(select auth\.uid\(\)\) is null then\s+return new;\s+end if;/);
-    // Read with the followee's row held, so a change of is_private and the follow wait for each other.
+    // Read plainly; a private followee read again with its row held, so a
+    // change of is_private and the request wait for each other. Only then:
+    // a follow that counts keeps bump_follow_counts' order (follower, then
+    // followee), which a lock on the followee taken first would turn round.
     expect(s).toMatch(
-      /select p\.is_private into v_private\s+from public\.profiles p\s+where p\.id = new\.followee_id\s+for no key update;\s+new\.status := case when coalesce\(v_private, false\) then 'pending' else 'accepted' end;/,
+      /select p\.is_private into v_private\s+from public\.profiles p\s+where p\.id = new\.followee_id;\s+if coalesce\(v_private, false\) then\s+perform 1\s+from public\.follows f\s+where f\.follower_id = new\.follower_id and f\.followee_id = new\.followee_id\s+for key share;\s+if not found then\s+select p\.is_private into v_private\s+from public\.profiles p\s+where p\.id = new\.followee_id\s+for no key update;\s+end if;\s+end if;\s+new\.status := case when coalesce\(v_private, false\) then 'pending' else 'accepted' end;/,
     );
+    expect(s.match(/for no key update/g)).toHaveLength(1);
     // Not a share lock: two followers holding one would deadlock when both count the follow.
-    expect(s).not.toMatch(/followee_id\s+for (key )?share/);
+    expect(s).not.toMatch(/where p\.id = new\.followee_id\s+for (key )?share/);
     expect(s).toMatch(/revoke execute on function private\.follow_status_from_followee\(\) from public, anon, authenticated;/);
     expect(s).toMatch(
       /create trigger follows_status_from_followee\s+before insert on public\.follows\s+for each row execute function private\.follow_status_from_followee\(\);/,

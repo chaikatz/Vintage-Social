@@ -15,7 +15,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { HeaderTitle, useHeaderHeight } from "@react-navigation/elements";
-import { useIsFocused } from "@react-navigation/native";
+import { StackActions, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { colors, radii, spacing, type } from "@/theme";
@@ -150,11 +150,24 @@ export default function Thread() {
   // Out of the thread, which shows nothing of theirs now. Handed to the
   // Block tap itself, not to the mutation: react-query drops a tap's own
   // onSuccess once the screen has gone (swiped away while the block was
-  // out), so it never takes the member back from somewhere else.
+  // out). And the thread itself is taken off its stack, not whatever is on
+  // top: a member who opened the profile or a photograph from the thread
+  // while the block was out (a while, with no signal) stays where they are.
+  // A thread opened first (from a link, or the web page reloaded) has
+  // nothing under it: the tabs take its place.
+  const navigation = useNavigation();
+  const route = useRoute();
   const leaveThread = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/");
-  }, [router]);
+    const stack = navigation.getState();
+    const at = stack ? stack.routes.findIndex((r) => r.key === route.key) : -1;
+    if (stack && at > 0) {
+      navigation.dispatch({ ...StackActions.pop(), source: route.key, target: stack.key });
+    } else if (stack && at === 0) {
+      navigation.dispatch({ ...StackActions.replace("(tabs)"), source: route.key, target: stack.key });
+    } else {
+      router.replace("/");
+    }
+  }, [navigation, route.key, router]);
   const block = useMutation({
     mutationFn: (member: Pick<ProfileRow, "id" | "username">) => blockMember(member.id),
     onSuccess: (_done, member) => {
@@ -174,8 +187,13 @@ export default function Thread() {
     onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
   const threadMenu = useCallback(() => {
-    // One block at a time: a second, sent while the first is out, would leave twice.
-    if (!peer || block.isPending) return;
+    if (!peer) return;
+    // One block at a time: a second, sent while the first is out, would
+    // leave twice. Said, not silent: with no signal the first waits for one.
+    if (block.isPending) {
+      showAlert("Still blocking", block.isPaused ? "It’s sent once you have a signal again." : "One moment.");
+      return;
+    }
     showAlert(peer.username, undefined, [
       { text: "View profile", onPress: openProfile },
       {

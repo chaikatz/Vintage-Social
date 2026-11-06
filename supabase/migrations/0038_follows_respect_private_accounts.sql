@@ -141,16 +141,38 @@ begin
   if (select auth.uid()) is null then
     return new;
   end if;
-  -- The followee's row is held while the follow is filed, so the follow and
-  -- a change of is_private (section 7) wait for each other: a request filed
-  -- as the account goes public is read after the change commits (and is
-  -- accepted), or is seen by the change's own update (which lets it in).
-  -- No key update, not share: two followers who both held a share lock and
-  -- then both counted the follow (bump_follow_counts) would deadlock.
   select p.is_private into v_private
     from public.profiles p
-   where p.id = new.followee_id
-     for no key update;
+   where p.id = new.followee_id;
+  -- A private followee: read again with its row held, so this request and a
+  -- change of is_private (section 7) wait for each other. A request filed as
+  -- the account goes public is read after the change commits (and is
+  -- accepted), or is seen by the change's own update (which lets it in).
+  -- Held only for a request, which counts nothing: a follow that counts
+  -- (bump_follow_counts locks the follower's row, then the followee's)
+  -- takes no lock here first, so it keeps that order and cannot deadlock
+  -- with Block, an unfollow, or a member following back at the same moment.
+  -- No key update, not share: two requesters who both held a share lock
+  -- and then both changed the row would deadlock.
+  -- Not when the pair's follow is already there (a request filed again from
+  -- a second phone): this one is refused as a duplicate anyway, and holding
+  -- the followee's row would have it wait on, and deadlock with, an Accept
+  -- of the first. That follow is read with a key share lock, which an
+  -- Accept does not wait for and which waits for a delete of it (an
+  -- unfollow, a withdrawn or declined request): once that is done the
+  -- follow is gone, and the followee's row is held as above.
+  if coalesce(v_private, false) then
+    perform 1
+       from public.follows f
+      where f.follower_id = new.follower_id and f.followee_id = new.followee_id
+        for key share;
+    if not found then
+      select p.is_private into v_private
+        from public.profiles p
+       where p.id = new.followee_id
+         for no key update;
+    end if;
+  end if;
   new.status := case when coalesce(v_private, false) then 'pending' else 'accepted' end;
   return new;
 end
