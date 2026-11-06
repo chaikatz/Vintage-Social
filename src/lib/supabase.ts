@@ -1,5 +1,6 @@
 import "react-native-url-polyfill/auto";
 import { createClient, type Session } from "@supabase/supabase-js";
+import { onlineManager } from "@tanstack/react-query";
 import * as SecureStore from "expo-secure-store";
 import { AppState, Platform } from "react-native";
 import { isDemoMode, requireEnv } from "./env";
@@ -34,11 +35,17 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: false,
   },
-  // Every request but a file's has a limit (boundedFetch.ts). The global
-  // fetch is looked up on each call, as the client itself does. A read
-  // that goes out without the member's token is noted (unsignedRead.ts),
-  // so it can be read again once the token goes through.
-  global: { fetch: noteUnsignedReads(boundedFetch((input, init) => fetch(input, init)), supabaseAnonKey) },
+  // Every request but a file's has a limit (boundedFetch.ts), and one that
+  // fails while the phone says it has no signal is handed back at once.
+  // The global fetch is looked up on each call, as the client itself
+  // does. A read that goes out without the member's token is noted
+  // (unsignedRead.ts), so it can be read again once the token goes through.
+  global: {
+    fetch: noteUnsignedReads(
+      boundedFetch((input, init) => fetch(input, init), () => !onlineManager.isOnline()),
+      supabaseAnonKey,
+    ),
+  },
 });
 
 /** Where auth keeps the session on this phone: the client's own key, read back rather than worked out again. */

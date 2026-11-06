@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { READ_LIMIT_MS, WRITE_LIMIT_MS, boundedFetch, limitFor } from "@/lib/boundedFetch";
+import { READ_LIMIT_MS, WRITE_LIMIT_MS, boundedFetch, failedOffline, limitFor, requestTimedOut } from "@/lib/boundedFetch";
 import { isAbortError, isTimedOut, isTransient, retryRead } from "@/utils/retry";
 
 const read = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
@@ -111,6 +111,62 @@ describe("a limit on each request", () => {
     expect(net.calls[1].init?.signal).toBe(own.signal);
   });
 
+  it("hands back at once a read that fails while the phone has no signal, and leaves PostgREST's own tries with one", async () => {
+    const calls: string[] = [];
+    const down = (async (input: unknown) => {
+      calls.push(String(input));
+      throw new TypeError("Network request failed");
+    }) as typeof globalThis.fetch;
+    let offline = true;
+    const client = createClient("https://example.supabase.co", "anon", {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: boundedFetch(down, () => offline) },
+    });
+    const toPosts = () => calls.filter((u) => u.includes("/rest/v1/posts")).length;
+
+    let settled = false;
+    const reading = client
+      .from("posts")
+      .select("*")
+      .then((r) => {
+        settled = true;
+        return r;
+      });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
+    const { error } = await reading;
+    expect(toPosts()).toBe(1);
+    // Still a connection that let go, and never work the member called off.
+    expect(error?.message).toMatch(/Network request failed/);
+    expect(isTransient(error)).toBe(true);
+    expect(isAbortError(error)).toBe(false);
+
+    // With a signal, a dropped connection is tried again by PostgREST, 1, 2 and 4 seconds apart, as before.
+    offline = false;
+    calls.length = 0;
+    let again = false;
+    void client
+      .from("posts")
+      .select("*")
+      .then(() => {
+        again = true;
+      });
+    await vi.advanceTimersByTimeAsync(6_999);
+    expect(again).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(again).toBe(true);
+    expect(toPosts()).toBe(4);
+  });
+
+  it("marks an offline failure without taking over a code it already has", () => {
+    const timedOut = requestTimedOut();
+    expect(failedOffline(timedOut)).toBe(timedOut);
+    expect((timedOut as { code?: string }).code).toBe("ABORT_ERR");
+    const refused = Object.assign(new Error("refused"), { code: "42501" });
+    expect((failedOffline(refused) as { code?: string }).code).toBe("42501");
+    expect(failedOffline(null)).toBeNull();
+  });
+
   it("answers in time are passed through, and their timers cleared", async () => {
     const ok = vi.fn(async () => new Response("[]", { status: 200 })) as unknown as typeof fetch;
     const res = await boundedFetch(ok)("https://x.supabase.co/rest/v1/posts");
@@ -121,7 +177,7 @@ describe("a limit on each request", () => {
 
 describe("the app's client", () => {
   it("limits its requests", () => {
-    expect(read("src/lib/supabase.ts")).toMatch(/global: \{ fetch: noteUnsignedReads\(boundedFetch\(\(input, init\) => fetch\(input, init\)\), supabaseAnonKey\) \}/);
+    expect(read("src/lib/supabase.ts")).toMatch(/boundedFetch\(\(input, init\) => fetch\(input, init\), \(\) => !onlineManager\.isOnline\(\)\)/);
     expect(read("src/lib/queryClient.ts")).toMatch(/retry: \(failures, error\) => onlineManager\.isOnline\(\) && retryRead\(failures, error\),/);
   });
 });

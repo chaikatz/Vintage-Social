@@ -109,7 +109,7 @@ describe("a read that goes out without the member's token", () => {
 describe("the app", () => {
   it("notes its own client's unsigned reads", () => {
     expect(read("src/lib/supabase.ts")).toMatch(
-      /global: \{ fetch: noteUnsignedReads\(boundedFetch\(\(input, init\) => fetch\(input, init\)\), supabaseAnonKey\) \}/,
+      /fetch: noteUnsignedReads\(\s*boundedFetch\(\(input, init\) => fetch\(input, init\), \(\) => !onlineManager\.isOnline\(\)\),\s*supabaseAnonKey,\s*\)/,
     );
   });
 

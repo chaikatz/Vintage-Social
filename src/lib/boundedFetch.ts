@@ -72,8 +72,34 @@ function methodOf(input: unknown, init: RequestInit | undefined): string | undef
   return undefined;
 }
 
-/** `base`, with each request it makes limited as above. */
-export function boundedFetch(base: typeof fetch): typeof fetch {
+/**
+ * A request that failed while the phone says it has no signal, marked
+ * with the same code as a request called off, so PostgREST hands it back
+ * at once. It used to try a read that failed so three more times itself,
+ * 1, 2 and 4 seconds apart, and a screen opened offline sat on its
+ * skeleton for those seven seconds before it could say it had not
+ * loaded. The signal's return reads it again (src/lib/queryClient.ts).
+ * Its message is left as it was, so it is still taken for a connection
+ * that let go (`isTransient`), and its name is not AbortError, so it is
+ * not taken for work the member cancelled.
+ */
+export function failedOffline<T>(err: T): T {
+  if (err && typeof err === "object" && !(err as { code?: unknown }).code) {
+    try {
+      (err as { code?: string }).code = "ABORT_ERR";
+    } catch {
+      // A frozen error keeps its own code; PostgREST then tries it again as before.
+    }
+  }
+  return err;
+}
+
+/**
+ * `base`, with each request it makes limited as above, and a request that
+ * fails while `offline()` says there is no signal handed back at once
+ * (`failedOffline`).
+ */
+export function boundedFetch(base: typeof fetch, offline: () => boolean = () => false): typeof fetch {
   return ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const ms = limitFor(urlOf(input), methodOf(input, init));
     if (ms == null || init?.signal) return base(input, init);
@@ -87,6 +113,10 @@ export function boundedFetch(base: typeof fetch): typeof fetch {
     });
     // The race also covers a fetch that does not honour the signal: the
     // caller stops waiting even if the request cannot be torn down.
-    return Promise.race([base(input, { ...init, signal: ctl.signal }), limit]).finally(() => clearTimeout(timer));
+    return Promise.race([base(input, { ...init, signal: ctl.signal }), limit])
+      .catch((err: unknown) => {
+        throw offline() ? failedOffline(err) : err;
+      })
+      .finally(() => clearTimeout(timer));
   }) as typeof fetch;
 }
