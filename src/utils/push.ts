@@ -9,6 +9,7 @@ import { registerPushToken, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
 import { tapFollower, tokenFiler } from "./pushRoute";
 import { onReturnFromBackground } from "./appReturn";
+import { deleteDiskCache, readDiskCache, writeDiskCache } from "./diskCache";
 
 /**
  * The phone's side of notifications.
@@ -36,6 +37,48 @@ Notifications.setNotificationHandler({
 
 /** The one token this phone holds, once known, so sign-out can drop it. */
 let currentToken: string | null = null;
+
+/**
+ * The token last filed from this phone, kept on it, so sign-out can take
+ * it away even in a launch whose own registration failed.
+ *
+ * Only the token this launch had filed was known before: a launch that
+ * could not reach Expo for a token (no signal at the start), or one that
+ * signed out before registering, left the row an earlier launch filed,
+ * under the member who had just left, and the phone went on being told
+ * about their likes and messages while signed out. Kept in the cache
+ * folder, which is not backed up: a phone restored from this one's backup
+ * must not take this phone's token for its own. If iOS empties the folder,
+ * the token is simply not known, and sign-out does what it does when the
+ * token cannot be removed (below).
+ */
+const TOKEN_FILE = "push-token.json";
+const TOKEN_KEY = "vintage.push-token";
+const IN_CACHE = { dir: "cache" } as const;
+
+interface KeptToken {
+  v: 1;
+  token: string;
+}
+
+export function parseKeptToken(raw: unknown): KeptToken | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.v !== 1 || typeof r.token !== "string" || !r.token) return null;
+  return { v: 1, token: r.token };
+}
+
+function keptToken(): string | null {
+  return readDiskCache(TOKEN_FILE, TOKEN_KEY, parseKeptToken, IN_CACHE)?.token ?? null;
+}
+
+function keepToken(token: string): void {
+  writeDiskCache(TOKEN_FILE, TOKEN_KEY, { v: 1, token } satisfies KeptToken, IN_CACHE);
+}
+
+function dropKeptToken(): void {
+  deleteDiskCache(TOKEN_FILE, TOKEN_KEY, IN_CACHE);
+}
 
 function projectId(): string | undefined {
   const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
@@ -69,6 +112,7 @@ export async function registerForPush(userId: string): Promise<string | null> {
     // that had run out) leaves the row an earlier launch filed, and
     // signing out must still be able to take it away.
     currentToken = token;
+    keepToken(token);
     await registerPushToken(userId, token, platform, device);
     return token;
   } catch (err) {
@@ -79,15 +123,58 @@ export async function registerForPush(userId: string): Promise<string | null> {
   }
 }
 
-/** On sign out: this phone stops speaking for the member who just left. */
+/**
+ * On sign out, while still signed in: this phone stops speaking for the
+ * member who is leaving. Its token's row is removed, the token this
+ * launch filed or, failing that, the one an earlier launch kept.
+ *
+ * When the row cannot be removed (no signal, the server refusing), or no
+ * token is known while the phone may receive notifications, the phone
+ * itself stops receiving them: it unregisters from Apple's push service,
+ * so a phone left signed out is never told about the last member's likes
+ * and messages. The next member to sign in registers it again.
+ */
 export async function forgetPushToken(): Promise<void> {
-  const token = currentToken;
+  const token = currentToken ?? keptToken();
   currentToken = null;
-  if (!token) return;
+  if (token) {
+    try {
+      await unregisterPushToken(token);
+      dropKeptToken();
+      return;
+    } catch {
+      // Offline, or refused: the row stays. The phone stops receiving instead.
+    }
+  }
+  await stopReceiving(token != null);
+}
+
+/**
+ * The session has left this phone without a sign-out made on it (a
+ * refresh token the server refused: a sign-out or a password change on
+ * another device). There is no session to remove the row with, so if
+ * this phone filed a token that sign-out did not take away, the phone
+ * stops receiving.
+ */
+export async function pushAfterSignedOut(): Promise<void> {
+  currentToken = null;
+  if (keptToken() == null) return;
+  await stopReceiving(true);
+}
+
+/**
+ * Unregister this phone from push notifications, and forget its token.
+ * Only when a token was filed from it, or when it may receive at all.
+ */
+async function stopReceiving(filed: boolean): Promise<void> {
+  dropKeptToken();
+  if (!pushSupported()) return;
   try {
-    await unregisterPushToken(token);
+    if (!filed && (await Notifications.getPermissionsAsync()).status !== "granted") return;
+    await Notifications.unregisterForNotificationsAsync();
   } catch {
-    // Already gone, or offline. The function retires dead tokens on its own.
+    // Nothing more this phone can do; the push function retires the token
+    // once Apple reports it gone.
   }
 }
 

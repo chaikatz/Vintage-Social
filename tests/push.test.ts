@@ -181,7 +181,8 @@ describe("the phone's push token, filed under the member", () => {
     const src = readFileSync(path.resolve(import.meta.dirname, "..", "src/utils/push.ts"), "utf8");
     expect(src).toMatch(/file\.current \?\?= tokenFiler\(registerForPush\);/);
     expect(src).toMatch(/const want = \(\) => file\.current\?\.\(userId\);\s*want\(\);\s*return onReturnFromBackground\(want\);/);
-    // Signing out can take the token away even when this launch's filing failed.
-    expect(src).toMatch(/currentToken = token;\s*await registerPushToken\(userId, token, platform, device\);/);
+    // Signing out can take the token away even when this launch's filing
+    // failed, or a later launch could not get one (tests/push-token.test.ts).
+    expect(src).toMatch(/currentToken = token;\s*keepToken\(token\);\s*await registerPushToken\(userId, token, platform, device\);/);
   });
 });

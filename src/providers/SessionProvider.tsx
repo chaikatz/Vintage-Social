@@ -16,7 +16,7 @@ import { isTransient, withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
-import { forgetPushToken } from "@/utils/push";
+import { forgetPushToken, pushAfterSignedOut } from "@/utils/push";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 import { forgetOutbox } from "@/uploads";
 import { clearRecent } from "@/utils/searchHistory";
@@ -211,6 +211,9 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       if (event === "SIGNED_OUT") {
         forgetOutbox();
         forgetMember();
+        // A session ended elsewhere leaves no way to remove this phone's
+        // token: the phone stops receiving instead (src/utils/push.ts).
+        void pushAfterSignedOut();
       }
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
