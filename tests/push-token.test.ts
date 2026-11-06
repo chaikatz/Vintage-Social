@@ -117,10 +117,12 @@ vi.mock("@/api/notifications", () => ({
     if (h.rowsRemoved > 0) h.deleted.push(token);
     return h.rowsRemoved;
   },
+  // Every row of the member's goes, and the tokens that went come back:
+  // this phone's among them unless its row is another member's (rowsRemoved 0).
   unregisterAllPushTokens: async (userId: string) => {
     if (h.deleteAllFails) throw new Error("no signal");
     h.deletedAllOf.push(userId);
-    return 2;
+    return [...(h.rowsRemoved > 0 && h.token ? [h.token] : []), "ExponentPushToken[their-other-phone]"];
   },
 }));
 // The phone's cache folder, kept across launches here.
@@ -305,13 +307,36 @@ describe("a session that ended elsewhere", () => {
 });
 
 describe("signing out everywhere", () => {
-  it("removes this phone's token, then every other phone's row of the member's", async () => {
+  it("removes every row of the member's, this phone's with them, in one request", async () => {
     const push = await launch();
     await push.registerForPush("u1");
     await push.forgetPushTokensEverywhere("u1");
-    expect(h.deleted).toEqual(["ExponentPushToken[phone]"]);
+    expect(h.deletedAllOf).toEqual(["u1"]);
+    // Not a second removal of this phone's row on its own, one after the other.
+    expect(h.deleted).toEqual([]);
+    // Its row was among them: the phone is not let go, the token is done with.
+    expect(h.unregistered).toBe(0);
+    expect(h.disk.size).toBe(0);
+  });
+
+  it("stops this phone receiving when its row was not among the member's (another member's)", async () => {
+    const push = await launch();
+    await push.registerForPush("u1");
+    h.rowsRemoved = 0;
+    await push.forgetPushTokensEverywhere("u1");
+    expect(h.deletedAllOf).toEqual(["u1"]);
+    expect(h.unregistered).toBe(1);
+    expect(h.disk.size).toBe(0);
+  });
+
+  it("takes the token an earlier launch kept, when this launch filed none", async () => {
+    const first = await launch();
+    await first.registerForPush("u1");
+    const push = await launch();
+    await push.forgetPushTokensEverywhere("u1");
     expect(h.deletedAllOf).toEqual(["u1"]);
     expect(h.unregistered).toBe(0);
+    expect(h.disk.size).toBe(0);
   });
 
   it("without a signal, this phone stops receiving and the other phones' rows stay", async () => {

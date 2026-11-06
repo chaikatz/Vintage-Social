@@ -252,6 +252,13 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
     const filters = [...url.searchParams].filter(([k]) => k !== "select");
     const gone = (h.tables[table] ?? []).filter((r) => filters.every(([k, v]) => matches(r, k, v)));
     h.tables[table] = (h.tables[table] ?? []).filter((r) => !gone.includes(r));
+    // With select (return=representation), the rows that went come back.
+    const select = url.searchParams.get("select");
+    if (select) {
+      const cols = select.split(",").map((c) => c.trim());
+      const body = gone.map((r) => (select === "*" ? r : Object.fromEntries(cols.map((c) => [c, r[c]]))));
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     return new Response(null, { status: 204, headers: { "Content-Range": `*/${gone.length}` } });
   }
   // A count with no rows (select(…, { count: "exact", head: true })): the
@@ -947,10 +954,12 @@ describe("this phone's push token", () => {
     expect(await notifications.unregisterPushToken("ExponentPushToken[mine]")).toBe(1);
     // A row row-level security does not let this member see: not in the table they are shown.
     expect(await notifications.unregisterPushToken("ExponentPushToken[someone-else]")).toBe(0);
-    expect(await notifications.unregisterAllPushTokens(ME)).toBe(1);
+    // Every row of the member's, and which tokens went, in the one request.
+    expect(await notifications.unregisterAllPushTokens(ME)).toEqual(["ExponentPushToken[second-phone]"]);
     expect(h.tables.push_tokens).toEqual([]);
     const all = h.requests.filter((r) => r.method === "DELETE").at(-1)!;
     expect(all.url.searchParams.get("user_id")).toBe(`eq.${ME}`);
+    expect(all.url.searchParams.get("select")).toBe("token");
   });
 });
 

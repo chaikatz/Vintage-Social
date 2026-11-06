@@ -107,24 +107,37 @@ export async function forgetPushToken(): Promise<void> {
 
 /**
  * On a sign-out that ends the member's sessions on every phone, while
- * still signed in: this phone stops speaking for them (forgetPushToken),
- * and so does every other phone of theirs, its row removed with this
- * one's. A phone whose session ended elsewhere hears of it only when its
- * app next runs (pushAfterSignedOut), and was sent the member's likes and
- * messages until then, for days if the app was not opened.
+ * still signed in: this phone stops speaking for them, and so does every
+ * other phone of theirs. A phone whose session ended elsewhere hears of
+ * it only when its app next runs (pushAfterSignedOut), and was sent the
+ * member's likes and messages until then, for days if the app was not
+ * opened.
+ *
+ * One request: every row of the member's goes, this phone's with them
+ * when it is theirs, and the tokens that went come back. This phone is
+ * let go as forgetPushToken lets it go: its row among them, the token is
+ * done with; not among them (gone already, or another member's, which
+ * row-level security neither removes nor reports), or no answer, the
+ * phone stops receiving. It was two removals one after the other, two
+ * waits on a slow connection before the sign-out could go on.
  *
  * Without a signal the rows stay: so does the sign-out, which then ends
  * only this phone's session (src/providers/SessionProvider.tsx), and the
  * other phones, still signed in, keep their notices.
  */
 export async function forgetPushTokensEverywhere(userId: string | null | undefined): Promise<void> {
-  await forgetPushToken();
-  if (!userId) return;
+  if (!userId) return forgetPushToken();
+  const token = takeToken();
   try {
-    await unregisterAllPushTokens(userId);
+    const removed = await unregisterAllPushTokens(userId);
+    if (token && removed.includes(token)) {
+      tokenRemoved();
+      return;
+    }
   } catch {
     // Offline, or refused: see above.
   }
+  await stopReceiving(token != null);
 }
 
 /**

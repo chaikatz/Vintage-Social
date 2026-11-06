@@ -101,13 +101,15 @@ export async function unregisterPushToken(token: string): Promise<number> {
  * sessions on all of them (src/providers/SessionProvider.tsx), while
  * still signed in: a phone whose session has ended elsewhere is not told
  * so until its app next runs, and would be sent the member's notices
- * until then. Resolves to how many rows went.
+ * until then. Resolves to the tokens whose rows went (the member's own,
+ * which they may read), so the caller knows from this one request
+ * whether this phone's own row was among them.
  */
-export async function unregisterAllPushTokens(userId: string): Promise<number> {
-  if (isDemoMode()) return 0;
-  const { error, count } = await supabase.from("push_tokens").delete({ count: "exact" }).eq("user_id", userId);
+export async function unregisterAllPushTokens(userId: string): Promise<string[]> {
+  if (isDemoMode()) return [];
+  const { data, error } = await supabase.from("push_tokens").delete().eq("user_id", userId).select("token");
   if (error) throw error;
-  return count ?? 0;
+  return ((data ?? []) as { token: string }[]).map((row) => row.token);
 }
 
 export async function fetchNotificationPrefs(userId: string): Promise<NotificationPrefs> {

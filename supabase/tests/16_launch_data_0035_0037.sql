@@ -157,6 +157,32 @@ insert into d_did values ('after again', (select user_id || ',' || platform || '
   from public.push_tokens where token = 'ExponentPushToken[phone-2]'));
 insert into d_did values ('delete after', tests.d_as(:'second', 'delete from public.push_tokens where token = ''ExponentPushToken[phone-1]'''));
 
+-- Signing out everywhere (src/api/notifications.ts unregisterAllPushTokens):
+-- one delete of every row of the member's, returning the tokens that went,
+-- as PostgREST runs it (a data-modifying WITH, then a select of it).
+create or replace function tests.d_took(p_uid uuid, p_sql text)
+returns text
+language plpgsql
+as $fn$
+declare
+  v text;
+begin
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claims', json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  execute 'with gone as (' || p_sql || ') select coalesce(string_agg(token, '','' order by token), ''-'') from gone' into v;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '', true);
+  return v;
+end
+$fn$;
+insert into d_did values ('second phone', tests.d_as(:'second', 'select public.claim_push_token(''ExponentPushToken[phone-4]'', ''ios'', null)'));
+insert into d_did values ('everywhere, the founder''s', tests.d_took(:'second',
+  'delete from public.push_tokens where user_id = ''11111111-1111-1111-1111-111111111111'' returning token'));
+insert into d_did values ('everywhere, their own', tests.d_took(:'second',
+  'delete from public.push_tokens where user_id = ''22222222-2222-2222-2222-222222222222'' returning token'));
+insert into d_did values ('after everywhere', (select coalesce(string_agg(token || ':' || (user_id = :'founder')::text, ',' order by token), '-')
+  from public.push_tokens where token in ('ExponentPushToken[phone-2]', 'ExponentPushToken[phone-4]')));
+
 -- Signed in as a role, with no member: auth.uid() is null.
 create or replace function tests.d_nobody(p_sql text)
 returns text
@@ -199,6 +225,10 @@ insert into tests.results (name, expected, actual) values
      join (values ('new token', 1), ('again', 2), ('after again', 3)) v(step, o) using (step))),
   ('0036: and the second member''s sign-out removes the row they now hold', 'OK:1',
    (select answer from d_did where step = 'delete after')),
+  ('0036: signing out everywhere, one delete returns the tokens that went: the member''s own, none of another''s',
+   'OK:1|-|ExponentPushToken[phone-4]|ExponentPushToken[phone-2]:true',
+   (select string_agg(answer, '|' order by o) from d_did
+     join (values ('second phone', 1), ('everywhere, the founder''s', 2), ('everywhere, their own', 3), ('after everywhere', 4)) v(step, o) using (step))),
   ('0036: no token, no platform, a made-up platform: refused', 'ERROR:Not a push token|ERROR:Not a platform|ERROR:Not a platform',
    tests.d_as(:'second', 'select public.claim_push_token('''', ''ios'', null)') || '|' ||
    tests.d_as(:'second', 'select public.claim_push_token(''t'', null, null)') || '|' ||
