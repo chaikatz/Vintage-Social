@@ -11,7 +11,14 @@ import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import { validateEmail, validatePassword, validateUsername } from "@/utils/validation";
 import { checkUsernameAvailable, submitApplication } from "@/api/membership";
+import { errorMessage } from "@/utils/errorMessage";
 import { useDoorClosesBehind } from "@/components/gate/useDoor";
+
+// A page at the door that breaks breaks only itself, not the whole app.
+// There is no header and no tab bar here, so the way back is on the page
+// (src/navigation/Recover.tsx): to the page before, or to Home, whose
+// guard sends anyone not yet let in to the door or the waiting room.
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * The application.
@@ -75,7 +82,10 @@ export default function Apply() {
     setTried(true);
     setBusy(true);
     try {
-      const available = await checkUsernameAvailable(username);
+      // With the email and password typed beside it: a try whose account
+      // was made but whose answer never came back (no session was kept)
+      // finds the name is its own account's, and carries on with it.
+      const available = await checkUsernameAvailable(username, { email, password });
       if (!available) {
         setErrors((e) => ({ ...e, username: "That username is taken." }));
         return;
@@ -93,7 +103,7 @@ export default function Apply() {
       });
       await goIn();
     } catch (err) {
-      showAlert("Application failed", err instanceof Error ? err.message : String(err));
+      showAlert("Application failed", errorMessage(err, "Your application didn’t reach us. Check your connection and try again."));
     } finally {
       setBusy(false);
     }

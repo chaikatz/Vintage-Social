@@ -14,6 +14,13 @@ import { showAlert, showPrompt } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
 import { awaitsDecision, takesInvitation, waitingRoomState } from "@/components/gate/waitingRoom";
+import { DELETION_KEEPS_REPORTS } from "@/legal/documents";
+
+// A page at the door that breaks breaks only itself, not the whole app.
+// There is no header and no tab bar here, so the way back is on the page
+// (src/navigation/Recover.tsx): to the page before, or to Home, whose
+// guard sends anyone not yet let in to the door or the waiting room.
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 const COPY: Record<string, { title: string; body: string }> = {
   applied: {
@@ -34,8 +41,11 @@ const COPY: Record<string, { title: string; body: string }> = {
   },
   // An account with no application of its own: an invitation refused after
   // the account was made, or an application that never reached the admins
-  // (the app closed part-way). An invitation is taken here; an application
-  // starts again from a new account, as this one already holds its username.
+  // (the app closed part-way). An invitation is taken here. To apply, the
+  // words give the clean way: delete this account and apply afresh, under
+  // any name. (Signed out, the Apply form given this account's email and
+  // password also carries on with it, under the name it already has: the
+  // form's check of the name is given them, src/api/membership.ts.)
   none: {
     title: "NO APPLICATION YET",
     body: "Your account is made, but no application or invitation of yours has reached us.\nIf a member invited you, enter the invitation below. To apply instead, delete this account and apply again.",
@@ -142,18 +152,20 @@ export default function Pending() {
 
   // The same two questions as Settings → Delete account. An admin is never
   // here (approved goes in), so there is no only-admin question to ask.
+  // What stays is said as Settings says it: a suspended member here may
+  // have filed reports, and those are kept (0031).
   const confirmDelete = () =>
     showAlert(
       "Delete your account?",
-      "Your account, your application, and anything you posted or sent are removed for good. This cannot be undone.",
+      `Your account, your application, and anything you posted or sent are removed for good. ${DELETION_KEEPS_REPORTS} This cannot be undone.`,
       [
         {
           text: "Delete account",
           style: "destructive",
           onPress: () =>
-            showAlert("Are you sure?", "This is the last step. Everything is deleted now.", [
+            showAlert("Are you sure?", "This is the last step. Your account is deleted now.", [
               {
-                text: "Yes, delete everything",
+                text: "Yes, delete my account",
                 style: "destructive",
                 onPress: async () => {
                   const userId = session?.user?.id;

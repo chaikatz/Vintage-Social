@@ -1,20 +1,27 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 import { Redirect } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/providers/SessionProvider";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
-import { undecided, withIds, withRowBack, withoutIds, withoutRow } from "@/components/decidedRows";
+import { undecided, withIds, withoutIds } from "@/components/decidedRows";
+import { pagesOf, rowsOf, withRowsBack, withoutRows, type QueuePages } from "@/components/admin/queuePages";
 import { colors, radii, spacing, type } from "@/theme";
-import { decideApplication, fetchApplications } from "@/api/moderation";
+import { decideApplication, fetchApplications, nextAdminCursor, type AdminCursor } from "@/api/moderation";
 import { errorMessage } from "@/utils/errorMessage";
 import { postAge } from "@/utils/time";
 import type { ApplicationRow, ApplicationStatus } from "@/types/db";
 import { showAlert } from "@/utils/alert";
+
+// A row that breaks this page breaks only this page, with the way back on
+// it as well as in the header: opened from a report's notification (0032)
+// or a link, an admin page is the first in its stack and has no back
+// button (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 const TABS: ApplicationStatus[] = ["pending", "waitlisted", "approved", "rejected"];
 
@@ -25,11 +32,16 @@ export default function AdminApplications() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ApplicationStatus>("pending");
 
-  const apps = useQuery({
+  // Fifty at a time (src/api/moderation.ts), the next fifty as the list
+  // nears its end: one read of fifty used to be all the screen ever showed.
+  const apps = useInfiniteQuery({
     queryKey: ["admin-apps", tab],
-    queryFn: () => fetchApplications(tab),
+    queryFn: ({ pageParam }) => fetchApplications(tab, pageParam),
+    initialPageParam: null as AdminCursor | null,
+    getNextPageParam: (last) => nextAdminCursor(last),
     enabled: isAdmin,
   });
+  const rows = useMemo(() => rowsOf(apps.data), [apps.data]);
 
   // The card leaves the list the moment the decision is tapped and comes
   // back if the database refused it, with the reason on screen — a tap
@@ -46,17 +58,19 @@ export default function AdminApplications() {
       setDeciding((ids) => withIds(ids, [app.id]));
       const key = ["admin-apps", tab];
       await queryClient.cancelQueries({ queryKey: key });
-      const order = (queryClient.getQueryData<ApplicationRow[]>(key) ?? []).map((r) => r.id);
-      queryClient.setQueryData<ApplicationRow[]>(key, (rows) => withoutRow(rows, app.id));
-      return { key, order };
+      const held = queryClient.getQueryData<QueuePages<ApplicationRow>>(key);
+      const order = rowsOf(held).map((r) => r.id);
+      const homes = pagesOf(held, [app.id]);
+      queryClient.setQueryData<QueuePages<ApplicationRow>>(key, (pages) => withoutRows(pages, [app.id]));
+      return { key, order, homes };
     },
     onSuccess: async (_done, { app }, ctx) => {
       // Taken: a read that left before it was cannot bring it back.
       await queryClient.cancelQueries({ queryKey: ctx.key });
-      queryClient.setQueryData<ApplicationRow[]>(ctx.key, (rows) => withoutRow(rows, app.id));
+      queryClient.setQueryData<QueuePages<ApplicationRow>>(ctx.key, (pages) => withoutRows(pages, [app.id]));
     },
     onError: (err, { app }, ctx) => {
-      if (ctx) queryClient.setQueryData<ApplicationRow[]>(ctx.key, (rows) => withRowBack(rows, app, ctx.order));
+      if (ctx) queryClient.setQueryData<QueuePages<ApplicationRow>>(ctx.key, (pages) => withRowsBack(pages, [app], ctx.order, ctx.homes));
       showAlert("That decision didn’t take", errorMessage(err, "The application is back in the list. Try again in a moment."));
     },
     onSettled: (_done, _err, { app }) => {
@@ -84,12 +98,23 @@ export default function AdminApplications() {
         ))}
       </View>
       <FlatList
-        data={undecided(apps.data, deciding)}
+        data={undecided(rows, deciding)}
         keyExtractor={(a) => a.id}
         refreshing={apps.isRefetching}
         onRefresh={() => apps.refetch()}
+        // Not while any read is on its way: asked for during the reread
+        // that follows every decision, the next page cancelled that reread
+        // (fetchNextPage cancels by default), and what other admins did
+        // since stayed off the list until the next one.
+        onEndReached={() => {
+          if (apps.hasNextPage && !apps.isFetching && !apps.isFetchNextPageError) apps.fetchNextPage();
+        }}
+        onEndReachedThreshold={1}
+        ListFooterComponent={
+          apps.isFetchNextPageError ? <LoadFailed what="the rest" onRetry={() => apps.fetchNextPage()} /> : null
+        }
         ListEmptyComponent={
-          apps.isError ? (
+          apps.isError && !apps.data ? (
             <LoadFailed what="the applications" onRetry={() => apps.refetch()} />
           ) : apps.isFetched ? (
             <EmptyState title={`No ${tab} applications`} />

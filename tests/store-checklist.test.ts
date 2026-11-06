@@ -38,6 +38,56 @@ describe("the database step", () => {
     expect(where).not.toMatch(/adds `0023_[^`]+` and `0024_[^`]+` and changes/);
     expect(where).toContain("numbered from **0023 up**");
   });
+
+  /**
+   * Verify script 12 grows with the migrations (each new one adds rows to
+   * it, and the harness counts them). The step names what it checks on one
+   * line; when the script grows, this says exactly what that line should
+   * now read.
+   */
+  const verify = () => read("supabase/production/12_policies_read_once_verify.sql");
+  const rowLabels = () =>
+    new Map([...verify().matchAll(/select (\d+)(?: as n)?, '((?:[^']|'')*)'/g)].map((m) => [Number(m[1]), m[2]] as const));
+
+  it("names what verify script 12 checks as the script and its harness do", () => {
+    const [, from, to] = verify().split("\n")[0].match(/verify (\d{4})-(\d{4})/) ?? [];
+    const count = Number(read("supabase/tests/run.mjs").match(/rows\.length !== (\d+)/)?.[1]);
+    expect(from, "the script's first line names its range").toBe("0023");
+    expect(rowLabels().size, "every row of the script is numbered").toBe(count);
+    const line = `Verify script 12 today: \`12_policies_read_once_verify.sql\`, which checks ${from} to ${to} in ${count} rows.`;
+    expect(doc(), `APP_STORE_LAUNCH.md step 4: make its verify line read: ${line}`).toContain(`\n   ${line}\n`);
+  });
+
+  it("says which rows of the script are each file's, and they are", () => {
+    const step = between(doc(), "### Step 4", "### Step 5");
+    const lines = [...step.matchAll(/^ {3}\| (\d{4}) \| [^|]+ \| ([\d–, ]+) \|$/gm)];
+    expect(lines.length, "the table of files and their rows").toBeGreaterThanOrEqual(12);
+    const labels = rowLabels();
+    const listed = new Map<number, string>();
+    for (const [, file, rows] of lines) {
+      for (const part of rows.split(",").map((p) => p.trim())) {
+        const [a, b] = part.split("–").map(Number);
+        for (let n = a; n <= (b ?? a); n++) {
+          expect(labels.has(n), `row ${n} (${file})`).toBe(true);
+          const named = labels.get(n)!.match(/^(\d{4}):/)?.[1];
+          if (named) expect(named, `row ${n}: ${labels.get(n)}`).toBe(file);
+          listed.set(n, file);
+        }
+      }
+    }
+    // Every row the script names as a file's is listed under that file, so a file that adds rows (or a
+    // file edited in place that adds one) has its line in the table, and the message says what to write.
+    const files = new Set(lines.map((l) => l[1]));
+    for (const [n, label] of labels) {
+      const named = label.match(/^(\d{4}):/)?.[1];
+      if (named) {
+        expect(listed.get(n), `APP_STORE_LAUNCH.md step 4: list row ${n} under ${named} in the table (its label: "${label}")`).toBe(named);
+      }
+    }
+    // And each file is in the folder.
+    const folder = readdirSync(path.join(root, "supabase/migrations")).map((f) => f.slice(0, 4));
+    for (const file of files) expect(folder, file).toContain(file);
+  });
 });
 
 describe("the house accounts, as Apple is told about them", () => {
@@ -76,6 +126,27 @@ describe("the house accounts, as Apple is told about them", () => {
     expect(flat(between(doc(), "- Content Rights:", "- **Age Rating**"))).not.toMatch(/header wrongly says/);
   });
 
+  it("seed/build.mjs writes that same header, so running it again does not take it back", () => {
+    const text = credits();
+    const rows = text.split("\n").filter((l) => /^\| \[/.test(l)).length;
+    const src = read("seed/build.mjs");
+    const from = src.indexOf("const credits = [") + "const credits = ".length;
+    const to = src.indexOf('"| File | Licence | Author |"', from);
+    expect(from, "the header in seed/build.mjs").toBeGreaterThan("const credits = ".length);
+    const header = new Function("used", "unsplash", "pd", "cc0", "none", `return ${src.slice(from, to)}];`)(
+      { size: rows },
+      count("Unsplash Licence"),
+      count("Public domain"),
+      count("CC0"),
+      count("No restrictions"),
+    ) as string[];
+    expect(header.join("\n")).toBe(text.slice(0, text.indexOf("| File |")).replace(/\n$/, ""));
+    // Counted whatever the case of the licence's spelling (photos.json has one "Public Domain"), and none left out.
+    expect(src).toMatch(/const licenceOf = \(p\) => \(photos\.find\(\(x\) => x\.url === p\.url\)\?\.licence \?\? ""\)\.toLowerCase\(\);/);
+    expect(src).toMatch(/if \(unsplash \+ pd \+ cc0 \+ none !== used\.size\) \{\s*throw new Error/);
+    expect(src).not.toMatch(/all public domain or CC0/);
+  });
+
   it("the review notes say the accounts the reviewer follows are the club's own, not people", () => {
     expect(read("supabase/migrations/0011_house_accounts.sql")).toMatch(/add column if not exists is_house/);
     const notes = flat(reviewNotes());
@@ -103,6 +174,21 @@ describe("how objectionable content is filtered, as the review notes say it", ()
     expect(notes).toContain("an invitation is tied to the member who sent it");
     // Location on the label, never the phone's position (tests/store-permissions.test.ts holds the code to it).
     expect(notes).toContain("the phone's own position is never read");
+  });
+
+  it("names only what an admin can do: remove content, warn and suspend, never remove a member", () => {
+    const notes = flat(reviewNotes());
+    expect(notes).toContain("admins remove content and warn or suspend members");
+    expect(notes).not.toMatch(/remove (a )?members?\b/);
+    // The admin pages: Remove on a reported photograph or comment, Warn and Suspend on a member, and nothing that deletes one.
+    const members = read("app/admin/members.tsx");
+    expect(members).toMatch(/<Button title="Warn"/);
+    expect(members).toMatch(/"Reinstate" : "Suspend"/);
+    expect(read("app/admin/reports.tsx")).toMatch(/removePost|removeComment/);
+    const api = read("src/api/moderation.ts");
+    expect(api).toMatch(/export async function warnMember\(/);
+    expect(api).toMatch(/export async function setSuspension\(/);
+    expect(api).not.toMatch(/export async function (remove|delete|ban)Member/);
   });
 });
 

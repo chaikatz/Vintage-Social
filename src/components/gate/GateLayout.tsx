@@ -58,6 +58,11 @@ export function GateLayout({
         {scroll ? (
           <ScrollView
             contentContainerStyle={[styles.scroll, { paddingTop: insets.top + spacing.xxl }]}
+            // Still when it all fits, as the landing is: the waiting screen
+            // moved to this scrolling page (for the largest text sizes) and
+            // rubber-banded on iOS where it used to sit still. It scrolls,
+            // and bounces, whenever its words are taller than the screen.
+            alwaysBounceVertical={false}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -73,6 +78,7 @@ export function GateLayout({
           style={[styles.back, { top: insets.top + spacing.sm }]}
           hitSlop={14}
           onPress={() => backFromDoor(router)}
+          accessibilityRole="button"
           accessibilityLabel="Back"
         >
           <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />

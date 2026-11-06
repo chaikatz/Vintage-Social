@@ -30,6 +30,7 @@ import { pushSupported, registerForPush } from "@/utils/push";
 import { deleteMyAccount } from "@/api/account";
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL, supportMailto } from "@/config/launch";
 import { createSettingWriter } from "@/components/settingWriter";
+import { DELETION_KEEPS_REPORTS } from "@/legal/documents";
 
 // A row that breaks this screen breaks only this screen, with the way back on its
 // page as well as in its header: a screen opened from a link has no back button
@@ -227,20 +228,21 @@ export default function Settings() {
     else router.push(`/legal/${doc}`);
   };
 
-  // Two questions, then it is done. The words say what goes, because it
-  // all goes.
+  // Two questions, then it is done. The words say what goes, as the
+  // Privacy Policy lists it, and what stays: the reports this member filed
+  // (0031), as the policy says too.
   const confirmDelete = () =>
     showAlert(
       "Delete your account?",
-      "Your profile, photographs, comments, likes, follows, tags and messages are removed for good. Your membership number is never reissued. This cannot be undone.",
+      `Your profile, photographs, comments, likes, follows, tags, messages, application and share links are removed for good. ${DELETION_KEEPS_REPORTS} Your membership number is never reissued. This cannot be undone.`,
       [
         {
           text: "Delete account",
           style: "destructive",
           onPress: () =>
-            showAlert("Are you sure?", "This is the last step. Everything is deleted now.", [
+            showAlert("Are you sure?", "This is the last step. Your account is deleted now.", [
               {
-                text: "Yes, delete everything",
+                text: "Yes, delete my account",
                 style: "destructive",
                 onPress: async () => {
                   const userId = session?.user?.id;

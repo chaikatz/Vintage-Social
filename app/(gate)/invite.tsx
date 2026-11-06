@@ -24,10 +24,17 @@ import {
   validateUsername,
 } from "@/utils/validation";
 import { checkUsernameAvailable, fetchInviteOwner, joinWithInvite } from "@/api/membership";
+import { errorMessage } from "@/utils/errorMessage";
 import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
 import { useSession } from "@/providers/SessionProvider";
 import { backFromDoor } from "@/components/gate/door";
 import { useDoorClosesBehind } from "@/components/gate/useDoor";
+
+// A page at the door that breaks breaks only itself, not the whole app.
+// There is no header and no tab bar here, so the way back is on the page
+// (src/navigation/Recover.tsx): to the page before, or to Home, whose
+// guard sends anyone not yet let in to the door or the waiting room.
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /** How long the typing pauses before the code typed so far is asked about. */
 const TYPING_PAUSE_MS = 350;
@@ -116,7 +123,10 @@ export default function Invite() {
 
     setBusy(true);
     try {
-      const available = await checkUsernameAvailable(username);
+      // With the email and password typed beside it: a try whose account
+      // was made but whose answer never came back (no session was kept)
+      // finds the name is its own account's, and carries on with it.
+      const available = await checkUsernameAvailable(username, { email, password });
       if (!available) {
         setErrors((e) => ({ ...e, username: "That username is taken." }));
         return;
@@ -131,7 +141,9 @@ export default function Invite() {
       await refreshProfile();
       await goIn();
     } catch (err) {
-      showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
+      // joinWithInvite's own sentence ("… Your account has been created;
+      // enter a valid invitation to join.") comes through as it is.
+      showAlert("Couldn’t join", errorMessage(err, "Check your connection and try again."));
     } finally {
       setBusy(false);
     }
@@ -154,7 +166,7 @@ export default function Invite() {
         >
           {/* The name, small, in the corner — back to the door is one tap left of it. */}
           <View style={styles.head}>
-            <Pressable hitSlop={14} onPress={() => backFromDoor(router)} accessibilityLabel="Back" style={styles.back}>
+            <Pressable hitSlop={14} onPress={() => backFromDoor(router)} accessibilityRole="button" accessibilityLabel="Back" style={styles.back}>
               <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />
             </Pressable>
             <Wordmark tagline="Members only" />

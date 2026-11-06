@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PRIVACY_POLICY, TERMS_OF_USE } from "@/legal/documents";
+import { DELETION_KEEPS_REPORTS, PRIVACY_POLICY, TERMS_OF_USE } from "@/legal/documents";
 import { isSupportEmail, renderLegalPages, renderSupportPage, supportAddressIn } from "../scripts/build-legal.mjs";
 
 /**
@@ -169,6 +169,36 @@ describe("what the Privacy Policy says a deletion does, against the schema", () 
       expect(removedOnDeletion()).not.toContain("reports");
       expect(support).not.toContain("the reports you filed, are removed");
     }
+  });
+
+  /**
+   * What the two screens that delete an account say before they ask, held
+   * to the same schema: "anything you posted or sent is removed" stopped
+   * being so when 0031 kept the reports a member filed.
+   */
+  it("the two screens that delete an account say what goes and what stays, as the policy does", () => {
+    const firstQuestion = (file: string) => {
+      const src = read(file);
+      const m = src.match(/showAlert\(\s*"Delete your account\?",\s*(`[^`]*`|"[^"]*")/);
+      expect(m, `${file}: the first question`).toBeTruthy();
+      return m![1];
+    };
+    const settings = firstQuestion("app/settings.tsx");
+    const pending = firstQuestion("app/(gate)/pending.tsx");
+    const kept = onDelete("reports", "reporter_id") === "set null";
+    for (const words of [settings, pending]) {
+      if (kept) expect(words).toContain("${DELETION_KEEPS_REPORTS}");
+      else expect(words).not.toContain("DELETION_KEEPS_REPORTS");
+      expect(words).toContain("This cannot be undone.");
+    }
+    // The one sentence both say is the policy's own.
+    expect(PRIVACY_POLICY).toContain(DELETION_KEEPS_REPORTS);
+    for (const file of ["app/settings.tsx", "app/(gate)/pending.tsx"]) {
+      expect(read(file)).toContain('import { DELETION_KEEPS_REPORTS } from "@/legal/documents";');
+    }
+    // Settings lists what goes as the policy lists it.
+    expect(removedOnDeletion()).toMatch(/^your /);
+    expect(settings).toContain(`Your ${removedOnDeletion().replace(/^your /, "")} are removed for good.`);
   });
 
   it("share links go with the account; the notes about shares stay without it", () => {

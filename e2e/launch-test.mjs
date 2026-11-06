@@ -156,6 +156,16 @@ check("The waiting screen offers Delete my account", (await byText("Delete my ac
     asked.join(" → ") === "Delete your account? → Are you sure?" && /Application received/i.test(await text()) && /\/pending/.test(page.url()),
     asked.join(" → ") || "no dialog",
   );
+  check(
+    "…and its first question says what stays, as the Privacy Policy does: the reports filed",
+    /removed for good\. The reports you filed are kept without your account attached\. This cannot be undone\./.test(dialogs[before] ?? ""),
+    (dialogs[before] ?? "no dialog").split("\n").slice(1).join(" "),
+  );
+  check(
+    "…and its second says the account goes now, never that everything does",
+    /This is the last step\. Your account is deleted now\./.test(dialogs[before + 1] ?? "") && !/everything/i.test(dialogs[before + 1] ?? ""),
+    (dialogs[before + 1] ?? "no dialog").split("\n").slice(1).join(" "),
+  );
 }
 
 // 2. the founder approves
@@ -935,6 +945,11 @@ check(
   commentReports(queueNow) === 2 && (await byText("Remove comment").count()) === 2,
   `${commentReports(queueNow)} open reports on it`,
 );
+check(
+  "Each report on it shows the comment's own words, so it is never removed unseen",
+  (queueNow.match(/“The emptiness makes it\./g) ?? []).length === 2,
+  `${(queueNow.match(/“The emptiness makes it\./g) ?? []).length} shown`,
+);
 await shot("19-comment-report");
 await tap("Remove comment", 2600);
 const queueAfter = await text();
@@ -984,6 +999,61 @@ check(
       (await lost.getByText("Apply for membership", { exact: true }).locator("visible=true").count()) > 0 &&
       !/Unmatched Route|Sitemap/.test(body),
     lost.url(),
+  );
+  await fresh.close();
+}
+
+// A bar at the door keeps its label clear of its arrow: at the default
+// size in the same place as before, and at a much larger size (drawn here
+// at 60 pixels, wider than the bar less its clearances, as the largest
+// accessibility sizes would draw a longer label) wrapped between the two
+// clearances rather than under the arrow. On the narrowest phone (320
+// wide) the door's longest bar label, "I have an invitation" on the
+// waiting screen, still takes one line at the default size.
+{
+  const fresh = await browser.newContext({ viewport: { width: 375, height: 812 } });
+  const door = await fresh.newPage();
+  door.on("pageerror", (e) => errors.push("door bar: " + e.message));
+  await door.goto(B + "/sign-in", { waitUntil: "networkidle" });
+  await door.waitForTimeout(2400);
+  const measure = (px, words) =>
+    door.evaluate(([size, text]) => {
+      const bar = [...document.querySelectorAll('[role="button"][aria-label="Sign in"]')].find(
+        (el) => el.getBoundingClientRect().width > 200,
+      );
+      const label = bar && [...bar.querySelectorAll('[dir="auto"]')].find((el) => /^sign in$/i.test(el.textContent ?? ""));
+      const arrow = bar && [...bar.children].find((el) => el !== label && !el.contains(label));
+      if (!bar || !label || !arrow) return null;
+      // Each measure starts from the page's own size, whatever the one before it drew.
+      if (label.dataset.fs === undefined) label.dataset.fs = label.style.fontSize;
+      label.style.fontSize = size ? `${size}px` : label.dataset.fs;
+      if (text) label.textContent = text;
+      const b = bar.getBoundingClientRect();
+      const l = label.getBoundingClientRect();
+      const a = arrow.getBoundingClientRect();
+      return {
+        bar: Math.round(b.width),
+        left: Math.round(l.left - b.left),
+        right: Math.round(b.right - l.right),
+        arrow: Math.round(b.right - a.left),
+        lines: Math.round(l.height / (size ? size : 11)),
+      };
+    }, [px, words]);
+  const normal = await measure(0);
+  const large = await measure(60);
+  await door.setViewportSize({ width: 320, height: 640 });
+  await door.waitForTimeout(400);
+  const narrow = await measure(0, "I have an invitation");
+  check(
+    "A bar's label at the door is centred and on one line at the default size, even 320 wide, and clear of its arrow at a large size",
+    Boolean(normal && large && narrow) &&
+      Math.abs(normal.left - normal.right) <= 3 &&
+      normal.lines === 1 &&
+      narrow.lines === 1 &&
+      large.lines > 1 &&
+      large.right >= large.arrow + 2 &&
+      large.left >= large.arrow,
+    JSON.stringify({ normal, large, narrow }),
   );
   await fresh.close();
 }
