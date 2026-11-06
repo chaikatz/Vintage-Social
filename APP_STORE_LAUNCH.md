@@ -266,9 +266,9 @@ comment at the top of each file says what it changes, what members would
 notice, and how to undo it. If you approve, in the merged branch:
 
 1. Look in `supabase/migrations`. Every file whose number is **0023 or
-   higher** is new, and all of them are needed: when this was written,
-   0023 to 0034, with more from the sweep's last round. Do not stop at the
-   ones named here; take the list from the folder.
+   higher** is new, and all of them are needed (the table under item 4
+   lists them). Do not stop at the ones named here; take the list from
+   the folder.
 2. Supabase → **Vintage-Production** (`scfwowqsqrnzpknzurmm`) → **SQL
    Editor** → **New query**.
 3. Paste the whole of the lowest-numbered new file → **Run**. Wait for
@@ -297,7 +297,6 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0033 | A photograph a member reports leaves their own view | 32 |
    | 0034 | The house photographs' grid squares at 500 pixels, not full size | 33–34 |
 
-   A file after 0034 has rows of its own after these, named by its number.
 5. Redeploy the `push` function, which changed in the sweep:
    `npx supabase functions deploy push --project-ref scfwowqsqrnzpknzurmm`
    (or Supabase → **Edge Functions** → `push` → deploy the new code).

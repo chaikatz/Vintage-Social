@@ -75,11 +75,14 @@ describe("the database step", () => {
         }
       }
     }
-    // Every row a listed file names as its own is listed under it.
+    // Every row the script names as a file's is listed under that file, so a file that adds rows (or a
+    // file edited in place that adds one) has its line in the table, and the message says what to write.
     const files = new Set(lines.map((l) => l[1]));
     for (const [n, label] of labels) {
       const named = label.match(/^(\d{4}):/)?.[1];
-      if (named && files.has(named)) expect(listed.get(n), `row ${n}: ${label}`).toBe(named);
+      if (named) {
+        expect(listed.get(n), `APP_STORE_LAUNCH.md step 4: list row ${n} under ${named} in the table (its label: "${label}")`).toBe(named);
+      }
     }
     // And each file is in the folder.
     const folder = readdirSync(path.join(root, "supabase/migrations")).map((f) => f.slice(0, 4));
