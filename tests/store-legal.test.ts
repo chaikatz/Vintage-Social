@@ -35,7 +35,7 @@ describe("the web copies of the documents", () => {
 
   it("say what the app shares and saves, in the same words as the permission strings and the privacy label", () => {
     const policy = PRIVACY_POLICY;
-    expect(policy).toContain("we add nothing to it unless you choose Save Image or Save Video in the share sheet");
+    expect(policy).toContain("We add nothing to it unless you choose Save Image or Save Video in the share sheet.");
     expect(policy).toContain("Apple’s map service");
     expect(policy).toContain("Sharing outside VINTAGE.");
     expect(policy).toContain("make and model");
