@@ -178,6 +178,6 @@ describe("a limit on each request", () => {
 describe("the app's client", () => {
   it("limits its requests", () => {
     expect(read("src/lib/supabase.ts")).toMatch(/boundedFetch\(\(input, init\) => fetch\(input, init\), \(\) => !onlineManager\.isOnline\(\)\)/);
-    expect(read("src/lib/queryClient.ts")).toMatch(/retry: \(failures, error\) => onlineManager\.isOnline\(\) && retryRead\(failures, error\),/);
+    expect(read("src/lib/queryClient.ts")).toMatch(/retry: retryRead,/);
   });
 });

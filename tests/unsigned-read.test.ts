@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { memberSignedIn, noteUnsignedReads, takeUnsignedRead } from "@/lib/unsignedRead";
-import { isTransient } from "@/utils/retry";
+import { isTransient, retryRead } from "@/utils/retry";
 import { errorMessage } from "@/utils/errorMessage";
 
 const read = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
@@ -112,6 +112,14 @@ describe("a read that goes out without the member's token", () => {
     expect(net.sent.filter((r) => r.url.includes("/rest/v1/"))).toHaveLength(0);
     // Tried again like a connection that let go; an alert says its own words.
     expect(isTransient(error)).toBe(true);
+    // For as long as auth takes to get a refresh through (about a minute
+    // and a half at most), not three tries: a screen that waits for an
+    // answer before saying it is empty would otherwise say so meanwhile.
+    expect(retryRead(3, error)).toBe(true);
+    expect(retryRead(19, error)).toBe(true);
+    expect(retryRead(20, error)).toBe(false);
+    // A dropped connection still gets its three.
+    expect(retryRead(3, new TypeError("Network request failed"))).toBe(false);
     expect(errorMessage(error, "Try again in a moment.")).toBe("Try again in a moment.");
     // And read again once the token goes through.
     expect(takeUnsignedRead()).toBe(true);

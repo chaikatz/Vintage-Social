@@ -17,29 +17,50 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      // A read is tried even when the phone says it is offline. In
-      // react-query's own mode ("online") a read asked for with no signal
-      // waits, neither loading nor failed, and a screen opened that way
-      // (the app opened in a lift, on a plane) drew its empty state: Home
-      // said "A quiet start" to a member with a full feed, and a pull to
-      // refresh did nothing. Tried, it fails at once, and the screen says
-      // it could not load, with Try again.
-      networkMode: "always",
-      // That mode would also stop reading again when the signal comes
-      // back; this keeps it, so a screen that could not load fills in by
-      // itself once the phone is online.
-      refetchOnReconnect: true,
+      // Each read is tried once whatever the phone says of its signal, and
+      // only its further tries wait for one. In react-query's own mode
+      // ("online") a read asked for with no signal was not tried at all,
+      // and waited neither loading nor failed: reads of the phone's own,
+      // which need no network (the photo library on On this day), waited
+      // for one, and a screen opened that way (the app opened in a lift,
+      // on a plane) drew its empty state: Home said "A quiet start" to a
+      // member with a full feed. What a read that failed so shows is
+      // decided below (showOfflineFirstReadsAsFailed).
+      networkMode: "offlineFirst",
       // A stalled read is tried once more, not three times: each try is a
       // full request limit (src/lib/boundedFetch.ts) behind a skeleton.
-      // With no signal at all it is not tried again: the signal's return
-      // reads it again (above), and the screen need not sit on its
-      // skeleton through three more tries (5.6 s of waits) to say it
-      // could not load.
-      retry: (failures, error) => onlineManager.isOnline() && retryRead(failures, error),
+      retry: retryRead,
       retryDelay: (attempt) => Math.min(800 * 2 ** attempt, 5000),
     },
   },
 });
+
+/**
+ * A screen's first read that failed with no signal, shown as failed.
+ *
+ * Its further tries wait for the signal (above), and while they wait the
+ * read is neither loading nor failed, so Home, opened with no signal,
+ * drew "A quiet start" and a pull to refresh did nothing. Marked failed
+ * here, it says it could not load, with Try again, and the tries that
+ * wait for the signal go on as soon as it returns and fill the screen in
+ * by themselves.
+ *
+ * It is marked failed without being counted as an answer (`isFetched`
+ * stays false), so a screen that waits for an answer before saying it is
+ * empty (your profile's grid, the inbox) goes on waiting rather than
+ * saying there is nothing. A read that has something keeps it, and is not
+ * marked. Only with no signal: tries also wait while the app is in the
+ * background, which is no failure. Returns the way to stop.
+ */
+export function showOfflineFirstReadsAsFailed(client: QueryClient): () => void {
+  return client.getQueryCache().subscribe((event) => {
+    if (event.type !== "updated" || event.action.type !== "pause") return;
+    const { state } = event.query;
+    if (state.data !== undefined || state.status !== "pending" || onlineManager.isOnline()) return;
+    event.query.setState({ status: "error", error: state.fetchFailureReason });
+  });
+}
+showOfflineFirstReadsAsFailed(queryClient);
 
 /**
  * Whether the app is in front, for react-query, as iOS reports a change:

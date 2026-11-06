@@ -64,13 +64,26 @@ export function isTimedOut(err: unknown): boolean {
   return /timed? ?out/.test(message);
 }
 
+/** A screen's read held back while auth cannot yet refresh the member's token (src/lib/unsignedRead.ts). */
+export function isSigningInAgain(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const message = (err as { message?: unknown }).message;
+  return typeof message === "string" && /signing in again/i.test(message);
+}
+
 /**
  * Whether a screen's read is tried again (react-query's `retry`, given
  * the failures so far, from 0): a connection that let go, up to three
  * times, briefly spaced; one that ran out of time, once; a refusal, never.
+ * One held back while signing in again is tried for about a minute and a
+ * half, spaced at most five seconds apart: as long as auth takes to get a
+ * refresh through after the signal returns (it keeps a failed refresh for
+ * a minute, and tries every half minute). Given up sooner, a screen that
+ * waits for an answer before saying it is empty would say so meanwhile.
  */
 export function retryRead(failureCount: number, error: unknown): boolean {
   if (!isTransient(error)) return false;
+  if (isSigningInAgain(error)) return failureCount < 20;
   return failureCount < (isTimedOut(error) ? 1 : 3);
 }
 
