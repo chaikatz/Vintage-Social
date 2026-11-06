@@ -7,7 +7,8 @@ import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { registerPushToken, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
-import { tapFollower } from "./pushRoute";
+import { tapFollower, tokenFiler } from "./pushRoute";
+import { onReturnFromBackground } from "./appReturn";
 
 /**
  * The phone's side of notifications.
@@ -64,8 +65,11 @@ export async function registerForPush(userId: string): Promise<string | null> {
     if (!token) return null;
     const platform = Platform.OS === "ios" ? "ios" : "android";
     const device = [Device.manufacturer, Device.modelName].filter(Boolean).join(" ") || null;
-    await registerPushToken(userId, token, platform, device);
+    // Known before it is filed: a filing that fails (no signal, a token
+    // that had run out) leaves the row an earlier launch filed, and
+    // signing out must still be able to take it away.
     currentToken = token;
+    await registerPushToken(userId, token, platform, device);
     return token;
   } catch (err) {
     // A push that cannot be set up is a push that will not arrive; the
@@ -87,14 +91,19 @@ export async function forgetPushToken(): Promise<void> {
   }
 }
 
-/** Register when an approved member is present; once per member per launch. */
+/**
+ * Register when an approved member is present, and again on each return
+ * to the app until it has worked (pushRoute.ts). Kept with the tabs, so a
+ * member who signs out and back in is filed afresh.
+ */
 export function usePushRegistration(userId: string | null | undefined, approved: boolean): void {
-  const done = useRef<string | null>(null);
+  const file = useRef<((userId: string) => void) | null>(null);
+  file.current ??= tokenFiler(registerForPush);
   useEffect(() => {
     if (!userId || !approved) return;
-    if (done.current === userId) return;
-    done.current = userId;
-    registerForPush(userId);
+    const want = () => file.current?.(userId);
+    want();
+    return onReturnFromBackground(want);
   }, [userId, approved]);
 }
 

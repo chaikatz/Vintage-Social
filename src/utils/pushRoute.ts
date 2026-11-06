@@ -94,3 +94,36 @@ export function tapFollower({
     if (route) go(route, 0);
   };
 }
+
+/**
+ * Filing the phone's push token under the member, until it has been.
+ *
+ * It used to be tried once per member per launch, and counted as done
+ * before it had worked. Now the app opens before auth has answered, so on
+ * a launch with no signal, or with an access token that had run out, the
+ * write went out offline or without the member's token, failed, and was
+ * not tried again until the next launch. Each call here tries again
+ * unless it has worked for this member, or a try is still on its way;
+ * the hook calls it as the member arrives and on each return to the app.
+ *
+ * `register` resolves with the token once filed, and with null when it
+ * was not (no permission, no device, no network).
+ */
+export function tokenFiler(register: (userId: string) => Promise<string | null>): (userId: string) => void {
+  let filed: string | null = null;
+  let filing: string | null = null;
+  return (userId) => {
+    if (!userId || filed === userId || filing === userId) return;
+    filing = userId;
+    register(userId)
+      .then(
+        (token) => {
+          if (token) filed = userId;
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        if (filing === userId) filing = null;
+      });
+  };
+}
