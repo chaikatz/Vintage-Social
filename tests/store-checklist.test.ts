@@ -38,6 +38,53 @@ describe("the database step", () => {
     expect(where).not.toMatch(/adds `0023_[^`]+` and `0024_[^`]+` and changes/);
     expect(where).toContain("numbered from **0023 up**");
   });
+
+  /**
+   * Verify script 12 grows with the migrations (each new one adds rows to
+   * it, and the harness counts them). The step names what it checks on one
+   * line; when the script grows, this says exactly what that line should
+   * now read.
+   */
+  const verify = () => read("supabase/production/12_policies_read_once_verify.sql");
+  const rowLabels = () =>
+    new Map([...verify().matchAll(/select (\d+)(?: as n)?, '((?:[^']|'')*)'/g)].map((m) => [Number(m[1]), m[2]] as const));
+
+  it("names what verify script 12 checks as the script and its harness do", () => {
+    const [, from, to] = verify().split("\n")[0].match(/verify (\d{4})-(\d{4})/) ?? [];
+    const count = Number(read("supabase/tests/run.mjs").match(/rows\.length !== (\d+)/)?.[1]);
+    expect(from, "the script's first line names its range").toBe("0023");
+    expect(rowLabels().size, "every row of the script is numbered").toBe(count);
+    const line = `Verify script 12 today: \`12_policies_read_once_verify.sql\`, which checks ${from} to ${to} in ${count} rows.`;
+    expect(doc(), `APP_STORE_LAUNCH.md step 4: make its verify line read: ${line}`).toContain(`\n   ${line}\n`);
+  });
+
+  it("says which rows of the script are each file's, and they are", () => {
+    const step = between(doc(), "### Step 4", "### Step 5");
+    const lines = [...step.matchAll(/^ {3}\| (\d{4}) \| [^|]+ \| ([\d–, ]+) \|$/gm)];
+    expect(lines.length, "the table of files and their rows").toBeGreaterThanOrEqual(12);
+    const labels = rowLabels();
+    const listed = new Map<number, string>();
+    for (const [, file, rows] of lines) {
+      for (const part of rows.split(",").map((p) => p.trim())) {
+        const [a, b] = part.split("–").map(Number);
+        for (let n = a; n <= (b ?? a); n++) {
+          expect(labels.has(n), `row ${n} (${file})`).toBe(true);
+          const named = labels.get(n)!.match(/^(\d{4}):/)?.[1];
+          if (named) expect(named, `row ${n}: ${labels.get(n)}`).toBe(file);
+          listed.set(n, file);
+        }
+      }
+    }
+    // Every row a listed file names as its own is listed under it.
+    const files = new Set(lines.map((l) => l[1]));
+    for (const [n, label] of labels) {
+      const named = label.match(/^(\d{4}):/)?.[1];
+      if (named && files.has(named)) expect(listed.get(n), `row ${n}: ${label}`).toBe(named);
+    }
+    // And each file is in the folder.
+    const folder = readdirSync(path.join(root, "supabase/migrations")).map((f) => f.slice(0, 4));
+    for (const file of files) expect(folder, file).toContain(file);
+  });
 });
 
 describe("the house accounts, as Apple is told about them", () => {

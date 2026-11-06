@@ -64,10 +64,10 @@ or anywhere in the repository, and must never be.
   in the SQL editor (0009, 0010, 0012, 0019–0022) are not listed there, and
   that is harmless.
 - **Pending your approval:** the launch sweep's backend work adds new
-  migrations numbered from **0023 up** (on 6 November the backend branch
-  had 0023, 0024 and 0025, and its repair was adding more) and changes the
-  `push` function. Nothing has been applied. See step 4: run every one of
-  them, in number order.
+  migrations numbered from **0023 up** (0023 to 0034 when this was
+  written, with more from the sweep's last round) and changes the `push`
+  function. Nothing has been applied. See step 4: run every one of them,
+  in number order.
 - Edge function `push`: active (version 1). Daily job `vintage-memories`
   at 15:00 UTC: active. Live push tokens: 5.
 - Security advisor: the `SECURITY DEFINER` warnings are the app's RPC
@@ -260,27 +260,53 @@ Then open, in Safari:
 
 ### Step 4 · Database changes from the sweep (only after you approve them)
 
-The backend work in this sweep is on branch `r12-backend` (and its
-repair) and is **not** applied. Read its notes first. If you approve, in
-the merged branch:
+The backend work in this sweep is in the merged branch and is **not**
+applied anywhere, staging or production. Read its notes first: the
+comment at the top of each file says what it changes, what members would
+notice, and how to undo it. If you approve, in the merged branch:
 
 1. Look in `supabase/migrations`. Every file whose number is **0023 or
-   higher** is new, and all of them are needed: on 6 November that was
-   0023, 0024 and 0025, with more being added. Do not stop at the ones
-   named here; take the list from the folder.
+   higher** is new, and all of them are needed: when this was written,
+   0023 to 0034, with more from the sweep's last round. Do not stop at the
+   ones named here; take the list from the folder.
 2. Supabase → **Vintage-Production** (`scfwowqsqrnzpknzurmm`) → **SQL
    Editor** → **New query**.
 3. Paste the whole of the lowest-numbered new file → **Run**. Wait for
    "Success". Then the next number, and so on: **every file from 0023 up,
-   one at a time, in number order**. If one fails, stop there and ask
-   Claude; do not skip it.
+   one at a time, in number order**, to the last one in the folder. If
+   one fails, stop there and ask Claude; do not skip it.
 4. Then run each verify script in `supabase/production` numbered **12 or
-   higher** (today `12_policies_read_once_verify.sql`, which checks
-   0023 to 0025) → **Run**, and check every row reads as the file says it
-   should.
-5. If `supabase/functions/push/` changed in the merge, redeploy it:
+   higher** → **Run**, once, after the last file (some rows count what
+   later files add, so part-way through they read false).
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0034 in 34 rows.
+   Every row's `ok` must read true. Each file's own rows, so a false one
+   points at its file:
+
+   | File | What it does | Rows |
+   | --- | --- | --- |
+   | 0023 | Policies read the caller once; an index under every foreign key | 1–13, 20–23 |
+   | 0024 | Block checks answer only for the member asking | 14 |
+   | 0025 | Home's feed in one request, paged by a cursor | 15–17, 24 |
+   | 0026 | A photograph's followers read in order | 18 |
+   | 0027 | Expo's push receipts kept for the `push` function | 19 |
+   | 0028 | Comments, likes and tags read only with their photograph | 25 |
+   | 0029 | A waitlist or rejection reaches the profile; an approval never lifts a suspension | 26–28 |
+   | 0030 | A photograph or comment is removed once, and its author told once | 29 |
+   | 0031 | A report outlives the member who filed it | 30 |
+   | 0032 | A new report reaches the admins' phones (needs item 5) | 31 |
+   | 0033 | A photograph a member reports leaves their own view | 32 |
+   | 0034 | The house photographs' grid squares at 500 pixels, not full size | 33–34 |
+
+   A file after 0034 has rows of its own after these, named by its number.
+5. Redeploy the `push` function, which changed in the sweep:
    `npx supabase functions deploy push --project-ref scfwowqsqrnzpknzurmm`
    (or Supabase → **Edge Functions** → `push` → deploy the new code).
+   0032 (reports reach the admins) needs this redeploy to send anything:
+   until then the deployed function answers its calls with "Unknown kind".
+6. On a project whose house accounts are seeded after the migrations (a
+   fresh project; production's are already there), run
+   `0034_seed_thumbnails_at_a_standard_width.sql` again after
+   `supabase/production/08_house_accounts.sql`.
 
 Never run anything against `omvezsrkjizxdfeogccw` (staging) by mistake for
 production, or the other way round: the project name is at the top left of
@@ -549,7 +575,9 @@ to check)
 > invitation is tied to the member who sent it) or by an application that
 > a person reads and approves. After that, by people: every report goes to
 > a human queue, admins remove content and warn, suspend or remove
-> members, and any member can block another. There is no automatic content
+> members, and any member can block another. A photograph a member
+> reports leaves their own feed, Explore and grids the moment the report is
+> sent, and does not come back for them. There is no automatic content
 > filter. Members accept the Terms of Use, which say there is no tolerance
 > for objectionable content or abuse, when they apply or accept an
 > invitation. Every photograph and
