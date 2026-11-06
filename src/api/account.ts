@@ -21,7 +21,10 @@ import type { Bucket } from "./media";
  *      to try again: the database's backstop (0018) deletes only the rows
  *      of files still there, not their bytes, so going on would have left
  *      their photographs in a public bucket after the account had gone.
- *   3. The database function removes the auth user and everything of
+ *   3. This phone stops taking the account's notices (its push token is
+ *      let go), and not before: a deletion stopped at the files leaves
+ *      the account as it was, notices and all.
+ *   4. The database function removes the auth user and everything of
  *      theirs cascades from it: profile, photographs, comments, likes,
  *      follows, tags, messages, tokens, preferences, invitation link. The
  *      membership number is never reissued. A dropped connection here is
@@ -29,7 +32,7 @@ import type { Bucket } from "./media";
  *      then their files are gone, and an account left without them is the
  *      worst place to stop. Asked again after it went through (the answer
  *      was lost), it finds nothing left to delete and says so as success.
- *   4. The phone forgets the session.
+ *   5. The phone forgets the session.
  *
  * A retry after any failure starts again at 1 and finishes the deletion:
  * folders already empty list empty at once.
@@ -117,8 +120,10 @@ async function refuseOnlyAdmin(userId: string): Promise<void> {
 export async function deleteMyAccount(userId: string, options: DeleteOptions = {}): Promise<void> {
   if (isDemoMode()) return;
   await refuseOnlyAdmin(userId);
-  await forgetPushToken();
   await removeOwnFiles(userId, options.sleep);
+  // Only now: a deletion stopped at the files leaves the account whole,
+  // its notices still coming to this phone. (forgetPushToken never throws.)
+  await forgetPushToken();
   await withRetry(
     async () => {
       const { error } = await supabase.rpc("delete_my_account");

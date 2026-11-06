@@ -29,10 +29,16 @@ const h = vi.hoisted(() => ({
   otherAdmins: 1,
   profileReads: 0,
   signedOut: 0,
+  /** Each step in the order it happened: "token", "rpc". */
+  steps: [] as string[],
 }));
 
 vi.mock("@/lib/env", () => ({ isDemoMode: () => false }));
-vi.mock("@/utils/push", () => ({ forgetPushToken: async () => undefined }));
+vi.mock("@/utils/push", () => ({
+  forgetPushToken: async () => {
+    h.steps.push("token");
+  },
+}));
 vi.mock("@/lib/supabase", () => {
   const profiles = () => {
     const q: Record<string, unknown> = {};
@@ -89,6 +95,7 @@ vi.mock("@/lib/supabase", () => {
       },
       rpc: async (name: string) => {
         h.rpc.push(name);
+        h.steps.push("rpc");
         const answer = h.rpcAnswers.length ? h.rpcAnswers.shift()! : null;
         return { error: answer };
       },
@@ -122,6 +129,7 @@ beforeEach(() => {
   h.otherAdmins = 1;
   h.profileReads = 0;
   h.signedOut = 0;
+  h.steps.length = 0;
 });
 
 describe("deleting an account removes every file, not the first thousand", () => {
@@ -173,6 +181,15 @@ describe("a folder that cannot be emptied stops the deletion with the account wh
     expect(h.removed.avatars).toBeUndefined();
     expect(h.rpc).toEqual([]);
     expect(h.signedOut).toBe(0);
+    // The account is whole, and so is its phone's place in its notices.
+    expect(h.steps).not.toContain("token");
+  });
+
+  it("the phone stops taking the account's notices only once its files are gone, just before the account goes", async () => {
+    h.files.media = names(3, "p");
+    await deleteMyAccount(ME, noWait);
+    expect(h.steps).toEqual(["token", "rpc"]);
+    expect(h.files.media).toEqual([]);
   });
 
   it("storage refusing a remove is not taken for done", async () => {
