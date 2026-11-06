@@ -33,10 +33,12 @@ const COPY: Record<string, { title: string; body: string }> = {
     body: "Your membership is currently suspended. If you believe this is a mistake, write to us.",
   },
   // An account with no application of its own: an invitation refused after
-  // the account was made, or an application that never reached the admins.
+  // the account was made, or an application that never reached the admins
+  // (the app closed part-way). An invitation is taken here; an application
+  // starts again from a new account, as this one already holds its username.
   none: {
     title: "NO APPLICATION YET",
-    body: "Your account is made, but no application or invitation of yours has reached us.\nIf a member invited you, enter the invitation below.",
+    body: "Your account is made, but no application or invitation of yours has reached us.\nIf a member invited you, enter the invitation below. To apply instead, delete this account and apply again.",
   },
 };
 

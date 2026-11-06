@@ -33,13 +33,17 @@ export default function Apply() {
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
-  // Signed in, the application goes through the door as the invitation
-  // does (door.ts): sent, to the waiting room. And when the account was
-  // made but the application did not reach us (a dropped connection on the
-  // portrait or the last insert), to the waiting room too, where the
-  // account can be deleted or an invitation entered. Left here, every
-  // further try was "That username is taken": by their own new account.
-  const goIn = useDoorClosesBehind(busy);
+  // Once Submit has been pressed, the filled-in form stays until the
+  // application is sent. A try can fail after the account was made (the
+  // signal goes during the portrait or the application itself), and the
+  // way on is Submit again, which carries on with that account
+  // (submitApplication) rather than to the waiting room, which can take an
+  // invitation but not an application.
+  const [tried, setTried] = useState(false);
+  // Sent, the application goes in through the door as the invitation does
+  // (door.ts), once, to the waiting room. Signed in before anything was
+  // sent (opened by a link from inside the app), the page goes in at once.
+  const goIn = useDoorClosesBehind(busy || tried);
 
   const pickAvatar = async () => {
     try {
@@ -68,6 +72,7 @@ export default function Apply() {
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
 
+    setTried(true);
     setBusy(true);
     try {
       const available = await checkUsernameAvailable(username);
