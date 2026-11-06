@@ -17,9 +17,12 @@ import {
   PLATE_STALL_MS,
   PlateStall,
   progressOf,
+  PROOF_AHEAD,
+  PROOF_BEHIND,
   quietAllowed,
   SILENT_TRIES,
   stallCheck,
+  wantsProof,
 } from "@/components/darkroom/plateImage";
 import { Visit } from "@/components/darkroom/visit";
 import { gated, inBackground, onThisDay, Surprise, yearIndex } from "@/darkroom/discovery";
@@ -346,6 +349,18 @@ describe("a plate's photograph", () => {
 
   it("leaves a slightly larger rendition to the GPU rather than redrawing it on the main thread", () => {
     for (const d of [true, false]) for (const r of [true, false]) expect(photographRequest(d, r).allowDownscaling).toBe(false);
+  });
+
+  it("slides in soft, not empty: a proof on the settled page, the one before and the two after", () => {
+    expect([PROOF_BEHIND, PROOF_AHEAD]).toEqual([1, 2]);
+    const settled = 10;
+    const proofed = [7, 8, 9, 10, 11, 12, 13, 14].filter((i) => wantsProof(i, settled));
+    expect(proofed).toEqual([9, 10, 11, 12]);
+    expect(wantsProof(0, 0)).toBe(true);
+    expect(wantsProof(-1, 0)).toBe(true);
+    expect(read("app/darkroom.tsx")).toMatch(/proof=\{chapter != null && wantsProof\(index, chapter\.index\)\}/);
+    // The full photograph is still asked for only by the pages the stage mounts: the one in view and one either side.
+    expect(read("src/components/darkroom/Stage.tsx")).toMatch(/initialNumToRender=\{1\}\s*maxToRenderPerBatch=\{1\}\s*windowSize=\{3\}/);
   });
 
   it("reads iCloud's progress as Photos sends it for a ph:// address, and bytes elsewhere", () => {

@@ -54,8 +54,10 @@ const CLOUD_STEP_MS = 120;
  * thumbnail it keeps on the phone, so the print develops out of a soft
  * version of itself and never flashes empty. Then the full image,
  * dissolving in over 240 ms (none for a print already drawn this visit,
- * which comes from memory), after which the proof is unmounted. Only the
- * current page and the next have a proof.
+ * which comes from memory), after which the proof is unmounted. The
+ * settled page, the one before it and the two after have a proof
+ * (`wantsProof` in plateImage.ts), so a print turned back to, or brought
+ * in by a quick double swipe, slides in soft rather than empty.
  *
  * Why the proof cannot poison the full image's cache. For a `ph://`
  * source expo-image (3.0, `ios/ImageView.swift`) always resizes early: it
@@ -110,7 +112,7 @@ export interface PrintPageProps {
   pixelRatio: number;
   /** The settled page. */
   current: boolean;
-  /** The current page or the next: worth a soft proof. */
+  /** Near enough the settled page to be worth a soft proof (`wantsProof`). */
   proof: boolean;
   /** Draw the photograph at all (neighbours under the editor do not). */
   images: boolean;

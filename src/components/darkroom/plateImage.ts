@@ -42,6 +42,27 @@ import type { PlateTrouble } from "./words";
  *    before, for the phone to come back online or the library to change.
  */
 
+/** Pages before the settled one that keep a soft proof while their photograph comes: turning back to a print that had not drawn yet shows it soft, not an empty well. */
+export const PROOF_BEHIND = 1;
+
+/**
+ * Pages after the settled one with a soft proof. The stage mounts only the
+ * pages either side of the one in view, and the page after next is mounted
+ * as a swipe begins, so on a quick double swipe it slides in before the
+ * first swipe has settled: with a proof it slides in soft.
+ */
+export const PROOF_AHEAD = 2;
+
+/**
+ * Whether a page draws the soft proof (a 48 pt thumbnail Photos keeps on
+ * the phone, scaled up): the settled page, the one before and the two
+ * after. The full photograph is still asked for only by the pages the
+ * stage has mounted.
+ */
+export function wantsProof(index: number, settled: number): boolean {
+  return index >= settled - PROOF_BEHIND && index <= settled + PROOF_AHEAD;
+}
+
 /** The full image dissolves in over this; a print already drawn this visit comes from memory and does not. */
 export const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" } as const;
 
