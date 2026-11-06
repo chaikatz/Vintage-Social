@@ -59,6 +59,7 @@ export default function Settings() {
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [city, setCity] = useState(profile?.city ?? "");
   const [newAvatarUri, setNewAvatarUri] = useState<string | null>(null);
+  const uploadedAvatar = useRef<{ uri: string; path: string } | null>(null);
   const [isPrivate, setIsPrivate] = useState(profile?.is_private ?? false);
   const [busy, setBusy] = useState(false);
   // Light print, dark print, or the phone's choice. Takes effect at once.
@@ -165,20 +166,28 @@ export default function Settings() {
     setBusy(true);
     try {
       let avatarPath: string | undefined;
+      // The portrait the new one replaces, removed only once the profile
+      // names the new one.
+      let replaced: string | null = null;
       if (newAvatarUri && isDemoMode()) {
         avatarPath = newAvatarUri; // demo mode: keep the local uri, no upload
       } else if (newAvatarUri) {
-        const prepared = await prepareAvatar(newAvatarUri);
         // A new key for every portrait. The old one was overwritten in place
         // under a fixed name, and every cache between the bucket and the
         // screen — the CDN's, the image library's — went on serving the old
         // face for as long as it liked. A new address is new everywhere at
         // once; the previous file is cleared away afterwards, best-effort.
-        avatarPath = await uploadFile("avatars", `${userId}/avatar-${Date.now()}.jpg`, prepared.uri, "image/jpeg");
-        const previous = profile?.avatar_url;
-        if (previous && previous.startsWith(`${userId}/`) && previous !== avatarPath) {
-          supabase.storage.from("avatars").remove([previous]).catch(() => undefined);
+        // A Save tried again after a refused update sends the file already
+        // uploaded for this photograph, not another copy of it.
+        if (uploadedAvatar.current?.uri === newAvatarUri) {
+          avatarPath = uploadedAvatar.current.path;
+        } else {
+          const prepared = await prepareAvatar(newAvatarUri);
+          avatarPath = await uploadFile("avatars", `${userId}/avatar-${Date.now()}.jpg`, prepared.uri, "image/jpeg");
+          uploadedAvatar.current = { uri: newAvatarUri, path: avatarPath };
         }
+        const previous = profile?.avatar_url;
+        if (previous && previous.startsWith(`${userId}/`) && previous !== avatarPath) replaced = previous;
       }
       await updateOwnProfile(userId, {
         full_name: fullName.trim(),
@@ -186,6 +195,10 @@ export default function Settings() {
         city: city.trim(),
         ...(avatarPath ? { avatar_url: avatarPath } : {}),
       });
+      // Only now: the old portrait used to be removed before this update,
+      // and an update that failed (no signal, a timeout) left the profile
+      // naming a file that was gone, a broken portrait for everyone.
+      if (replaced) supabase.storage.from("avatars").remove([replaced]).catch(() => undefined);
       await refreshProfile();
       queryClient.invalidateQueries();
       router.back();
