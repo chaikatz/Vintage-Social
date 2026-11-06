@@ -248,6 +248,16 @@ const authorRef = (id: string) => {
 
 const withAuthor = (post: PostRow): PostWithAuthor => ({ ...clone(post), author: authorRef(post.author_id) });
 
+/**
+ * Whether the member has reported this photograph, and so no longer sees
+ * it (0033): never their own, and admins see everything.
+ */
+function reportedBy(viewerId: string | null, post: PostRow): boolean {
+  if (!viewerId || post.author_id === viewerId) return false;
+  if (state.profiles.find((p) => p.id === viewerId)?.role === "admin") return false;
+  return state.reports.some((r) => r.reporter_id === viewerId && r.post_id === post.id);
+}
+
 // ---------------------------------------------------------------------------
 // posts / feed
 // ---------------------------------------------------------------------------
@@ -264,7 +274,7 @@ export function demoFetchFeedPage(
   );
   followees.add(userId);
   const feed = state.posts
-    .filter((p) => followees.has(p.author_id) && !p.removed_at)
+    .filter((p) => followees.has(p.author_id) && !p.removed_at && !reportedBy(userId, p))
     .filter((p) => !before || p.created_at < before.at || (p.created_at === before.at && p.id < before.id))
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   return feed.slice(0, pageSize).map(withAuthor);
@@ -272,13 +282,13 @@ export function demoFetchFeedPage(
 
 export function demoFetchUserPosts(authorId: string): PostRow[] {
   return state.posts
-    .filter((p) => p.author_id === authorId && !p.removed_at)
+    .filter((p) => p.author_id === authorId && !p.removed_at && !reportedBy(state.currentUserId, p))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map(clone);
 }
 
 export function demoFetchPost(postId: string): PostWithAuthor | null {
-  const post = state.posts.find((p) => p.id === postId && !p.removed_at);
+  const post = state.posts.find((p) => p.id === postId && !p.removed_at && !reportedBy(state.currentUserId, p));
   return post ? withAuthor(post) : null;
 }
 
@@ -1046,6 +1056,7 @@ export function demoFetchExplore(viewerId: string, limit: number): PostRow[] {
       (p) =>
         !p.removed_at &&
         p.author_id !== viewerId &&
+        !reportedBy(viewerId, p) &&
         demoCanViewPosts(viewerId, p.author_id),
     )
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -1199,7 +1210,7 @@ export function demoFetchPostTags(postId: string): PostTagWithMember[] {
 export function demoFetchTaggedPosts(userId: string): PostRow[] {
   const ids = new Set(state.tags.filter((t) => t.user_id === userId && t.status === "accepted").map((t) => t.post_id));
   return state.posts
-    .filter((p) => ids.has(p.id) && !p.removed_at)
+    .filter((p) => ids.has(p.id) && !p.removed_at && !reportedBy(state.currentUserId, p))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map(clone);
 }

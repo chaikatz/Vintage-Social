@@ -2,21 +2,30 @@ import React, { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
 import { TextField } from "@/components/TextField";
 import { colors, radii, spacing, type } from "@/theme";
 import { REPORT_REASONS, submitReport } from "@/api/moderation";
 import { useSession } from "@/providers/SessionProvider";
+import { removePostEverywhere } from "@/utils/postCache";
 import type { ReportTargetType } from "@/types/db";
 
 /**
  * Reporting goes to human admins. Nothing here is automated — reports feed
  * the moderation queue where a person decides what happens.
+ *
+ * A photograph the member reports leaves their own feed, Explore and grids
+ * the moment the report is in, whatever an admin later decides: taken out
+ * of what is on screen here, and kept out of every read after by the
+ * database (0033), from the member's own reports. Nobody else's view
+ * changes. Admins see everything, as they must to act on it.
  */
 export default function Report() {
   const router = useRouter();
-  const { session } = useSession();
+  const queryClient = useQueryClient();
+  const { session, isAdmin } = useSession();
   const params = useLocalSearchParams<{
     targetType: ReportTargetType;
     postId?: string;
@@ -45,6 +54,8 @@ export default function Report() {
         reason,
         details,
       });
+      const targetType = params.targetType ?? "post";
+      if (targetType === "post" && params.postId && !isAdmin) void removePostEverywhere(queryClient, params.postId);
       showAlert("Thank you", "An admin will take a look.", [
         { text: "Done", onPress: () => router.back() },
       ]);
