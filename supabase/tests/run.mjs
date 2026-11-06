@@ -256,26 +256,24 @@ try {
     }
   }
 
-  // The read-only script the owner runs on production after 0023: it must
-  // run clean here, and every check it makes must hold. Its last block
-  // always raises (to undo the role it takes), so stopping on errors is
-  // off for it, and its message is read instead.
+  // The read-only script the owner runs on production after 0023-0027: it
+  // must run clean here, without a single error (the SQL editor shows only
+  // the last statement's result, or only the error), and its one table,
+  // the last statement's, must say ok on every row.
   const verify0023 = join(here, "..", "production", "12_policies_read_once_verify.sql");
   if (existsSync(verify0023) && res.status === 0 && process.exitCode !== 1) {
     process.stdout.write("· supabase/production/12_policies_read_once_verify.sql … ");
-    const r = psql(["-U", "vintage_owner", "-v", "ON_ERROR_STOP=0", "-A", "-F", "|", "-f", verify0023], { allowFail: true });
+    const r = psql(["-U", "vintage_owner", "-A", "-F", "|", "-f", verify0023], { allowFail: true });
     const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
     const failing = rows.filter((l) => !l.endsWith("|t"));
-    const result = (r.stderr ?? "").split("RESULT")[1] ?? "";
-    const answers = result.split("\n").filter((l) => /:\s+(yes|NO)\s*$/.test(l));
-    const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l) && !/RESULT/.test(l) && !/^\s*$/.test(l));
-    if (rows.length !== 15 || failing.length > 0 || answers.length !== 4 || answers.some((l) => /NO\s*$/.test(l)) || errors.length > 1) {
+    const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l));
+    if (r.status !== 0 || rows.length !== 23 || failing.length > 0 || errors.length > 0) {
       console.log("FAILED");
       process.stdout.write(r.stdout ?? "");
       process.stderr.write(r.stderr ?? "");
       process.exitCode = 1;
     } else {
-      console.log(`ok (${rows.length} checks, ${answers.length} plan answers, all as expected)`);
+      console.log(`ok (${rows.length} checks in one table, every one ok, no error)`);
     }
   }
 

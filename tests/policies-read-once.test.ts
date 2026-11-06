@@ -147,6 +147,22 @@ describe("0023: every policy reads the caller once", () => {
     const verify = readFileSync(join(root, "supabase", "production", "12_policies_read_once_verify.sql"), "utf8");
     expect(code(verify)).not.toMatch(/\b(insert|update|delete|create|alter|drop|grant|revoke|truncate)\b/i);
   });
+
+  // The SQL editor shows only the last statement's result, and a run that
+  // ends in an error shows only the error: the owner must see the table.
+  it("ends the production check with its table of checks, and never raises", () => {
+    const verify = code(readFileSync(join(root, "supabase", "production", "12_policies_read_once_verify.sql"), "utf8"));
+    expect(verify).not.toMatch(/\braise\b/i);
+    const statements = verify.split(/;\s*\n/).map((st) => st.trim()).filter(Boolean);
+    const last = statements[statements.length - 1];
+    expect(last).toMatch(/^with checks as \(/);
+    expect(last).toMatch(/select n, what, found, expected, coalesce\(found = expected, false\) as ok\s+from checks\s+order by n;?$/);
+    // The plan's answers reach the table through a setting, not a message.
+    expect(verify).toMatch(/perform set_config\('vintage\.verify_plan', v_answer, false\);/);
+    expect((last.match(/current_setting\('vintage\.verify_plan', true\)/g) ?? []).length).toBe(4);
+    const runner = readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8");
+    expect(runner).toMatch(/r\.status !== 0 \|\| rows\.length !== 23 \|\| failing\.length > 0 \|\| errors\.length > 0/);
+  });
 });
 
 describe("0025: the home feed in one piece", () => {
