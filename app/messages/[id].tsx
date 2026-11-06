@@ -33,6 +33,7 @@ import { useMinute } from "@/utils/useMinute";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { useImageRetry } from "@/media/imageRetry";
 
 // A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
 export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
@@ -170,13 +171,26 @@ const Bubble = React.memo(function Bubble({
   const thumb = shared
     ? mediaUrl("thumbnails", shared.thumb_path) ?? mediaUrl("media", shared.media_path)
     : null;
+  // A photograph that fails to load is asked for again (src/media/imageRetry.ts).
+  const retry = useImageRetry(thumb);
 
   return (
     <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
       <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
         {shared ? (
           <Pressable style={styles.shared} onPress={() => onOpenPost(shared.id)}>
-            {thumb ? <Image source={thumb} style={styles.sharedImage} contentFit="cover" /> : null}
+            {thumb ? (
+              <Image
+                source={thumb}
+                style={styles.sharedImage}
+                contentFit="cover"
+                // In memory as well as on disk: a bubble scrolled back to
+                // was read from disk and decoded again each time.
+                cachePolicy="memory-disk"
+                key={retry.attempt}
+                onError={retry.onError}
+              />
+            ) : null}
             {/* A photograph whose author the reader may not see comes without one. */}
             {shared.author ? (
               <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>

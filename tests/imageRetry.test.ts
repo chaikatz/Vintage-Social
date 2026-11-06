@@ -319,4 +319,27 @@ describe("the pictures that try again", () => {
     expect(avatar.indexOf("useImageRetry(url)")).toBeLessThan(avatar.indexOf("if (!url)"));
     expect(avatar).toMatch(/cachePolicy="memory-disk"\s*key=\{retry\.attempt\}\s*onError=\{retry\.onError\}/);
   });
+
+  it("and a notice's photograph in Activity and a photograph sent in a thread, held in memory too", () => {
+    // expo-image keeps a picture on disk alone unless told otherwise
+    // (ImageModule.swift: `cachePolicy ?? .disk`): a row scrolled back to
+    // was read from disk and decoded again.
+    const activity = code("app/(tabs)/activity.tsx");
+    expect(activity).toMatch(/\{thumb \? <ActivityThumb source=\{thumb\} \/> : null\}/);
+    expect(activity).toMatch(/function ActivityThumb\(\{ source \}: \{ source: string \| number \}\) \{\s*const retry = useImageRetry\(source\);/);
+    expect(activity).toMatch(
+      /<Image\s*source=\{source\}\s*style=\{styles\.thumb\}\s*cachePolicy="memory-disk"\s*key=\{retry\.attempt\}\s*onError=\{retry\.onError\}\s*\/>/,
+    );
+    // No other picture on the page is left to the disk alone.
+    expect(activity.match(/<Image\b/g)).toHaveLength(1);
+
+    const thread = code("app/messages/[id].tsx");
+    expect(thread).toMatch(/const retry = useImageRetry\(thumb\);/);
+    expect(thread).toMatch(
+      /<Image\s*source=\{thumb\}\s*style=\{styles\.sharedImage\}\s*contentFit="cover"\s*cachePolicy="memory-disk"\s*key=\{retry\.attempt\}\s*onError=\{retry\.onError\}\s*\/>/,
+    );
+    expect(thread.match(/<Image\b/g)).toHaveLength(1);
+    // The hook runs on every draw of a bubble, before anything it draws.
+    expect(thread.indexOf("useImageRetry(thumb)")).toBeLessThan(thread.indexOf("return (\n    <View style={[styles.bubbleRow"));
+  });
 });

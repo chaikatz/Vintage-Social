@@ -13,6 +13,7 @@ import { fetchActivity, markActivityRead } from "@/api/activity";
 import { decideTag, fetchMyTagStatus } from "@/api/tags";
 import { mediaUrl } from "@/api/media";
 import { postAge } from "@/utils/time";
+import { useImageRetry } from "@/media/imageRetry";
 import { useSession } from "@/providers/SessionProvider";
 import type { ActivityWithRefs } from "@/types/db";
 
@@ -143,12 +144,32 @@ export default function Activity() {
                   <Text style={styles.decided}>On your profile</Text>
                 ) : null}
               </View>
-              {thumb ? <Image source={thumb} style={styles.thumb} /> : null}
+              {thumb ? <ActivityThumb source={thumb} /> : null}
             </Pressable>
           );
         }}
       />
     </Screen>
+  );
+}
+
+/**
+ * The photograph a notice is about. Held in memory as well as on disk, as
+ * the grid's squares are: a row scrolled back to was read from disk and
+ * decoded again each time (expo-image keeps a picture on disk alone unless
+ * told otherwise). One that fails to load is asked for again rather than
+ * left empty (src/media/imageRetry.ts).
+ */
+function ActivityThumb({ source }: { source: string | number }) {
+  const retry = useImageRetry(source);
+  return (
+    <Image
+      source={source}
+      style={styles.thumb}
+      cachePolicy="memory-disk"
+      key={retry.attempt}
+      onError={retry.onError}
+    />
   );
 }
 
