@@ -55,7 +55,7 @@ describe("0023: every policy reads the caller once", () => {
       expect(code(p.text), p.name).not.toMatch(/blocked_between\(|blocked_by\(/);
       const text = code(p.text);
       for (let at = text.indexOf("= any ("); at >= 0; at = text.indexOf("= any (", at + 1)) {
-        expect(text.slice(at + 7), p.name).toMatch(/^\(select public\.my_block(_partners|ers)\(\)\)::uuid\[\]\)/);
+        expect(text.slice(at + 7), p.name).toMatch(/^\(select private\.my_block(_partners|ers)\(\)\)::uuid\[\]\)/);
       }
     }
   });
@@ -108,9 +108,34 @@ describe("0023: every policy reads the caller once", () => {
   it("gives the new functions to members only", () => {
     for (const fn of ["my_block_partners()", "my_blockers()", "own_profile_unchanged(text, text, integer, integer, uuid, boolean)"]) {
       const name = fn.replace(/\(.*/, "");
-      expect(rewrite).toMatch(new RegExp(`revoke execute on function[^;]*public\\.${name}\\([^;]*from public, anon, authenticated;`));
-      expect(rewrite).toMatch(new RegExp(`grant execute on function[^;]*public\\.${name}\\([^;]*to authenticated;`));
+      expect(rewrite).toMatch(new RegExp(`revoke execute on function[^;]*private\\.${name}\\([^;]*from public, anon, authenticated;`));
+      expect(rewrite).toMatch(new RegExp(`grant execute on function[^;]*private\\.${name}\\([^;]*to authenticated;`));
     }
+  });
+
+  // PostgREST publishes every function in public that a role may execute
+  // (/rest/v1/rpc/<name>). A SECURITY DEFINER function there answers past
+  // row-level security: my_blockers() in public would hand any member the
+  // ids of everyone who has blocked them. 0023's definer helpers belong in
+  // a schema the API does not publish.
+  it("makes no SECURITY DEFINER function in public, where the API would publish it", () => {
+    const fns = [...code(rewrite).matchAll(/create or replace function\s+([\w.]+)\s*\(([\s\S]*?)\$\$/gi)];
+    expect(fns.length).toBe(3);
+    for (const [, name, head] of fns) {
+      if (/security definer/i.test(head)) expect(name, name).toMatch(/^private\./);
+    }
+    expect(code(rewrite)).toMatch(/create schema if not exists private;/);
+    expect(code(rewrite)).toMatch(/revoke all on schema private from public, anon;/);
+    expect(code(rewrite)).not.toMatch(/grant [^;]* on schema private to [^;]*\banon\b/);
+    // And nothing anywhere calls them in public any more.
+    expect(code(rewrite)).not.toMatch(/public\.(my_block_partners|my_blockers|own_profile_unchanged)\b/);
+  });
+
+  it("will not wait behind a long transaction while holding every table", () => {
+    // DROP/CREATE POLICY take ACCESS EXCLUSIVE until commit; the first
+    // statement bounds how long any one lock may be waited for.
+    const first = code(rewrite).split(";").map((s) => s.trim()).find(Boolean);
+    expect(first).toMatch(/^set local lock_timeout = '\d+s'$/);
   });
 
   it("is proven by the policy harness, which runs the matrix, the plans and the rollback", () => {

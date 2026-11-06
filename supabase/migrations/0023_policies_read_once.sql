@@ -49,14 +49,24 @@
 --     for every row: blocked_between(me, x) is true exactly when x is in
 --     my_block_partners(), and blocked_by(me, x) exactly when x is in
 --     my_blockers(), for any signed-in caller and any x; for a signed-out
---     caller both are false and both lists are empty. Neither function
---     takes an argument, so neither can be asked about anyone else, and
---     neither tells a member anything blocked_by(me, x) could not
---     already: anon may call neither, as with blocked_between.
+--     caller both are false and both lists are empty.
 --     The policies that compare two columns of the row (a conversation's
 --     pair, who follows whom, who tags whom) are checks on a single
 --     write or a member's own few threads, read no caller, and are left
 --     exactly as they are.
+--
+--   * Those three functions (my_block_partners, my_blockers,
+--     own_profile_unchanged) live in a schema of their own, private, and
+--     not in public. They are SECURITY DEFINER, so they read blocks and
+--     profiles past row-level security, and PostgREST publishes as
+--     /rest/v1/rpc every function in public that a role may execute: in
+--     public, any member could call my_blockers() and be handed, in one
+--     request, the ids of everyone who has blocked them - ids the
+--     "hidden from those blocked" policy exists to keep from them.
+--     private is not an exposed schema, so nothing in it can be called
+--     through the API; policies reach the functions by reference, and
+--     members hold EXECUTE on them for that and nothing else. anon holds
+--     neither, as with blocked_between.
 --
 -- Permissive policies stay as they are. PostgreSQL already ORs the
 -- permissive policies for a command into one expression and stops at the
@@ -87,17 +97,32 @@
 --   Partial where the column is mostly null, so they stay small. Nothing
 --   is dropped.
 --
+-- Locks. DROP POLICY and CREATE POLICY each take an ACCESS EXCLUSIVE lock
+-- on their table, and in one transaction every one of those locks is
+-- held until it commits: from the first policy on profiles to the last
+-- index, about twenty tables and storage.objects cannot be read by
+-- anyone. At today's size the whole file runs in well under a second;
+-- but if a long transaction is open on any of those tables, the file
+-- waits for it, and every read of the tables it already holds waits
+-- behind the file. So lock_timeout is set first: a lock not granted
+-- within five seconds stops the run, everything is rolled back as if it
+-- had never started, and it can simply be run again a little later. Run
+-- it at a quiet hour.
+--
 -- At today's size every CREATE INDEX here takes milliseconds, so plain
--- CREATE INDEX inside the migration's transaction is fine: it holds a
--- write lock on each table only while that index builds. On a club a
+-- CREATE INDEX inside the migration's transaction is fine. On a club a
 -- hundred times larger, build them first, one at a time, outside a
 -- transaction, with CREATE INDEX CONCURRENTLY and the same names (the
--- "if not exists" below then skips them), and apply this file after.
+-- "if not exists" below then skips them), and apply this file after; the
+-- policy statements still take their ACCESS EXCLUSIVE locks, so the
+-- lock_timeout and the quiet hour still apply.
 --
 -- No begin or commit of its own, like the other migrations: the runner
--- applies each file in one transaction, so no table is ever without its
--- policies, even for a moment. Idempotent: drop policy if exists before
--- each create, create index if not exists, create or replace function.
+-- (and the SQL editor, given the whole file) applies each file in one
+-- transaction, so no table is ever without its policies, even for a
+-- moment. Idempotent: drop policy if exists before each create, create
+-- index if not exists, create schema if not exists, create or replace
+-- function.
 --
 -- Proven on the policy harness (npm run test:rls):
 --   supabase/tests/08_policy_rewrite.sql  every member, signed-out
@@ -113,16 +138,28 @@
 --   supabase/tests/10_rollback_0023.sql  the rollback, for real.
 --
 -- Rollback: supabase/tests/0023_rollback.sql puts back every policy as
--- 0003-0022 left it and drops the three functions and the indexes made
--- here; 10_rollback_0023.sql applies it and checks the policies match
--- the ones kept from before, exactly, then applies this file again.
--- Nothing needs rolling back for correctness: no answer changes.
+-- 0003-0022 left it and drops the three functions, the private schema
+-- (when nothing else is in it) and the indexes made here;
+-- 10_rollback_0023.sql applies it and checks the policies match the ones
+-- kept from before, exactly, then applies this file again. Nothing needs
+-- rolling back for correctness: no answer changes.
+
+set local lock_timeout = '5s';
+
+-- ---------------------------------------------------------------------------
+-- a schema the API does not publish, for what only policies may call
+-- ---------------------------------------------------------------------------
+create schema if not exists private;
+-- Nobody but its owner may look inside; members may use what policies
+-- call from it (EXECUTE on each function below), and nothing else.
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- who is on the other side of a block from the caller, read once
 -- ---------------------------------------------------------------------------
 /** Everyone the caller has blocked or been blocked by. Empty when signed out. */
-create or replace function public.my_block_partners()
+create or replace function private.my_block_partners()
 returns uuid[]
 language sql stable security definer set search_path = public
 as $$
@@ -135,7 +172,7 @@ as $$
 $$;
 
 /** Everyone who has blocked the caller: the one direction a profile hides in. */
-create or replace function public.my_blockers()
+create or replace function private.my_blockers()
 returns uuid[]
 language sql stable security definer set search_path = public
 as $$
@@ -145,9 +182,10 @@ $$;
 
 -- As blocked_between and blocked_by (0018): members only. Policies run as
 -- the querying role, so authenticated needs EXECUTE; anon gets none, as
--- with the functions these replace in the policies.
-revoke execute on function public.my_block_partners(), public.my_blockers() from public, anon, authenticated;
-grant execute on function public.my_block_partners(), public.my_blockers() to authenticated;
+-- with the functions these replace in the policies. A function made in a
+-- new schema is executable by PUBLIC until that is taken away, here.
+revoke execute on function private.my_block_partners(), private.my_blockers() from public, anon, authenticated;
+grant execute on function private.my_block_partners(), private.my_blockers() to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- profiles
@@ -183,7 +221,7 @@ create policy "profiles: admins read all" on public.profiles
  * change their own name, bio, city, avatar and privacy; these six only
  * change through the definer functions that own them.
  */
-create or replace function public.own_profile_unchanged(
+create or replace function private.own_profile_unchanged(
   p_role text, p_status text, p_invite_quota integer,
   p_member_no integer, p_invited_by uuid, p_is_house boolean)
 returns boolean
@@ -201,9 +239,9 @@ as $$
   )
 $$;
 
-revoke execute on function public.own_profile_unchanged(text, text, integer, integer, uuid, boolean)
+revoke execute on function private.own_profile_unchanged(text, text, integer, integer, uuid, boolean)
   from public, anon, authenticated;
-grant execute on function public.own_profile_unchanged(text, text, integer, integer, uuid, boolean)
+grant execute on function private.own_profile_unchanged(text, text, integer, integer, uuid, boolean)
   to authenticated;
 
 drop policy if exists "profiles: update own" on public.profiles;
@@ -211,7 +249,7 @@ create policy "profiles: update own" on public.profiles
   for update using (id = (select auth.uid()))
   with check (
     id = (select auth.uid())
-    and public.own_profile_unchanged(role, status, invite_quota, member_no, invited_by, is_house)
+    and private.own_profile_unchanged(role, status, invite_quota, member_no, invited_by, is_house)
   );
 
 drop policy if exists "profiles: hidden from those blocked" on public.profiles;
@@ -219,7 +257,7 @@ create policy "profiles: hidden from those blocked" on public.profiles
   as restrictive for select using (
     id = (select auth.uid())
     or (select public.is_admin((select auth.uid())))
-    or not coalesce(id = any ((select public.my_blockers())::uuid[]), false)
+    or not coalesce(id = any ((select private.my_blockers())::uuid[]), false)
   );
 
 -- ---------------------------------------------------------------------------
@@ -268,8 +306,8 @@ create policy "follows: unfollow as self" on public.follows
 drop policy if exists "follows: not between blocked" on public.follows;
 create policy "follows: not between blocked" on public.follows
   as restrictive for select using (
-    not coalesce(follower_id = any ((select public.my_block_partners())::uuid[]), false)
-    and not coalesce(followee_id = any ((select public.my_block_partners())::uuid[]), false)
+    not coalesce(follower_id = any ((select private.my_block_partners())::uuid[]), false)
+    and not coalesce(followee_id = any ((select private.my_block_partners())::uuid[]), false)
   );
 
 -- ---------------------------------------------------------------------------
@@ -327,7 +365,7 @@ drop policy if exists "posts: not between blocked" on public.posts;
 create policy "posts: not between blocked" on public.posts
   as restrictive for select using (
     (select public.is_admin((select auth.uid())))
-    or not coalesce(author_id = any ((select public.my_block_partners())::uuid[]), false)
+    or not coalesce(author_id = any ((select private.my_block_partners())::uuid[]), false)
   );
 
 -- ---------------------------------------------------------------------------
@@ -350,7 +388,7 @@ create policy "likes: unlike as self" on public.likes
 drop policy if exists "likes: not between blocked" on public.likes;
 create policy "likes: not between blocked" on public.likes
   as restrictive for select using (
-    not coalesce(user_id = any ((select public.my_block_partners())::uuid[]), false)
+    not coalesce(user_id = any ((select private.my_block_partners())::uuid[]), false)
   );
 
 -- ---------------------------------------------------------------------------
@@ -383,7 +421,7 @@ drop policy if exists "comments: not between blocked" on public.comments;
 create policy "comments: not between blocked" on public.comments
   as restrictive for select using (
     (select public.is_admin((select auth.uid())))
-    or not coalesce(author_id = any ((select public.my_block_partners())::uuid[]), false)
+    or not coalesce(author_id = any ((select private.my_block_partners())::uuid[]), false)
   );
 
 -- ---------------------------------------------------------------------------
@@ -402,7 +440,7 @@ drop policy if exists "activity: not from blocked" on public.activity;
 create policy "activity: not from blocked" on public.activity
   as restrictive for select using (
     actor_id is null
-    or not coalesce(actor_id = any ((select public.my_block_partners())::uuid[]), false)
+    or not coalesce(actor_id = any ((select private.my_block_partners())::uuid[]), false)
   );
 
 -- ---------------------------------------------------------------------------
@@ -493,7 +531,7 @@ create policy "messages: mark read" on public.messages
 drop policy if exists "messages: not between blocked" on public.messages;
 create policy "messages: not between blocked" on public.messages
   as restrictive for select using (
-    not coalesce(sender_id = any ((select public.my_block_partners())::uuid[]), false)
+    not coalesce(sender_id = any ((select private.my_block_partners())::uuid[]), false)
   );
 
 -- ---------------------------------------------------------------------------
@@ -548,8 +586,8 @@ create policy "post_tags: either party removes" on public.post_tags
 drop policy if exists "post_tags: not between blocked" on public.post_tags;
 create policy "post_tags: not between blocked" on public.post_tags
   as restrictive for select using (
-    not coalesce(user_id = any ((select public.my_block_partners())::uuid[]), false)
-    and not coalesce(tagged_by = any ((select public.my_block_partners())::uuid[]), false)
+    not coalesce(user_id = any ((select private.my_block_partners())::uuid[]), false)
+    and not coalesce(tagged_by = any ((select private.my_block_partners())::uuid[]), false)
   );
 
 -- ---------------------------------------------------------------------------
@@ -620,7 +658,7 @@ drop policy if exists "era_edits: not between blocked" on public.era_edits;
 create policy "era_edits: not between blocked" on public.era_edits
   as restrictive for select to authenticated using (
     (select public.is_admin((select auth.uid())))
-    or not coalesce(author_id = any ((select public.my_block_partners())::uuid[]), false)
+    or not coalesce(author_id = any ((select private.my_block_partners())::uuid[]), false)
   );
 
 drop policy if exists "era_edits: authors write own" on public.era_edits;

@@ -126,7 +126,11 @@ try {
       if (runAs) execFileSync("chown", [runAs, copy]);
     });
     process.stdout.write(`· ${label}${stood.length ? ` (stand-in for ${stood.join(", ")})` : ""} … `);
-    psql(["-U", "vintage_owner", "-q", "-f", applied], { stdio: ["ignore", "ignore", "pipe"] });
+    // Each migration in one transaction (-1), as Supabase's migration
+    // runner and the SQL editor apply a file: what one does is all there or
+    // none of it, and `set local` (0023's lock_timeout) holds for the file.
+    const single = f.startsWith(migrations) ? ["-1"] : [];
+    psql(["-U", "vintage_owner", "-q", ...single, "-f", applied], { stdio: ["ignore", "ignore", "pipe"] });
     console.log("ok");
   }
 

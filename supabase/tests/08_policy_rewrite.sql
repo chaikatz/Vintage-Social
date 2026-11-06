@@ -446,10 +446,30 @@ insert into tests.results (name, expected, actual) values
                         where i.indrelid = k.conrelid and i.indkey[0] = k.conkey[1])), '<none>')),
   ('the block lists answer only to members', 'false,false,true,true',
    (select string_agg(x::text, ',') from (values
-     (has_function_privilege('anon', 'public.my_block_partners()', 'execute')),
-     (has_function_privilege('anon', 'public.my_blockers()', 'execute')),
-     (has_function_privilege('authenticated', 'public.my_block_partners()', 'execute')),
-     (has_function_privilege('authenticated', 'public.my_blockers()', 'execute'))) v(x)));
+     (has_function_privilege('anon', 'private.my_block_partners()', 'execute')),
+     (has_function_privilege('anon', 'private.my_blockers()', 'execute')),
+     (has_function_privilege('authenticated', 'private.my_block_partners()', 'execute')),
+     (has_function_privilege('authenticated', 'private.my_blockers()', 'execute'))) v(x))),
+  -- PostgREST publishes every function in public a role may execute, as
+  -- /rest/v1/rpc/<name>. A SECURITY DEFINER function there that a member
+  -- may call answers past row-level security: my_blockers() in public
+  -- would hand a member the ids of everyone who blocked them.
+  ('0023 puts no SECURITY DEFINER function in public, where the API publishes it', '<none>',
+   coalesce((select string_agg(p.oid::regprocedure::text, ', ' order by 1)
+             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.prosecdef
+               and p.oid::regprocedure::text not in (select signature from before_0023.functions)), '<none>')),
+  ('its three helpers live in private, run as their owner, members only', '3',
+   (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'private' and p.prosecdef
+       and p.proname in ('my_block_partners', 'my_blockers', 'own_profile_unchanged')
+       and has_function_privilege('authenticated', p.oid, 'execute')
+       and not has_function_privilege('anon', p.oid, 'execute')
+       and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0))),
+  ('signed-out visitors cannot reach into private at all', 'false,false',
+   has_schema_privilege('anon', 'private', 'usage')::text || ',' ||
+   coalesce((select bool_or(a.grantee = 0) from pg_namespace n, aclexplode(n.nspacl) a
+             where n.nspname = 'private'), false)::text);
 
 -- Put back the policies 0023 replaced, as they were, and any function a
 -- later migration has changed since; then ask everything again.

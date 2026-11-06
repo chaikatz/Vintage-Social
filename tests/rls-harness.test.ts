@@ -75,4 +75,10 @@ describe("the policy runner on a server without Supabase's extensions", () => {
     expect(runner).toMatch(/withStandIns\(f, standIns, dir/);
     expect(runner).toMatch(/"-f", applied\]/);
   });
+
+  it("applies each migration in one transaction, as Supabase and the SQL editor do", () => {
+    const runner = readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8");
+    expect(runner).toMatch(/const single = f\.startsWith\(migrations\) \? \["-1"\] : \[\];/);
+    expect(runner).toMatch(/psql\(\["-U", "vintage_owner", "-q", \.\.\.single, "-f", applied\]/);
+  });
 });

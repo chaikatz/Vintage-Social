@@ -34,17 +34,51 @@ insert into tests.results (name, expected, actual) values
        except
        select schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check from before_0023.policies)
     ) d)),
-  ('and every index is as it was before 0023', '0',
+  ('and every index from before 0023 is there, unchanged', '0',
    (select count(*)::text from (
-      (select schemaname, indexname, indexdef from before_0023.indexes
-       except select schemaname, indexname, indexdef from pg_indexes where schemaname in ('public', 'storage'))
+      select schemaname, indexname, indexdef from before_0023.indexes
+      except select schemaname, indexname, indexdef from pg_indexes where schemaname in ('public', 'storage')
+    ) d)),
+  -- Later migrations (0026, 0027) make indexes of their own, which this
+  -- rollback is not about: it must take away 0023's and nothing else.
+  ('and the indexes it took away are 0023''s thirty, no more', '30',
+   (select count(*)::text from (
+      select * from indexes_first
+      except select schemaname, indexname, indexdef from pg_indexes where schemaname in ('public', 'storage')
+    ) d
+    where d.indexname in (
+     'activity_post_idx', 'activity_comment_idx', 'activity_actor_idx', 'comments_author_idx',
+     'likes_user_idx', 'messages_sender_idx', 'messages_post_idx', 'post_tags_tagged_by_idx',
+     'post_shares_owner_idx', 'share_events_post_idx', 'share_events_actor_idx',
+     'reports_reporter_idx', 'reports_post_idx', 'reports_comment_idx', 'reports_profile_idx',
+     'moderation_actions_post_idx', 'moderation_actions_comment_idx', 'moderation_actions_admin_idx',
+     'posts_removed_by_idx', 'comments_removed_by_idx', 'applications_decided_by_idx',
+     'reports_resolved_by_idx', 'invites_used_by_idx', 'app_settings_updated_by_idx',
+     'profiles_invited_by_idx', 'profiles_private_idx', 'follows_followers_idx',
+     'likes_post_recent_idx', 'activity_unread_idx', 'posts_taken_idx'))),
+  ('and every other index is still there, and none was added', '0',
+   (select count(*)::text from (
+      (select * from indexes_first
+        except select schemaname, indexname, indexdef from pg_indexes where schemaname in ('public', 'storage'))
       union all
       (select schemaname, indexname, indexdef from pg_indexes where schemaname in ('public', 'storage')
-       except select schemaname, indexname, indexdef from before_0023.indexes)
-    ) d)),
-  ('and the functions 0023 made are gone', '0',
+        except select * from indexes_first)
+    ) d
+    where d.indexname not in (
+     'activity_post_idx', 'activity_comment_idx', 'activity_actor_idx', 'comments_author_idx',
+     'likes_user_idx', 'messages_sender_idx', 'messages_post_idx', 'post_tags_tagged_by_idx',
+     'post_shares_owner_idx', 'share_events_post_idx', 'share_events_actor_idx',
+     'reports_reporter_idx', 'reports_post_idx', 'reports_comment_idx', 'reports_profile_idx',
+     'moderation_actions_post_idx', 'moderation_actions_comment_idx', 'moderation_actions_admin_idx',
+     'posts_removed_by_idx', 'comments_removed_by_idx', 'applications_decided_by_idx',
+     'reports_resolved_by_idx', 'invites_used_by_idx', 'app_settings_updated_by_idx',
+     'profiles_invited_by_idx', 'profiles_private_idx', 'follows_followers_idx',
+     'likes_post_recent_idx', 'activity_unread_idx', 'posts_taken_idx'))),
+  ('and the functions 0023 made are gone, from either schema', '0',
    (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public' and p.proname in ('my_block_partners', 'my_blockers', 'own_profile_unchanged')));
+     where n.nspname in ('public', 'private') and p.proname in ('my_block_partners', 'my_blockers', 'own_profile_unchanged'))),
+  ('and so is the private schema it made for them', '0',
+   (select count(*)::text from pg_namespace where nspname = 'private'));
 
 -- And forward again.
 \o /dev/null

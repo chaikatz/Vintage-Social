@@ -6,7 +6,8 @@
 -- afternoon: every policy 0023 replaced, exactly as 0003-0022 left it
 -- (generated from the policy harness just before 0023, and checked by
 -- 10_rollback_0023.sql to match those policies one for one), then the
--- three functions and the indexes 0023 made.
+-- three functions, the private schema they lived in (when nothing else
+-- is in it) and the indexes 0023 made.
 --
 -- One transaction: no table is ever without its policies. Run as a whole
 -- in the SQL editor, or with psql -f. Nothing else in the database is
@@ -14,6 +15,9 @@
 
 begin;
 
+-- As in 0023: a lock not granted within five seconds stops the run and
+-- undoes all of it, rather than leaving members' reads queued behind it.
+set local lock_timeout = '5s';
 set local search_path = public, extensions;
 
 drop policy if exists "activity: mark read" on public.activity;
@@ -435,9 +439,23 @@ create policy "media: upload own folder" on storage.objects
   with check (((bucket_id = ANY (ARRAY['media'::text, 'thumbnails'::text])) AND ((storage.foldername(name))[1] = (auth.uid())::text) AND is_active_member(auth.uid())));
 
 -- The policies above no longer call these.
-drop function if exists public.my_block_partners();
-drop function if exists public.my_blockers();
-drop function if exists public.own_profile_unchanged(text, text, integer, integer, uuid, boolean);
+drop function if exists private.my_block_partners();
+drop function if exists private.my_blockers();
+drop function if exists private.own_profile_unchanged(text, text, integer, integer, uuid, boolean);
+
+-- And the schema 0023 made for them, if nothing else has been put in it
+-- since (should something have been, it stays, and so does what is in it).
+do $private$
+begin
+  if exists (select 1 from pg_namespace where nspname = 'private')
+     and not exists (select 1 from pg_depend d
+                      where d.refclassid = 'pg_namespace'::regclass
+                        and d.refobjid = 'private'::regnamespace
+                        and d.deptype = 'n') then
+    drop schema private;
+  end if;
+end
+$private$;
 
 drop index if exists public.activity_post_idx;
 drop index if exists public.activity_comment_idx;

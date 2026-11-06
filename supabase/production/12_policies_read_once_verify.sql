@@ -53,21 +53,21 @@ with checks as (
   select 6, 'restrictive policies (blocking)', count(*)::text, '14'
   from pg_policies where schemaname = 'public' and permissive = 'RESTRICTIVE'
   union all
-  -- 4. The three functions, members only.
+  -- 4. The three functions, in private (the API does not publish it), members only.
   select 7, 'my_block_partners, my_blockers, own_profile_unchanged exist', count(*)::text, '3'
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public'
+  where n.nspname = 'private'
     and p.proname in ('my_block_partners', 'my_blockers', 'own_profile_unchanged')
     and p.prosecdef
   union all
   select 8, 'anon may call them', count(*)::text, '0'
-  from (values ('public.my_block_partners()'), ('public.my_blockers()'),
-               ('public.own_profile_unchanged(text, text, integer, integer, uuid, boolean)')) f(sig)
+  from (values ('private.my_block_partners()'), ('private.my_blockers()'),
+               ('private.own_profile_unchanged(text, text, integer, integer, uuid, boolean)')) f(sig)
   where has_function_privilege('anon', f.sig, 'execute')
   union all
   select 9, 'members may call them', count(*)::text, '3'
-  from (values ('public.my_block_partners()'), ('public.my_blockers()'),
-               ('public.own_profile_unchanged(text, text, integer, integer, uuid, boolean)')) f(sig)
+  from (values ('private.my_block_partners()'), ('private.my_blockers()'),
+               ('private.own_profile_unchanged(text, text, integer, integer, uuid, boolean)')) f(sig)
   where has_function_privilege('authenticated', f.sig, 'execute')
   union all
   -- 5. The thirty indexes, built and valid.
