@@ -87,11 +87,34 @@ export async function fetchConversations(userId: string): Promise<ConversationWi
   });
 }
 
-/** How many unread messages are waiting, for the badge on the tab bar. */
+/**
+ * How many unread messages are waiting, for the badge on the tab bar.
+ *
+ * Only what the badge needs: the member's threads, by id, and the unread
+ * messages others sent in them - the same count the inbox adds up, without
+ * the inbox's newest message per thread and every peer's profile, which
+ * the badge never shows and refreshes far more often than the inbox.
+ */
 export async function fetchUnreadMessageCount(userId: string): Promise<number> {
   if (isDemoMode()) return demo.demoUnreadMessageCount(userId);
-  const conversations = await fetchConversations(userId);
-  return conversations.reduce((n, c) => n + c.unread_count, 0);
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id")
+    .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+  if (error) throw error;
+  const ids = (data ?? []).map((c) => c.id as string);
+  if (ids.length === 0) return 0;
+  const waiting = await readInChunks(ids, async (chunk) => {
+    const { data: rows, error: unreadError } = await supabase
+      .from("messages")
+      .select("conversation_id")
+      .in("conversation_id", chunk)
+      .is("read_at", null)
+      .neq("sender_id", userId);
+    if (unreadError) throw unreadError;
+    return (rows ?? []) as { conversation_id: string }[];
+  }).catch(() => [] as { conversation_id: string }[]);
+  return waiting.length;
 }
 
 /**

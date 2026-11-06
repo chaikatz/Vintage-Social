@@ -422,6 +422,29 @@ describe("the inbox", () => {
     inbox();
     const unread = oldWay().reduce((n, c) => n + c.unread, 0);
     expect(await messages.fetchUnreadMessageCount(ME)).toBe(unread);
+    const inboxCount = (await messages.fetchConversations(ME)).reduce((n, c) => n + c.unread_count, 0);
+    expect(inboxCount).toBe(unread);
+  });
+
+  it("counts the badge without reading anyone's profile or any thread's newest message", async () => {
+    inbox();
+    await messages.fetchUnreadMessageCount(ME);
+    expect(h.requests.some((r) => r.url.pathname === "/rest/v1/profiles")).toBe(false);
+    const threads = h.requests.filter((r) => r.url.pathname === "/rest/v1/conversations");
+    expect(threads.length).toBe(1);
+    expect(threads[0].url.searchParams.get("select")).toBe("id");
+    for (const r of h.requests.filter((q) => q.url.pathname === "/rest/v1/messages")) {
+      expect(r.url.searchParams.get("select")).toBe("conversation_id");
+      expect(r.url.searchParams.get("read_at")).toBe("is.null");
+      expect(r.url.searchParams.get("sender_id")).toBe(`neq.${ME}`);
+    }
+  });
+
+  it("counts no badge for a member with no threads, in one read", async () => {
+    inbox();
+    h.tables.conversations = [];
+    expect(await messages.fetchUnreadMessageCount(ME)).toBe(0);
+    expect(h.requests.length).toBe(1);
   });
 });
 
