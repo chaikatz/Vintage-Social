@@ -24,9 +24,6 @@ describe("the recover pages", () => {
   it("stand in for the whole app, and for each screen of ours that draws rows from the server", () => {
     expect(read("app/_layout.tsx")).toMatch(/^export \{ RecoverApp as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
     for (const screen of [
-      "app/messages/index.tsx",
-      "app/messages/[id].tsx",
-      "app/comments.tsx",
       "app/(tabs)/activity.tsx",
       "app/(tabs)/search.tsx",
       // One bad row on these used to take the member out to the whole app's page. A tab's
@@ -46,6 +43,11 @@ describe("the recover pages", () => {
     for (const screen of [
       "app/post/[id].tsx",
       "app/user/[username].tsx",
+      // The inbox, a conversation and a photograph's comments: opened from a notification or
+      // a link, each is the first in its stack. Their recover page used to offer Try again alone.
+      "app/messages/index.tsx",
+      "app/messages/[id].tsx",
+      "app/comments.tsx",
       "app/gallery.tsx",
       "app/memories.tsx",
       "app/library-picker.tsx",
