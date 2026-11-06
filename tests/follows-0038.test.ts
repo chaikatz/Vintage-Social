@@ -224,7 +224,7 @@ describe("0038", () => {
     // a follow that counts keeps bump_follow_counts' order (follower, then
     // followee), which a lock on the followee taken first would turn round.
     expect(s).toMatch(
-      /select p\.is_private into v_private\s+from public\.profiles p\s+where p\.id = new\.followee_id;\s+if coalesce\(v_private, false\) then\s+select p\.is_private into v_private\s+from public\.profiles p\s+where p\.id = new\.followee_id\s+for no key update;\s+end if;\s+new\.status := case when coalesce\(v_private, false\) then 'pending' else 'accepted' end;/,
+      /select p\.is_private into v_private\s+from public\.profiles p\s+where p\.id = new\.followee_id;\s+if coalesce\(v_private, false\)\s+and not exists \(select 1 from public\.follows f\s+where f\.follower_id = new\.follower_id and f\.followee_id = new\.followee_id\) then\s+select p\.is_private into v_private\s+from public\.profiles p\s+where p\.id = new\.followee_id\s+for no key update;\s+end if;\s+new\.status := case when coalesce\(v_private, false\) then 'pending' else 'accepted' end;/,
     );
     expect(s.match(/for no key update/g)).toHaveLength(1);
     // Not a share lock: two followers holding one would deadlock when both count the follow.

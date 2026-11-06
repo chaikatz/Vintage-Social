@@ -153,8 +153,13 @@ begin
   -- takes no lock here first, so it keeps that order and cannot deadlock
   -- with Block, an unfollow, or a member following back at the same moment.
   -- No key update, not share: two requesters who both held a share lock
-  -- and then both changed the row would deadlock.
-  if coalesce(v_private, false) then
+  -- and then both changed the row would deadlock. Not when the request is
+  -- already there (filed again from a second phone): this one is refused as
+  -- a duplicate anyway, and holding the row would have it wait on, and
+  -- deadlock with, an Accept of the first.
+  if coalesce(v_private, false)
+     and not exists (select 1 from public.follows f
+                      where f.follower_id = new.follower_id and f.followee_id = new.followee_id) then
     select p.is_private into v_private
       from public.profiles p
      where p.id = new.followee_id
