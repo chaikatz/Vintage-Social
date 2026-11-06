@@ -27,7 +27,7 @@ import {
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
-import { PHOTOGRAPH_UNAVAILABLE, photographUnavailable, unreadFrom } from "@/utils/messageText";
+import { PHOTOGRAPH_UNAVAILABLE, newestUnreadFrom, photographUnavailable } from "@/utils/messageText";
 import { postAge } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
@@ -74,12 +74,13 @@ export default function Thread() {
   const newestFirst = useMemo(() => [...(messagesQ.data ?? [])].reverse(), [messagesQ.data]);
 
   // Opening the thread is what marks it read: once there is something of
-  // theirs unread in it, and again when a new one arrives. It used to be
-  // written on every read of the thread, before it had even loaded, and
-  // each write sent the inbox and the badge to read every message again.
-  const unreadFromPeer = useMemo(() => unreadFrom(messagesQ.data, userId), [messagesQ.data, userId]);
+  // theirs unread in it, and again for each new one that arrives, keyed
+  // on the newest (messageText.ts). It used to be written on every read
+  // of the thread, before it had even loaded, and each write sent the
+  // inbox and the badge to read every message again.
+  const newestUnread = useMemo(() => newestUnreadFrom(messagesQ.data, userId), [messagesQ.data, userId]);
   useEffect(() => {
-    if (!id || !userId || !unreadFromPeer) return;
+    if (!id || !userId || !newestUnread) return;
     markConversationRead(id, userId)
       .then(() => {
         queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
@@ -87,7 +88,7 @@ export default function Thread() {
       })
       // Not marked this time; the next message, or the next visit, marks it.
       .catch(() => undefined);
-  }, [id, userId, unreadFromPeer, queryClient]);
+  }, [id, userId, newestUnread, queryClient]);
 
   // The same function for every row, so typing in the field below, which
   // draws this screen again on each letter, leaves the bubbles as they are.

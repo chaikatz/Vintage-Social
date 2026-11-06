@@ -1,31 +1,49 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { unreadFrom } from "@/utils/messageText";
+import { newestUnreadFrom } from "@/utils/messageText";
 
 const read = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
 
 describe("opening a thread marks it read", () => {
   const me = "me";
-  const msg = (sender_id: string, read_at: string | null) => ({ sender_id, read_at });
+  let n = 0;
+  const msg = (sender_id: string, read_at: string | null, id = `m${++n}`) => ({ id, sender_id, read_at });
 
   it("only when something of theirs is unread", () => {
-    expect(unreadFrom(undefined, me)).toBe(false);
-    expect(unreadFrom([], me)).toBe(false);
+    expect(newestUnreadFrom(undefined, me)).toBeNull();
+    expect(newestUnreadFrom([], me)).toBeNull();
     // My own messages are never mine to mark, read or not.
-    expect(unreadFrom([msg(me, null), msg(me, null)], me)).toBe(false);
-    expect(unreadFrom([msg("them", "2026-01-01")], me)).toBe(false);
-    expect(unreadFrom([msg("them", "2026-01-01"), msg("them", null)], me)).toBe(true);
+    expect(newestUnreadFrom([msg(me, null), msg(me, null)], me)).toBeNull();
+    expect(newestUnreadFrom([msg("them", "2026-01-01")], me)).toBeNull();
+    expect(newestUnreadFrom([msg("them", "2026-01-01"), msg("them", null, "m-unread")], me)).toBe("m-unread");
     // No reader, nothing to mark.
-    expect(unreadFrom([msg("them", null)], "")).toBe(false);
+    expect(newestUnreadFrom([msg("them", null)], "")).toBeNull();
+  });
+
+  it("again for a second message that arrives before the thread shows the first marked", () => {
+    const first = msg("them", null, "first");
+    const second = msg("them", null, "second");
+    // Opened: the first is unread, and marked.
+    const opened = newestUnreadFrom([first], me);
+    expect(opened).toBe("first");
+    // The next read of the thread still shows it unread (the mark had not
+    // landed): the same key, so no second write.
+    expect(newestUnreadFrom([first], me)).toBe(opened);
+    // A second message arrives before a read shows the first marked: a
+    // new key, so it is marked too. As a yes or no, the answer was yes
+    // throughout, and the second stayed unread.
+    expect(newestUnreadFrom([first, second], me)).toBe("second");
+    expect(newestUnreadFrom([{ ...first, read_at: "2026-01-01" }, second], me)).toBe("second");
+    // One of mine after it changes nothing.
+    expect(newestUnreadFrom([first, second, msg(me, null)], me)).toBe("second");
   });
 
   it("writes only then, and a write that fails is left for the next one", () => {
     const thread = read("app/messages/[id].tsx");
-    expect(thread).toMatch(/const unreadFromPeer = useMemo\(\(\) => unreadFrom\(messagesQ\.data, userId\), \[messagesQ\.data, userId\]\);/);
-    expect(thread).toMatch(/if \(!id \|\| !userId \|\| !unreadFromPeer\) return;\s*markConversationRead\(id, userId\)/);
-    expect(thread).toMatch(/\}, \[id, userId, unreadFromPeer, queryClient\]\);/);
-    expect(thread).toMatch(/\.catch\(\(\) => undefined\);\s*\}, \[id, userId, unreadFromPeer/);
+    expect(thread).toMatch(/const newestUnread = useMemo\(\(\) => newestUnreadFrom\(messagesQ\.data, userId\), \[messagesQ\.data, userId\]\);/);
+    expect(thread).toMatch(/if \(!id \|\| !userId \|\| !newestUnread\) return;\s*markConversationRead\(id, userId\)/);
+    expect(thread).toMatch(/\.catch\(\(\) => undefined\);\s*\}, \[id, userId, newestUnread, queryClient\]\);/);
   });
 });
 

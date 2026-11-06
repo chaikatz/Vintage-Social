@@ -34,11 +34,25 @@ export function inboxPreview(last: Pick<MessageRow, "body" | "post_id"> | null):
 }
 
 /**
- * Whether a thread holds a message from the other member that the reader
- * has not seen: what opening it has to mark read. Nothing to mark, no
- * write, and no new read of the inbox and its badge after it.
+ * The newest message in a thread, oldest first as it is read, from the
+ * other member and not yet seen by the reader: what opening it has to
+ * mark read, or null when there is nothing to mark (no write, and no new
+ * read of the inbox and its badge after it).
+ *
+ * The message, not only whether there is one: a second message that
+ * arrives before the thread's next read shows the first marked is
+ * another message to mark. Taken as a yes or no, the answer stayed yes
+ * across both, the mark was never written again, and the second stayed
+ * unread, on the badge too, while the member was looking at it.
  */
-export function unreadFrom(messages: readonly Pick<MessageRow, "sender_id" | "read_at">[] | undefined, readerId: string): boolean {
-  if (!readerId || !messages) return false;
-  return messages.some((m) => m.sender_id !== readerId && !m.read_at);
+export function newestUnreadFrom(
+  messages: readonly Pick<MessageRow, "id" | "sender_id" | "read_at">[] | undefined,
+  readerId: string,
+): string | null {
+  if (!readerId || !messages) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.sender_id !== readerId && !m.read_at) return m.id;
+  }
+  return null;
 }
