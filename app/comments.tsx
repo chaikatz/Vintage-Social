@@ -26,7 +26,7 @@ import { removeComment } from "@/api/moderation";
 import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
-import { rewritePostEverywhere } from "@/utils/postCache";
+import { rereadCommentPreviewsOf, rewritePostEverywhere } from "@/utils/postCache";
 import { MAX_COMMENT_LENGTH } from "@/utils/validation";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
@@ -91,7 +91,8 @@ export default function Comments() {
     onSuccess: () => {
       setDraft("");
       queryClient.invalidateQueries({ queryKey: ["comments", postId] });
-      queryClient.invalidateQueries({ queryKey: ["comment-previews"] });
+      // The previews under this photograph, wherever it is shown; no others.
+      void rereadCommentPreviewsOf(queryClient, postId ?? "");
       queryClient.invalidateQueries({ queryKey: ["post", postId] });
       countComment(1);
     },
@@ -118,7 +119,7 @@ export default function Comments() {
               return;
             }
             queryClient.invalidateQueries({ queryKey: ["comments", postId] });
-            queryClient.invalidateQueries({ queryKey: ["comment-previews"] });
+            void rereadCommentPreviewsOf(queryClient, postId ?? "");
             // The count under the photograph lives on the post row.
             queryClient.invalidateQueries({ queryKey: ["post", postId] });
             countComment(-1);

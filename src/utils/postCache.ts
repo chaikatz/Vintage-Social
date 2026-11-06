@@ -96,9 +96,12 @@ const CHANGED_BY_THE_DELETE = ["activity", "conversations", "messages", "profile
  * message, a notification) says it is gone at once. Comments, tags, likers
  * and the share link of the post are let go the same way.
  *
- * The likes and comment previews are keyed by the ids on screen, so the
- * next read after the row has gone asks for a new key by itself; nothing
- * is done to them.
+ * The likes and comment previews are read in groups that keep their
+ * posts (src/utils/stableChunks.ts), so a group's key does not change when
+ * one of its posts is deleted. Nothing is done to them all the same: the
+ * post's card is no longer drawn, so its heart and previews are never
+ * looked up, and its group's answer, which still names it, costs nothing
+ * until it is read again.
  */
 export async function removePostEverywhere(queryClient: QueryClient, postId: string): Promise<void> {
   await Promise.all(POST_LISTS.map((key) => queryClient.cancelQueries({ queryKey: [key] })));
@@ -170,4 +173,38 @@ export function removeValue(value: unknown, postId: string): unknown {
     }
   }
   return value;
+}
+
+/**
+ * The likes and comment previews of a screen's cards, read again: on a
+ * refresh. They are read in groups that keep their posts, and their keys
+ * (src/hooks/usePostActions.ts), however the screen's list moves, so a
+ * refresh that reads the posts again no longer reads them again by itself.
+ * Only the groups given: a group on screen is read now, one the reader
+ * has scrolled away from when it is next shown.
+ */
+export function rereadPostActions(
+  queryClient: QueryClient,
+  userId: string,
+  groups: readonly (readonly string[])[],
+): Promise<void> {
+  const keys = new Set(groups.map((ids) => ids.join(",")));
+  return queryClient.invalidateQueries({
+    predicate: ({ queryKey: k }) =>
+      (k[0] === "my-likes" && k[1] === userId && keys.has(String(k[2]))) ||
+      (k[0] === "comment-previews" && keys.has(String(k[1]))),
+  });
+}
+
+/**
+ * The comment previews of every group that holds this post, on whatever
+ * screen, read again once a comment on it is added or removed; no other
+ * group's. All of them were, every list's on Home, the gallery and each
+ * post page, for one comment.
+ */
+export function rereadCommentPreviewsOf(queryClient: QueryClient, postId: string): Promise<void> {
+  return queryClient.invalidateQueries({
+    queryKey: ["comment-previews"],
+    predicate: ({ queryKey: k }) => typeof k[1] === "string" && k[1].split(",").includes(postId),
+  });
 }

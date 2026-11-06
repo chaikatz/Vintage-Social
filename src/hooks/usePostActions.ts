@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { useQueries, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { removePostEverywhere, rewritePostEverywhere } from "@/utils/postCache";
+import { removePostEverywhere, rereadPostActions, rewritePostEverywhere } from "@/utils/postCache";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { perfLog, shortId } from "@/utils/perf";
@@ -56,6 +56,13 @@ export function usePostActions(userId: string, postIds: string[]) {
   const commentsFor = useCallback(
     (post: { id: string }): CommentWithAuthor[] => previews[post.id] ?? [],
     [previews],
+  );
+
+  // A refresh of the screen's posts reads their hearts and previews again
+  // too: the groups keep their keys, so nothing else would (postCache.ts).
+  const rereadActions = useCallback(
+    () => rereadPostActions(queryClient, userId, chunks),
+    [queryClient, userId, chunks],
   );
 
   // Comments open on their own screen. Pushing the post again would show
@@ -260,7 +267,18 @@ export function usePostActions(userId: string, postIds: string[]) {
     [userId, router, queryClient, seed, deletePost, erasReady],
   );
 
-  return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenPost, onOpenLikes, commentsFor };
+  return {
+    isLiked,
+    likeCountFor,
+    toggleLike,
+    onMore,
+    onShare,
+    onOpenComments,
+    onOpenPost,
+    onOpenLikes,
+    commentsFor,
+    rereadActions,
+  };
 }
 
 /**

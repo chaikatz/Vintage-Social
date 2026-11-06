@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { QueryClient, QueryObserver, type InfiniteData } from "@tanstack/react-query";
-import { removePostEverywhere, removeValue, rewriteValue } from "@/utils/postCache";
+import {
+  removePostEverywhere,
+  removeValue,
+  rereadCommentPreviewsOf,
+  rereadPostActions,
+  rewriteValue,
+} from "@/utils/postCache";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 const post = (id: string, caption: string) => ({ id, media_path: `u/${id}.jpg`, caption });
 
@@ -120,7 +128,7 @@ describe("a deleted post, gone from every screen at once", () => {
     expect(qc.getQueryState(["post-tags", "gone"])).toBeUndefined();
     expect(qc.getQueryState(["share-link", "gone", "u1"])).toBeUndefined();
     expect(qc.getQueryData(["comments", "kept"])).toEqual([{ id: "c2" }]);
-    // Keyed by the ids on screen: the next read asks for a new key by itself.
+    // Its group keeps its key; nothing looks the deleted post up in it again.
     expect(qc.getQueryState(["comment-previews", "gone,kept"])?.isInvalidated).toBe(false);
   });
 
@@ -186,5 +194,57 @@ describe("a deleted post, gone from every screen at once", () => {
     expect(ids(qc.getQueryData<Row[]>(["user-posts", "u1"]))).toEqual(["a"]);
     expect(ids(qc.getQueryData<Row[]>(["user-posts", "u9"]))).toEqual(["a"]);
     leave();
+  });
+});
+
+describe("the likes and comment previews of a screen's cards, read again", () => {
+  const client = () => new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  const invalidated = (qc: QueryClient, key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated ?? null;
+  const read = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
+
+  function filled() {
+    const qc = client();
+    qc.setQueryData(["my-likes", "u1", "a,b"], new Set(["a"]));
+    qc.setQueryData(["my-likes", "u1", "c,d"], new Set<string>());
+    qc.setQueryData(["my-likes", "u2", "a,b"], new Set<string>());
+    qc.setQueryData(["comment-previews", "a,b"], {});
+    qc.setQueryData(["comment-previews", "c,d"], {});
+    qc.setQueryData(["comment-previews", "cc,e"], {});
+    qc.setQueryData(["comments", "a"], []);
+    return qc;
+  }
+
+  it("on a refresh: the groups the screen shows, for this member, and nothing else", async () => {
+    const qc = filled();
+    await rereadPostActions(qc, "u1", [["a", "b"]]);
+    expect(invalidated(qc, ["my-likes", "u1", "a,b"])).toBe(true);
+    expect(invalidated(qc, ["comment-previews", "a,b"])).toBe(true);
+    expect(invalidated(qc, ["my-likes", "u1", "c,d"])).toBe(false);
+    expect(invalidated(qc, ["my-likes", "u2", "a,b"])).toBe(false);
+    expect(invalidated(qc, ["comment-previews", "c,d"])).toBe(false);
+    expect(invalidated(qc, ["comments", "a"])).toBe(false);
+  });
+
+  it("after a comment: the previews of every group holding that post, and no other's", async () => {
+    const qc = filled();
+    await rereadCommentPreviewsOf(qc, "c");
+    expect(invalidated(qc, ["comment-previews", "c,d"])).toBe(true);
+    // An id that only begins the same is another post.
+    expect(invalidated(qc, ["comment-previews", "cc,e"])).toBe(false);
+    expect(invalidated(qc, ["comment-previews", "a,b"])).toBe(false);
+    expect(invalidated(qc, ["my-likes", "u1", "c,d"])).toBe(false);
+    await rereadCommentPreviewsOf(qc, "");
+    expect(invalidated(qc, ["comment-previews", "a,b"])).toBe(false);
+  });
+
+  it("are offered by every card's actions, and used by the comments screen", () => {
+    const actions = read("src/hooks/usePostActions.ts");
+    expect(actions).toMatch(
+      /const rereadActions = useCallback\(\s*\(\) => rereadPostActions\(queryClient, userId, chunks\),\s*\[queryClient, userId, chunks\],\s*\);/,
+    );
+    expect(actions).toMatch(/commentsFor,\s*rereadActions,\s*\};/);
+    const comments = read("app/comments.tsx");
+    expect(comments.match(/void rereadCommentPreviewsOf\(queryClient, postId \?\? ""\);/g)).toHaveLength(2);
+    expect(comments).not.toMatch(/invalidateQueries\(\{ queryKey: \["comment-previews"\] \}\)/);
   });
 });
