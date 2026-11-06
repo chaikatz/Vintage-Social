@@ -63,19 +63,20 @@ const REASONS: Record<string, string[]> = {
  * What the app collects, each with where the Privacy Policy says so —
  * the label in App Store Connect is the same list (APP_STORE_LAUNCH.md).
  */
-const COLLECTED: Record<string, { policy: string[]; purpose: string }> = {
-  EmailAddress: { policy: ["Your email address"], purpose: "AppFunctionality" },
-  Name: { policy: ["the name and username you choose"], purpose: "AppFunctionality" },
-  OtherUserContactInfo: { policy: ["where your photographs live online"], purpose: "AppFunctionality" },
-  PhotosorVideos: { policy: ["Photographs and short films you publish", "optional portrait"], purpose: "AppFunctionality" },
-  EmailsOrTextMessages: { policy: ["the messages you send to other members"], purpose: "AppFunctionality" },
-  OtherUserContent: { policy: ["your caption", "your likes and comments", "the answers you give"], purpose: "AppFunctionality" },
-  PreciseLocation: { policy: ["the point on the map it stands for"], purpose: "AppFunctionality" },
-  CoarseLocation: { policy: ["bio and city"], purpose: "AppFunctionality" },
-  UserID: { policy: ["the name and username you choose"], purpose: "AppFunctionality" },
-  DeviceID: { policy: ["Device token."], purpose: "AppFunctionality" },
-  ProductInteraction: { policy: ["Sharing outside VINTAGE."], purpose: "Analytics" },
+const COLLECTED: Record<string, { policy: string[]; purpose: string; label: string }> = {
+  EmailAddress: { policy: ["Your email address"], purpose: "AppFunctionality", label: "Email Address" },
+  Name: { policy: ["the name and username you choose"], purpose: "AppFunctionality", label: "Name" },
+  OtherUserContactInfo: { policy: ["where your photographs live online"], purpose: "AppFunctionality", label: "Other User Contact Info" },
+  PhotosorVideos: { policy: ["Photographs and short films you publish", "optional portrait"], purpose: "AppFunctionality", label: "Photos or Videos" },
+  EmailsOrTextMessages: { policy: ["the messages you send to other members"], purpose: "AppFunctionality", label: "Emails or Text Messages" },
+  OtherUserContent: { policy: ["your caption", "your likes and comments", "the answers you give"], purpose: "AppFunctionality", label: "Other User Content" },
+  PreciseLocation: { policy: ["the point on the map it stands for"], purpose: "AppFunctionality", label: "Precise Location" },
+  CoarseLocation: { policy: ["bio and city"], purpose: "AppFunctionality", label: "Coarse Location" },
+  UserID: { policy: ["the name and username you choose"], purpose: "AppFunctionality", label: "User ID" },
+  DeviceID: { policy: ["Device token."], purpose: "AppFunctionality", label: "Device ID" },
+  ProductInteraction: { policy: ["Sharing outside VINTAGE."], purpose: "Analytics", label: "Product Interaction" },
 };
+const PURPOSE_LABEL: Record<string, string> = { AppFunctionality: "App Functionality", Analytics: "Analytics" };
 
 function walk(dir: string, ext: RegExp): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -180,6 +181,19 @@ describe("what the app collects", () => {
       expect(t.NSPrivacyCollectedDataTypePurposes, name).toEqual([`NSPrivacyCollectedDataTypePurpose${COLLECTED[name].purpose}`]);
       for (const phrase of COLLECTED[name].policy) expect(PRIVACY_POLICY, `${name}: "${phrase}"`).toContain(phrase);
     }
+  });
+
+  it("is the same list on the App Store privacy label the owner fills in", () => {
+    const doc = read("APP_STORE_LAUNCH.md");
+    const section = doc.slice(doc.indexOf("## 3. App Privacy label"), doc.indexOf("## 4."));
+    expect(section.length).toBeGreaterThan(100);
+    const rows = [...section.matchAll(/^\| [A-Za-z &]+ → \*\*([^*]+)\*\* \| ([A-Za-z ]+) \|/gm)].map((m) => ({ label: m[1], purpose: m[2].trim() }));
+    expect(rows.map((r) => r.label).sort()).toEqual(Object.values(COLLECTED).map((c) => c.label).sort());
+    for (const c of Object.values(COLLECTED)) {
+      expect(rows.find((r) => r.label === c.label)?.purpose, c.label).toBe(PURPOSE_LABEL[c.purpose]);
+    }
+    expect(section).toContain("**linked to the user: Yes · used for tracking: No**");
+    expect(section).toContain("**Tracking: No.**");
   });
 
   it("includes the share notes, because the app writes them with the member's id", () => {

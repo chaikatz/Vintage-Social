@@ -1,4 +1,11 @@
-# VINTAGE — Launch readiness
+# VINTAGE — Launch readiness (superseded)
+
+> **Superseded (5 November 2026).** This report was written before the
+> backend existed (it describes the in-memory demo, migrations 0001–0007 and
+> no Supabase project) and none of its blockers or steps apply any more. The
+> one current launch checklist is [`APP_STORE_LAUNCH.md`](APP_STORE_LAUNCH.md).
+> Kept for history only.
+
 
 ## 1. Verdict
 
