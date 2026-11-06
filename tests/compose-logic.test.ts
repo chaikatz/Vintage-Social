@@ -680,11 +680,30 @@ describe("a photograph opened from On this day or That night", () => {
     });
   });
 
-  it("draws the picker's thumbnails from memory only, never the app's disk cache", () => {
+  it("keeps the picker's thumbnails in their cells alone: never the app's disk cache, nor its memory cache", () => {
+    // The shared memory cache has no limit and nothing in the picker empties
+    // it; "memory" would keep every thumbnail decoded after the picker closes.
     const picker = code("app/library-picker.tsx");
     const images = picker.match(/<Image\s[^>]*\/>/g) ?? [];
     expect(images.length).toBeGreaterThan(0);
-    for (const image of images) expect(image).toMatch(/cachePolicy="memory"/);
+    for (const image of images) {
+      expect(image).toMatch(/cachePolicy="none"/);
+      expect(image).not.toMatch(/cachePolicy="(memory|disk|memory-disk)"/);
+    }
+  });
+
+  it("mounts the picker's rows a screen at a time, not the whole day at once", () => {
+    const picker = code("app/library-picker.tsx");
+    const list = picker.match(/<FlatList\s[\s\S]*?renderItem=/)?.[0] ?? "";
+    expect(list).toMatch(/initialNumToRender=\{PICKER_FIRST_ROWS\}/);
+    expect(list).toMatch(/maxToRenderPerBatch=\{PICKER_BATCH_ROWS\}/);
+    expect(list).toMatch(/windowSize=\{PICKER_WINDOW\}/);
+    const value = (name: string) => Number(picker.match(new RegExp(`const ${name} = (\\d+);`))?.[1] ?? NaN);
+    // FlatList's defaults are 10, 10 and 21: every row of a 120-photograph night at once.
+    expect(value("PICKER_FIRST_ROWS")).toBeLessThanOrEqual(8);
+    expect(value("PICKER_BATCH_ROWS")).toBeLessThanOrEqual(4);
+    expect(value("PICKER_WINDOW")).toBeLessThanOrEqual(5);
+    expect(value("PICKER_WINDOW")).toBeGreaterThanOrEqual(3);
   });
 });
 

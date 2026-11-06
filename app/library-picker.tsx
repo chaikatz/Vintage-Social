@@ -84,6 +84,11 @@ export default function LibraryPicker() {
       <FlatList
         data={rows}
         keyExtractor={(r) => r.key}
+        // A screenful first, then a few rows at a time, two screens either
+        // side: a long day is not mounted and asked of Photos all at once.
+        initialNumToRender={PICKER_FIRST_ROWS}
+        maxToRenderPerBatch={PICKER_BATCH_ROWS}
+        windowSize={PICKER_WINDOW}
         contentContainerStyle={{ gap: GAP, paddingBottom: spacing.xxl }}
         ListEmptyComponent={
           photos.isFetched ? (
@@ -102,8 +107,8 @@ export default function LibraryPicker() {
             <View style={{ flexDirection: "row", gap: GAP }}>
               {item.photos.map((p) => (
                 <Pressable key={p.id} onPress={() => choose(p)} style={{ width: size, height: size }}>
-                  {/* Read straight off the phone at the cell's size, and kept in memory only: nothing from the camera roll is written to the app's disk cache. */}
-                  <Image source={p.uri} style={styles.cell} contentFit="cover" transition={60} cachePolicy="memory" />
+                  {/* Read straight off the phone at the cell's size and kept by the cell alone: never written to the app's disk cache, and never left in its memory cache, which nothing here would empty. Photos keeps its own thumbnails, so a cell scrolled back to costs little. */}
+                  <Image source={p.uri} style={styles.cell} contentFit="cover" transition={60} cachePolicy="none" />
                   {opening === p.id ? (
                     <View style={styles.opening}>
                       <ActivityIndicator color={colors.onCamera} />
@@ -120,6 +125,12 @@ export default function LibraryPicker() {
 }
 
 const GAP = 2;
+/** Rows drawn first: a screenful, with its heading, on the tallest phone. */
+const PICKER_FIRST_ROWS = 8;
+/** Rows drawn at a time after that. */
+const PICKER_BATCH_ROWS = 4;
+/** Screens kept drawn: the one in view and two either side. */
+const PICKER_WINDOW = 5;
 
 interface Section {
   key: string;
