@@ -161,7 +161,7 @@ describe("0023: every policy reads the caller once", () => {
     expect(verify).toMatch(/perform set_config\('vintage\.verify_plan', v_answer, false\);/);
     expect((last.match(/current_setting\('vintage\.verify_plan', true\)/g) ?? []).length).toBe(4);
     const runner = readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8");
-    expect(runner).toMatch(/r\.status !== 0 \|\| rows\.length !== 39 \|\| failing\.length > 0 \|\| errors\.length > 0/);
+    expect(runner).toMatch(/r\.status !== 0 \|\| rows\.length !== 45 \|\| failing\.length > 0 \|\| errors\.length > 0/);
   });
 });
 

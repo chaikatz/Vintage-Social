@@ -64,9 +64,17 @@ or anywhere in the repository, and must never be.
   in the SQL editor (0009, 0010, 0012, 0019–0022) are not listed there, and
   that is harmless.
 - **Pending your approval:** the launch sweep's backend work adds new
-  migrations numbered from **0023 up** (0023 to 0037) and changes the
+  migrations numbered from **0023 up** (0023 to 0038) and changes the
   `push` function. Nothing has been applied. See step 4: run every one of them,
   in number order.
+- **Private accounts (read 6 November): apply 0038 before launch.** 7
+  accounts are private, all of them house accounts; their 95 followers
+  are all house accounts, and 0 follows are waiting as requests. Until
+  0038 is applied, the database takes a follow's status from the app, so
+  any member could make themselves an accepted follower of a private
+  account and see its photographs, and a private member's Accept and
+  Decline change nothing. 0038 fixes both for every build, the one in
+  TestFlight included.
 - Edge function `push`: active (version 1). Daily job `vintage-memories`
   at 15:00 UTC: active. Live push tokens: 5.
 - Security advisor: the `SECURITY DEFINER` warnings are the app's RPC
@@ -277,7 +285,7 @@ notice, and how to undo it. If you approve, in the merged branch:
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false).
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0037 in 39 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0038 in 45 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -298,6 +306,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0035 | A member's own photograph files readable to them whatever their membership, so Delete my account removes them | 36 |
    | 0036 | A phone's push token belongs to whoever signed in on it last | 37 |
    | 0037 | Unread messages counted in the database | 38–39 |
+   | 0038 | Follows that respect private accounts: a follow of a private account is always a request, and the account accepts or declines it | 40–45 |
 
 5. Redeploy the `push` function, which changed in the sweep:
    `npx supabase functions deploy push --project-ref scfwowqsqrnzpknzurmm`

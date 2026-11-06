@@ -18,6 +18,11 @@
 -- Delete my account can remove a suspended member's photographs). This
 -- puts back 0009's version, with the membership check; apply
 -- 0035_own_files_whatever_the_membership.sql again after it.
+--
+-- 0038 (follows that respect private accounts) keeps its trigger function
+-- in the schema private, so with 0038 applied the schema stays, holding
+-- only that; 0038's policies, grants and triggers are not 0023's, and are
+-- left as they are.
 
 begin;
 

@@ -14,7 +14,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const read = (f: string) => readFileSync(path.join(root, f), "utf8");
 const code = (sql: string) => sql.replace(/--[^\n]*/g, "");
 const files = readdirSync(path.join(root, "supabase", "migrations"))
-  .filter((f) => /^\d{4}_.*\.sql$/.test(f) && Number(f.slice(0, 4)) >= 35)
+  .filter((f) => /^\d{4}_.*\.sql$/.test(f) && Number(f.slice(0, 4)) >= 35 && Number(f.slice(0, 4)) <= 37)
   .sort();
 const migration = (n: string) => {
   const f = files.find((x) => x.startsWith(n));
@@ -44,7 +44,7 @@ describe("0035-0037, each", () => {
   it("the harness runs their tests, the plan, and the owner's check with their rows", () => {
     const runner = read("supabase/tests/run.mjs");
     expect(runner).toMatch(/"14_moderation_0029_0033\.sql",\s*"16_launch_data_0035_0037\.sql",/);
-    expect(runner).toMatch(/rows\.length !== 39/);
+    expect(runner).toMatch(/rows\.length !== 45/);
     const plans = read("supabase/tests/09_scale_plans.sql");
     expect(plans).toMatch(/\('unread messages', tests\.plan_as\(:'me',\s*\(select p\.prosrc from pg_proc p/);
     expect(plans).toMatch(/\('unread messages', 'messages_unread_idx'\),/);
