@@ -62,6 +62,10 @@ export default function UserProfile() {
   });
 
   const status = followQ.data ?? null;
+  // Whether you follow them is known only once it has been read
+  // (src/components/readState.ts): until then the button offers no follow,
+  // which a member who already follows them would send a second time.
+  const followRead = readState(followQ);
   const isMe = profile?.id === myId;
 
   // Have I blocked this member? Their photographs are hidden by the
@@ -77,7 +81,7 @@ export default function UserProfile() {
   const locked = (Boolean(profile?.is_private) && !isMe && status !== "accepted") || blocked;
   // Whether they have let you in could not be read: said, with a way to try
   // again, rather than "Ask to follow" to a member who already follows them.
-  const standingUnread = Boolean(profile?.is_private) && !isMe && !blocked && readState(followQ) === "failed";
+  const standingUnread = Boolean(profile?.is_private) && !isMe && !blocked && followRead === "failed";
 
   const postsQ = useQuery({
     queryKey: ["user-posts", profile?.id],
@@ -225,11 +229,12 @@ export default function UserProfile() {
             <View style={styles.actions}>
               <View style={styles.followButton}>
                 <Button
-                  title={followLabel}
-                  variant={status ? "secondary" : "primary"}
+                  // A follow that could not be read is read again, never taken for "Follow".
+                  title={followRead === "failed" ? "Try again" : followLabel}
+                  variant={status || followRead === "failed" ? "secondary" : "primary"}
                   small
-                  loading={toggleFollow.isPending}
-                  onPress={() => toggleFollow.mutate(status === null)}
+                  loading={toggleFollow.isPending || (followRead !== "empty" && followQ.isFetching)}
+                  onPress={() => (followRead === "empty" ? toggleFollow.mutate(status === null) : void followQ.refetch())}
                   onLongPress={memberMenu}
                 />
               </View>

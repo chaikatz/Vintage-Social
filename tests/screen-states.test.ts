@@ -93,12 +93,25 @@ describe("the screens that draw a read", () => {
 
   it("a private member whose follow could not be read: said, not 'Ask to follow'", () => {
     const src = code("app/user/[username].tsx");
-    expect(src).toMatch(
-      /const standingUnread = Boolean\(profile\?\.is_private\) && !isMe && !blocked && readState\(followQ\) === "failed";/,
-    );
+    expect(src).toMatch(/const followRead = readState\(followQ\);/);
+    expect(src).toMatch(/const standingUnread = Boolean\(profile\?\.is_private\) && !isMe && !blocked && followRead === "failed";/);
     expect(src).toMatch(
       /\) : standingUnread \? \(\s*<LoadFailed what="their photographs" onRetry=\{\(\) => followQ\.refetch\(\)\} \/>\s*\) : locked \? \(/,
     );
+  });
+
+  it("a member's follow button offers a follow only once it is known you don't follow them", () => {
+    const src = code("app/user/[username].tsx");
+    const button = src.match(/<Button\s+title=\{followRead[\s\S]*?\/>/)?.[0] ?? "";
+    // Could not be read: "Try again", which reads it again, never "Follow", which sent a second follow.
+    expect(button).toMatch(/title=\{followRead === "failed" \? "Try again" : followLabel\}/);
+    expect(button).toMatch(/variant=\{status \|\| followRead === "failed" \? "secondary" : "primary"\}/);
+    expect(button).toMatch(
+      /onPress=\{\(\) => \(followRead === "empty" \? toggleFollow\.mutate\(status === null\) : void followQ\.refetch\(\)\)\}/,
+    );
+    // On its way: the button waits with it, rather than offering "Follow" to a member who may already follow.
+    expect(button).toMatch(/loading=\{toggleFollow\.isPending \|\| \(followRead !== "empty" && followQ\.isFetching\)\}/);
+    expect(src.match(/toggleFollow\.mutate\(/g)).toHaveLength(1);
   });
 
   it("Likes: a re-read that fails leaves the likers on screen", () => {
