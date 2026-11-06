@@ -299,10 +299,18 @@ describe("a session that ended elsewhere", () => {
 
   it("sign-out removes the tokens while still signed in, before auth lets go", () => {
     const provider = readFileSync(path.resolve(import.meta.dirname, "..", "src/providers/SessionProvider.tsx"), "utf8");
-    expect(provider).toMatch(/await forgetPushTokensEverywhere\(currentUser\.current\);[\s\S]*?const \{ error \} = await supabase\.auth\.signOut\(\);/);
-    // The sign-out is everywhere (the default scope) unless that cannot
-    // be done: then this phone only, whose other phones keep their rows.
-    expect(provider).toMatch(/const \{ error \} = await supabase\.auth\.signOut\(\);\s+if \(error\) await supabase\.auth\.signOut\(\{ scope: "local" \}\);/);
+    // As the member, the first thing endSession waits for, before this
+    // phone lets go (tests/sign-out.test.ts runs it on the real client).
+    expect(provider).toMatch(/await endSession\(\{\s*auth: supabase\.auth,\s*asMember: \(\) => forgetPushTokensEverywhere\(currentUser\.current\),/);
+    const ending = readFileSync(path.resolve(import.meta.dirname, "..", "src/providers/endSession.ts"), "utf8");
+    const body = ending.slice(ending.indexOf("export async function endSession"));
+    expect(body.indexOf("asMember()")).toBeGreaterThan(0);
+    expect(body.indexOf("asMember()")).toBeLessThan(body.indexOf("await forgetStored();"));
+    // Then this phone, and everywhere with the member's token when there
+    // was one: without a signal, this phone only, and the other phones
+    // keep their rows.
+    expect(body.indexOf("await forgetStored();")).toBeLessThan(body.indexOf('auth.signOut({ scope: "local" })'));
+    expect(body.indexOf('auth.signOut({ scope: "local" })')).toBeLessThan(body.indexOf('auth.admin.signOut(token, "global")'));
   });
 });
 
