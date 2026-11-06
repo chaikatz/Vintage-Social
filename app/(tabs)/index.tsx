@@ -79,15 +79,8 @@ export default function Home() {
     refetchOnReconnect: false,
   });
 
-  // A refresh starts the feed again from its newest page: one request,
-  // not one for every page the reader has loaded, and those pages back as
-  // they were if it cannot be read (src/media/feedPages.ts).
   const queryClient = useQueryClient();
   const feedRefetch = feed.refetch;
-  const refreshFromTop = useCallback(
-    () => refreshFromFirstPage(queryClient, ["feed", userId], feedRefetch),
-    [queryClient, userId, feedRefetch],
-  );
 
   const posts = useMemo(() => flattenPages(feed.data?.pages), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
@@ -115,8 +108,20 @@ export default function Home() {
     () => idsAround(postIds, Math.max(0, seenIndex), { keepFirst: HOME_FIRST_DRAW }),
     [postIds, seenIndex],
   );
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor, rereadActions } =
     usePostActions(userId, actionIds);
+
+  // A refresh starts the feed again from its newest page: one request,
+  // not one for every page the reader has loaded, and those pages back as
+  // they were if it cannot be read (src/media/feedPages.ts). And it reads
+  // the hearts and comment previews of the cards on screen again with it:
+  // their groups keep their keys, so nothing else would, and a friend's
+  // new comment stayed out of the preview while the count beside it went
+  // up (src/utils/postCache.ts).
+  const refreshFromTop = useCallback(() => {
+    void rereadActions();
+    return refreshFromFirstPage(queryClient, ["feed", userId], feedRefetch);
+  }, [queryClient, userId, feedRefetch, rereadActions]);
 
   // Leaving the feed — another tab, a profile, a single post — pauses it.
   // The tab stays mounted underneath, and a clip you can no longer see
