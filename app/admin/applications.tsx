@@ -11,10 +11,10 @@ import { LoadFailed } from "@/components/LoadFailed";
 import { undecided, withIds, withRowBack, withoutIds, withoutRow } from "@/components/decidedRows";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideApplication, fetchApplications } from "@/api/moderation";
+import { errorMessage } from "@/utils/errorMessage";
 import { postAge } from "@/utils/time";
 import type { ApplicationRow, ApplicationStatus } from "@/types/db";
 import { showAlert } from "@/utils/alert";
-import { errorMessage } from "@/utils/errorMessage";
 
 const TABS: ApplicationStatus[] = ["pending", "waitlisted", "approved", "rejected"];
 
