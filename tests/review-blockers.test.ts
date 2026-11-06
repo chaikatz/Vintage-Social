@@ -87,6 +87,27 @@ describe("A · the waiting screen deletes the account", () => {
   });
 });
 
+describe("B · the invitation says what is agreed to", () => {
+  const src = code("app/(gate)/invite.tsx");
+  const apply = code("app/(gate)/apply.tsx");
+
+  it("under Accept the invitation, with both documents a tap away, as the application does", () => {
+    const after = src.slice(src.indexOf('<GateButton title="Accept the invitation"'));
+    expect(after).toMatch(
+      /^<GateButton title="Accept the invitation"[^>]*\/>\s*<Text style=\{styles\.agree\}>\s*By accepting you agree to the\{" "\}\s*<Text style=\{styles\.agreeLink\} onPress=\{\(\) => router\.push\("\/legal\/terms"\)\}[^>]*>\s*Terms of Use\s*<\/Text>\{" "\}\s*and\{" "\}\s*<Text style=\{styles\.agreeLink\} onPress=\{\(\) => router\.push\("\/legal\/privacy"\)\}[^>]*>\s*Privacy Policy\s*<\/Text>/,
+    );
+    expect(apply).toContain("By applying you agree to the");
+    expect(apply).toContain('router.push("/legal/terms")');
+  });
+
+  it("in the application's own type", () => {
+    const style = (s: string, name: string) => s.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0].replace(/\s+/g, " ").replace(`${name}:`, "") ?? "";
+    expect(style(src, "agree")).toBe(style(apply, "footnote"));
+    expect(style(src, "agreeLink")).toBe(style(apply, "footLink"));
+    expect(style(src, "agree")).not.toBe("");
+  });
+});
+
 describe("every screen at the door calls its hooks before any early return", () => {
   for (const file of ["app/(gate)/pending.tsx", "app/admin/index.tsx"]) {
     it(file, () => expect(hooksAfterFirstReturn(code(file))).toEqual([]));

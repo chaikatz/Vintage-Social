@@ -202,6 +202,19 @@ export default function Invite() {
 
           <GateButton title="Accept the invitation" variant="quiet" onPress={submit} loading={busy} style={styles.accept} />
 
+          {/* As on the application: what is agreed to is said before the account is made (App Review Guideline 1.2). */}
+          <Text style={styles.agree}>
+            By accepting you agree to the{" "}
+            <Text style={styles.agreeLink} onPress={() => router.push("/legal/terms")} accessibilityRole="link">
+              Terms of Use
+            </Text>{" "}
+            and{" "}
+            <Text style={styles.agreeLink} onPress={() => router.push("/legal/privacy")} accessibilityRole="link">
+              Privacy Policy
+            </Text>
+            .
+          </Text>
+
           <Text style={styles.foot}>Members only · Est. 2026</Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -239,6 +252,16 @@ const styles = StyleSheet.create({
   },
   form: {},
   accept: { alignSelf: "center", marginTop: spacing.sm },
+  // The application's footnote and its links, to the point.
+  agree: {
+    fontFamily: type.serif,
+    fontSize: 12,
+    lineHeight: 19,
+    color: colors.inkSoft,
+    textAlign: "center",
+    marginTop: spacing.lg,
+  },
+  agreeLink: { textDecorationLine: "underline", color: colors.ink },
 
   foot: {
     fontFamily: type.mono,
