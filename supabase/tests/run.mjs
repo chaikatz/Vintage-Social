@@ -237,6 +237,8 @@ try {
     "10_rollback_0023.sql",
     "11_block_privacy.sql",
     "12_feed_page.sql",
+    // Not a migration: a proposal waiting on the owner, tried and rolled back.
+    "13_proposed_0028.sql",
   ]) {
     if (res.status !== 0 || process.exitCode === 1) break;
     if (!existsSync(join(here, file))) continue;

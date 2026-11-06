@@ -253,3 +253,34 @@ describe("0026 and 0027: the push function's own reads and writes", () => {
     }
   });
 });
+
+describe("proposed 0028: comments, likes and tags only with their photograph", () => {
+  const file = "proposed_0028_comments_likes_tags_follow_the_photograph.sql";
+  const proposal = code(readFileSync(join(root, "supabase", "tests", file), "utf8"));
+
+  it("waits for the owner: it is not among the migrations, and the harness only tries it and rolls back", () => {
+    expect(readdirSync(migrations).some((f) => /^0028|comments_likes_tags/.test(f))).toBe(false);
+    const runner = readFileSync(join(root, "supabase", "tests", "run.mjs"), "utf8");
+    expect(runner).toMatch(/"13_proposed_0028\.sql"/);
+    const test = readFileSync(join(root, "supabase", "tests", "13_proposed_0028.sql"), "utf8");
+    expect(test).toMatch(new RegExp(`\\\\ir ${file.replace(/\./g, "\\.")}`));
+    expect(test.trim().endsWith("rollback;")).toBe(true);
+  });
+
+  it("only narrows reading: three restrictive select policies, each keeping the member's own rows", () => {
+    const made = policies(proposal);
+    expect(made.map((p) => `${p.table} ${p.name}`)).toEqual([
+      "public.comments comments: only with their photograph",
+      "public.likes likes: only with their photograph",
+      "public.post_tags post_tags: only with their photograph",
+    ]);
+    for (const p of made) {
+      expect(p.text, p.name).toMatch(/as restrictive for select using \(/);
+      expect(p.text, p.name).toMatch(/or exists \(select 1 from public\.posts p where p\.id = post_id\)/);
+    }
+    expect(made[0].text).toMatch(/author_id = \(select auth\.uid\(\)\)/);
+    expect(made[1].text).toMatch(/user_id = \(select auth\.uid\(\)\)/);
+    expect(made[2].text).toMatch(/user_id = \(select auth\.uid\(\)\)\s+or tagged_by = \(select auth\.uid\(\)\)/);
+    expect(proposal).not.toMatch(/\b(grant|revoke|alter table|delete from|update public)\b/i);
+  });
+});
