@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
-import { fetchFollowing, searchProfiles } from "@/api/profiles";
+import { fetchFollowPage, searchProfiles, type FollowCursor } from "@/api/profiles";
 import { useNameFace } from "@/utils/nameFace";
 import { Avatar } from "./Avatar";
+import { memberLabel } from "./memberLabel";
+import { LoadFailed } from "./LoadFailed";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
@@ -38,9 +40,12 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
   // Editorial (Preview): every username in the sheet, half bold.
   const face = useNameFace();
 
-  const following = useQuery({
-    queryKey: ["following-list", myId],
-    queryFn: () => fetchFollowing(myId),
+  // Fifty at a time as the sheet is scrolled; anyone further is a search away.
+  const following = useInfiniteQuery({
+    queryKey: ["following-list", myId, "pages"],
+    queryFn: ({ pageParam }) => fetchFollowPage("following", myId, pageParam),
+    initialPageParam: null as FollowCursor | null,
+    getNextPageParam: (last) => last.next,
     enabled: visible && Boolean(myId),
     staleTime: 5 * 60_000,
   });
@@ -51,7 +56,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
   });
 
   const rows: Taggable[] = useMemo(() => {
-    const source = searching ? results.data ?? [] : following.data ?? [];
+    const source = searching ? results.data ?? [] : (following.data?.pages ?? []).flatMap((p) => p.members);
     return source.filter((p) => p.id !== myId);
   }, [searching, results.data, following.data, myId]);
 
@@ -101,21 +106,45 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
           data={rows}
           keyExtractor={(p) => p.id}
           keyboardShouldPersistTaps="handled"
+          onEndReached={() => {
+            if (!searching && following.hasNextPage && !following.isFetchingNextPage && !following.isFetchNextPageError) {
+              following.fetchNextPage();
+            }
+          }}
+          onEndReachedThreshold={1}
+          ListFooterComponent={
+            !searching && following.isFetchNextPageError ? (
+              <LoadFailed what="the rest" onRetry={() => following.fetchNextPage()} />
+            ) : null
+          }
           ListEmptyComponent={
-            <Text style={styles.empty}>
-              {searching
-                ? results.isFetched
-                  ? "Nobody by that name."
-                  : ""
-                : following.isFetched
-                  ? "Follow a few members and they will be listed here."
-                  : ""}
-            </Text>
+            // A read that failed is no answer: "Nobody by that name" would not be true.
+            searching && results.isError ? (
+              <LoadFailed what="the search" onRetry={() => results.refetch()} />
+            ) : !searching && following.isError ? (
+              <LoadFailed what="who you follow" onRetry={() => following.refetch()} />
+            ) : (
+              <Text style={styles.empty}>
+                {searching
+                  ? results.isFetched
+                    ? "Nobody by that name."
+                    : ""
+                  : following.isFetched
+                    ? "Follow a few members and they will be listed here."
+                    : ""}
+              </Text>
+            )
           }
           renderItem={({ item }) => {
             const on = chosen.has(item.id);
             return (
-              <Pressable style={styles.row} onPress={() => toggle(item)}>
+              <Pressable
+                style={styles.row}
+                onPress={() => toggle(item)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: on, disabled: !on && selected.length >= MAX_TAGS }}
+                accessibilityLabel={memberLabel(item.username, item.full_name)}
+              >
                 <Avatar path={item.avatar_url} username={item.username} size={36} />
                 <View style={styles.rowText}>
                   <Text style={[styles.username, face]}>{item.username}</Text>

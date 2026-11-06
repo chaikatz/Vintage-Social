@@ -1,16 +1,26 @@
 import React from "react";
 import { AppState, Linking, StyleSheet, Text, View } from "react-native";
 import { Redirect } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GateLayout } from "@/components/gate/GateLayout";
 import { GateButton } from "@/components/gate/GateButton";
 import { Wordmark } from "@/components/Wordmark";
 import { colors, spacing, type } from "@/theme";
 import { enterApp, useSession } from "@/providers/SessionProvider";
 import { describeRedeem, fetchMyApplication, redeemInviteLink } from "@/api/membership";
+import { deleteMyAccount } from "@/api/account";
 import { slugFromInput } from "@/utils/inviteLink";
 import { showAlert, showPrompt } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
+import { awaitsDecision, takesInvitation, waitingRoomState } from "@/components/gate/waitingRoom";
+import { DELETION_KEEPS_REPORTS } from "@/legal/documents";
+
+// A page at the door that breaks breaks only itself, not the whole app.
+// There is no header and no tab bar here, so the way back is on the page
+// (src/navigation/Recover.tsx): to the page before, or to Home, whose
+// guard sends anyone not yet let in to the door or the waiting room.
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 const COPY: Record<string, { title: string; body: string }> = {
   applied: {
@@ -29,12 +39,26 @@ const COPY: Record<string, { title: string; body: string }> = {
     title: "Account suspended",
     body: "Your membership is currently suspended. If you believe this is a mistake, write to us.",
   },
+  // An account with no application of its own: an invitation refused after
+  // the account was made, or an application that never reached the admins
+  // (the app closed part-way). An invitation is taken here. To apply, the
+  // words give the clean way: delete this account and apply afresh, under
+  // any name. (Signed out, the Apply form given this account's email and
+  // password also carries on with it, under the name it already has: the
+  // form's check of the name is given them, src/api/membership.ts.)
+  none: {
+    title: "NO APPLICATION YET",
+    body: "Your account is made, but no application or invitation of yours has reached us.\nIf a member invited you, enter the invitation below. To apply instead, delete this account and apply again.",
+  },
 };
 
 export default function Pending() {
   const { session, profile, refreshProfile, signOut } = useSession();
 
-  useQuery({
+  // Read for what it says (waitingRoom.ts): the profile alone told a
+  // rejected applicant, and an account that never applied, that an
+  // application had been received.
+  const application = useQuery({
     queryKey: ["my-application", session?.user?.id],
     queryFn: () => fetchMyApplication(session!.user.id),
     enabled: Boolean(session?.user?.id),
@@ -59,6 +83,12 @@ export default function Pending() {
   const [checking, setChecking] = React.useState(false);
   const [checkedAt, setCheckedAt] = React.useState<Date | null>(null);
   const [checkFailed, setCheckFailed] = React.useState(false);
+  // Settings is out of reach from here, so an account that is waiting, was
+  // not accepted or is suspended is deleted from this screen (App Review
+  // Guideline 5.1.1(v): every account the app makes can be deleted in it).
+  // Above the redirect below, with the other hooks.
+  const queryClient = useQueryClient();
+  const [deleting, setDeleting] = React.useState(false);
   const approved = profile?.status === "approved";
   React.useEffect(() => {
     if (approved) enterApp();
@@ -81,13 +111,13 @@ export default function Pending() {
 
   if (session === null) return <Redirect href="/(gate)/landing" />;
 
-  const status = profile?.status ?? "applied";
+  const status = waitingRoomState(profile?.status, application.isSuccess ? application.data : undefined);
   const copy = COPY[status] ?? COPY.applied;
 
   const checkAgain = async () => {
     setChecking(true);
     try {
-      const ok = await refreshProfile();
+      const [ok] = await Promise.all([refreshProfile(), application.refetch()]);
       setCheckFailed(!ok);
       setCheckedAt(new Date());
     } finally {
@@ -113,29 +143,84 @@ export default function Pending() {
           await refreshProfile();
           await enterApp();
         } catch (err) {
-          showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
+          showAlert("Couldn’t join", errorMessage(err, "Your invitation wasn’t taken up. Check your connection and try again."));
         } finally {
           setRedeeming(false);
         }
       },
     );
 
+  // The same two questions as Settings → Delete account. An admin is never
+  // here (approved goes in), so there is no only-admin question to ask.
+  // What stays is said as Settings says it: a suspended member here may
+  // have filed reports, and those are kept (0031).
+  const confirmDelete = () =>
+    showAlert(
+      "Delete your account?",
+      `Your account, your application, and anything you posted or sent are removed for good. ${DELETION_KEEPS_REPORTS} This cannot be undone.`,
+      [
+        {
+          text: "Delete account",
+          style: "destructive",
+          onPress: () =>
+            showAlert("Are you sure?", "This is the last step. Your account is deleted now.", [
+              {
+                text: "Yes, delete my account",
+                style: "destructive",
+                onPress: async () => {
+                  const userId = session?.user?.id;
+                  if (!userId) return;
+                  setDeleting(true);
+                  try {
+                    await deleteMyAccount(userId);
+                    queryClient.clear();
+                    await signOut();
+                  } catch (err) {
+                    setDeleting(false);
+                    // deleteMyAccount removes the files before it asks the
+                    // database to close the account, so a failure can come
+                    // after the portrait has gone. A second try finishes it.
+                    showAlert(
+                      "Couldn’t delete the account",
+                      errorMessage(
+                        err,
+                        "Your account is still here, but your portrait or photographs may already have been removed. Try again to finish deleting it.",
+                      ),
+                    );
+                  }
+                },
+              },
+              { text: "Keep my account", style: "cancel" },
+            ]),
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+
   return (
-    <GateLayout back={false} scroll={false}>
+    // It scrolls, as the other screens at the door do: at the largest text
+    // sizes the words and the buttons are taller than the screen, and Sign
+    // out and Delete my account, last of all, were below its bottom edge.
+    // Where it all fits, the page is laid out exactly as before.
+    <GateLayout back={false}>
       <View style={styles.center}>
         <Wordmark size={34} lineHeight={44} tracking={9} rule={24} gap={spacing.lg} style={styles.wordmark} />
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.body}>{copy.body}</Text>
-        {status === "applied" || status === "waitlisted" ? (
+        {takesInvitation(status) && status !== "none" ? (
           <View style={styles.inviteNote}>
             <Text style={styles.inviteLead}>Already know a member?</Text>
             <Text style={styles.inviteBody}>An invitation grants access.</Text>
           </View>
         ) : null}
-        {status === "suspended" && SUPPORT_EMAIL ? (
+        {(status === "suspended" || status === "none") && SUPPORT_EMAIL ? (
           <Text
             style={[styles.body, styles.link]}
-            onPress={() => Linking.openURL(supportMailto("VINTAGE membership") ?? "")}
+            onPress={() =>
+              Linking.openURL(supportMailto("VINTAGE membership") ?? "").catch(() =>
+                showAlert("Write to us", `No mail account is set up on this phone. Our address is ${SUPPORT_EMAIL}.`),
+              )
+            }
             accessibilityRole="link"
           >
             {SUPPORT_EMAIL}
@@ -143,10 +228,12 @@ export default function Pending() {
         ) : null}
       </View>
       <View style={styles.actions}>
-        {status === "applied" || status === "waitlisted" ? (
+        {takesInvitation(status) ? (
+          <GateButton title="I have an invitation" variant="solid" onPress={enterInvitation} loading={redeeming} disabled={deleting} />
+        ) : null}
+        {awaitsDecision(status) ? (
           <>
-            <GateButton title="I have an invitation" variant="solid" onPress={enterInvitation} loading={redeeming} />
-            <GateButton title="Check status" onPress={checkAgain} loading={checking} style={styles.gap} />
+            <GateButton title="Check status" onPress={checkAgain} loading={checking} disabled={deleting} style={styles.gap} />
             {checkedAt ? (
               <Text style={styles.checked}>
                 {checkFailed
@@ -156,7 +243,9 @@ export default function Pending() {
             ) : null}
           </>
         ) : null}
-        <GateButton title="Sign out" variant="quiet" onPress={signOut} style={styles.gap} />
+        {/* While the account is being deleted, nothing else is asked of it. */}
+        <GateButton title="Sign out" variant="quiet" onPress={signOut} disabled={deleting} style={styles.gap} />
+        <GateButton title="Delete my account" variant="quiet" onPress={confirmDelete} loading={deleting} style={styles.gap} />
       </View>
     </GateLayout>
   );

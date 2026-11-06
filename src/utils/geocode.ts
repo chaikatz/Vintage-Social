@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import * as Location from "expo-location";
-import { makeLazyWriter, readDiskCache, writeDiskCache } from "./diskCache";
+import { makeLazyWriter, readDiskCache, setBounded, trimOldest, writeDiskCache } from "./diskCache";
 
 /**
  * Turning the place a member typed into a point.
@@ -23,6 +23,14 @@ const KEY = "vintage.place-points";
 
 const cache = new Map<string, Point | null>();
 let loaded = false;
+
+/**
+ * Places kept, the most recently found: the file is read whole on the
+ * first look and written whole while places are found, so it is kept to
+ * a size that costs nothing to read. A place let go is looked up again
+ * the next time it is wanted.
+ */
+export const POINTS_KEPT = 2000;
 
 /** The stored points, checked value by value. */
 export function parseStoredPoints(raw: unknown): Record<string, Point | null> | null {
@@ -51,6 +59,7 @@ function load() {
   for (const [k, v] of Object.entries(stored)) {
     if (!cache.has(k)) cache.set(k, v);
   }
+  trimOldest(cache, POINTS_KEPT);
 }
 
 const persist = makeLazyWriter(() => writeDiskCache(FILE, KEY, Object.fromEntries(cache)));
@@ -73,6 +82,9 @@ export function knownPoints<T extends { id: string; location: string | null; lat
   return out;
 }
 
+/** A lookup that failed, as against one that found nothing. */
+const LOOKUP_FAILED = Symbol("lookup failed");
+
 /** Look a place up, remembering the answer for the session. */
 export async function geocodePlace(place: string, timeoutMs = 2500): Promise<Point | null> {
   load();
@@ -82,20 +94,25 @@ export async function geocodePlace(place: string, timeoutMs = 2500): Promise<Poi
   if (Platform.OS === "web") return null;
   let settled = false;
   const lookup = Location.geocodeAsync(place.trim())
-    .then((results) => {
+    .then((results): Point | null => {
       const first = results[0];
       if (!first || !Number.isFinite(first.latitude) || !Number.isFinite(first.longitude)) return null;
       return { lat: first.latitude, lng: first.longitude };
     })
-    .catch(() => null)
-    .then((point) => {
+    // The lookup failed rather than answered: no network, or the system
+    // geocoder holding back after many asks (iOS says both as a network
+    // error; "no such place" comes back as no results, above).
+    .catch((): typeof LOOKUP_FAILED => LOOKUP_FAILED)
+    .then((answer) => {
       settled = true;
       // Remember the answer — including "no such place" — but only when the
-      // lookup actually answered. A timeout stays unremembered so a later,
-      // calmer moment can try again.
-      cache.set(k, point);
+      // lookup actually answered. A timeout or a failure stays unremembered
+      // so a later, calmer moment can try again; remembered, one visit to
+      // the places view with no signal lost those places for good.
+      if (answer === LOOKUP_FAILED) return null;
+      setBounded(cache, k, answer, POINTS_KEPT);
       persist();
-      return point;
+      return answer;
     });
   const point = await Promise.race([
     lookup,

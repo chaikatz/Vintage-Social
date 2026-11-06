@@ -7,14 +7,19 @@ import { Image } from "expo-image";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, spacing } from "@/theme";
 import { fetchActivity, markActivityRead } from "@/api/activity";
 import { decideTag, fetchMyTagStatus } from "@/api/tags";
 import { mediaUrl } from "@/api/media";
 import { postAge } from "@/utils/time";
+import { useImageRetry } from "@/media/imageRetry";
 import { useSession } from "@/providers/SessionProvider";
 import { useNameFace } from "@/utils/nameFace";
 import type { ActivityWithRefs } from "@/types/db";
+
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 
 function line(item: ActivityWithRefs): string {
   switch (item.type) {
@@ -54,9 +59,10 @@ export default function Activity() {
   const isFocused = useIsFocused();
   useEffect(() => {
     if (isFocused && userId && activity.isFetched) {
-      markActivityRead(userId).then(() =>
-        queryClient.invalidateQueries({ queryKey: ["activity-unread"] }),
-      );
+      markActivityRead(userId)
+        .then(() => queryClient.invalidateQueries({ queryKey: ["activity-unread"] }))
+        // Not marked this time; the next visit marks it.
+        .catch(() => undefined);
     }
   }, [isFocused, userId, activity.isFetched, queryClient]);
 
@@ -91,7 +97,10 @@ export default function Activity() {
         refreshing={activity.isRefetching}
         onRefresh={() => activity.refetch()}
         ListEmptyComponent={
-          activity.isFetched ? (
+          // A read that failed is no answer: "Nothing yet" would not be true.
+          activity.isError ? (
+            <LoadFailed what="your activity" onRetry={() => activity.refetch()} />
+          ) : activity.isFetched ? (
             <EmptyState title="Nothing yet" body="Likes, comments and new followers appear here." />
           ) : null
         }
@@ -138,12 +147,32 @@ export default function Activity() {
                   <Text style={styles.decided}>On your profile</Text>
                 ) : null}
               </View>
-              {thumb ? <Image source={thumb} style={styles.thumb} /> : null}
+              {thumb ? <ActivityThumb source={thumb} /> : null}
             </Pressable>
           );
         }}
       />
     </Screen>
+  );
+}
+
+/**
+ * The photograph a notice is about. Held in memory as well as on disk, as
+ * the grid's squares are: a row scrolled back to was read from disk and
+ * decoded again each time (expo-image keeps a picture on disk alone unless
+ * told otherwise). One that fails to load is asked for again rather than
+ * left empty (src/media/imageRetry.ts).
+ */
+function ActivityThumb({ source }: { source: string | number }) {
+  const retry = useImageRetry(source);
+  return (
+    <Image
+      source={source}
+      style={styles.thumb}
+      cachePolicy="memory-disk"
+      key={retry.attempt}
+      onError={retry.onError}
+    />
   );
 }
 

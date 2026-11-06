@@ -11,6 +11,7 @@ import { useMinute } from "@/utils/useMinute";
 import { Avatar } from "../Avatar";
 import { INLINE_COMMENTS, PostCard } from "../PostCard";
 import { PostMedia } from "../PostMedia";
+import { authorShown, withAuthors } from "../hiddenAuthors";
 
 /** Exactly PostCard's props: a feed hands either card the same ones. */
 type Props = React.ComponentProps<typeof PostCard>;
@@ -40,7 +41,7 @@ type Props = React.ComponentProps<typeof PostCard>;
  * as PostCard's, the double tap is PostMedia's, and the name, the "…" and
  * the comments call what the screen passes in.
  */
-export function EditorialPostCard({
+export const EditorialPostCard = React.memo(function EditorialPostCard({
   post,
   likedByMe,
   onToggleLike,
@@ -52,6 +53,7 @@ export function EditorialPostCard({
   active = true,
   warm = true,
   frameOnly = false,
+  standIn = false,
   priority = "normal",
   surface = "feed",
 }: Props) {
@@ -60,14 +62,20 @@ export function EditorialPostCard({
     if (next !== likedByMe) onToggleLike(post, next);
   };
 
-  const preview = (comments ?? []).slice(-INLINE_COMMENTS);
-  // The print's own words: the place and the date in full. Its `@name` is left off; the name is above the picture.
-  const label = exportLabelText(post, null);
   const paper = paperStyle(useFeedPaper());
   // Larger Text grows the label, up to its cap, and the right-hand lines
   // then ask for more room beside the buttons.
   const scale = Math.min(Math.max(useWindowDimensions().fontScale, 1), LABEL_CAP);
   const dateline = { flexBasis: DATELINE * scale };
+  // A post whose author row-level security keeps back names nobody: drawn as
+  // nothing, as PostCard draws it (src/components/hiddenAuthors.ts). After the
+  // hooks, so they are called in the same order on every draw, and before
+  // anything reads a name, the label's words among them.
+  if (!authorShown(post)) return null;
+
+  const preview = withAuthors(comments ?? []).slice(-INLINE_COMMENTS);
+  // The print's own words: the place and the date in full. Its `@name` is left off; the name is above the picture.
+  const label = exportLabelText(post, null);
 
   return (
     <View style={[styles.card, paper]} testID="editorial-post-card">
@@ -104,6 +112,7 @@ export function EditorialPostCard({
           recyclingKey={post.id}
           warm={warm}
           frameOnly={frameOnly}
+          standIn={standIn}
           priority={priority}
           surface={surface}
           bare
@@ -179,7 +188,7 @@ export function EditorialPostCard({
       <PostedTime at={post.created_at} />
     </View>
   );
-}
+});
 
 /**
  * `29m ago`: when the post went up, at the foot of the print, in the

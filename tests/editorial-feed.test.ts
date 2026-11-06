@@ -321,22 +321,23 @@ describe("Home", () => {
     const cards = tags(home, "FeedCard");
     expect(cards).toHaveLength(1);
     expect(props(cards[0], "FeedCard")).toEqual([
-      "post={{ ...item, like_count: likeCountFor(item) }}",
+      "post={counted(item, likeCountFor(item))}",
       "likedByMe={isLiked(item)}",
       "onToggleLike={toggleLike}",
       "onOpenComments={onOpenComments}",
-      "onOpenProfile={(username) => router.push(`/user/${username}`)}",
+      "onOpenProfile={openProfile}",
       "onShare={onShare}",
       "onOpenLikes={onOpenLikes}",
-      "comments={commentsFor(item)}",
-      "onMore={(p) => onMore(p)}",
+      "comments={commentsOrNone(commentsFor(item))}",
+      "onMore={more}",
       "active={focused && item.id === visibleId}",
+      'priority={index < FIRST_SCREEN ? "high" : "normal"}',
     ]);
   });
 
   it("draws the chosen card the moment the choice changes", () => {
     const render = home.slice(home.indexOf("const renderItem = useCallback("), home.indexOf("const header ="));
-    expect(render).toMatch(/\[FeedCard, likeCountFor, isLiked, toggleLike,/);
+    expect(render).toMatch(/\[FeedCard, counted, likeCountFor, isLiked, toggleLike,/);
   });
 
   it("keeps the list itself as it was", () => {
@@ -384,18 +385,19 @@ describe("the gallery", () => {
     const cards = tags(gallery, "FeedCard");
     expect(cards).toHaveLength(1);
     expect(props(cards[0], "FeedCard")).toEqual([
-      "post={{ ...item, like_count: likeCountFor(item) }}",
+      "post={counted(item, likeCountFor(item))}",
       "likedByMe={isLiked(item)}",
       "onToggleLike={toggleLike}",
       "onOpenComments={onOpenComments}",
-      "onOpenProfile={(username) => router.push(`/user/${username}`)}",
+      "onOpenProfile={openProfile}",
       "onShare={onShare}",
       "onOpenLikes={onOpenLikes}",
-      "comments={commentsFor(item)}",
-      "onMore={(p) => onMore(p, () => router.back())}",
+      "comments={commentsOrNone(commentsFor(item))}",
+      "onMore={more}",
       "active={ready && focused && item.id === visibleId}",
       "warm={isWarm(index, warm)}",
-      "frameOnly={!ready && index >= MEASURE_LIMIT && item.id !== postId}",
+      "frameOnly={!isWarm(index, pictures)}",
+      "standIn={isWarm(index, standIns)}",
       'priority={item.id === postId ? "high" : "normal"}',
       'surface="gallery"',
     ]);
@@ -475,7 +477,7 @@ describe("the editorial card", () => {
 
   it("takes exactly PostCard's props", () => {
     expect(card).toMatch(/type Props = React\.ComponentProps<typeof PostCard>;/);
-    expect(card).toMatch(/export function EditorialPostCard\(\{[\s\S]*?\}: Props\)/);
+    expect(card).toMatch(/export const EditorialPostCard = React\.memo\(function EditorialPostCard\(\{[\s\S]*?\}: Props\)/);
   });
 
   it("is the print without the brand: no wordmark, no tagline, no member number", () => {
@@ -690,7 +692,7 @@ describe("the editorial card", () => {
 
   it("ends with when it went up, in the label's typewriter face a shade fainter", () => {
     // Last, after the caption and the comments, and once.
-    expect(body).toMatch(/<PostedTime at=\{post\.created_at\} \/>\s*<\/View>\s*\);\s*\}\s*$/);
+    expect(body).toMatch(/<PostedTime at=\{post\.created_at\} \/>\s*<\/View>\s*\);\s*\}\);?\s*$/);
     expect(card.match(/<PostedTime\b/g)).toHaveLength(1);
     // When it was posted, not when it was taken; said in full to a screen reader.
     expect(posted).toMatch(/accessibilityLabel=\{postedAgoSpoken\(at, now\)\}/);
@@ -705,7 +707,7 @@ describe("the editorial card", () => {
   it("follows the app's one clock for that line alone, and starts no timer of its own", () => {
     expect(posted).toMatch(/const now = new Date\(useMinute\(\)\);/);
     // Only the line follows the clock, so a tick draws the line again, not the card and its picture.
-    const whole = card.slice(card.indexOf("export function EditorialPostCard("), card.indexOf("function PostedTime("));
+    const whole = card.slice(card.indexOf("export const EditorialPostCard = React.memo(function EditorialPostCard("), card.indexOf("function PostedTime("));
     expect(whole.length).toBeGreaterThan(0);
     expect(whole).not.toMatch(/useMinute\(/);
     expect(card.match(/useMinute\(/g)).toHaveLength(1);
@@ -766,7 +768,58 @@ describe("the editorial card", () => {
   it("decides nothing for itself", () => {
     expect(card).not.toMatch(/@\/api|supabase|usePostActions|useQuery|useState|useEffect/);
     expect(card).toMatch(/import \{ INLINE_COMMENTS, PostCard \} from "\.\.\/PostCard";/);
-    expect(card).toMatch(/const preview = \(comments \?\? \[\]\)\.slice\(-INLINE_COMMENTS\);/);
+    expect(card).toMatch(/const preview = withAuthors\(comments \?\? \[\]\)\.slice\(-INLINE_COMMENTS\);/);
+  });
+
+  it("draws nothing for a post naming nobody, after its hooks and before anything reads a name", () => {
+    // Row-level security can send a post without its author (src/components/hiddenAuthors.ts).
+    const whole = card.slice(card.indexOf("function EditorialPostCard("), card.indexOf("function PostedTime("));
+    const guard = whole.indexOf("if (!authorShown(post)) return null;");
+    expect(guard).toBeGreaterThan(-1);
+    // Every hook above it, so they are called in the same order whatever the post.
+    const hooks = whole.match(/\buse[A-Z]\w*\(/g) ?? [];
+    expect(hooks.length).toBeGreaterThan(0);
+    for (const hook of hooks) expect(whole.lastIndexOf(hook), hook).toBeLessThan(guard);
+    // Nothing that reads the author before it: the label's words name the member too.
+    for (const reader of ["exportLabelText(post", "post.author.", "withAuthors(comments"]) {
+      expect(whole.indexOf(reader), reader).toBeGreaterThan(guard);
+    }
+    expect(card).toMatch(/^import \{ authorShown, withAuthors \} from "\.\.\/hiddenAuthors";$/m);
+  });
+
+  it("draws a post naming nobody as nothing, where it used to break the feed", async () => {
+    const { createElement } = await import("react");
+    // React's own server renderer draws it here, with nothing on screen: react-dom ships no types of its own.
+    const server = "react-dom/server";
+    const { renderToString } = (await import(/* @vite-ignore */ server)) as { renderToString: (element: unknown) => string };
+    const { EditorialPostCard } = await import("@/components/feed/EditorialPostCard");
+    const post = {
+      id: "p1",
+      author_id: "a1",
+      caption: "The 19 tram",
+      location: "Milan",
+      taken_at: "2026-10-28T09:00:00Z",
+      created_at: "2026-10-28T10:00:00Z",
+      media_type: "photo",
+      media_path: "a1/p1.jpg",
+      thumb_path: null,
+      width: 1200,
+      height: 1500,
+    };
+    const props = (author: unknown) => ({
+      post: { ...post, author },
+      likedByMe: false,
+      onToggleLike: () => undefined,
+      onOpenComments: () => undefined,
+      onOpenProfile: () => undefined,
+      onMore: () => undefined,
+      comments: [{ id: "c1", body: "Lovely", author: null }],
+    });
+    const draw = (author: unknown) =>
+      renderToString(createElement(EditorialPostCard, props(author) as unknown as Parameters<typeof EditorialPostCard>[0]));
+    expect(draw(null)).toBe("");
+    // The same post with its author is drawn, its name and all: the card is not simply empty.
+    expect(draw({ id: "a1", username: "elena.marchetti", full_name: null, avatar_url: null })).toContain("elena.marchetti");
   });
 
   it("gives every control a full target, a role and a name", () => {

@@ -39,9 +39,13 @@ page.on("console", (m) => {
 // without it the menu is left as it was. Every dialog's words are kept.
 let promptAnswer = null;
 let promptChoice = null;
+// Answers for the next confirmations, in order: true is OK, false is
+// Cancel. Empty, every confirmation is accepted as before.
+const answers = [];
 const dialogs = [];
 page.on("dialog", (d) => {
   dialogs.push(d.message());
+  if (d.type() === "confirm" && answers.length) return answers.shift() ? d.accept() : d.dismiss();
   if (d.type() === "prompt" && promptChoice != null) {
     const line = d.message().split("\n").find((l) => l.trim().endsWith(promptChoice));
     return d.accept(line?.trim().match(/^\d+/)?.[0] ?? "");
@@ -138,6 +142,32 @@ check("Application lands on the waitlist screen", /Application received/i.test(p
 check("Applicant carries no membership number", !/NO\. \d{5}/.test(pendingText));
 await shot("03-pending");
 
+// Review blocker A (Guideline 5.1.1(v)): an applicant can delete the
+// account from the waiting screen, where Settings is out of reach. The two
+// questions are Settings' own; Keep my account at the second keeps it.
+check("The waiting screen offers Delete my account", (await byText("Delete my account").count()) > 0);
+{
+  const before = dialogs.length;
+  answers.push(true, false);
+  await tap("Delete my account", 1800);
+  const asked = dialogs.slice(before).map((m) => m.split("\n")[0]);
+  check(
+    "Delete my account asks Settings' two questions, and Keep my account keeps the account",
+    asked.join(" → ") === "Delete your account? → Are you sure?" && /Application received/i.test(await text()) && /\/pending/.test(page.url()),
+    asked.join(" → ") || "no dialog",
+  );
+  check(
+    "…and its first question says what stays, as the Privacy Policy does: the reports filed",
+    /removed for good\. The reports you filed are kept without your account attached\. This cannot be undone\./.test(dialogs[before] ?? ""),
+    (dialogs[before] ?? "no dialog").split("\n").slice(1).join(" "),
+  );
+  check(
+    "…and its second says the account goes now, never that everything does",
+    /This is the last step\. Your account is deleted now\./.test(dialogs[before + 1] ?? "") && !/everything/i.test(dialogs[before + 1] ?? ""),
+    (dialogs[before + 1] ?? "no dialog").split("\n").slice(1).join(" "),
+  );
+}
+
 // 2. the founder approves
 await tap("Sign out", 2600);
 check("Signing out from the waitlist reaches the door", /Members only/.test(await text()));
@@ -172,7 +202,19 @@ await shot("06-reports");
 
 // 3. a member's invitation
 await back();
+// Who the last member looked for in Search is not left for the next one
+// (src/utils/searchHistory.ts keeps it in localStorage on the web).
+await page.evaluate(() =>
+  localStorage.setItem(
+    "vintage.recent-searches",
+    JSON.stringify([{ id: "someone", username: "looked.for", full_name: null, avatar_url: null }]),
+  ),
+);
 await signOutFromSettings();
+check(
+  "Sign out forgets the member's recent searches",
+  (await page.evaluate(() => localStorage.getItem("vintage.recent-searches"))) === "[]",
+);
 await signInAs("elena@vintage.club");
 await tab("profile");
 await tap("Invitations", 2600);
@@ -183,14 +225,44 @@ const codes = (await text()).match(/vintage:\/\/invite\/([a-z0-9-]+)|\/i\/([a-z0
 const code = codes?.[1] ?? codes?.[2] ?? "";
 check("An invitation code is shown", code.length > 0, code || "none");
 await shot("07-invitations");
+// This browser has no share sheet, as a phone may fail to open one: the
+// tap says so and points at Copy, where it used to end in silence.
+{
+  const before = dialogs.length;
+  await tap("Send invitation", 1400);
+  check(
+    "Send invitation that cannot open sharing says so",
+    dialogs.length > before && /Couldn’t open sharing/.test(dialogs.at(-1) ?? ""),
+    dialogs.length > before ? dialogs.at(-1) : "no dialog",
+  );
+}
 
 // 4. the invitation is taken up
 await back();
 await signOutFromSettings();
 await tap("I have an invitation", 2500);
 check("Invitation screen is framed as an invitation", /By invitation/.test(await text()));
+// Review blocker B (Guideline 1.2): what is agreed to, before the account is made.
+check(
+  "The invitation says the Terms and the Privacy Policy are agreed to",
+  /By accepting you agree to the Terms of Use and Privacy Policy\./.test(await text()) &&
+    (await seen(page.getByRole("link", { name: "Terms of Use", exact: true })).count()) > 0 &&
+    (await seen(page.getByRole("link", { name: "Privacy Policy", exact: true })).count()) > 0,
+);
+// The review notes send Apple here: opened empty, the card welcomes, and
+// does not open on "That invitation isn’t one we know".
+check(
+  "Opened empty, the invitation welcomes rather than refuses",
+  (await seen(page.getByText(/A member has put your name forward/)).count()) > 0 &&
+    (await seen(page.getByText(/isn’t one we know/)).count()) === 0,
+);
 const g = fields();
 await g.nth(0).fill(code);
+await wait(1400);
+check(
+  "Once the code is in, the invitation says who sent it",
+  (await seen(page.getByText(/Elena Marchetti invited you to VINTAGE/)).count()) > 0,
+);
 await g.nth(1).fill("Ada Fen");
 await g.nth(2).fill("ada.fen");
 await g.nth(3).fill("ada@example.com");
@@ -533,17 +605,27 @@ check(
   offWhite.join(" | "),
 );
 await shot("12b-editorial");
-let editorialLike = "no card to like";
-// The member has liked most of the first few already; the first one not yet liked will do.
-for (let i = 0; i < (await editorial.count()); i++) {
-  const card = editorial.nth(i);
-  if (!(await card.getByLabel("Like", { exact: true }).count())) continue;
-  await card.getByLabel("Like", { exact: true }).click();
+// The heart on the first print, both ways and back to how it was. Home draws
+// only its first few prints at first, and the member may well have liked
+// every one of them (the walk liked the first above), so no print is picked
+// for being unliked: the first one's heart is turned over, then back.
+const editorialHeart = async (card) =>
+  (await card.getByLabel("Unlike", { exact: true }).count()) > 0 ? "Unlike" : (await card.getByLabel("Like", { exact: true }).count()) > 0 ? "Like" : null;
+const editorialFirst = editorial.first();
+const editorialHeartWas = await editorialHeart(editorialFirst);
+let editorialLike = editorialHeartWas ? "" : "no heart on the first print";
+for (const step of editorialHeartWas ? [1, 2] : []) {
+  const before = await editorialHeart(editorialFirst);
+  await editorialFirst.getByLabel(before, { exact: true }).click();
   await wait(1500);
-  editorialLike = (await card.getByLabel("Unlike", { exact: true }).count()) > 0 ? "" : "the heart did not fill";
-  break;
+  const after = await editorialHeart(editorialFirst);
+  if (after === before) {
+    editorialLike = `tap ${step}: the heart stayed ${before}`;
+    break;
+  }
 }
-check("Like still works on the editorial card", editorialLike === "", editorialLike);
+if (!editorialLike && (await editorialHeart(editorialFirst)) !== editorialHeartWas) editorialLike = `the heart did not come back to ${editorialHeartWas}`;
+check("Like still works on the editorial card, both ways", editorialLike === "", editorialLike || editorialHeartWas);
 
 // The comments on a print, and the Activity tab: every name in the list in its own face, half bold.
 await editorial.first().getByLabel("Comments", { exact: true }).click();
@@ -1110,6 +1192,31 @@ await go("/search", 2800);
 check("Explore grid populated", (await page.locator("img").count()) > 6);
 await shot("15-explore");
 
+// Search ranks who the member follows above a stranger, read for the
+// results alone (fetchFollowsAmong): "ar" finds clara.reyes before
+// margot.dubois alphabetically, but Elena follows Margot and Margot her.
+await page.getByPlaceholder("Search members").fill("ar");
+await wait(1600);
+{
+  // Where each is drawn in the results, on screen (the tabs behind keep
+  // their own text, drawn out of view).
+  const height = page.viewportSize()?.height ?? 900;
+  const topOf = async (name) => {
+    const all = page.getByText(name, { exact: true });
+    let top = -1;
+    for (let i = 0; i < (await all.count()); i++) {
+      const box = (await all.nth(i).isVisible()) ? await all.nth(i).boundingBox() : null;
+      if (box && box.y >= 0 && box.y < height && (top < 0 || box.y < top)) top = box.y;
+    }
+    return top;
+  };
+  const margot = await topOf("margot.dubois");
+  const clara = await topOf("clara.reyes");
+  check("Search ranks a member followed both ways above one who only follows", margot >= 0 && clara >= 0 && margot < clara, `margot ${margot}, clara ${clara}`);
+}
+await page.getByPlaceholder("Search members").fill("");
+await wait(400);
+
 await go("/messages", 2600);
 check("Messages inbox renders", /tomas|june|arthur/i.test(await text()));
 await shot("16-messages");
@@ -1138,6 +1245,306 @@ check("Stamp reads the capture date, not today", /6 14/.test(afterPost));
 // Taken in June, posted now: the card's last line is the posting time.
 check("A new post says it went up just now", (await byLabel("Posted just now").count()) > 0);
 await shot("18-posted");
+
+// ===========================================================================
+// PHASE C — the door signed in, Settings' switches, a reported comment
+// ===========================================================================
+
+// Signed in, an invitation link goes into the app. Left on the card, a
+// second account could be made over this one, and a join refused after
+// its account was made left the new member there for good.
+await go("/invite/someone-invitation", 3400);
+check(
+  "A signed-in member who opens an invitation link goes into the app, not onto the card",
+  new URL(page.url()).pathname === "/" &&
+    (await byText("Accept the invitation").count()) === 0 &&
+    (await seen(page.locator('[role="tab"]')).count()) > 0,
+  page.url(),
+);
+
+// An admin page opened by its address by a member who is not an admin
+// sends them home: it used to show Suspend and Approve buttons whose calls
+// the database then refused.
+for (const admin of ["/admin/members", "/admin/applications", "/admin/reports"]) {
+  await go(admin, 3000);
+  check(
+    `A member who is not an admin, opening ${admin} by its address, is sent home`,
+    !/\/admin/.test(new URL(page.url()).pathname) &&
+      (await byText("Suspend").count()) === 0 &&
+      (await byText("Approve").count()) === 0 &&
+      (await byText("Dismiss").count()) === 0 &&
+      (await seen(page.locator('[role="tab"]')).count()) > 0,
+    page.url(),
+  );
+}
+// An address the app does not know goes home, signed in as here, never to
+// the router's own page with its sitemap of every route.
+await go("/no-such-page", 3000);
+check(
+  "Signed in, an unknown address goes home",
+  !/no-such-page/.test(page.url()) &&
+    (await seen(page.locator('[role="tab"]')).count()) > 0 &&
+    !/Unmatched Route|Sitemap/.test(await text()),
+  page.url(),
+);
+
+// The private account switch does what it says when it is flipped: it
+// used to wait for Save, and going back left the account as it was.
+const privateSwitch = () => byLabel("Private account").first();
+const openSettings = async () => {
+  await tab("profile");
+  await byLabel("Settings").first().click();
+  await wait(2200);
+};
+await openSettings();
+const wasPrivate = await privateSwitch().isChecked();
+await privateSwitch().click();
+await wait(1200);
+await back(1600);
+await openSettings();
+check("The private account switch holds once flipped, without Save", (await privateSwitch().isChecked()) === !wasPrivate);
+await privateSwitch().click();
+await wait(1200);
+await back(1600);
+await openSettings();
+check("…and flipped back, it holds back", (await privateSwitch().isChecked()) === wasPrivate);
+await back(1600);
+
+// A reported comment: held a moment, reported, and an admin can remove it
+// from the queue, where a comment's report used to offer only Dismiss.
+// It is reported twice, as two members would: one removal closes both,
+// where the second report's own Remove used to remove it again and send
+// its author another notice.
+const reportTheComment = async (first) => {
+  await tab("home");
+  await cardOf("forgives everything").getByLabel("Comments", { exact: true }).first().click();
+  await wait(2500);
+  // The comment as it is drawn on top: the feed's preview of it lies under this screen.
+  const reported = await page.evaluate(() => {
+    for (const el of document.querySelectorAll('[dir="auto"]')) {
+      if (!/The emptiness makes it\./.test(el.textContent ?? "")) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      const at = { x: r.x + 12, y: r.y + Math.min(r.height, 20) / 2 };
+      const hit = document.elementFromPoint(at.x, at.y);
+      if (hit && (hit === el || el.contains(hit))) return at;
+    }
+    return null;
+  });
+  await page.mouse.move(reported?.x ?? 0, reported?.y ?? 0);
+  await page.mouse.down();
+  await wait(900);
+  await page.mouse.up();
+  await wait(1900);
+  if (first) check("Holding another member's comment offers to report it", /Report comment/.test(dialogs.at(-1) ?? "") && /\/report/.test(page.url()), page.url());
+  await tap("Harassment or abuse", 600);
+  await tap("Send report", 2200);
+  check(first ? "The comment's report is sent, once" : "…and a second report on the same comment is sent", /An admin will take a look/.test(dialogs.at(-1) ?? ""));
+  await toTabs();
+};
+await reportTheComment(true);
+await reportTheComment(false);
+
+// A photograph she reports leaves her own feed the moment the report is
+// in (Guideline 1.2), and a read of the feed after does not bring it back.
+await tab("home");
+const ferryCards = () => cardOf("Last ferry of the evening").getByLabel("Post options", { exact: true }).count();
+const ferryBefore = await ferryCards();
+promptChoice = "Report post";
+await cardOf("Last ferry of the evening").getByLabel("Post options", { exact: true }).first().click();
+await wait(2200);
+promptChoice = null;
+const onReport = /\/report/.test(page.url());
+await tap("Spam or scam", 600);
+await tap("Send report", 2400);
+await toTabs();
+await tab("home", 3000);
+check(
+  "A photograph she reports leaves her own feed at once",
+  ferryBefore > 0 && onReport && /An admin will take a look/.test(dialogs.at(-1) ?? "") && (await ferryCards()) === 0,
+  `${ferryBefore} before, ${await ferryCards()} after`,
+);
+
+// Reported from its own page (opened here from a thread), Done closes that
+// page too, back to the thread: the page beneath the report used to show
+// the photograph she had just reported, as if nothing had happened. Gone
+// to by tapping, not by address: a reload would forget the reports above.
+await tab("home");
+await byLabel("Messages").first().click();
+await wait(2400);
+await byText("tomas.lindqvist").first().click();
+await wait(2600);
+const sharedAt = await page.evaluate(() => {
+  for (const img of document.querySelectorAll("img")) {
+    if (!/sthlm-ice/.test(img.getAttribute("src") ?? "")) continue;
+    const r = img.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }
+  return null;
+});
+if (sharedAt) await page.mouse.click(sharedAt.x, sharedAt.y);
+await wait(2600);
+const onItsPage = /\/post\/demo-post-06$/.test(new URL(page.url()).pathname);
+promptChoice = "Report post";
+await seen(page.getByLabel("Post options", { exact: true })).last().click();
+await wait(2200);
+promptChoice = null;
+const reportingIt = /\/report/.test(page.url());
+await tap("Spam or scam", 600);
+await tap("Send report", 2600);
+check(
+  "Reported from its own page, the photograph's page closes too, back to where it was opened",
+  Boolean(sharedAt) && onItsPage && reportingIt && /An admin will take a look/.test(dialogs.at(-1) ?? "") &&
+    new URL(page.url()).pathname === "/messages/demo-convo-01",
+  `${sharedAt ? "opened" : "no shared photograph"}; ${onItsPage}; ${reportingIt}; now ${new URL(page.url()).pathname}`,
+);
+await signOutFromSettings();
+await signInAs("admin@vintage.club");
+await tab("profile");
+await byLabel("Admin").first().click();
+await wait(2300);
+await tap("Reports", 2600);
+const queueNow = await text();
+const commentReports = (t) => (t.match(/comment · reported by elena\.marchetti/g) ?? []).length;
+check(
+  "A reported comment can be removed from the reports queue",
+  commentReports(queueNow) === 2 && (await byText("Remove comment").count()) === 2,
+  `${commentReports(queueNow)} open reports on it`,
+);
+check(
+  "Each report on it shows the comment's own words, so it is never removed unseen",
+  (queueNow.match(/“The emptiness makes it\./g) ?? []).length === 2,
+  `${(queueNow.match(/“The emptiness makes it\./g) ?? []).length} shown`,
+);
+await shot("19-comment-report");
+await tap("Remove comment", 2600);
+const queueAfter = await text();
+check(
+  "Removed once, every open report on the comment leaves the queue",
+  commentReports(queueAfter) === 0 && (await byText("Remove comment").count()) === 0,
+  `${commentReports(queueAfter)} still open`,
+);
+await tap("resolved", 2200);
+const resolvedNow = await text();
+check(
+  "…and both are resolved as content removed",
+  commentReports(resolvedNow) === 2 && /Content removed/.test(resolvedNow),
+  `${commentReports(resolvedNow)} resolved`,
+);
+
+// Opened on an invitation, with nothing behind the card, its back mark
+// still leads to the door. It used to go back to nothing at all.
+{
+  const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const card = await fresh.newPage();
+  card.on("pageerror", (e) => errors.push("fresh: " + e.message));
+  await card.goto(B + "/invite/someone-invitation", { waitUntil: "networkidle" });
+  await card.waitForTimeout(2600);
+  const onCard = /By invitation/.test((await card.textContent("body")) ?? "");
+  await card.getByLabel("Back", { exact: true }).locator("visible=true").first().click();
+  await card.waitForTimeout(2400);
+  check(
+    "Opened on an invitation, the card's back mark leads to the door",
+    onCard && (await card.getByText("Apply for membership", { exact: true }).locator("visible=true").count()) > 0,
+    card.url(),
+  );
+  await fresh.close();
+}
+
+// Signed out, an unknown address goes to the door.
+{
+  const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const lost = await fresh.newPage();
+  lost.on("pageerror", (e) => errors.push("unknown address: " + e.message));
+  await lost.goto(B + "/no-such-page", { waitUntil: "networkidle" });
+  await lost.waitForTimeout(2600);
+  const body = (await lost.textContent("body")) ?? "";
+  check(
+    "Signed out, an unknown address goes to the door, never to the router's sitemap",
+    !/no-such-page/.test(lost.url()) &&
+      (await lost.getByText("Apply for membership", { exact: true }).locator("visible=true").count()) > 0 &&
+      !/Unmatched Route|Sitemap/.test(body),
+    lost.url(),
+  );
+  await fresh.close();
+}
+
+// A bar at the door keeps its label clear of its arrow: at the default
+// size in the same place as before, and at a much larger size (drawn here
+// at 60 pixels, wider than the bar less its clearances, as the largest
+// accessibility sizes would draw a longer label) wrapped between the two
+// clearances rather than under the arrow. On the narrowest phone (320
+// wide) the door's longest bar label, "I have an invitation" on the
+// waiting screen, still takes one line at the default size.
+{
+  const fresh = await browser.newContext({ viewport: { width: 375, height: 812 } });
+  const door = await fresh.newPage();
+  door.on("pageerror", (e) => errors.push("door bar: " + e.message));
+  await door.goto(B + "/sign-in", { waitUntil: "networkidle" });
+  await door.waitForTimeout(2400);
+  const measure = (px, words) =>
+    door.evaluate(([size, text]) => {
+      const bar = [...document.querySelectorAll('[role="button"][aria-label="Sign in"]')].find(
+        (el) => el.getBoundingClientRect().width > 200,
+      );
+      const label = bar && [...bar.querySelectorAll('[dir="auto"]')].find((el) => /^sign in$/i.test(el.textContent ?? ""));
+      const arrow = bar && [...bar.children].find((el) => el !== label && !el.contains(label));
+      if (!bar || !label || !arrow) return null;
+      // Each measure starts from the page's own size, whatever the one before it drew.
+      if (label.dataset.fs === undefined) label.dataset.fs = label.style.fontSize;
+      label.style.fontSize = size ? `${size}px` : label.dataset.fs;
+      if (text) label.textContent = text;
+      const b = bar.getBoundingClientRect();
+      const l = label.getBoundingClientRect();
+      const a = arrow.getBoundingClientRect();
+      return {
+        bar: Math.round(b.width),
+        left: Math.round(l.left - b.left),
+        right: Math.round(b.right - l.right),
+        arrow: Math.round(b.right - a.left),
+        lines: Math.round(l.height / (size ? size : 11)),
+      };
+    }, [px, words]);
+  const normal = await measure(0);
+  const large = await measure(60);
+  await door.setViewportSize({ width: 320, height: 640 });
+  await door.waitForTimeout(400);
+  const narrow = await measure(0, "I have an invitation");
+  check(
+    "A bar's label at the door is centred and on one line at the default size, even 320 wide, and clear of its arrow at a large size",
+    Boolean(normal && large && narrow) &&
+      Math.abs(normal.left - normal.right) <= 3 &&
+      normal.lines === 1 &&
+      narrow.lines === 1 &&
+      large.lines > 1 &&
+      large.right >= large.arrow + 2 &&
+      large.left >= large.arrow,
+    JSON.stringify({ normal, large, narrow }),
+  );
+  await fresh.close();
+}
+
+// An invitation's web address, should it ever open the app, goes to the
+// invitation with its code, not home with the code lost.
+{
+  const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const link = await fresh.newPage();
+  link.on("pageerror", (e) => errors.push("invitation address: " + e.message));
+  await link.goto(B + "/i/someone-invitation", { waitUntil: "networkidle" });
+  await link.waitForTimeout(2600);
+  const filled = await link
+    .locator("input:not([type=checkbox])")
+    .locator("visible=true")
+    .first()
+    .inputValue()
+    .catch(() => "");
+  check(
+    "An invitation's web address opens the invitation with its code in it",
+    /By invitation/.test((await link.textContent("body")) ?? "") && filled === "someone-invitation",
+    `${link.url()} · ${filled || "empty"}`,
+  );
+  await fresh.close();
+}
 
 console.log("\nJS errors:", errors.length ? errors.slice(0, 10) : "none");
 const failed = results.filter((r) => !r.ok);

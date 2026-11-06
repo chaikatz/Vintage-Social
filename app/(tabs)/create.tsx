@@ -8,6 +8,7 @@ import { Screen } from "@/components/Screen";
 import { GateButton } from "@/components/gate/GateButton";
 import { todaysPrint } from "@/components/onThisDayPrint";
 import { colors, spacing, type } from "@/theme";
+import { showAlert } from "@/utils/alert";
 import { fetchUserPosts } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
 import { pickFromLibrary, takeForCompose, type PickedParams } from "@/utils/pickForCompose";
@@ -16,6 +17,9 @@ import { darkroomAvailable } from "@/darkroom/source";
 import { countLabel } from "@/darkroom/labels";
 import { placeLine } from "@/darkroom/session";
 import { useSetAside } from "@/darkroom/setAside";
+
+// A page that breaks as it draws breaks only this tab (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * Where a post begins.
@@ -62,6 +66,11 @@ export default function Create() {
     try {
       const params = await get();
       if (params) router.push({ pathname: "/compose", params });
+    } catch {
+      // The picker or the camera can refuse outright (an iCloud original
+      // that would not come down, a clip that could not be exported). The
+      // tap used to end in silence, as if it had not been made.
+      showAlert("Couldn’t open that", "It couldn’t be read here. Try again in a moment, or choose another.");
     } finally {
       opening.current = false;
       setBusy(null);

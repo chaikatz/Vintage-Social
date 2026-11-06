@@ -16,6 +16,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, chmodSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { extensionStandIns, withStandIns } from "./standins.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrations = join(here, "..", "migrations");
@@ -88,6 +89,19 @@ try {
 
   run(join(pgBin, "createdb"), ["-h", sock, "-U", "vintage_owner", "vintage"], { stdio: "ignore" });
 
+  // pg_net and pg_cron are Supabase's, not PostgreSQL's: a stock server has
+  // neither, and 0017 asks for both. Where one is missing, a migration that
+  // creates it is applied from a copy that makes, instead, the one function
+  // the migrations call from it (net.http_post, cron.schedule), with the
+  // same name and arguments and no effect. Nothing else in the file
+  // changes, and a server that has the real extension gets the real one.
+  const available = new Set(
+    psql(["-U", "vintage_owner", "-At", "-c",
+      "select name from pg_available_extensions where name in ('pg_net', 'pg_cron')"])
+      .stdout.trim().split("\n").filter(Boolean),
+  );
+  const standIns = extensionStandIns(available);
+
   const files = [
     join(here, "00_scaffold.sql"),
     ...execFileSync("ls", [migrations])
@@ -96,10 +110,27 @@ try {
     join(here, "01_fixtures.sql"),
   ];
 
+  let snapshotTaken = false;
   for (const f of files) {
     const label = f.replace(join(here, ".."), "supabase");
-    process.stdout.write(`· ${label} … `);
-    psql(["-U", "vintage_owner", "-q", "-f", f], { stdio: ["ignore", "ignore", "pipe"] });
+    // Keep the policies, indexes and functions 0023 replaces, so
+    // 08_policy_rewrite.sql can ask every question again under them.
+    const name = f.split("/").pop();
+    if (!snapshotTaken && f.startsWith(migrations) && name >= "0023") {
+      process.stdout.write("· supabase/tests/snapshot_before_0023.sql … ");
+      psql(["-U", "vintage_owner", "-q", "-f", join(here, "snapshot_before_0023.sql")], { stdio: ["ignore", "ignore", "pipe"] });
+      snapshotTaken = true;
+      console.log("ok");
+    }
+    const { path: applied, stood } = withStandIns(f, standIns, dir, (copy) => {
+      if (runAs) execFileSync("chown", [runAs, copy]);
+    });
+    process.stdout.write(`· ${label}${stood.length ? ` (stand-in for ${stood.join(", ")})` : ""} … `);
+    // Each migration in one transaction (-1), as Supabase's migration
+    // runner and the SQL editor apply a file: what one does is all there or
+    // none of it, and `set local` (0023's lock_timeout) holds for the file.
+    const single = f.startsWith(migrations) ? ["-1"] : [];
+    psql(["-U", "vintage_owner", "-q", ...single, "-f", applied], { stdio: ["ignore", "ignore", "pipe"] });
     console.log("ok");
   }
 
@@ -194,6 +225,61 @@ try {
     }
   }
 
+  // 0023: every member asks every table everything, under the rewritten
+  // policies and under the ones they replaced, and gets the same answers
+  // (08); the plans at many times today's size (09); and the rollback
+  // file, applied for real, puts the old policies back exactly before
+  // 0023 is applied again (10). 08 and 09 roll back; 10 leaves the
+  // database as 0023 made it.
+  for (const file of [
+    "08_policy_rewrite.sql",
+    "09_scale_plans.sql",
+    "10_rollback_0023.sql",
+    "11_block_privacy.sql",
+    "12_feed_page.sql",
+    "13_photograph_rows_0028.sql",
+    "14_moderation_0029_0033.sql",
+    "16_launch_data_0035_0037.sql",
+  ]) {
+    if (res.status !== 0 || process.exitCode === 1) break;
+    if (!existsSync(join(here, file))) continue;
+    process.stdout.write(`· supabase/tests/${file} … `);
+    const started = Date.now();
+    const r = psql(["-U", "vintage_owner", "-f", join(here, file)], { allowFail: true });
+    if (r.status !== 0) {
+      console.log("FAILED");
+      process.stdout.write(r.stdout ?? "");
+      process.stderr.write(r.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log(`ok (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+      const note = (r.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+      if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+      for (const l of (r.stdout ?? "").split("\n")) if (/^\s*(asked|plan:|time:)/.test(l)) console.log(`  ${l.trim()}`);
+    }
+  }
+
+  // The read-only script the owner runs on production after 0023-0037: it
+  // must run clean here, without a single error (the SQL editor shows only
+  // the last statement's result, or only the error), and its one table,
+  // the last statement's, must say ok on every row.
+  const verify0023 = join(here, "..", "production", "12_policies_read_once_verify.sql");
+  if (existsSync(verify0023) && res.status === 0 && process.exitCode !== 1) {
+    process.stdout.write("· supabase/production/12_policies_read_once_verify.sql … ");
+    const r = psql(["-U", "vintage_owner", "-A", "-F", "|", "-f", verify0023], { allowFail: true });
+    const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
+    const failing = rows.filter((l) => !l.endsWith("|t"));
+    const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l));
+    if (r.status !== 0 || rows.length !== 39 || failing.length > 0 || errors.length > 0) {
+      console.log("FAILED");
+      process.stdout.write(r.stdout ?? "");
+      process.stderr.write(r.stderr ?? "");
+      process.exitCode = 1;
+    } else {
+      console.log(`ok (${rows.length} checks in one table, every one ok, no error)`);
+    }
+  }
+
   const seedSql = join(here, "..", "production", "08_house_accounts.sql");
   if (existsSync(seedSql) && res.status === 0) {
     console.log("");
@@ -218,6 +304,19 @@ try {
       } else {
         const note = (seeded.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
         if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+        // 0034 over the seed as production has it: the house thumbnails.
+        process.stdout.write("· supabase/tests/15_seed_thumbnails_0034.sql … ");
+        const thumbs = psql(["-U", "vintage_owner", "-f", join(here, "15_seed_thumbnails_0034.sql")], { allowFail: true });
+        if (thumbs.status !== 0) {
+          console.log("FAILED");
+          process.stdout.write(thumbs.stdout ?? "");
+          process.stderr.write(thumbs.stderr ?? "");
+          process.exitCode = 1;
+        } else {
+          console.log("ok");
+          const passed = (thumbs.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+          if (passed) console.log(passed.replace(/^NOTICE:\s*/, "✓ "));
+        }
       }
     }
   }

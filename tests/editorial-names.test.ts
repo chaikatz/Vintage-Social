@@ -205,7 +205,7 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ["app/admin/applications.tsx", "the username asked for", /<Text style=\{\[styles\.username, face\]\}>\{item\.desired_username\}<\/Text>/],
   ["app/blocked.tsx", "each member blocked", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
   ["app/comments.tsx", "the caption's author", /<Text style=\{\[styles\.author, face\]\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/],
-  ["app/comments.tsx", "each comment's author", /<Text style=\{\[styles\.author, face\]\}>\{item\.author\.username\}<\/Text> \{item\.body\}/],
+  ["app/comments.tsx", "each comment's author", /<Text style=\{\[styles\.author, face\]\}>\{comment\.author\.username\}<\/Text> \{comment\.body\}/],
   ["app/compose.tsx", "who was there", /<Text style=\{\[styles\.tagNames, face\]\} numberOfLines=\{1\}>\s*\{tags\.map\(\(t\) => t\.username\)\.join\(", "\)\}/],
   ["app/messages/index.tsx", "who each thread is with, an unread thread's style after the face", /<Text style=\{\[styles\.username, face, unread && styles\.unreadText\]\}>\s*\{conversation\.peer\.username\}/],
   ["app/messages/[id].tsx", "whose photograph was sent, your own bubble's ink after it", /<Text style=\{\[styles\.sharedCaption, face, mine && styles\.textMine\]\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/],
@@ -217,7 +217,7 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ],
   ["app/post/[id].tsx", "each comment's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{c\.author\.username\}<\/Text> \{c\.body\}/],
   ["app/requests.tsx", "each member asking", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
-  ["app/share.tsx", "the photograph's author", /<Text style=\{\[styles\.previewAuthor, face\]\}>\{post\?\.author\.username \?\? ""\}<\/Text>/],
+  ["app/share.tsx", "the photograph's author", /<Text style=\{\[styles\.previewAuthor, face\]\}>\{post\?\.author\?\.username \?\? ""\}<\/Text>/],
   ["app/share.tsx", "each member to send it to", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
   ["src/components/UserRow.tsx", "every list of members: Search, Recent, Followers, Likes and the admin's Members", /<Text style=\{\[styles\.username, face\]\}>\{username\}<\/Text>/],
   ["src/components/PendingPostCard.tsx", "the author", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{draft\.author\.username\}/],
@@ -292,6 +292,8 @@ describe("every username the app draws", () => {
       "src/components/Avatar.tsx": /^\{\(username\[0\] \?\? "\?"\)\.toUpperCase\(\)\}$/,
       // A post's own page: the caption's author, in the caption's serif, which has no half bold (see below).
       "app/post/[id].tsx": /^\{post\.author\.username\}$/,
+      // An admin's report line: who wrote the reported comment, then its words. The page's names stay regular, as in its sentences (below).
+      "app/admin/reports.tsx": /^\{item\.comment\.author\?\.username \?\? "unknown"\}$/,
     };
     const drawn: string[] = [];
     for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
@@ -352,9 +354,10 @@ describe("every username the app draws", () => {
         /^`Suspend \$\{member\.username\}\?`$/,
         /^`Reinstate \$\{member\.username\}\?`$/,
       ],
-      "src/hooks/usePostActions.ts": [/^`Block \$\{post\.author\.username\}`$/, /^`Block \$\{post\.author\.username\}\?`$/],
       // Spoken by VoiceOver, never drawn.
       "app/(tabs)/search.tsx": [/^`Forget \$\{item\.username\}`$/],
+      "app/blocked.tsx": [/^`Unblock \$\{item\.username\}`$/],
+      "app/requests.tsx": [/^`Accept \$\{item\.username\}`$/, /^`Decline \$\{item\.username\}`$/],
       // The public web page, written on the server: the preference is kept on the phone.
       "src/share/publicPage.ts": [/^`A photograph from \$\{p\.username\}’s archive · VINTAGE`$/],
       // A private profile's line, in its regular caption (below), and the Block dialog.

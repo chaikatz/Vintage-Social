@@ -90,25 +90,18 @@ The home-screen icon will read **Vintage**.
 
 ## Before submitting for App Store review
 
-Not TestFlight blockers — internal testing needs none of them — but review
-will stop on all four.
+Everything review needs, in order, is in [`APP_STORE_LAUNCH.md`](APP_STORE_LAUNCH.md)
+(5 November 2026, updated 6 November). The four gaps this section used to
+list are closed for members: account deletion (Settings → Delete account),
+blocking (a member's "…" → Block member), the Privacy Policy (in the app and
+at https://vintagesocial.app/privacy), and the privacy label (section 3 of
+that file, the same list as the app's privacy manifest). The Face ID purpose
+string is no longer Expo's template; it says the app does not use Face ID.
 
-- **In-app account deletion.** Guideline 5.1.1(v): any app with account
-  creation must let a user delete their account from inside the app. There
-  is no such flow.
-- **Blocking another member.** Guideline 1.2 for user-generated content
-  requires a way to block an abusive user. Reporting exists; blocking does
-  not.
-- **Privacy policy URL.** Required at submission, and it has to describe the
-  photo-library access and the EXIF capture dates the app reads.
-- **Privacy nutrition labels** in App Store Connect, covering photos, email
-  and user content.
-
-Two smaller things worth a look before review:
-
-- `NSFaceIDUsageDescription` is boilerplate from `expo-secure-store`
-  ("Allow $(PRODUCT_NAME) to access your Face ID biometric data"). The app
-  does not use Face ID; a generic Apple-template string sometimes draws a
-  rejection.
-- The permission prompts say "VINTAGE" while the app is now named
-  "Vintage". Cosmetic, and only visible in the system dialogs.
+The two review blockers found at the door are fixed on branch `r13-door`:
+an account that is still waiting, was not accepted or is suspended deletes
+itself from its waiting screen (Delete my account, two confirmations), and
+the invitation says "By accepting you agree to the Terms of Use and Privacy
+Policy". Before you build, check the branch you build has both ("Before you
+build" at the top of section 2 of that file); steps 4 and 5 of its section 6
+try them on the phone.

@@ -24,8 +24,20 @@ import {
   validateUsername,
 } from "@/utils/validation";
 import { checkUsernameAvailable, fetchInviteOwner, joinWithInvite } from "@/api/membership";
+import { errorMessage } from "@/utils/errorMessage";
 import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
-import { enterApp, useSession } from "@/providers/SessionProvider";
+import { useSession } from "@/providers/SessionProvider";
+import { backFromDoor } from "@/components/gate/door";
+import { useDoorClosesBehind } from "@/components/gate/useDoor";
+
+// A page at the door that breaks breaks only itself, not the whole app.
+// There is no header and no tab bar here, so the way back is on the page
+// (src/navigation/Recover.tsx): to the page before, or to Home, whose
+// guard sends anyone not yet let in to the door or the waiting room.
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
+/** How long the typing pauses before the code typed so far is asked about. */
+const TYPING_PAUSE_MS = 350;
 
 /**
  * The invitation.
@@ -44,7 +56,8 @@ export default function Invite() {
   // the field is filled in and the page can say who sent it before anyone
   // types anything. Pasted or typed by hand still works.
   const params = useLocalSearchParams<{ slug?: string }>();
-  const [code, setCode] = useState(params.slug ?? "");
+  const [arrivedWith] = useState(params.slug ?? "");
+  const [code, setCode] = useState(arrivedWith);
   const [inviter, setInviter] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
   // A well-formed code that nobody owns: a typo, or a link since replaced.
@@ -55,31 +68,47 @@ export default function Invite() {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
+  // Signed in, the card goes in: after a join whose account was made but
+  // whose invitation was refused, to the waiting room that takes the code;
+  // for a member who opened a link, to the app (see door.ts).
+  const goIn = useDoorClosesBehind(busy);
 
   // Ask who is behind the link as soon as there is one worth asking about.
   // This is the whole emotional payload of an invitation, and it should not
   // wait until after the form is filled in.
   useEffect(() => {
     const slug = slugFromInput(code);
-    if (describeSlugProblem(slug)) {
-      setInviter(null);
-      setClosed(false);
-      setUnknown(false);
-      return;
-    }
+    // Whatever was said of the code before is not said of this one.
+    setInviter(null);
+    setClosed(false);
+    setUnknown(false);
+    // Nothing to ask about: an empty field, which is how "I have an
+    // invitation" opens this page (asked about "", the database answers that
+    // nobody owns it, and the page opened on "That invitation isn’t one we
+    // know"), or a code the database would refuse anyway.
+    if (!slug || describeSlugProblem(slug)) return;
     let live = true;
-    fetchInviteOwner(slug)
-      .then((owner) => {
-        if (!live) return;
-        setInviter(owner.inviter);
-        setClosed(Boolean(owner.inviter) && !owner.open);
-        setUnknown(owner.inviter === null);
-      })
-      .catch(() => undefined);
+    // A code that came with the link is asked about at once; one being
+    // typed, once the typing pauses, so a half-typed code is not called
+    // unknown at every letter and the database is not asked at every one.
+    const ask = setTimeout(
+      () => {
+        fetchInviteOwner(slug)
+          .then((owner) => {
+            if (!live) return;
+            setInviter(owner.inviter);
+            setClosed(Boolean(owner.inviter) && !owner.open);
+            setUnknown(owner.inviter === null);
+          })
+          .catch(() => undefined);
+      },
+      code === arrivedWith ? 0 : TYPING_PAUSE_MS,
+    );
     return () => {
       live = false;
+      clearTimeout(ask);
     };
-  }, [code]);
+  }, [code, arrivedWith]);
 
   const submit = async () => {
     const next: Record<string, string | null> = {
@@ -94,7 +123,10 @@ export default function Invite() {
 
     setBusy(true);
     try {
-      const available = await checkUsernameAvailable(username);
+      // With the email and password typed beside it: a try whose account
+      // was made but whose answer never came back (no session was kept)
+      // finds the name is its own account's, and carries on with it.
+      const available = await checkUsernameAvailable(username, { email, password });
       if (!available) {
         setErrors((e) => ({ ...e, username: "That username is taken." }));
         return;
@@ -107,9 +139,11 @@ export default function Invite() {
         code: slugFromInput(code),
       });
       await refreshProfile();
-      await enterApp();
+      await goIn();
     } catch (err) {
-      showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
+      // joinWithInvite's own sentence ("… Your account has been created;
+      // enter a valid invitation to join.") comes through as it is.
+      showAlert("Couldn’t join", errorMessage(err, "Check your connection and try again."));
     } finally {
       setBusy(false);
     }
@@ -132,7 +166,7 @@ export default function Invite() {
         >
           {/* The name, small, in the corner — back to the door is one tap left of it. */}
           <View style={styles.head}>
-            <Pressable hitSlop={14} onPress={() => router.back()} accessibilityLabel="Back" style={styles.back}>
+            <Pressable hitSlop={14} onPress={() => backFromDoor(router)} accessibilityRole="button" accessibilityLabel="Back" style={styles.back}>
               <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />
             </Pressable>
             <Wordmark tagline="Members only" />
@@ -196,6 +230,19 @@ export default function Invite() {
 
           <GateButton title="Accept the invitation" variant="quiet" onPress={submit} loading={busy} style={styles.accept} />
 
+          {/* As on the application: what is agreed to is said before the account is made (App Review Guideline 1.2). */}
+          <Text style={styles.agree}>
+            By accepting you agree to the{" "}
+            <Text style={styles.agreeLink} onPress={() => router.push("/legal/terms")} accessibilityRole="link">
+              Terms of Use
+            </Text>{" "}
+            and{" "}
+            <Text style={styles.agreeLink} onPress={() => router.push("/legal/privacy")} accessibilityRole="link">
+              Privacy Policy
+            </Text>
+            .
+          </Text>
+
           <Text style={styles.foot}>Members only · Est. 2026</Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -233,6 +280,16 @@ const styles = StyleSheet.create({
   },
   form: {},
   accept: { alignSelf: "center", marginTop: spacing.sm },
+  // The application's footnote and its links, to the point.
+  agree: {
+    fontFamily: type.serif,
+    fontSize: 12,
+    lineHeight: 19,
+    color: colors.inkSoft,
+    textAlign: "center",
+    marginTop: spacing.lg,
+  },
+  agreeLink: { textDecorationLine: "underline", color: colors.ink },
 
   foot: {
     fontFamily: type.mono,

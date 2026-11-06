@@ -221,7 +221,8 @@ for (let i = 1; i <= MEMBERS; i++) {
     const theme = pick(interests);
     const photo = nextPhoto(theme);
     if (!photo) break; // the pool is spent; this member simply posts less
-    if (!member.avatar) member.avatar = photo.thumb;
+    // The portrait curate.mjs drew for a Picsum photograph (480 wide, as production's), else the square.
+    if (!member.avatar) member.avatar = photo.avatar ?? photo.thumb;
     const posted = joined + Math.floor(rand() * (now - joined));
     posts.push({
       id: postUuid(i, j),
@@ -268,8 +269,9 @@ lines.push(`-- VINTAGE · production · house accounts
 -- None of them can sign in: the auth rows are created with no password and
 -- no identity, so there is nothing to authenticate against.
 --
--- Every photograph is public domain or CC0 — see seed/CREDITS.md for the
--- full list with sources. Requires migration 0011.
+-- The photographs are public domain, CC0 or under the Unsplash Licence —
+-- see seed/CREDITS.md for the full list with sources and the count of
+-- each. Requires migration 0011.
 --
 -- To remove the whole thing later:
 --   delete from auth.users where id in (select id from public.profiles where is_house);
@@ -372,17 +374,30 @@ const sql = lines.join("\n");
 const out = join(here, "..", "supabase", "production", "08_house_accounts.sql");
 writeFileSync(out, sql);
 
-// Credits: not legally required for PD/CC0, but the sources should be
-// traceable by anyone who asks where a photograph came from.
+// Credits: not legally required for public domain, CC0 or the Unsplash
+// Licence, but the sources should be traceable by anyone who asks where a
+// photograph came from. The header counts the licences in the table below
+// it (tests/store-checklist.test.ts holds the two together, and the launch
+// checklist's Content Rights answer to both); it used to call every one
+// public domain or CC0 from Wikimedia, over 679 Unsplash rows.
 const used = new Map();
 for (const p of posts) used.set(p.url, p);
+const licenceOf = (p) => (photos.find((x) => x.url === p.url)?.licence ?? "").toLowerCase();
+// Case aside: photos.json spells one "Public Domain".
+const tally = (name) => [...used.values()].filter((p) => licenceOf(p) === name.toLowerCase()).length;
+const [unsplash, pd, cc0, none] = ["Unsplash Licence", "Public domain", "CC0", "No restrictions"].map(tally);
+if (unsplash + pd + cc0 + none !== used.size) {
+  throw new Error(`CREDITS.md: ${used.size - unsplash - pd - cc0 - none} photographs have a licence the header does not count`);
+}
 const credits = [
   "# House photographs — sources",
   "",
-  `${used.size} photographs, all public domain or CC0, curated from Wikimedia`,
-  "Commons by `seed/curate.mjs`. None of these licences requires attribution;",
-  "this list exists so the provenance of anything in the seeded feed can be",
-  "traced back to its source file.",
+  `${used.size} photographs, chosen by \`seed/curate.mjs\`: ${unsplash} from Unsplash, through`,
+  `Lorem Picsum, under the Unsplash Licence, and ${pd + cc0 + none} from Wikimedia Commons`,
+  `(${pd} public domain, ${cc0} CC0 and ${none} marked "no restrictions"). None of these`,
+  "licences requires attribution; this list exists so the provenance of",
+  "anything in the seeded feed can be traced back to its source, and so the",
+  "licence of each is on record.",
   "",
   "| File | Licence | Author |",
   "| --- | --- | --- |",

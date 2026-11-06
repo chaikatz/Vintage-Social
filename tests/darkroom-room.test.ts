@@ -1142,11 +1142,29 @@ describe("the room's own rules, in its source", () => {
   });
 
   it("raises no alert and gives no failure haptic", () => {
+    // The room's own outcomes are states printed in the room. The one
+    // alert is the ordinary picker's, opened from the room: it speaks for
+    // itself when a photograph cannot be decoded (pickForCompose), and its
+    // outright refusal says so in the same words as on the Post tab,
+    // rather than ending in silence.
+    const screen = path.resolve(__dirname, "..", "app/darkroom.tsx");
     for (const f of files) {
       const src = read(f);
-      expect(src, f).not.toMatch(/showAlert|Alert\.alert/);
       expect(src, f).not.toMatch(/notificationAsync/);
+      if (f !== screen) {
+        expect(src, f).not.toMatch(/showAlert|Alert\.alert/);
+        continue;
+      }
+      expect(src.match(/showAlert\(|Alert\.alert/g), f).toHaveLength(1);
+      const pick = src.slice(src.indexOf("const pick = async () => {"), src.indexOf("const choose = ("));
+      expect(pick).toMatch(
+        /\} catch \{\s*develop\.unclaim\(\);[\s\S]*?if \(mounted\.current\) \{\s*showAlert\("Couldn’t open that", "It couldn’t be read here\. Try again in a moment, or choose another\."\);\s*\}\s*\}\s*\};/,
+      );
     }
+    // The same words as the Post tab's, for the same refusal.
+    expect(read(path.resolve(__dirname, "..", "app/(tabs)/create.tsx"))).toContain(
+      'showAlert("Couldn’t open that", "It couldn’t be read here. Try again in a moment, or choose another.");',
+    );
   });
 
   it("reads no location, metadata, moments or albums, never prefetches a photograph, logs or sends", () => {
@@ -1172,7 +1190,9 @@ describe("the room's own rules, in its source", () => {
   it("keeps the proof out of the image cache", () => {
     const page = read(path.resolve(__dirname, "../src/components/darkroom/PrintPage.tsx"));
     expect(page).toMatch(/cachePolicy="none"/);
-    expect(page).toMatch(/cachePolicy="memory"/);
+    // The photograph itself is kept in memory only, by the request it is made with.
+    expect(page).toMatch(/cachePolicy=\{request\.cachePolicy\}/);
+    expect(read(path.resolve(__dirname, "../src/components/darkroom/plateImage.ts"))).toMatch(/cachePolicy: "memory",/);
     expect(page).not.toMatch(/memory-disk|cachePolicy="disk"/);
   });
 });

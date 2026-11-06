@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { errorMessage, messageOf } from "@/utils/errorMessage";
 import { TimeoutError, abortError } from "@/utils/retry";
+import {
+  AuthApiError,
+  AuthRetryableFetchError,
+  AuthSessionMissingError,
+  AuthUnknownError,
+  AuthWeakPasswordError,
+} from "@supabase/supabase-js";
+import { code } from "./helpers/screenSource";
+
+// The screens' text only: src/api/membership.ts imports the Supabase client.
+const ACCOUNT_EXISTS = code("src/api/membership.ts").match(/export const ACCOUNT_EXISTS = "([^"]+)";/)![1];
 
 /**
  * What an alert says for whatever was thrown. The case that started it:
@@ -74,6 +85,86 @@ describe("what a member is shown", () => {
 
   it("can say nothing, for an alert that has its own words to fall back on", () => {
     expect(errorMessage(postgrest("42501", "permission denied for table messages"), "")).toBe("");
+  });
+});
+
+/**
+ * Supabase Auth's refusals, as auth-js throws them (its own classes, not
+ * look-alikes): the words written for the person at the door come
+ * through, its outages and session states do not.
+ */
+describe("what someone signing in or up is shown", () => {
+  const DOOR = "Check your connection and try again.";
+
+  it("a wrong password, an email already taken and a weak password, in Supabase Auth's words", () => {
+    const wrong = new AuthApiError("Invalid login credentials", 400, "invalid_credentials");
+    expect(errorMessage(wrong, DOOR)).toBe("Invalid login credentials");
+    const taken = new AuthApiError("User already registered", 422, "user_already_exists");
+    expect(errorMessage(taken, DOOR)).toBe("User already registered");
+    const weak = new AuthWeakPasswordError("Password should be at least 6 characters.", 422, ["length"]);
+    expect(errorMessage(weak, DOOR)).toBe("Password should be at least 6 characters.");
+    // As a server's legacy answer without a code.
+    expect(errorMessage(new AuthApiError("Email not confirmed", 400, undefined), DOOR)).toBe("Email not confirmed");
+  });
+
+  it("the fallback for an outage, too many tries, a timeout or the session's own state", () => {
+    for (const err of [
+      new AuthRetryableFetchError("Failed to fetch", 0),
+      new AuthRetryableFetchError("Service Unavailable", 503),
+      new AuthApiError("Request rate limit reached", 429, "over_request_rate_limit"),
+      new AuthApiError("email rate limit exceeded", 429, "over_email_send_rate_limit"),
+      new AuthApiError("Request timeout", 408, "request_timeout"),
+      new AuthApiError("Internal error", 500, "unexpected_failure"),
+      new AuthSessionMissingError(),
+      new AuthUnknownError("Unexpected token < in JSON", new SyntaxError("x")),
+      new AuthApiError("Invalid Refresh Token: Already Used", 400, "refresh_token_already_used"),
+      new AuthApiError("Session from session_id claim in JWT does not exist", 403, "session_not_found"),
+      new AuthApiError("Could not parse request body as JSON", 400, "bad_json"),
+    ]) {
+      expect(errorMessage(err, DOOR), `${err.name} ${err.message}`).toBe(DOOR);
+    }
+  });
+
+  it("a refusal's words only from auth-js itself, never from any Error that has a status", () => {
+    // Shaped like a refusal but not one of Auth's: still the server's, still the fallback.
+    const lookalike = Object.assign(new Error("Invalid login credentials"), { status: 400, name: "AuthApiError" });
+    expect(errorMessage(lookalike, DOOR)).toBe(DOOR);
+    // Auth's words that give away the machinery are still caught by what they say.
+    expect(errorMessage(new AuthApiError("invalid JWT: unable to parse or verify signature", 400, "validation_failed"), DOOR)).toBe(DOOR);
+  });
+});
+
+/** Each door's own alert, read from its source and run on what auth-js throws. */
+describe("the door's alerts", () => {
+  const alertOf = (file: string, title: string) => {
+    const src = code(file);
+    const m = src.match(new RegExp(`showAlert\\("${title}", errorMessage\\(err, "([^"]+)"\\)\\);`));
+    expect(m, `${file}: "${title}" through errorMessage`).toBeTruthy();
+    return m![1];
+  };
+
+  it("Sign in says a wrong password in Supabase Auth's words, and an outage in its own", () => {
+    const fallback = alertOf("app/(gate)/sign-in.tsx", "Sign in failed");
+    expect(errorMessage(new AuthApiError("Invalid login credentials", 400, "invalid_credentials"), fallback)).toBe("Invalid login credentials");
+    expect(errorMessage(new AuthRetryableFetchError("Network request failed", 0), fallback)).toBe(fallback);
+    expect(fallback).toBe("Check your connection and try again.");
+  });
+
+  it("Apply and the invitation say a refusal written for them, and never the database's words", () => {
+    const apply = alertOf("app/(gate)/apply.tsx", "Application failed");
+    const invite = alertOf("app/(gate)/invite.tsx", "Couldn’t join");
+    for (const fallback of [apply, invite]) {
+      expect(errorMessage(new AuthWeakPasswordError("Password is known to be weak and easy to guess, please choose a different one.", 422, ["pwned"]), fallback)).toBe(
+        "Password is known to be weak and easy to guess, please choose a different one.",
+      );
+      // A refused insert into applications, as postgrest-js hands it back.
+      expect(errorMessage(postgrest("42501", 'new row violates row-level security policy for table "applications"'), fallback)).toBe(fallback);
+      expect(errorMessage({ code: "", message: "", details: null, hint: null }, fallback)).toBe(fallback);
+    }
+    // src/api/membership.ts's own sentences come through as they are.
+    expect(errorMessage(new Error(ACCOUNT_EXISTS), apply)).toBe(ACCOUNT_EXISTS);
+    const refused = "Every invitation they were given has been taken up. Your account has been created; enter a valid invitation to join.";
+    expect(errorMessage(new Error(refused), invite)).toBe(refused);
   });
 });
 

@@ -1,17 +1,33 @@
 import React, { useState } from "react";
-import { FlatList, StyleSheet, TextInput, View } from "react-native";
+import { FlatList, StyleSheet, Text, TextInput, View } from "react-native";
 import { showAlert, showPrompt } from "@/utils/alert";
-import { useRouter } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Redirect, useRouter } from "expo-router";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/providers/SessionProvider";
 import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
-import { colors, radii, spacing } from "@/theme";
+import { LoadFailed } from "@/components/LoadFailed";
+import { colors, radii, spacing, type } from "@/theme";
 import { fetchMembers, setInviteQuota, setSuspension, warnMember } from "@/api/moderation";
 import { formatMemberNumber } from "@/utils/membership";
+import { errorMessage } from "@/utils/errorMessage";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { useDebounced } from "@/hooks/useDebounced";
+
+/**
+ * How many members one read brings: fetchMembers (src/api/moderation.ts)
+ * asks for the newest fifty, matching the search when there is one.
+ */
+const MEMBERS_READ = 50;
+
+// A row that breaks this page breaks only this page, with the way back on
+// it as well as in the header: opened from a report's notification (0032)
+// or a link, an admin page is the first in its stack and has no back
+// button (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /** Status, number and output — what a suspension decision is made against. */
 function memberSubtitle(member: ProfileRow): string {
@@ -28,33 +44,50 @@ function memberSubtitle(member: ProfileRow): string {
  */
 export default function AdminMembers() {
   const router = useRouter();
+  // Opened by a link (vintage://admin/members) by someone who is not an
+  // admin: nothing is read for them, and they are sent home below.
+  const { isAdmin, profileLoaded } = useSession();
   const queryClient = useQueryClient();
   const [q, setQ] = useState("");
 
+  // Asked a beat after typing stops, as Search is, and the last answer
+  // stays up while the next one comes: a read on every keystroke used to
+  // blank the list between letters.
+  const settledQ = useDebounced(q, 250);
   const members = useQuery({
-    queryKey: ["admin-members", q],
-    queryFn: () => fetchMembers(q),
+    queryKey: ["admin-members", settledQ],
+    queryFn: () => fetchMembers(settledQ),
+    enabled: isAdmin,
+    placeholderData: keepPreviousData,
   });
+  // A full read may not be everyone: say so, and how to find the rest.
+  const more =
+    (members.data?.length ?? 0) >= MEMBERS_READ
+      ? settledQ.trim()
+        ? `The ${MEMBERS_READ} newest that match. Type more to find anyone else.`
+        : `The ${MEMBERS_READ} newest. Search to find anyone else.`
+      : null;
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-members"] });
 
   const warn = useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) => warnMember(id, note),
     onSuccess: () => showAlert("Warning sent"),
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t send the warning", errorMessage(err, "The member hasn’t been warned. Try again in a moment.")),
   });
 
   const suspend = useMutation({
     mutationFn: ({ id, suspended, note }: { id: string; suspended: boolean; note: string }) =>
       setSuspension(id, suspended, note),
     onSuccess: refresh,
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err, { suspended }) =>
+      showAlert(suspended ? "Couldn’t suspend" : "Couldn’t reinstate", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const quota = useMutation({
     mutationFn: ({ id, n }: { id: string; n: number }) => setInviteQuota(id, n),
     onSuccess: refresh,
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t change the invitations", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   // The allowance as a whole number, typed: "8" means eight invitations,
@@ -107,6 +140,9 @@ export default function AdminMembers() {
     );
   };
 
+  // After every hook: a member who is not an admin never sees this, even from a link.
+  if (profileLoaded && !isAdmin) return <Redirect href="/(tabs)" />;
+
   return (
     <Screen padded={false}>
       <View style={styles.searchWrap}>
@@ -123,7 +159,14 @@ export default function AdminMembers() {
       <FlatList
         data={members.data ?? []}
         keyExtractor={(m) => m.id}
-        ListEmptyComponent={members.isFetched ? <EmptyState title="No members found" /> : null}
+        ListFooterComponent={more ? <Text style={styles.more}>{more}</Text> : null}
+        ListEmptyComponent={
+          members.isError ? (
+            <LoadFailed what="the members" onRetry={() => members.refetch()} />
+          ) : members.isFetched ? (
+            <EmptyState title="No members found" />
+          ) : null
+        }
         renderItem={({ item }) => (
           <UserRow
             username={item.username}
@@ -163,4 +206,5 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   actions: { flexDirection: "row", gap: spacing.xs },
+  more: { ...type.caption, textAlign: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
 });

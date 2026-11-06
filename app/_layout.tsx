@@ -9,6 +9,11 @@ import { restoreAppearance } from "@/utils/appearance";
 import { useNotificationTaps } from "@/utils/push";
 import { KeyboardDone } from "@/components/KeyboardDone";
 import { startOutbox } from "@/uploads";
+import { releaseImagesInBackground } from "@/utils/imageMemory";
+
+// A page that breaks while it is drawn shows the recover page instead of
+// closing the app (src/navigation/Recover.tsx).
+export { RecoverApp as ErrorBoundary } from "@/navigation/Recover";
 
 // Before the first screen draws, so the page opens on the print it was left on.
 restoreAppearance();
@@ -17,6 +22,11 @@ restoreAppearance();
 // where they stopped. Started here, once, above the navigator: the outbox
 // outlives every screen, and Home only reads it.
 startOutbox();
+
+// A long session's decoded photographs are let go as the app goes to the
+// background, so iOS has less reason to end it while it is away
+// (src/utils/imageMemory.ts). Once, for the life of the app.
+releaseImagesInBackground();
 
 /** A tapped notice goes where it points. Lives under the router, renders nothing. */
 function NotificationTaps() {

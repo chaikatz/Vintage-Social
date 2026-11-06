@@ -53,6 +53,10 @@ import {
   type PlaceInput,
 } from "@/utils/composeDraft";
 
+// An editor that breaks as it draws breaks only the editor, with the way back on its
+// page: the header hides its back button while a post develops (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * The film tray draws fifteen swatches 70 pt square, about 210 px on a 3x
  * phone. Each is its own renderer, and each used to decode the full 2048 px
@@ -482,7 +486,15 @@ export default function Compose() {
           {FILTERS.map((f) => {
             const selected = f.id === filterId;
             return (
-              <Pressable key={f.id} style={styles.swatchWrap} onPress={() => selectFilter(f.id)}>
+              <Pressable
+                key={f.id}
+                style={styles.swatchWrap}
+                onPress={() => selectFilter(f.id)}
+                accessibilityRole="button"
+                accessibilityLabel={f.name}
+                accessibilityHint="Develops the photograph in this film."
+                accessibilityState={{ selected }}
+              >
                 {/* The swatch is its own sunken well until the tray's copy
                     exists, then the film drawn on that copy, at its own
                     size so the crop is not stretched. */}
@@ -523,7 +535,14 @@ export default function Compose() {
 
         {/* Available on every filter — the preset only decides the default. */}
         <SectionLabel>Date stamp</SectionLabel>
-        <Pressable style={styles.stampRow} onPress={() => setStampOn(!stampOn)}>
+        {/* One switch to VoiceOver: the row is what it reads and what it turns, the Switch inside it is hidden by it. */}
+        <Pressable
+          style={styles.stampRow}
+          onPress={() => setStampOn(!stampOn)}
+          accessibilityRole="switch"
+          accessibilityLabel={`Date stamp, ${stampLabel}`}
+          accessibilityState={{ checked: stampOn }}
+        >
           <View style={styles.grow}>
             <Text style={[styles.stampValue, !stampOn && styles.stampValueOff]}>{stampLabel}</Text>
             <Text style={styles.stampHint}>

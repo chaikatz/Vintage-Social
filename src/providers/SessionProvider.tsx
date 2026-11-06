@@ -9,15 +9,19 @@ import React, {
 } from "react";
 import { router } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { readStoredSession, supabase } from "@/lib/supabase";
+import { memberSignedIn, takeUnsignedRead } from "@/lib/unsignedRead";
 import { queryClient } from "@/lib/queryClient";
-import { withRetry } from "@/utils/retry";
+import { isTransient, withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
-import { forgetPushToken } from "@/utils/push";
+import { forgetPushTokensEverywhere } from "@/utils/push";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 import { forgetOutbox } from "@/uploads";
+import { clearRecent } from "@/utils/searchHistory";
+import { forgetMember, recallMember, rememberMember } from "./rememberedMember";
+import { openSession } from "./launchSession";
 
 interface SessionState {
   /** undefined while restoring the persisted session on launch. */
@@ -127,6 +131,9 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
         // The demo reads the phone's own library too: nothing of this member stays.
         forgetDarkroom();
         forgetOutbox();
+        // Nor what was read for them, nor who they looked for in Search.
+        queryClient.clear();
+        clearRecent();
         await leaveToLanding();
       },
     }),
@@ -136,16 +143,60 @@ function DemoSessionProvider({ children }: { children: React.ReactNode }) {
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/**
+ * A read that found no profile while the member's token could not be
+ * refreshed: it went out without the token, and no row is what such a
+ * read sees. Not taken for "no profile", which would send an approved
+ * member to the waitlist; it is tried again like a dropped connection.
+ */
+class NotSignedInYet extends Error {
+  constructor() {
+    super("Signing in again");
+    this.name = "NotSignedInYet";
+  }
+}
+
 function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
+  // Auth could not reach the server as the app opened (launchSession.ts).
+  const authUnreachable = useRef(false);
+  // The profile read, for the auth listener, which is made before it.
+  const readProfileAgain = useRef<() => Promise<boolean>>(async () => false);
+  // Who is signed in now: for the listener, and for a read that lands
+  // after they have gone.
+  const currentUser = useRef<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    // Who is signed in, from the phone's own copy at once and from auth
+    // when it has answered, so the launch never waits on the network to
+    // find out (launchSession.ts).
+    const stopOpening = openSession(supabase.auth, readStoredSession, setSession, () => {
+      authUnreachable.current = true;
+    });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
-      // SIGNED_OUT forgets the Darkroom where the client is made
-      // (src/lib/supabase.ts), so that one said during launch is heard.
+      // The first answer of nobody is the launch read's to give (above):
+      // auth says it also when a refresh could not reach the server.
+      if (event === "INITIAL_SESSION" && !next) return;
+      // What was read without the member's token came back empty: at
+      // launch while auth could not reach the server, and on a return to
+      // the app after the token ran out with no signal, when auth hands
+      // the client no session for a minute (src/lib/unsignedRead.ts).
+      // Once a refresh goes through, every screen reads again, and the
+      // profile of the member already here (one signing in is read as
+      // they arrive, below).
+      if (next && (event === "TOKEN_REFRESHED" || event === "SIGNED_IN")) {
+        const unsigned = takeUnsignedRead();
+        if (authUnreachable.current || unsigned) {
+          authUnreachable.current = false;
+          void queryClient.invalidateQueries();
+          if (next.user?.id === currentUser.current) void readProfileAgain.current();
+        }
+      }
+      // SIGNED_OUT forgets the Darkroom, the recent searches and the
+      // phone's push token where the client is made (src/lib/supabase.ts),
+      // so that one said during launch is heard.
       // auth-js says it only once it has removed the session from this
       // phone: a sign-out, or a refresh token the server refused; a
       // refresh that failed for want of a network keeps the session.
@@ -157,12 +208,23 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       // this run costs nothing.
       //
       // Posts still going up go with the session: their uploads are made
-      // as the member who has just left.
-      if (event === "SIGNED_OUT") forgetOutbox();
+      // as the member who has just left. So does what was read for them,
+      // as at "Sign out": a session ended on another device leaves the app
+      // running, and the next member to sign in on this phone would
+      // otherwise be shown the last one's posts, comments and threads
+      // from the cache (many of its keys do not name the reader).
+      if (event === "SIGNED_OUT") {
+        forgetOutbox();
+        forgetMember();
+        queryClient.clear();
+      }
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
     });
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      stopOpening();
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   // Keyed on who is signed in, not on the session object: a token refresh
@@ -173,10 +235,15 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   const userId = session?.user?.id ?? null;
   const restoring = session === undefined;
   useDarkroomOwner(userId);
+  // While a member is here, a screen's read that auth would send without
+  // their token is held back rather than answered as a visitor's
+  // (src/lib/unsignedRead.ts).
+  useEffect(() => memberSignedIn(userId != null), [userId]);
 
   // One read at a time: a second call while the first is still retrying
   // joins it instead of stacking another behind it.
   const inFlight = useRef<Promise<boolean> | null>(null);
+  currentUser.current = userId;
   const refreshProfile = useCallback(async (): Promise<boolean> => {
     if (!userId) {
       setProfile(null);
@@ -186,13 +253,22 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     if (inFlight.current) return inFlight.current;
     const run = (async () => {
     try {
-      const data = await withRetry(async () => {
-        const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
-        if (error) throw error;
-        return data as ProfileRow | null;
-      });
+      const data = await withRetry(
+        async () => {
+          const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+          if (error) throw error;
+          if (!data && !(await supabase.auth.getSession()).data.session) throw new NotSignedInYet();
+          return data as ProfileRow | null;
+        },
+        { retryOn: (err) => err instanceof NotSignedInYet || isTransient(err) },
+      );
+      // Read for a member who has since signed out: neither shown nor kept.
+      if (currentUser.current !== userId) return false;
       setProfile(data);
       setProfileLoaded(true);
+      // Kept for the next launch to open on (rememberedMember.ts).
+      if (data) rememberMember(data);
+      else forgetMember();
       return true;
     } catch {
       // The read failed, not the membership. Keep what we knew; a member
@@ -211,11 +287,20 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       inFlight.current = null;
     }
   }, [userId, restoring]);
+  readProfileAgain.current = refreshProfile;
 
+  // A member this phone has seen opens on the profile last read for them,
+  // at once, and the read goes on behind it; anyone else waits for the read.
   useEffect(() => {
-    setProfileLoaded(false);
+    const known = userId ? recallMember(userId) : null;
+    if (known) {
+      setProfile(known);
+      setProfileLoaded(true);
+    } else {
+      setProfileLoaded(false);
+    }
     refreshProfile();
-  }, [refreshProfile]);
+  }, [refreshProfile]); // userId is read through refreshProfile
 
   // No profile yet and the read keeps failing: try again until it lands.
   useEffect(() => {
@@ -225,8 +310,11 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   }, [userId, profileLoaded, refreshProfile]);
 
   const signOut = useCallback(async () => {
-    // While still signed in, so the row can be deleted under RLS.
-    await forgetPushToken();
+    // While still signed in, so the rows can be deleted under RLS. Sign
+    // out ends the member's sessions on every phone (the default scope,
+    // below), so every phone of theirs stops being sent their notices
+    // now, not when its app next runs: this one's token and the others'.
+    await forgetPushTokensEverywhere(currentUser.current);
     // Signing out everywhere needs the network; without it, the session
     // must still leave this phone, or "Sign out" leaves you signed in.
     const { error } = await supabase.auth.signOut();
@@ -234,7 +322,11 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     // Nothing of this member stays for the next one to sign in on this phone.
     queryClient.clear();
     forgetDarkroom();
+    // Who they looked for in Search: also forgotten when auth says SIGNED_OUT
+    // (src/lib/supabase.ts), and here as well in case that is not heard.
+    clearRecent();
     forgetOutbox();
+    forgetMember();
     await leaveToLanding();
   }, []);
 

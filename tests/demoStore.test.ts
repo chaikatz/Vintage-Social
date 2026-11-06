@@ -37,7 +37,7 @@ describe("demo store", () => {
   });
 
   it("serves a chronological feed of followed members only", () => {
-    const feed = demoFetchFeedPage(DEMO_IDS.elena, 0, 50);
+    const feed = demoFetchFeedPage(DEMO_IDS.elena, null, 50);
     expect(feed.length).toBeGreaterThan(0);
     const followees = new Set<string>([
       DEMO_IDS.elena, DEMO_IDS.tomas, DEMO_IDS.june, DEMO_IDS.arthur,
@@ -51,16 +51,16 @@ describe("demo store", () => {
   });
 
   it("likes and comments update counts and reverse cleanly", () => {
-    const before = demoFetchFeedPage(DEMO_IDS.elena, 0, 1)[0];
+    const before = demoFetchFeedPage(DEMO_IDS.elena, null, 1)[0];
     demoLike(DEMO_IDS.elena, before.id);
-    let after = demoFetchFeedPage(DEMO_IDS.elena, 0, 1)[0];
+    let after = demoFetchFeedPage(DEMO_IDS.elena, null, 1)[0];
     expect(after.like_count).toBe(before.like_count + 1);
     demoUnlike(DEMO_IDS.elena, before.id);
-    after = demoFetchFeedPage(DEMO_IDS.elena, 0, 1)[0];
+    after = demoFetchFeedPage(DEMO_IDS.elena, null, 1)[0];
     expect(after.like_count).toBe(before.like_count);
 
     demoAddComment(DEMO_IDS.elena, before.id, "Lovely.");
-    after = demoFetchFeedPage(DEMO_IDS.elena, 0, 1)[0];
+    after = demoFetchFeedPage(DEMO_IDS.elena, null, 1)[0];
     expect(after.comment_count).toBe(before.comment_count + 1);
   });
 
@@ -69,7 +69,7 @@ describe("demo store", () => {
     demoFollow(DEMO_IDS.niko, DEMO_IDS.tomas);
     const tomasAfter = demoFetchProfileByUsername("tomas.lindqvist")!;
     expect(tomasAfter.follower_count).toBe(tomasBefore.follower_count + 1);
-    const feed = demoFetchFeedPage(DEMO_IDS.niko, 0, 50);
+    const feed = demoFetchFeedPage(DEMO_IDS.niko, null, 50);
     expect(feed.some((p) => p.author_id === DEMO_IDS.tomas)).toBe(true);
   });
 
@@ -106,7 +106,7 @@ describe("demo store", () => {
     expect(me?.status).toBe("approved");
     expect(me?.member_no).toBeGreaterThan(0);
     expect(me?.invited_by).toBe(DEMO_IDS.elena);
-    expect(demoFetchFeedPage(me!.id, 0, 10).length).toBeGreaterThan(0);
+    expect(demoFetchFeedPage(me!.id, null, 10).length).toBeGreaterThan(0);
   });
 
   it("refuses a link that belongs to nobody", () => {
@@ -211,7 +211,7 @@ describe("demo media is bundled, not remote", () => {
     expect(demoFollowState(me.id, DEMO_IDS.elena)).not.toBe("accepted");
     // The public regulars they do follow give them a live feed.
     expect(demoFollowState(me.id, DEMO_IDS.june)).toBe("accepted");
-    expect(demoFetchFeedPage(me.id, 0, 10).length).toBeGreaterThan(0);
+    expect(demoFetchFeedPage(me.id, null, 10).length).toBeGreaterThan(0);
   });
 
   it("seeds enough conversation for the world to feel lived in", () => {

@@ -585,30 +585,38 @@ judgment is involved anywhere.
 
 ## Requires credentials / external configuration
 
-Everything below needs accounts or secrets that are intentionally not in
-this repo:
+The launch checklist, with every step only the owner can take, is
+[`APP_STORE_LAUNCH.md`](APP_STORE_LAUNCH.md) (5 November 2026). In short,
+these need accounts or values that are intentionally not in this repo:
 
-1. **Supabase project** — create one (or run locally via Docker) and set
-   `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` in `.env`.
-2. **SMTP for auth emails** — email confirmations are disabled in
-   `supabase/config.toml` so the demo works without a mail server. Before
-   production: configure SMTP in Supabase Auth and re-enable
-   confirmations.
-3. **Apple credentials** — an Apple Developer account for on-device and
-   App Store builds. EAS is already configured (`eas.json`); see
-   "Running on a real iPhone" above. The iOS bundle id is
-   `com.vintage.social` — confirm it before your first build. Camera/photo/microphone
-   usage strings are already configured in `app.json`.
-4. **App icon & splash** — `assets/` still contains Expo template art;
-   replace with VINTAGE marks before shipping. The iOS launch screen has
-   no image today, so it is the system background: white on a phone set to
-   Light, black on one set to Dark. `ios.splash` in `app.json` already
-   holds the same two colours (`#FFFFFF`, and `#000000` for Dark), because
-   once a splash `image` is added Expo paints the launch in that colour set
-   instead, and without the dark value a cold start in Dark would be white.
-   The launch screen is native: it changes only with a full EAS build.
-5. **Push notifications** (optional, future) — not implemented; would need
-   APNs keys via EAS.
+1. **Supabase** — production is `scfwowqsqrnzpknzurmm`, staging
+   `omvezsrkjizxdfeogccw`. Builds read `EXPO_PUBLIC_SUPABASE_URL` /
+   `EXPO_PUBLIC_SUPABASE_ANON_KEY` from the EAS "production" environment;
+   locally from `.env`. Email confirmation is off on production on purpose
+   (an applicant writes their application with the session sign-up returns).
+2. **EAS build settings** — also `EXPO_PUBLIC_INVITE_BASE`
+   (`https://vintagesocial.app`) and `EXPO_PUBLIC_SUPPORT_EMAIL` (the address
+   Settings → Support shows; Apple asks for a way to reach a person).
+3. **Apple** — an Apple Developer account for TestFlight and the App Store.
+   EAS is configured (`eas.json`); the bundle id is `com.vintage.social`.
+   The purpose strings and the privacy manifest are in `app.json`;
+   `tests/store-permissions.test.ts` and `tests/store-privacy.test.ts` check
+   them against the code and the Privacy Policy.
+4. **App icon & launch screen** — `assets/icon.png` is the VINTAGE mark (the
+   V and its rule on cream, 1024 × 1024, no transparency). The iOS launch
+   screen has no image: white on a phone set to Light, black on one set to
+   Dark. `ios.splash` in `app.json` holds the same two colours (`#FFFFFF`,
+   and `#000000` for Dark), because once a splash `image` is added Expo
+   paints the launch in that colour set instead, and without the dark value
+   a cold start in Dark would be white. The launch screen is native: it
+   changes only with a full EAS build.
+5. **Push notifications** — the `push` edge function and Expo's push service;
+   the APNs key is held by EAS.
+6. **The web** — Vercel serves the landing page, `/privacy`, `/terms` and
+   `/support.html` from `public/` (`npm run build:legal` writes the last
+   three from `src/legal/documents.ts`), plus the invitation and share
+   pages (`api/`). Server-only values (`SHARE_MEDIA_KEY`,
+   `VINTAGE_INSTALL_URL`) live in Vercel's settings.
 
 ## Known first-pass limitations
 

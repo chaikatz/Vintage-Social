@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, spacing } from "@/theme";
 import { useNameFace } from "@/utils/nameFace";
 import { Avatar } from "./Avatar";
+import { memberLabel } from "./memberLabel";
 
 interface Props {
   username: string;
@@ -13,19 +14,35 @@ interface Props {
   right?: React.ReactElement;
 }
 
+/**
+ * A member in a list: face and name, which open them, and beside it the
+ * row's own control (Follow, Forget, an admin's actions).
+ *
+ * The control stands beside the pressable part, not inside it. A
+ * Pressable is one element to VoiceOver and swallows whatever is in it:
+ * with the control inside, Follow, Forget and the admins' Warn and Suspend
+ * could not be reached at all. The look is as it was.
+ */
 export function UserRow({ username, avatarPath, title, subtitle, onPress, right }: Props) {
   // Editorial (Preview): the username, half bold.
   const face = useNameFace();
   return (
-    <Pressable style={styles.row} onPress={onPress}>
-      <Avatar path={avatarPath} username={username} size={44} />
-      <View style={styles.text}>
-        <Text style={[styles.username, face]}>{username}</Text>
-        {title ? <Text style={styles.title}>{title}</Text> : null}
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-      </View>
+    <View style={styles.row}>
+      <Pressable
+        style={styles.person}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={memberLabel(username, title, subtitle)}
+      >
+        <Avatar path={avatarPath} username={username} size={44} />
+        <View style={styles.text}>
+          <Text style={[styles.username, face]}>{username}</Text>
+          {title ? <Text style={styles.title}>{title}</Text> : null}
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        </View>
+      </Pressable>
       {right}
-    </Pressable>
+    </View>
   );
 }
 
@@ -33,8 +50,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
+  },
+  person: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.sm + 2,
   },
   text: { flex: 1, marginLeft: spacing.md },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink },

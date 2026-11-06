@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FlatList, StyleSheet, View, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { focusManager, onlineManager, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
 import { EditorialPostCard } from "@/components/feed/EditorialPostCard";
@@ -10,7 +10,7 @@ import { PendingPostCard } from "@/components/PendingPostCard";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { PostSkeleton } from "@/components/Skeleton";
-import { FEED_PAGE_SIZE, fetchFeedPage } from "@/api/posts";
+import { fetchFeedPage, nextFeedCursor, type FeedCursor } from "@/api/posts";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { onHomeAgain } from "@/utils/homeRefresh";
@@ -18,15 +18,21 @@ import { useFeedLayout } from "@/utils/feedLayout";
 import { useFeedBackground } from "@/utils/feedPaper";
 import { notePostsInFeed, setOutboxProfileRefresher, usePendingPosts, type PendingState } from "@/uploads";
 import { pendingNeedsTop } from "@/uploads/store";
+import { idsAround } from "@/media/cardWindow";
+import { commentsOrNone, likeCounted } from "@/media/stableCards";
+import { refreshFromFirstPage, refreshOnReturn } from "@/media/feedPages";
 import type { PostWithAuthor } from "@/types/db";
+
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * The feed's pages as one list, each post once.
  *
- * Pages are fetched by offset. A post just published is put on top of the
- * first page by hand (see src/uploads/feedCache.ts), which pushes every
- * later post along by one, so the next page fetched starts with a post the
- * list already has. Dropping repeats by id keeps that from showing twice.
+ * Each page starts after the last post of the one before, so pages read
+ * from the server do not overlap. A post just published is put on top of
+ * the first page by hand (see src/uploads/feedCache.ts); dropping repeats
+ * by id keeps it from showing twice should a page read later bring it too.
  */
 function flattenPages(pages: PostWithAuthor[][] | undefined): PostWithAuthor[] {
   const seen = new Set<string>();
@@ -47,9 +53,9 @@ function flattenPages(pages: PostWithAuthor[][] | undefined): PostWithAuthor[] {
  * where looking back is the point; the feed is for what is new.
  *
  * Above it, the member's own posts that are still on their way up. They
- * are a header, never rows of the feed: the feed pages by offset, and a
- * row the server does not know would shift every page and be offered to
- * likes and comments that cannot exist yet. When one is posted, the feed
+ * are a header, never rows of the feed: a row the server does not know
+ * could become where the next page starts, and would be offered to likes
+ * and comments that cannot exist yet. When one is posted, the feed
  * gets the real row and the card steps aside for it.
  */
 export default function Home() {
@@ -64,11 +70,20 @@ export default function Home() {
   const feed = useInfiniteQuery({
     queryKey: ["feed", userId],
     queryFn: ({ pageParam }) => fetchFeedPage(userId, pageParam),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, pages) =>
-      lastPage.length < FEED_PAGE_SIZE ? undefined : pages.length,
+    // Each page after the last post of the one before (a cursor), not
+    // after however many came before it: a post deleted or added between
+    // two pages then neither skips one nor repeats one.
+    initialPageParam: null as FeedCursor | null,
+    getNextPageParam: (lastPage) => nextFeedCursor(lastPage),
     enabled: Boolean(userId),
+    // Coming back to the app, or back online, is decided below: left to
+    // the query, it read every page loaded again, one after another.
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
+
+  const queryClient = useQueryClient();
+  const feedRefetch = feed.refetch;
 
   const posts = useMemo(() => flattenPages(feed.data?.pages), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
@@ -85,8 +100,31 @@ export default function Home() {
   }, [outbox, postIds, userId]);
   useEffect(() => notePostsInFeed(postIds), [postIds]);
 
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
-    usePostActions(userId, postIds);
+  // Likes and comment previews are read for the cards around the reader,
+  // not every post loaded (see src/media/cardWindow.ts): the last card
+  // reported on screen, kept while nothing is. And for the list's first
+  // draw, which it keeps however far down the reader goes: without them
+  // those cards lost their previews and grew shorter above the reader.
+  const [seenId, setSeenId] = useState<string | null>(null);
+  const seenIndex = useMemo(() => (seenId ? postIds.indexOf(seenId) : -1), [postIds, seenId]);
+  const actionIds = useMemo(
+    () => idsAround(postIds, Math.max(0, seenIndex), { keepFirst: HOME_FIRST_DRAW }),
+    [postIds, seenIndex],
+  );
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor, rereadActions } =
+    usePostActions(userId, actionIds);
+
+  // A refresh starts the feed again from its newest page: one request,
+  // not one for every page the reader has loaded, and those pages back as
+  // they were if it cannot be read (src/media/feedPages.ts). And it reads
+  // the hearts and comment previews of the cards on screen again with it:
+  // their groups keep their keys, so nothing else would, and a friend's
+  // new comment stayed out of the preview while the count beside it went
+  // up (src/utils/postCache.ts).
+  const refreshFromTop = useCallback(() => {
+    void rereadActions();
+    return refreshFromFirstPage(queryClient, ["feed", userId], feedRefetch);
+  }, [queryClient, userId, feedRefetch, rereadActions]);
 
   // Leaving the feed — another tab, a profile, a single post — pauses it.
   // The tab stays mounted underneath, and a clip you can no longer see
@@ -96,18 +134,54 @@ export default function Home() {
   // Home tapped while on Home: to the top, and one refetch — never a second
   // while the first is still out, however many times the icon is tapped.
   const listRef = useRef<FlatList<(typeof posts)[number]>>(null);
-  const refetchRef = useRef(feed.refetch);
-  refetchRef.current = feed.refetch;
+  const refetchRef = useRef(refreshFromTop);
+  refetchRef.current = refreshFromTop;
   const fetchingRef = useRef(false);
   fetchingRef.current = feed.isFetching;
-  useEffect(
-    () =>
-      onHomeAgain(() => {
-        listRef.current?.scrollToOffset({ offset: 0, animated: true });
-        if (!fetchingRef.current) void refetchRef.current();
-      }),
-    [],
-  );
+  // Where the reader is, for the refreshes that are not asked for.
+  const seenIndexRef = useRef(seenIndex);
+  seenIndexRef.current = seenIndex;
+  useEffect(() => {
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const off = onHomeAgain(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      if (fetchingRef.current) return;
+      // From further down, the pages below the first are let go once the
+      // list is back at the top, not under it while it is on its way.
+      clearTimeout(settle);
+      if (seenIndexRef.current <= 0) void refetchRef.current();
+      else
+        settle = setTimeout(() => {
+          if (!fetchingRef.current) void refetchRef.current();
+        }, HOME_AGAIN_SETTLE_MS);
+    });
+    return () => {
+      off();
+      clearTimeout(settle);
+    };
+  }, []);
+
+  // Back in the app, or back online: the newest page for a reader at the
+  // top whose feed has gone stale; a reader further down keeps their place.
+  useEffect(() => {
+    const back = (now: boolean) => {
+      if (!now || !userId || fetchingRef.current) return;
+      const state = queryClient.getQueryState(["feed", userId]);
+      const stale = refreshOnReturn({
+        seenIndex: seenIndexRef.current,
+        updatedAt: state?.dataUpdatedAt ?? 0,
+        now: Date.now(),
+        staleMs: FEED_STALE_MS,
+      });
+      if (stale) void refetchRef.current();
+    };
+    const offFocus = focusManager.subscribe((isFocused) => back(isFocused));
+    const offOnline = onlineManager.subscribe((isOnline) => back(isOnline));
+    return () => {
+      offFocus();
+      offOnline();
+    };
+  }, [queryClient, userId]);
 
   // A new post's card is the list's header, at the very top. Coming back
   // from compose keeps Home as it was (the tabs are not remounted), so a
@@ -128,7 +202,9 @@ export default function Home() {
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     // The most-covered item wins; FlatList reports them top to bottom.
     const first = viewableItems.find((v) => v.isViewable);
-    setVisibleId((first?.item as { id: string } | undefined)?.id ?? null);
+    const id = (first?.item as { id: string } | undefined)?.id ?? null;
+    setVisibleId(id);
+    if (id) setSeenId(id);
   }).current;
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 60,
@@ -141,22 +217,32 @@ export default function Home() {
   const FeedCard = useFeedLayout() === "editorial" ? EditorialPostCard : PostCard;
   const paper = useFeedBackground();
 
+  // Each card is handed the same objects while nothing about it has
+  // changed, so only the cards whose state did change are drawn again when
+  // the list is: the one that stopped playing and the one that started,
+  // not every card held (see src/media/stableCards.ts).
+  const [counted] = useState(likeCounted);
+  const openProfile = useCallback((username: string) => router.push(`/user/${username}`), [router]);
+  const more = useCallback((p: PostWithAuthor) => onMore(p), [onMore]);
   const renderItem = useCallback(
-    ({ item }: { item: (typeof posts)[number] }) => (
+    ({ item, index }: { item: (typeof posts)[number]; index: number }) => (
       <FeedCard
-        post={{ ...item, like_count: likeCountFor(item) }}
+        post={counted(item, likeCountFor(item))}
         likedByMe={isLiked(item)}
         onToggleLike={toggleLike}
         onOpenComments={onOpenComments}
-        onOpenProfile={(username) => router.push(`/user/${username}`)}
+        onOpenProfile={openProfile}
         onShare={onShare}
         onOpenLikes={onOpenLikes}
-        comments={commentsFor(item)}
-        onMore={(p) => onMore(p)}
+        comments={commentsOrNone(commentsFor(item))}
+        onMore={more}
         active={focused && item.id === visibleId}
+        // The photographs on the first screen are fetched ahead of the
+        // ones drawn below it, waiting for the reader.
+        priority={index < FIRST_SCREEN ? "high" : "normal"}
       />
     ),
-    [FeedCard, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onMore, router, visibleId, focused],
+    [FeedCard, counted, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, more, openProfile, visibleId, focused],
   );
 
   // Only one clip plays at a time. A pending one may when it is the
@@ -185,11 +271,24 @@ export default function Home() {
         keyExtractor={(p) => p.id}
         contentContainerStyle={styles.list}
         refreshing={feed.isRefetching && !feed.isFetchingNextPage}
-        onRefresh={() => feed.refetch()}
+        onRefresh={() => void refreshFromTop()}
         onEndReached={() => {
           if (feed.hasNextPage && !feed.isFetchingNextPage) feed.fetchNextPage();
         }}
-        onEndReachedThreshold={0.6}
+        // The next page is asked for two screens before the end, so it is
+        // usually there before the reader is.
+        onEndReachedThreshold={2}
+        // Cards are drawn four screens either side of the reader and let go
+        // past that, their photographs and players with them; the list's
+        // default is ten screens either side, every card of a first page
+        // and more, each holding a full-width photograph and any clip's
+        // player. Four screens ahead is still several cards: they are
+        // drawn, and their photographs fetched, before they are reached.
+        windowSize={HOME_WINDOW}
+        // The list keeps its first draw for good; four cards are more than
+        // the first screen, and the rest are drawn a few at a time.
+        initialNumToRender={HOME_FIRST_DRAW}
+        maxToRenderPerBatch={HOME_BATCH}
         ListHeaderComponent={header}
         ListEmptyComponent={
           feed.isLoading ? (
@@ -214,6 +313,20 @@ export default function Home() {
     </Screen>
   );
 }
+
+/** The query's own staleness (src/lib/queryClient.ts): a feed older than this is refreshed on return. */
+const FEED_STALE_MS = 30_000;
+/** How long a scroll back to the top is given before the pages below the first are let go. */
+const HOME_AGAIN_SETTLE_MS = 400;
+
+/** Screens of cards drawn around the reader: four either side, and the one in view. */
+const HOME_WINDOW = 9;
+/** Cards in the list's first draw, which it keeps for good. */
+const HOME_FIRST_DRAW = 4;
+/** Cards drawn at a time as the reader goes on. */
+const HOME_BATCH = 4;
+/** Cards whose photographs are fetched first: what the first screen shows. */
+const FIRST_SCREEN = 2;
 
 const styles = StyleSheet.create({
   list: { paddingVertical: 8 },

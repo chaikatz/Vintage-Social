@@ -18,7 +18,7 @@ export const LEGAL_TITLES: Record<LegalDoc, string> = {
   terms: "Terms of Use",
 };
 
-export const LEGAL_UPDATED = "October 29, 2026";
+export const LEGAL_UPDATED = "November 6, 2026";
 
 export const PRIVACY_POLICY = `VINTAGE is a small, invitation-only club for photographs. This policy says what we collect, why, and what you can do about it.
 
@@ -26,33 +26,39 @@ export const PRIVACY_POLICY = `VINTAGE is a small, invitation-only club for phot
 
 Account details. Your email address and a password (stored as a hash by our authentication provider), the name and username you choose, and an optional portrait, bio and city.
 
-Your application. If you apply for membership, the answers you give — who you are, what you photograph, who sent you — are read by a person who decides on your membership. Applications are kept while your application is pending or waitlisted.
+Your application. If you apply for membership, the answers you give — who you are, where your photographs live online, what you photograph, who sent you — are read by a person who decides on your membership. Your application is kept with your account as the record of that decision, whatever it was, and is deleted with your account.
 
-What you post. Photographs and short films you publish, the filter you chose, your caption, the place you name, the members you tag, your likes and comments, who you follow, and the messages you send to other members.
+What you post. Photographs and short films you publish, the filter you chose, your caption, the place you name and the point on the map it stands for, the members you tag, your likes and comments, who you follow, and the messages you send to other members.
 
-Capture dates. With your permission, VINTAGE reads the date a photograph or film was taken from the file you choose, so the date stamp says when the shutter fired. VINTAGE does not read your location from your photographs and does not track where you are. A place on a post is the one you typed or picked by name.
+Capture dates. With your permission, VINTAGE reads the date a photograph or film was taken from the file you choose, so the date stamp says when the shutter fired. VINTAGE does not read your location from your photographs and does not track where you are. A place on a post is the one you typed or picked by name. Your phone looks that name up with Apple’s map service to find its point on the map.
 
 Your photo library, in the Memory Room. If you allow it, the Memory Room shows you photographs already on your phone so you can find one worth posting. It chooses them by the date each was taken and by what your library records about each one, such as its size and whether it is a screenshot — never by place, and never by looking at what is in the picture. It does not look through your Hidden album. Nothing about your library — not the photographs, their dates, or how many there are — is sent to us or to anyone else. So that it does not repeat itself, the Memory Room keeps a short list on your phone of the library’s own identifiers and when each was added: photographs you looked at, for up to two months; photographs you posted from it, for a year; and photographs you set aside, until you put them back. It also keeps where you left off, which it offers back for twelve hours. For the photographs you set aside and those around where you left off, it keeps the date each was taken and its size as well, so it can show them again. It also notes which VINTAGE account the list belongs to. The list is deleted when you sign out. If you are signed out some other way, for example from another device, it is deleted the next time the app hears from VINTAGE that you were, and always before anyone else who signs in on this phone could see it. “Forget what the Memory Room has shown me” in Settings clears what it has shown you and where you left off, but keeps the photographs you set aside. Like the rest of the app’s data on your phone, the list can be included in your phone’s own backup. When a photograph is kept in iCloud, iOS brings a screen-sized copy from your own iCloud account to show it, as Photos does; VINTAGE downloads the photograph itself only when you ask it to develop it. Only a photograph you choose to post is uploaded.
 
-Device token. If you allow notifications, a token that lets us send them to your phone. It is deleted when you sign out.
+Device token. If you allow notifications, a token that lets us send them to your phone, and the phone’s make and model. It is deleted when you sign out.
+
+Sharing outside VINTAGE. When you share a photograph outside the app, we note that you began a share or made a link, and the format and paper you chose, and we note when someone opens the link’s page or asks to join from it. Only admins see these notes; they tell the club whether prints sent out bring anyone to the door.
 
 Diagnostics. Our hosting providers keep ordinary server logs (such as IP address and request time) to run the service.
 
 ## What we do not do
 
-We do not sell your information. We do not show advertising. We do not use your photographs to train anything. We do not read your contacts. We do not upload anything from your photo library except the photographs you post.
+We do not sell your information. We do not show advertising. We do not use your photographs to train anything. We do not read your contacts. We do not upload anything from your photo library except the photographs you post. We add nothing to it unless you choose Save Image or Save Video in the share sheet.
 
 ## Who can see what
 
 VINTAGE is members-only. Your profile and photographs are visible to approved members. A private account is visible only to the members you have accepted. Messages are visible to the two people in the conversation. Admins can see content in order to review reports and keep the club safe.
 
+A link you make with Share outside VINTAGE shows that one photograph or film, with its place, its date and your username, to anyone who has the link, even if your account is private. It works until you turn the link off or delete the photograph.
+
 ## Where it is kept
 
-Data is stored with Supabase (database, authentication and file storage) and delivered through their infrastructure. Push notifications are delivered through Expo’s push service and Apple. Invitation pages are hosted on Vercel.
+Data is stored with Supabase (database, authentication and file storage) and delivered through their infrastructure. Push notifications are delivered through Expo’s push service and Apple. Places you type are looked up with Apple’s map service. Invitation pages are hosted on Vercel.
 
 ## Your choices
 
-You can edit your profile, delete any photograph or comment you posted, remove yourself from a tag, turn each kind of notification off, block another member, and delete your account — all from within the app. Deleting your account removes your profile, photographs, comments, likes, follows, tags and messages. Some records may persist in backups for a limited period, and reports you filed are kept for moderation history without your account attached.
+As a member you can edit your profile, delete any photograph or comment you posted, remove yourself from a tag, turn each kind of notification off, block another member, and delete your account — all from within the app. Deleting your account removes your profile, photographs, comments, likes, follows, tags, messages, application and share links. The reports you filed are kept without your account attached. Each holds only what was reported and the reason and note you gave, so that it can still be acted on after you leave. The notes about your shares outside VINTAGE are kept without your account attached. Some records may persist in backups for a limited period.
+
+If your application is still waiting or was not accepted, or your membership is suspended, the app opens on a screen that says so. Delete my account on that screen, confirmed twice, deletes your account and everything listed above with it. You can also write to the support address from your account’s email and we will delete your account for you.
 
 ## Children
 
@@ -62,11 +68,13 @@ VINTAGE is for people aged 17 and over. We do not knowingly accept members under
 
 If this policy changes in a way that matters, we will say so in the app. Questions go to the support address shown in Settings.`;
 
-export const TERMS_OF_USE = `These terms are the agreement between you and VINTAGE when you use the app.
+export const TERMS_OF_USE = `These terms are the agreement between you and VINTAGE when you use the app. You agree to them when you apply for membership or accept an invitation.
 
 ## Membership
 
 VINTAGE is by application or invitation. Membership can be declined, waitlisted, suspended or ended by the club's admins, and you can leave at any time by deleting your account. Each member is issued a permanent membership number; it is never reassigned.
+
+Some accounts are the club's own house accounts. They show public-domain and licensed photographs so that the club is not empty when you arrive. They are not members, and no one answers from them.
 
 ## Your photographs
 
@@ -74,7 +82,7 @@ You keep every right to what you post. You give VINTAGE the permission needed to
 
 ## Conduct
 
-VINTAGE is a quiet place. Do not post content that is unlawful, hateful, harassing, sexually explicit, violent, or that reveals someone's private information. Do not impersonate others, spam, or promote. Do not post other people's work as your own.
+VINTAGE is a quiet place, and it has no tolerance for objectionable content or for abuse of other members. Do not post content that is unlawful, hateful, harassing, sexually explicit, violent, or that reveals someone's private information. Do not impersonate others, spam, or promote. Do not post other people's work as your own.
 
 Anyone can report a photograph, comment or member from within the app. Reports are read by people, not machines. The admins may remove content, warn, suspend or remove a member for breaking these terms, and act on reports within 24 hours of receiving them. You can block any member; once blocked, neither of you sees the other's content.
 
@@ -88,7 +96,7 @@ VINTAGE is provided as it is. We work to keep it available and your photographs 
 
 ## Ending
 
-You may delete your account at any time from Settings. We may end your membership for breaking these terms. Sections about your content, conduct and liability continue to apply to the period you were a member.
+You may delete your account at any time from within the app: a member from Settings, anyone else with Delete my account on the screen the app opens on. You can also write to the support address. We may end your membership for breaking these terms. Sections about your content, conduct and liability continue to apply to the period you were a member.
 
 ## Contact
 
@@ -97,3 +105,14 @@ Questions about these terms go to the support address shown in Settings.`;
 export function legalText(doc: LegalDoc): string {
   return doc === "privacy" ? PRIVACY_POLICY : TERMS_OF_USE;
 }
+
+/**
+ * What deleting an account keeps, in the Privacy Policy's own words, said
+ * by both screens that delete one (Settings → Delete account, and Delete
+ * my account on the waiting screen) before they ask. A report is sent,
+ * and migration 0031 keeps it, with no reporter, so that it can still be
+ * acted on: "anything you posted or sent is removed" was no longer so.
+ * tests/store-legal.test.ts holds this sentence to the policy and to what
+ * the reports table does when its reporter goes.
+ */
+export const DELETION_KEEPS_REPORTS = "The reports you filed are kept without your account attached.";

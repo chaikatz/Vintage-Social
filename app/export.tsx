@@ -5,8 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
+import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
+import { authorShown } from "@/components/hiddenAuthors";
 import { ExportCard } from "@/components/ExportCard";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
@@ -18,6 +23,10 @@ import { useSession } from "@/providers/SessionProvider";
 import { shareUrl, shareUrlLabel } from "@/utils/shareLink";
 import { PRINT_WIDTH, STORY_WIDTH, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
 import { brandVideo, canBrandVideo, canExport, capturePrint, shareFile } from "@/utils/exportPost";
+
+// A row that breaks this sheet breaks only the sheet, with the way back on its page,
+// as a sheet's header has none (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * A photograph leaves VINTAGE as a print.
@@ -49,13 +58,21 @@ export default function Export() {
   const [ready, setReady] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const cardRef = useRef<View>(null);
+  // Checked and set in the tap itself. The button only went quiet once a
+  // stage was on it, after the story's link had been made: a second tap
+  // before then opened a second share sheet and made a second capture.
+  const sharing = useRef(false);
 
   const postQ = useQuery({
     queryKey: ["post", postId],
     queryFn: () => fetchPost(postId ?? ""),
     enabled: Boolean(postId),
   });
-  const post = postQ.data;
+  // A photograph whose author the reader may not see comes back naming
+  // nobody (src/components/hiddenAuthors.ts): to the reader it is gone, as on
+  // its own page, and the print, whose label names its member, is not drawn.
+  const postRow = postQ.data;
+  const post = postRow && authorShown(postRow) ? postRow : undefined;
   const isVideo = post?.media_type === "video";
   const mine = Boolean(post && post.author_id === userId);
 
@@ -133,7 +150,7 @@ export default function Export() {
             setToken(null);
             setCopied(false);
           } catch (err) {
-            showAlert("That didn’t work", err instanceof Error ? err.message : String(err));
+            showAlert("That didn’t work", errorMessage(err, "The link is still on. Try again in a moment."));
           }
         },
       },
@@ -145,6 +162,9 @@ export default function Export() {
       showAlert("Not here", "Exporting is for the phone.");
       return;
     }
+    if (sharing.current) return;
+    sharing.current = true;
+    setStage(filmAsFilm ? "Fetching the film…" : "Printing…");
     recordShareEvent(userId, "share_started", { postId: post.id, token, format, theme: paper });
     try {
       const linked = await prepareLink();
@@ -163,7 +183,9 @@ export default function Export() {
       }
     } catch (err) {
       setStage(null);
-      showAlert("Couldn’t export", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t export", errorMessage(err, "Nothing was shared. Try again in a moment."));
+    } finally {
+      sharing.current = false;
     }
   };
 
@@ -174,6 +196,11 @@ export default function Export() {
           <View style={styles.previewShadow}>
             <ExportCard post={post} source={source} format={format} paper={paper} width={previewWidth} memberNo={memberNo} />
           </View>
+        ) : readState(postQ) === "failed" ? (
+          // The photograph could not be read: said, with a way to try again, not an empty frame.
+          <LoadFailed what="this photograph" onRetry={() => postQ.refetch()} />
+        ) : readState(postQ) === "empty" ? (
+          <EmptyState title="This photograph is gone" />
         ) : null}
       </View>
 

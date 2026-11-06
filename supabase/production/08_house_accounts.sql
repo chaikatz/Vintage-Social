@@ -15,8 +15,9 @@
 -- None of them can sign in: the auth rows are created with no password and
 -- no identity, so there is nothing to authenticate against.
 --
--- Every photograph is public domain or CC0 — see seed/CREDITS.md for the
--- full list with sources. Requires migration 0011.
+-- The photographs are public domain, CC0 or under the Unsplash Licence —
+-- see seed/CREDITS.md for the full list with sources and the count of
+-- each. Requires migration 0011.
 --
 -- To remove the whole thing later:
 --   delete from auth.users where id in (select id from public.profiles where is_house);

@@ -1,4 +1,4 @@
-import { groupEras, takenDate, type Era } from "./memories";
+import { byTimeDescending, groupEras, takenDate, type Era } from "./memories";
 import type { PostRow } from "@/types/db";
 
 /**
@@ -156,9 +156,9 @@ export function placedAt(post: Timed): number {
   return Number.isNaN(posted) ? 0 : posted;
 }
 
-/** Newest first, by placedAt; those placed alike keep their order. */
+/** Newest first, by placedAt, each read once; those placed alike keep their order. */
 function newestFirst<T extends Timed>(posts: T[]): T[] {
-  return [...posts].sort((a, b) => placedAt(b) - placedAt(a));
+  return byTimeDescending(posts, placedAt);
 }
 
 /**

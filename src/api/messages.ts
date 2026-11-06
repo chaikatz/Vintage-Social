@@ -1,8 +1,18 @@
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
-import { fetchPost } from "./posts";
-import type { ConversationWithPeer, MessageRow, MessageWithPost, PostWithAuthor, ProfileRow } from "@/types/db";
+import { POST_WITH_AUTHOR } from "./posts";
+import { readInChunks } from "./batch";
+import { functionMissing, noteRpcMissing, rpcKnownMissing } from "./rpcMissing";
+import { ROWS_PER_READ } from "@/utils/eraEdits";
+import type {
+  ConversationRow,
+  ConversationWithPeer,
+  MessageRow,
+  MessageWithPost,
+  PostWithAuthor,
+  ProfileRow,
+} from "@/types/db";
 
 /**
  * Direct messages: one to one, nothing else.
@@ -12,48 +22,153 @@ import type { ConversationWithPeer, MessageRow, MessageWithPost, PostWithAuthor,
  * of you. A message carries words, a shared photograph, or both.
  */
 
-/** The inbox, newest thread first. */
+/**
+ * The inbox, newest thread first: each thread with the member on the
+ * other end, its newest message, and how many of the other member's
+ * messages are unread.
+ *
+ * It used to read every message of every thread to find those two
+ * things - the whole of a member's correspondence, on every open of the
+ * inbox and every refresh of the badge on the feed - and PostgREST stops
+ * at max_rows (1000) without saying so, oldest first: past a thousand
+ * messages the "newest" message shown was an old one and new messages
+ * were not counted as unread. Now each thread brings only its newest
+ * message (an embedded resource's order and limit apply per thread), and
+ * the unread counts are counted by the database (unreadCounts).
+ *
+ * At most the newest INBOX_THREADS threads, asked for by name rather than
+ * left to PostgREST's own cut at max_rows, which would make the same cut
+ * without saying so. A member with more threads than that sees the
+ * newest thousand; an older one comes back to the top, and into the
+ * inbox, with its next message (last_message_at moves with every
+ * message), and is always reachable from the other member's profile. An
+ * unread thread is a thread with a new message, so it is among the
+ * newest; the badge counts every thread all the same (0037).
+ */
 export async function fetchConversations(userId: string): Promise<ConversationWithPeer[]> {
   if (isDemoMode()) return demo.demoFetchConversations(userId);
 
   const { data, error } = await supabase
     .from("conversations")
-    .select("*")
+    .select("*, messages!messages_conversation_id_fkey(*)")
     .or(`user_a.eq.${userId},user_b.eq.${userId}`)
-    .order("last_message_at", { ascending: false });
+    .order("last_message_at", { ascending: false })
+    .order("created_at", { referencedTable: "messages", ascending: false })
+    .limit(1, { referencedTable: "messages" })
+    .limit(INBOX_THREADS);
   if (error) throw error;
 
-  const rows = data ?? [];
+  const rows = (data ?? []) as unknown as (ConversationRow & { messages: MessageRow[] | null })[];
   if (rows.length === 0) return [];
 
   const peerIds = rows.map((c) => (c.user_a === userId ? c.user_b : c.user_a));
-  const [{ data: peers }, { data: messages }] = await Promise.all([
-    supabase.from("profiles").select("id, username, full_name, avatar_url").in("id", peerIds),
-    supabase
-      .from("messages")
-      .select("*")
-      .in("conversation_id", rows.map((c) => c.id))
-      .order("created_at", { ascending: true }),
+  const [peers, unread] = await Promise.all([
+    readInChunks(peerIds, async (chunk) => {
+      const { data: found, error: peersError } = await supabase
+        .from("profiles")
+        .select("id, username, full_name, avatar_url")
+        .in("id", chunk);
+      if (peersError) throw peersError;
+      return (found ?? []) as ConversationWithPeer["peer"][];
+    }).catch(() => [] as ConversationWithPeer["peer"][]),
+    // Counts that cannot be read leave the inbox showing, unmarked.
+    unreadCounts(userId, rows.map((c) => c.id)).catch(() => new Map<string, number>()),
   ]);
 
-  const byId = new Map((peers ?? []).map((p) => [p.id, p]));
-  return rows.map((c) => {
+  const byId = new Map(peers.map((p) => [p.id, p]));
+  return rows.map(({ messages, ...c }) => {
     const peerId = c.user_a === userId ? c.user_b : c.user_a;
-    const mine = (messages ?? []).filter((m) => m.conversation_id === c.id);
     return {
       ...c,
       peer: byId.get(peerId) ?? { id: peerId, username: "someone", full_name: null, avatar_url: null },
-      last_message: mine.length ? mine[mine.length - 1] : null,
-      unread_count: mine.filter((m) => m.sender_id !== userId && !m.read_at).length,
+      last_message: messages?.[0] ?? null,
+      unread_count: unread.get(c.id) ?? 0,
     };
   });
 }
 
-/** How many unread messages are waiting, for the badge on the tab bar. */
+/** The most threads the inbox reads: PostgREST's max_rows, newest first (fetchConversations). */
+export const INBOX_THREADS = ROWS_PER_READ;
+
+/**
+ * How many unread messages are waiting, for the badge on the tab bar.
+ *
+ * Only what the badge needs: the same counts the inbox shows, added up,
+ * without the inbox's newest message per thread and every peer's
+ * profile, which the badge never shows and refreshes far more often than
+ * the inbox. One request.
+ */
 export async function fetchUnreadMessageCount(userId: string): Promise<number> {
   if (isDemoMode()) return demo.demoUnreadMessageCount(userId);
-  const conversations = await fetchConversations(userId);
-  return conversations.reduce((n, c) => n + c.unread_count, 0);
+  const counted = await countedUnread();
+  if (counted) {
+    let total = 0;
+    for (const n of counted.values()) total += n;
+    return total;
+  }
+  // The database has no unread_message_counts yet: the old way.
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id")
+    .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+    // The same newest thousand as the inbox, should there be more.
+    .order("last_message_at", { ascending: false })
+    .limit(INBOX_THREADS);
+  if (error) throw error;
+  const ids = (data ?? []).map((c) => c.id as string);
+  if (ids.length === 0) return 0;
+  const waiting = await downloadedUnread(userId, ids).catch(() => new Map<string, number>());
+  let total = 0;
+  for (const n of waiting.values()) total += n;
+  return total;
+}
+
+/**
+ * Each of the member's threads with unread messages from the other
+ * member, and how many: counted by the database (unread_message_counts,
+ * migration 0037), one row a thread, as the member, through the same
+ * policies as reading the messages would. It used to download every such
+ * message to count them, a row each, and PostgREST stops at a thousand
+ * rows without saying so: past that the counts fell short.
+ *
+ * Null where the database has no such function yet.
+ */
+async function countedUnread(): Promise<Map<string, number> | null> {
+  if (rpcKnownMissing("unread_message_counts")) return null;
+  const { data, error } = await supabase.rpc("unread_message_counts");
+  if (error) {
+    if (!functionMissing(error)) throw error;
+    noteRpcMissing("unread_message_counts");
+    return null;
+  }
+  const out = new Map<string, number>();
+  for (const row of (data ?? []) as { conversation_id: string; unread: number | string }[]) {
+    const n = Number(row.unread);
+    if (row.conversation_id && Number.isFinite(n) && n > 0) out.set(row.conversation_id, n);
+  }
+  return out;
+}
+
+/** The old way, for a database without the function: the unread messages themselves, a hundred threads a request. */
+async function downloadedUnread(userId: string, threadIds: string[]): Promise<Map<string, number>> {
+  const rows = await readInChunks(threadIds, async (chunk) => {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("conversation_id")
+      .in("conversation_id", chunk)
+      .is("read_at", null)
+      .neq("sender_id", userId);
+    if (error) throw error;
+    return (data ?? []) as { conversation_id: string }[];
+  });
+  const out = new Map<string, number>();
+  for (const m of rows) out.set(m.conversation_id, (out.get(m.conversation_id) ?? 0) + 1);
+  return out;
+}
+
+/** The unread counts of these threads, by the database where it can, else the old way. */
+async function unreadCounts(userId: string, threadIds: string[]): Promise<Map<string, number>> {
+  return (await countedUnread()) ?? downloadedUnread(userId, threadIds);
 }
 
 /**
@@ -82,6 +197,15 @@ export async function openConversation(userId: string, peerId: string): Promise<
   return data.id;
 }
 
+/**
+ * A thread, oldest first, with the photographs it carries.
+ *
+ * PostgREST stops at max_rows (1000, ROWS_PER_READ) without saying so,
+ * and the thread used to be read oldest first: past a thousand messages
+ * the newest - the one just sent, the one just received - were the ones
+ * left out, and stayed out on every poll. It now reads the newest
+ * thousand and turns them round: the same list whenever there are fewer.
+ */
 export async function fetchMessages(conversationId: string): Promise<MessageWithPost[]> {
   if (isDemoMode()) return demo.demoFetchMessages(conversationId);
 
@@ -89,18 +213,57 @@ export async function fetchMessages(conversationId: string): Promise<MessageWith
     .from("messages")
     .select("*")
     .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false })
+    .limit(ROWS_PER_READ);
   if (error) throw error;
 
-  const rows = (data ?? []) as MessageRow[];
-  // Shared photographs are rare enough that fetching them individually is
-  // cheaper than joining every message against posts — and a thread is
-  // re-read every few seconds while open, so each is read once and kept
-  // for a while rather than fetched again on every poll.
-  const shared = await Promise.all(
-    rows.map((m) => (m.post_id ? sharedPost(m.post_id) : Promise.resolve(null))),
-  );
-  return rows.map((m, i) => ({ ...m, post: shared[i] }));
+  return withSharedPosts(((data ?? []) as MessageRow[]).reverse());
+}
+
+/**
+ * A thread's messages from `from` on (at or after it), oldest first, at
+ * most `limit`, with the photographs they carry: what a poll of an open
+ * thread asks for, rather than the whole thread again (see
+ * src/utils/threadPoll.ts). Read along the thread's own index
+ * (conversation_id, created_at).
+ */
+export async function fetchMessagesSince(
+  conversationId: string,
+  from: string,
+  limit: number,
+): Promise<MessageWithPost[]> {
+  if (isDemoMode()) {
+    const since = Date.parse(from);
+    return demo
+      .demoFetchMessages(conversationId)
+      .filter((m) => Date.parse(m.created_at) >= since)
+      .slice(0, limit);
+  }
+
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .gte("created_at", from)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return withSharedPosts((data ?? []) as MessageRow[]);
+}
+
+/**
+ * The messages with the photographs they carry. Shared photographs are
+ * rare enough that reading them on their own is cheaper than joining every
+ * message against posts — and a thread is re-read every few seconds while
+ * open, so each is read once and kept for a while rather than fetched
+ * again on every poll. The ones not already kept are read together, a
+ * hundred a request, rather than one request each: a thread of shared
+ * photographs used to open with one round trip per photograph.
+ */
+async function withSharedPosts(rows: MessageRow[]): Promise<MessageWithPost[]> {
+  const shared = await sharedPostsFor(rows.map((m) => m.post_id).filter((id): id is string => Boolean(id)));
+  return rows.map((m) => ({ ...m, post: m.post_id ? shared.get(m.post_id) : null }));
 }
 
 const SHARED_POST_TTL_MS = 5 * 60_000;
@@ -111,32 +274,65 @@ interface SharedRead {
   known: PostWithAuthor | null | undefined;
 }
 const sharedPosts = new Map<string, SharedRead>();
+
+/** Forget every kept photograph (tests, and a sign-out). */
+export function forgetSharedPosts(): void {
+  sharedPosts.clear();
+}
+
 /**
- * The post, or null when the server answered without it (it has gone, or
+ * Each post, or null when the server answered without it (it has gone, or
  * the reader may not see it). A read that fails is not kept: no answer is
  * not taken for gone. It stands on the server's last answer, or undefined
  * if there has not been one, and the next poll asks again.
  */
-function sharedPost(postId: string): Promise<PostWithAuthor | null | undefined> {
-  const cached = sharedPosts.get(postId);
-  if (cached && Date.now() - cached.at < SHARED_POST_TTL_MS) return cached.post;
-  const known = cached?.known;
-  const read: SharedRead = { at: Date.now(), post: Promise.resolve(known), known };
-  read.post = fetchPost(postId).then(
-    (post) => {
-      read.known = post;
-      return post;
-    },
-    () => {
-      if (sharedPosts.get(postId) === read) {
-        if (known === undefined) sharedPosts.delete(postId);
-        else read.at = 0;
-      }
-      return known;
-    },
+async function sharedPostsFor(postIds: string[]): Promise<Map<string, PostWithAuthor | null | undefined>> {
+  const now = Date.now();
+  const toRead: { id: string; read: SharedRead; known: PostWithAuthor | null | undefined }[] = [];
+  for (const id of new Set(postIds)) {
+    const cached = sharedPosts.get(id);
+    if (cached && now - cached.at < SHARED_POST_TTL_MS) continue;
+    const known = cached?.known;
+    const read: SharedRead = { at: now, post: Promise.resolve(known), known };
+    sharedPosts.set(id, read);
+    toRead.push({ id, read, known });
+  }
+
+  if (toRead.length > 0) {
+    const answered = readInChunks(
+      toRead.map((r) => r.id),
+      async (chunk) => {
+        const { data, error } = await supabase.from("posts").select(POST_WITH_AUTHOR).in("id", chunk);
+        if (error) throw error;
+        return (data ?? []) as unknown as PostWithAuthor[];
+      },
+    ).then(
+      (posts) => new Map(posts.map((p) => [p.id, p])),
+      () => null,
+    );
+    for (const r of toRead) {
+      r.read.post = answered.then((found) => {
+        if (found) {
+          const post = found.get(r.id) ?? null;
+          r.read.known = post;
+          return post;
+        }
+        if (sharedPosts.get(r.id) === r.read) {
+          if (r.known === undefined) sharedPosts.delete(r.id);
+          else r.read.at = 0;
+        }
+        return r.known;
+      });
+    }
+  }
+
+  const out = new Map<string, PostWithAuthor | null | undefined>();
+  await Promise.all(
+    [...new Set(postIds)].map(async (id) => {
+      out.set(id, await (sharedPosts.get(id)?.post ?? Promise.resolve(undefined)));
+    }),
   );
-  sharedPosts.set(postId, read);
-  return read.post;
+  return out;
 }
 
 export async function sendMessage(

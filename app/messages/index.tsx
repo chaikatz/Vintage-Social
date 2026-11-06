@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, spacing, type } from "@/theme";
 import { fetchConversations } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
@@ -12,6 +13,11 @@ import { postAge } from "@/utils/time";
 import { inboxPreview } from "@/utils/messageText";
 import { useNameFace } from "@/utils/nameFace";
 import type { ConversationWithPeer } from "@/types/db";
+
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * The inbox. One thread per member, newest first — no folders, no requests
@@ -37,7 +43,10 @@ export default function Messages() {
         refreshing={conversations.isRefetching}
         onRefresh={() => conversations.refetch()}
         ListEmptyComponent={
-          conversations.isFetched ? (
+          // A read that failed is no answer: "No messages" would not be true.
+          conversations.isError ? (
+            <LoadFailed what="your messages" onRetry={() => conversations.refetch()} />
+          ) : conversations.isFetched ? (
             <EmptyState
               title="No messages"
               body="Open a member's profile and write to them, or send a photograph from the feed."

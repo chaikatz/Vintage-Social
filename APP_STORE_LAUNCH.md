@@ -1,214 +1,520 @@
-# VINTAGE 1.0 · App Store Release Candidate
+# VINTAGE 1.0 · App Store launch checklist
 
-Prepared 7 October 2026 against branch `claude/vintage-ios-social-app-gkrfo3`.
-This replaces the 15 September launch report. Everything below was checked
-against the repository and the live environments on this date; anything that
-could not be checked from here is marked **UNVERIFIED** and says what to run.
+Prepared **5 November 2026**. This is the one current checklist. It replaces
+the 7 October release-candidate report that used to be in this file, and
+`LAUNCH_READINESS.md` (written before the backend existed).
 
-Credentials for the review account are **not** in this file or anywhere in the
-repository. They belong in App Store Connect → App Review Information only.
+Everything under "Where things stand" was read from the repository, from
+production (read-only) and from the public web on 5 November, and
+corrected on 6 November after an independent review (the house accounts,
+the Privacy Policy's deletion sentences, the migration list). Nothing here
+was run on an iPhone or a simulator: none can run where this was prepared.
+What only you can do is in section 2, in the order to do it. The two
+review blockers found on 5 November (an account that is not a member's
+could not be deleted in the app, and the invitation did not say the
+Terms are agreed to) are fixed in the sweep's second round, on branch
+`r13-door`. **Before you build, check the branch you build has both: see
+"Before you build" at the top of section 2.**
+
+Passwords, keys and the review account's password are **not** in this file
+or anywhere in the repository, and must never be.
 
 ---
 
-## 1. Release state
+## 1. Where things stand
+
+### The app
 
 | | |
 | --- | --- |
-| Branch | `claude/vintage-ios-social-app-gkrfo3` |
-| Release candidate commit | the commit this file lands in (see `git log -1`) |
+| What you test on TestFlight | branch `claude/editorial-feed-preview`: `claude/product-polish` plus the removable "Editorial (Preview)" feed |
+| `claude/product-polish` | `ae28ca6`: classic dark mode (a black page, white type), the Memory Room printed on the app's own page with the signature line under each photograph and CONTENTS as a tab, the invitation card's shadow |
+| Launch sweep | branches `r12-room`, `r12-stability`, `r12-media`, `r12-flows`, `r12-backend`, `r12-store` merge into `claude/product-polish`, then into the preview branch. A second round fixes what the first handed on; its door part (the two review blockers, the admin pages, unknown addresses) is branch `r13-door` |
 | App version | `1.0.0` (`app.json`) |
-| iOS build number | managed remotely by EAS (`appVersionSource: remote`, `autoIncrement: true`). **UNVERIFIED** from here — `npx eas-cli build:version:get -p ios` prints the current value; the next build is that plus one. |
+| Build number | kept by EAS (`appVersionSource: remote`, `autoIncrement: true`); each production build adds one |
 | Bundle ID | `com.vintage.social` |
-| EAS project | `7d93bd28-2dec-4e7f-8f05-dc2f8c2ecd5f`, owner `chaikatz`, profile `production` (`EXPO_PUBLIC_DEMO_MODE=0`, `environment: production`) |
-| Last uploaded build | made 6 October from commit `5fdd20c`. One commit follows it (`afb12d3`: pager one-finger module, gesture fixes, Places cache, waitlist auto-check) plus this release-candidate commit. Both are needed in the final build; `afb12d3` adds a native module, so a full EAS build is required, not an update. |
-| Production Supabase | `scfwowqsqrnzpknzurmm` ("Vintage-Production 09/01/26") |
-| Staging Supabase | `omvezsrkjizxdfeogccw` — holds no real member data, never referenced by a production build |
-| Web | https://vintagesocial.app on Vercel, HTTPS enforced (HTTP → 308 to HTTPS, HSTS two years) |
+| Name on the home screen | `Vintage` |
+| App Store Connect record | `Vintage Social` |
+| EAS | project `7d93bd28-2dec-4e7f-8f05-dc2f8c2ecd5f`, owner `chaikatz`, profile `production` (`EXPO_PUBLIC_DEMO_MODE=0`) |
+| Devices | iPhone only (`supportsTablet: false`), portrait, iOS 15.1 and later |
+| Sign-in | email and password only. No Google, Facebook or other third-party sign-in, so Sign in with Apple is not required (Guideline 4.8) |
+| Export compliance | `ITSAppUsesNonExemptEncryption` is `false`: answer "No" if asked |
+| Icon | `assets/icon.png`: the V and its rule on cream, 1024 × 1024, no transparency (checked: RGB, no alpha channel). This is the real mark, not Expo's template |
+| Launch screen | colour only: white in Light, black in Dark (`ios.splash`). No image, which is allowed |
 
-### Migrations
+### Production (Supabase `scfwowqsqrnzpknzurmm`), read on 5 November
 
-All twenty files in `supabase/migrations/` are applied to **both** projects.
-Production's own migration ledger (`supabase_migrations.schema_migrations`)
-lists only 0001–0008, 0011, 0013–0018, because 0009, 0010, 0012, 0019 and
-0020 were run through the SQL editor, which does not record them. Their
-objects were verified present on production on 7 October:
+- **Accounts (re-read 6 November).** 6 approved members who are people,
+  your own account and the review account among them. 150 **house
+  accounts**: the club's own accounts, flagged `is_house` (149 approved,
+  1 suspended). They cannot sign in, never take a membership number, and
+  show the 908 photographs listed in `seed/CREDITS.md`. 5 more people have
+  an account but are not members: 4 whose application was rejected and 1
+  with no application at all (their profile still reads `applied`; the
+  flows area's repair makes the waiting screen say what is true for each).
+- 1,139 posts: **908 from house accounts, 231 from members**. 127 posts
+  have a point on the map.
+- Reports: 2 in all, both dismissed, **0 open**. Applications: 2 approved,
+  4 rejected, 0 waiting. Blocks: 0.
+- Migrations: everything up to and including **0022** is on production.
+  0021 and 0022 were checked by what they made: the message check moved
+  to `check_message_not_empty()` and the old `messages_check` constraint is
+  gone (0021); the `era_edits` table exists (0022). The dashboard's
+  migration list shows only the files that went through the CLI; files run
+  in the SQL editor (0009, 0010, 0012, 0019–0022) are not listed there, and
+  that is harmless.
+- **Pending your approval:** the launch sweep's backend work adds new
+  migrations numbered from **0023 up** (0023 to 0037) and changes the
+  `push` function. Nothing has been applied. See step 4: run every one of them,
+  in number order.
+- Edge function `push`: active (version 1). Daily job `vintage-memories`
+  at 15:00 UTC: active. Live push tokens: 5.
+- Security advisor: the `SECURITY DEFINER` warnings are the app's RPC
+  surface and are by design. **Leaked-password protection is off** (step 7).
+- The review account `appreview@vintagesocial.app`: approved, email
+  confirmed, not banned, 5 invitations left, invitation link
+  `applereview`. It follows 12 accounts, and **all 12 are house
+  accounts**, so the reviewer's Home is house photographs. The review
+  notes (section 4) say so. Last sign-in 7 October. Its password cannot be
+  checked from here (step 6).
 
-| Migration | Production evidence |
+### The web (vintagesocial.app), read on 5 November
+
+| Address | Answer |
 | --- | --- |
-| 0009 storage read-own | `media: read own folder` storage policy present |
-| 0010 invitation wording | `invite_slug_status`, `reserved_invite_slugs` present |
-| 0012 invite links | `invite_links` table, `ensure_invite_link`, `set_invite_slug`, `rotate_invite_link`, `invite_link_owner`, `redeem_invite_link` present |
-| 0019 shares | `post_shares`, `share_events` (RLS on), `create_post_share`, `revoke_post_share`, `live_share_post`, `shared_post`, `shared_post_media(text,text)`, `record_share_event` present, grants as the file states; `app_settings.share_media_key` row present (set 16 September) |
-| 0020 photos baked | every photo row carries `filter_baked = true` (1027 rows on 6 October) |
+| `https://vintagesocial.app/` | 200, the landing page. `http://` redirects (308) to `https://` |
+| `/privacy`, `/terms` | 200, **but the 22 October text** ("Last updated October 22, 2026", and it still says "Darkroom"). The repository's text is dated 5 November. Fixed by redeploying the web (step 3) |
+| `/support.html` | 200, **but it is not a support page yet**: any address the web does not know is answered with the app's web shell (title "Vintage", no contact details). It becomes the support page only after step 1 (the file is committed) and step 3 (the web is redeployed). Do not enter the Support URL in App Store Connect (step 9) before then |
+| `/i/applereview` | 200, the invitation page |
+| `/.well-known/apple-app-site-association` | 404, by design: universal links are not part of 1.0 |
 
-**No migration needs to be applied for 1.0.** Nothing destructive is pending.
+The live web build has no `EXPO_PUBLIC_SUPPORT_EMAIL`. Whether the EAS
+production environment has it cannot be seen from here. Without it the
+Support row in the app's Settings is hidden, and the Privacy Policy's "the
+support address shown in Settings" points at nothing.
 
-### Backend
+### What this pass changed for review
 
-- Edge function `push` is ACTIVE on production (version 1); `app_settings.push_hook` points at it; five push tokens are registered; cron `vintage-memories` runs daily at 15:00 UTC.
-- RLS is enabled on all 20 public tables.
-- Email confirmation is **off** for production: on 6 October a fresh applicant signed up and, with the session the sign-up returned, immediately created their application row. With confirmations on, sign-up returns no session and that write could not have happened.
-- Supabase security advisor: the only warnings are the `SECURITY DEFINER` functions that are callable by design (`username_available` and `invite_link_owner` must answer before sign-in; the share functions answer the web server; the rest are the app's RPC surface and check `auth.uid()` themselves) and **leaked-password protection being off** — see §3.
-
-### Web (vintagesocial.app), checked 7 October
-
-| Route | Result |
-| --- | --- |
-| `/` | 200, landing page, renders at iPhone width with no horizontal overflow |
-| `/privacy`, `/terms` | 200, the documents, "Last updated September 15, 2026" |
-| `/apply`, `/invite`, `/sign-in`, `/landing` | 200, the app's own screens |
-| `/i/early`, `/i/applereview` | 200, invitation page; `/i/<unknown>` → 404 "no longer open" |
-| `/s/<live token>` | 200, page with the photograph's words; HTML contains no storage address |
-| `/s/<live token>/media` | **404 — the picture does not load.** See §3, item 1. |
-| `/s/<token>/request` | 302 → `/apply` |
-| `/s/<unknown 32-hex>`, `/s/<malformed>` | 404 |
-| `/.well-known/apple-app-site-association` | 404 by design (`APPLE_TEAM_ID` not set); the app declares no associated domains, so universal links are not part of 1.0 and nothing depends on this |
-| `/invite-card.png`, `/3d/*` | 200 |
+- **Permission sentences** (what iOS shows when it asks on the app's behalf)
+  now say what the app does:
+  - Add to Photos: "When you choose Save Image or Save Video in the share
+    sheet, VINTAGE adds that print to your library. It adds nothing else."
+    It used to say the app "does not save anything to your library", but
+    the share sheet's Save Image does exactly that, and iOS shows this
+    sentence when a member first taps it.
+  - Face ID and the old "always" location key were still Expo's template
+    words ("Allow $(PRODUCT_NAME) to …"). Neither is ever asked for; both
+    now say so in the app's words.
+  - Microphone: the camera takes photographs only and nothing records
+    sound, so it now says "VINTAGE does not record sound…".
+  - Photo library, camera, location (never asked): unchanged.
+- **Privacy manifest** (`PrivacyInfo.xcprivacy`, from `app.json` →
+  `ios.privacyManifests`): no tracking; the required-reason APIs with
+  Apple's codes (UserDefaults CA92.1, file timestamps C617.1, system boot
+  time 35F9.1, disk space E174.1); and the data collected, the same list
+  as the privacy label in section 3.
+- **Terms of Use** now say there is no tolerance for objectionable content
+  or abuse of other members, and that a member agrees to them when they
+  apply or accept an invitation (Guideline 1.2).
+- **Privacy Policy** now also names: the point on the map a typed place is
+  looked up to (with Apple's map service); the share notes admins see; the
+  phone's make and model kept with the push token; the application's
+  "where your photographs live"; and that a print is added to Photos only
+  from the share sheet. Dated 5 November 2026.
+- **Corrected on 6 November** (the facts were wrong before):
+  - An application is kept with the account as the record of the decision
+    and deleted with it. (It used to say applications are kept only while
+    waiting; nothing ever deletes one.)
+  - Deleting an account deletes that member's share links; the notes
+    about their shares stay with no account attached. The reports they
+    filed stay too, with no account attached, so that they can still be
+    acted on: migration 0031 keeps them (until it is applied, step 4, the
+    database deletes them with the reporter).
+  - A share link shows that one photograph, its place, date and username
+    to anyone who has the link, even from a private account, until it is
+    turned off or the photograph deleted.
+  - Someone whose application is waiting or was not accepted, or whose
+    membership is suspended, cannot reach Settings. Their waiting screen
+    now has **Delete my account** (two confirmations, as in Settings), and
+    the Privacy Policy, the Terms and the support page name it, with
+    writing in to the support address kept as a second way. Both
+    documents are dated **November 6, 2026**.
+  - The Terms say the house accounts are the club's own, show
+    public-domain and licensed photographs, and are not members.
+- **Support page:** `npm run build:legal` can now write
+  `public/support.html` (Guideline 1.5: the Support URL must give a way to
+  reach a person), once you give it an address.
+- **The door, second round (`r13-door`, 6 November):**
+  - The waiting screen has **Delete my account** (Guideline 5.1.1(v)),
+    and the invitation says "By accepting you agree to the Terms of Use
+    and Privacy Policy" (Guideline 1.2). These were the two review
+    blockers.
+  - The admin pages (Applications, Members, Reports) send a member who
+    is not an admin home when opened by a link; only the dashboard used
+    to (Guideline 2.1).
+  - An address the app does not know goes home, where it used to open
+    Expo's "Unmatched Route" page with a Sitemap of every route, the
+    admin pages among them (Guideline 2.1).
+  - The waiting screen and the landing page scroll when the largest text
+    sizes make them taller than the screen; Sign out, Delete my account,
+    Sign in and Privacy · Terms were below the bottom edge.
+  - An applicant whose account was made but whose application did not
+    reach us goes to the waiting screen, where every retry on the form
+    used to say "That username is taken".
+  - `seed/CREDITS.md` says above its table what the table says: 679
+    Unsplash Licence, 143 public domain, 70 CC0, 16 "no restrictions".
 
 ---
 
-## 2. What was audited
+## 2. What only you can do, in order
 
-### Automated (run 7 October on this commit)
+### Before you build: check the two review fixes are in the branch
 
-| Check | Result |
+Both were review blockers on 5 November and are fixed on branch
+`r13-door`, which merges into `claude/product-polish` and then into the
+preview branch you build. Before step 8, check the branch you build has
+both; if either is missing, the merge has not happened yet: ask Claude,
+and do not submit until it has.
+
+- **Deleting an account that is not a member's (Guideline 5.1.1(v)).**
+  An account whose application is waiting or was not accepted, or whose
+  membership is suspended, sees only the waiting screen and cannot reach
+  Settings, and the review notes send the reviewer to "Apply for
+  membership", which makes exactly this kind of account. Check:
+  `app/(gate)/pending.tsx` has a **Delete my account** button under Sign
+  out (search the file for `deleteMyAccount`). Step 4 of section 6 tries it
+  on the phone.
+- **The invitation says what is agreed to (Guideline 1.2).** The review
+  notes ask Apple to join with the `applereview` invitation. Check:
+  `app/(gate)/invite.tsx` contains "By accepting you agree to the". Step 5
+  of section 6 looks for it on the phone.
+
+`npm test` checks both as well (`tests/review-blockers.test.ts`).
+
+Then do these in this order. Steps 1 and 2 must happen **before** the
+build, because the app reads those values when it is built.
+
+### Step 1 · A support address, in the app and on the web
+
+Apple asks for a way to reach a person, both on the Support URL and in
+the app. Choose an address you will read (for example a
+`support@` address on your own domain).
+
+1. Put it in the app's build settings. On expo.dev: sign in → project
+   **vintage** → **Environment variables** → **Add variable** →
+   Name `EXPO_PUBLIC_SUPPORT_EMAIL`, Value your address, Environment
+   **Production**, Visibility **Plain text** → Save.
+   Or in Terminal, in the project folder:
+   `npx eas-cli@latest env:set production --name EXPO_PUBLIC_SUPPORT_EMAIL --value you@yourdomain --visibility plaintext`
+2. Make the support page. In Terminal, in the project folder:
+   ```bash
+   SUPPORT_EMAIL=you@yourdomain npm run build:legal
+   git add public/support.html && git commit -m "Support page" && git push
+   ```
+   (It refuses anything that is not an email address. Or ask Claude to do
+   it with your address.) Until this file is committed and the web is
+   redeployed (step 3), `/support.html` answers with the app's web page
+   and no address, so enter the Support URL in App Store Connect only
+   after step 3.
+3. Optional: add the same `EXPO_PUBLIC_SUPPORT_EMAIL` in Vercel → project →
+   **Settings** → **Environment Variables** (Production), so Settings on the
+   web shows it too.
+
+### Step 2 · Check the other build settings
+
+On expo.dev → project **vintage** → **Environment variables**, filter
+**Production**. It must have:
+
+| Name | Value |
 | --- | --- |
-| TypeScript (`npm run typecheck`) | clean |
-| Unit tests (`npm test`) | 39 files, 264 tests, all passing |
-| `npx expo-doctor` | 18/18 checks passed |
-| Web export (`expo export --platform web`) | builds |
-| Policy tests (`npm run test:rls`) | migrations 0001–0016 apply cleanly to a throwaway PostgreSQL 16; the run stops at 0017 because that file needs the `pg_net` extension, which the local server does not have. 0017–0020 and the share-policy file were therefore **not** exercised here; the share functions were instead checked directly on production (below). |
-| Launch test (`npm run test:e2e`, Playwright against the demo build) | **32/32 checks passed**: application → waitlist → approval → invitation → feed → like → comment → follow → private gate → explore → messages → compose with filter, place and date stamp → publish. The script's expected wording was brought up to the current product (invitations, "Members only", MEMBER, the place sheet); no product code was changed for it. The only console errors are two "no supported source" messages from the demo's seeded sample videos, which headless Chromium cannot decode. |
+| `EXPO_PUBLIC_SUPABASE_URL` | `https://scfwowqsqrnzpknzurmm.supabase.co` |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | the production anon key (Supabase → Vintage-Production → Project Settings → API) |
+| `EXPO_PUBLIC_INVITE_BASE` | `https://vintagesocial.app` |
+| `EXPO_PUBLIC_SUPPORT_EMAIL` | your address, from step 1 |
 
-### Sharing (migration 0019), checked on production as the `anon` role
+Without `EXPO_PUBLIC_INVITE_BASE`, Privacy and Terms in Settings open the
+app's own copy instead of the web page. That is fine for review; the words
+are the same.
 
-- `shared_post_media(<live token>, 'wrong key')` → 0 rows; with an empty key → 0 rows.
-- `shared_post(<live token>)` → 1 row of words only (kind, shape, place, date, username); `shared_post(<unknown token>)` → 0 rows.
-- `live_share_post(...)` → permission denied (not callable by anon or authenticated).
-- Direct `select` on `post_shares` and `app_settings` → 0 rows. Direct `select` on `posts` and `profiles` → refused outright (the blocking policy calls a function anon may not execute, so anon reads error rather than return rows; nothing in the app reads those tables before sign-in).
-- The public page's HTML points only at `/s/<token>/media`; the storage address is resolved server-side and never sent. The media route copies an allow-list of headers, never redirects, and marks itself `no-store`.
-- `SHARE_MEDIA_KEY` is server-only on Vercel (no `EXPO_PUBLIC_` prefix); only its SHA-256 is in the database; the key is in no bundle and no file in the repository. The one `service_role` reference in the codebase is the `push` edge function reading its own runtime secret.
-- The migration file is idempotent (`if not exists` / `create or replace` / `drop if exists`) and says so accurately. Its header line "NOT YET APPLIED TO PRODUCTION" is stale: it has been applied. Left as written so the file's hash does not change.
+### Step 3 · Put the current web pages live
 
-**Verdict: the design is secure as implemented. It is not working in production because the key on Vercel does not match the hash in the database** (item 1 below). No redesign.
+After the launch-sweep branches are merged and pushed, redeploy the web
+from the project folder:
 
-### Compliance surfaces (code read, and where noted, exercised)
+```bash
+npx vercel --prod
+```
 
-- **Account deletion** — Settings → Delete account → two confirmations → files removed from all three buckets, then `delete_my_account()` removes the auth user and everything cascades. Reachable without contacting anyone.
-- **Blocking** — profile "…" menu, long-press on Follow, or any post's "…" menu; Settings → Blocked members to unblock. Enforced by RESTRICTIVE database policies in both directions. Functions present on production with grants to `authenticated` only. No block has yet been made on production, so this is verified on staging (15 September) and by code, not by production data.
-- **Reporting** — every post, comment and member has Report in its "…" menu; two reports exist on production; Admin → Reports resolves them with remove / warn / suspend.
-- **Suspended member** — the tab layout sends anyone not approved to the waitlist screen, which for `suspended` shows "Account suspended", the support address and Sign out.
-- **Waitlist** — "Application received", "I have an invitation" (code or link), "Check status", "Sign out". Since `afb12d3` the screen also re-reads membership whenever the app returns to the front and every 30 seconds, and walks an approved applicant in.
-- **Privacy / Terms** — in Settings and on the landing screen; open the web copies when the URLs are configured, the bundled copies otherwise, so no build ships a dead link.
-- **Permissions** — photo library, camera, microphone, media-library (capture date), location (never requested; the strings say so), notifications (asked after first sign-in; a refusal returns null and nothing else changes). The app never writes to the photo library, so the "does not save anything" string is true. Camera refusal shows an explanation.
-- **Error states** — `LoadFailed` with retry on every list; "This photograph is gone" for a removed post; `EmptyState` on empty lists; image placeholders; a video that stalls shows a play mark after 2.5 s; invalid invitation and invalid share token both answer 404 pages; a server failure answers 503 so a crawler does not cache a wrong "gone".
+Then open, in Safari:
 
----
+- `https://vintagesocial.app/privacy` → "Last updated November 6, 2026",
+  it says "Memory Room", not "Darkroom", and it names "Delete my account"
+  for an application that is waiting.
+- `https://vintagesocial.app/terms` → "no tolerance for objectionable
+  content".
+- `https://vintagesocial.app/support.html` → "Support", your address as
+  a link, and the Delete your account section, which names both Settings →
+  Delete account and Delete my account on the waiting screen. If it shows the app's
+  landing page instead, `public/support.html` was not committed (step 1).
 
-## 3. What remains — in order
+### Step 4 · Database changes from the sweep (only after you approve them)
 
-1. **Fix the share-media key (production bug, external sharing is in 1.0).**
-   The share page renders but the photograph answers 404 because the key the
-   Vercel function sends does not match the hash stored on 16 September. One
-   key, set in two places, then redeploy:
+The backend work in this sweep is in the merged branch and is **not**
+applied anywhere, staging or production. Read its notes first: the
+comment at the top of each file says what it changes, what members would
+notice, and how to undo it. If you approve, in the merged branch:
 
-   ```bash
-   openssl rand -hex 32          # on your Mac; copy the output
-   ```
+1. Look in `supabase/migrations`. Every file whose number is **0023 or
+   higher** is new, and all of them are needed (the table under item 4
+   lists them). Do not stop at the ones named here; take the list from
+   the folder.
+2. Supabase → **Vintage-Production** (`scfwowqsqrnzpknzurmm`) → **SQL
+   Editor** → **New query**.
+3. Paste the whole of the lowest-numbered new file → **Run**. Wait for
+   "Success". Then the next number, and so on: **every file from 0023 up,
+   one at a time, in number order**, to the last one in the folder. If
+   one fails, stop there and ask Claude; do not skip it.
+4. Then run each verify script in `supabase/production` numbered **12 or
+   higher** → **Run**, once, after the last file (some rows count what
+   later files add, so part-way through they read false).
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0037 in 39 rows.
+   Every row's `ok` must read true. Each file's own rows, so a false one
+   points at its file:
 
-   - Vercel → project → Settings → Environment Variables → `SHARE_MEDIA_KEY`
-     → replace the value with that key, for **Production** (and Preview). No
-     quotes, no trailing newline.
-   - Supabase → Vintage-Production (`scfwowqsqrnzpknzurmm`) → SQL editor →
-     open `supabase/production/11_share_media_key.sql`, put the same key in
-     place of `PASTE_KEY_HERE`, run it. It stores only the hash and prints one
-     row with `hash_length 64`. Do not save the file with the key in it.
-   - `cd ~/Documents/Vintage-Social && npx vercel --prod`
-   - Check: open any share link from the app (Post → … → Share outside →
-     link) in Safari; the photograph should show. From a terminal,
-     `curl -sI https://vintagesocial.app/s/<token>/media | head -1` should
-     read `HTTP/2 200`.
+   | File | What it does | Rows |
+   | --- | --- | --- |
+   | 0023 | Policies read the caller once; an index under every foreign key | 1–13, 20–23 |
+   | 0024 | Block checks answer only for the member asking | 14 |
+   | 0025 | Home's feed in one request, paged by a cursor | 15–17, 24 |
+   | 0026 | A photograph's followers read in order | 18 |
+   | 0027 | Expo's push receipts kept for the `push` function | 19 |
+   | 0028 | Comments, likes and tags read only with their photograph | 25 |
+   | 0029 | A waitlist or rejection reaches the profile; an approval never lifts a suspension | 26–28 |
+   | 0030 | A photograph or comment is removed once, and its author told once | 29 |
+   | 0031 | A report outlives the member who filed it | 30 |
+   | 0032 | A new report reaches the admins' phones (needs item 5) | 31 |
+   | 0033 | A photograph a member reports leaves their own view | 32 |
+   | 0034 | The house photographs' grid squares at a grid's size: Wikimedia's at 500 pixels, Picsum's with a 540-pixel short side | 33–35 |
+   | 0035 | A member's own photograph files readable to them whatever their membership, so Delete my account removes them | 36 |
+   | 0036 | A phone's push token belongs to whoever signed in on it last | 37 |
+   | 0037 | Unread messages counted in the database | 38–39 |
 
-2. **Confirm the EAS production environment** (`npx eas-cli env:list production`).
-   It must contain `EXPO_PUBLIC_SUPABASE_URL` (the production URL),
-   `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_INVITE_BASE`
-   (`https://vintagesocial.app`) and `EXPO_PUBLIC_SUPPORT_EMAIL`. **UNVERIFIED**
-   from here. The first three are evidently set, since the TestFlight build
-   talks to production and members' share links are web links; the support
-   address could not be inferred. Without it the Support row in Settings is
-   hidden and the Privacy Policy's "support address shown in Settings" points
-   at nothing — Apple does ask for a visible support contact.
+5. Redeploy the `push` function, which changed in the sweep:
+   `npx supabase functions deploy push --project-ref scfwowqsqrnzpknzurmm`
+   (or Supabase → **Edge Functions** → `push` → deploy the new code).
+   0032 (reports reach the admins) needs this redeploy to send anything:
+   until then the deployed function answers its calls with "Unknown kind".
+6. On a project whose house accounts are seeded after the migrations (a
+   fresh project; production's are already there), run
+   `0034_seed_thumbnails_at_a_standard_width.sql` again after
+   `supabase/production/08_house_accounts.sql`.
 
-3. **Set a password you know for the review account and verify it.** The
-   account (`appreview@vintagesocial.app`, username `app_review`) is approved,
-   email-confirmed, not banned, follows 12 members and has 96 posts in its
-   Home feed, but its last sign-in was 15 September and the password cannot
-   be checked from here. On your Mac:
+Never run anything against `omvezsrkjizxdfeogccw` (staging) by mistake for
+production, or the other way round: the project name is at the top left of
+the dashboard.
 
-   ```bash
-   cd ~/Documents/Vintage-Social && npm i --no-save bcryptjs
-   node scripts/reviewer-password.mjs hash      # type the new password twice; prints SQL with only its hash
-   ```
+### Step 5 · Check the share link's photograph
 
-   Paste the printed SQL into the **production** SQL editor and run it (one
-   row changes: that account's password hash; its old sessions end). Then
+On your iPhone: open any of your photographs → the paper plane (Send to)
+→ **Share outside VINTAGE** → make a link → open the link in Safari. The
+page **and the photograph** should show.
 
-   ```bash
-   node scripts/reviewer-password.mjs verify    # signs in as the reviewer, checks profile, allowance and feed, signs out
-   ```
+If the page shows but the photograph does not, the key on Vercel and the
+one in the database do not match. Fix it once:
 
-   `verify` reads the production URL and anon key from `.env.production` (or
-   the shell). All lines PASS → put the same password in App Store Connect.
-   The password is typed, never echoed, never written anywhere by the script,
-   and must never be committed or pasted into a chat.
+1. On your Mac: `openssl rand -hex 32` and copy the output.
+2. Vercel → project → **Settings** → **Environment Variables** →
+   `SHARE_MEDIA_KEY` → replace the value with it (Production and Preview).
+   No quotes, no extra line.
+3. Supabase → Vintage-Production → **SQL Editor** → open
+   `supabase/production/11_share_media_key.sql`, put the same key in place
+   of `PASTE_KEY_HERE`, **Run**. It prints one row with `hash_length 64`.
+   Do not save the file with the key in it.
+4. `npx vercel --prod`, then try the link again.
 
-4. **Supabase Auth → Attack protection → enable "Leaked password protection".**
-   One toggle; recommended by the advisor; not a review blocker.
+### Step 6 · The review account's password
 
-5. **Legal review** of the Privacy Policy and Terms is still advised. The
-   facts in them are accurate to the app as built; not a technical blocker.
+Set a password you know, and check it works, on your Mac in the project
+folder:
 
-6. **After Apple approves:** in Vercel set `VINTAGE_INSTALL_URL` to the App
-   Store URL and redeploy. Until then the invitation page offers "Open
-   VINTAGE" and says the app is in private testing — correct for TestFlight,
-   wrong once the app is public.
+```bash
+npm i --no-save bcryptjs
+node scripts/reviewer-password.mjs hash     # type the new password twice; prints SQL holding only its hash
+```
 
-### Build and submit (only after items 1–3)
+Paste the printed SQL into Supabase → Vintage-Production → **SQL Editor**
+→ **Run** (it changes that one account's password; its old sessions end).
+Then:
+
+```bash
+node scripts/reviewer-password.mjs verify   # signs in as the reviewer, checks profile, invitations and feed, signs out
+```
+
+Every line should say PASS. Keep the password for App Store Connect
+(step 9). Never commit it or paste it into a chat.
+
+### Step 7 · Leaked-password protection
+
+Supabase → Vintage-Production → **Authentication** → **Attack Protection**
+(in older dashboards: Policies → Password security) → turn on **Prevent use
+of leaked passwords** → Save. Recommended by Supabase's advisor; not a
+review blocker. If the switch is greyed out, it needs the Pro plan.
+
+### Step 8 · Build and send to Apple
+
+Decide which branch you are launching:
+
+- `claude/editorial-feed-preview` is what you have been testing, with the
+  Editorial (Preview) feed in it;
+- `claude/product-polish` is the same app without that experiment.
+
+Then, on your Mac:
 
 ```bash
 cd ~/Documents/Vintage-Social
-git pull origin claude/vintage-ios-social-app-gkrfo3
+git fetch && git checkout <the branch you chose> && git pull
 npm install
-npx eas-cli build --platform ios --profile production
-npx eas-cli submit --platform ios --latest
+npx eas-cli@latest build --platform ios --profile production
+npx eas-cli@latest submit --platform ios --latest
 ```
 
-(`--auto-submit` on the build command does the same in one step. The build
-number increments itself.)
+The build is a full native build (needed: the sweep changes `app.json` and
+native modules, so an over-the-air update is not enough). The build number
+goes up by itself. App Store Connect takes about 5–15 minutes to process
+it. Install it from TestFlight and go through section 6 before you submit
+it for review.
+
+### Step 9 · App Store Connect
+
+Open appstoreconnect.apple.com → **Apps** → **Vintage Social**.
+
+1. **App Information** (left column, under General):
+   - Subtitle: `Your best photos aren't new.`
+   - Category: Primary **Photo & Video**, Secondary **Social Networking**.
+   - Content Rights: **Yes, it contains third-party content**: members'
+     photographs, and the house accounts' photographs, which are **not
+     yours**. They are other photographers' work: of the 908, 679 are
+     under the Unsplash Licence, 143 public domain, 70 CC0 and 16 marked
+     "no restrictions" (`seed/CREDITS.md` lists every one, and its header
+     gives the same counts). Members grant what the app
+     needs in the Terms. Answer "Yes, I have the necessary rights" only
+     after you have decided the house-accounts question in section 7.
+   - **Age Rating** → Edit → answer as in section 4.
+2. **App Privacy** (left column):
+   - Privacy Policy URL: `https://vintagesocial.app/privacy`
+   - Data collection → **Get Started** → "Yes, we collect data" → tick
+     exactly the types in section 3 → for each: the purpose shown,
+     **linked to the user: Yes**, **used for tracking: No** → **Publish**.
+3. **Pricing and Availability**: Free. Countries as you like.
+4. **iOS App → 1.0 Prepare for Submission**:
+   - Screenshots: section 5.
+   - Promotional text, Description, Keywords: section 4.
+   - Support URL: `https://vintagesocial.app/support.html` (only once
+     step 3 shows your address on it)
+   - Marketing URL: `https://vintagesocial.app`
+   - Version: `1.0.0`. Copyright: `© 2026` and the owner's legal name.
+   - **Build**: pick the build from step 8.
+   - **App Review Information**: Sign-in required **on**. User name
+     `appreview@vintagesocial.app`, password from step 6. Your name, phone
+     and email as the contact. Notes: paste the text in section 4.
+   - **Version Release**: "Manually release this version", so you choose
+     the day.
+5. **Add for Review** → **Submit to App Review**. If asked about
+   encryption: No. About advertising identifier (IDFA): No.
+
+### Step 10 · While in review, and after
+
+- Check **Profile → shield → Reports** at least once a day. The Terms
+  promise action within 24 hours, and Apple reads that promise. Once
+  migration 0032 is applied and the `push` function redeployed (step 4),
+  each admin's phone with notifications on is told "A report is waiting."
+  when one is filed; until then nothing tells you, and an admin with
+  notifications off is never told.
+- If someone writes to the support address asking to delete an account
+  that is not a member's (the Privacy Policy now promises this for
+  applications that are waiting or were not accepted, and for suspended
+  memberships): check the message comes from the account's own email, then
+  Supabase → Vintage-Production → **Authentication** → **Users** → search
+  the email → the row's **…** menu → **Delete user**. The profile and the
+  application go with it. If they added a portrait to their application,
+  also **Storage** → `avatars` → the folder named with their user ID (shown
+  in the Users list) → delete it. Reply when it is done.
+- Apple's reviewer may join with the `applereview` invitation. Each join
+  spends one of the review account's 5 invitations and gives the new
+  account a real membership number, which is never reissued. Top the
+  invitations up in **Admin → Members** if they run low.
+- After approval: Vercel → project → **Settings** → **Environment
+  Variables** → set `VINTAGE_INSTALL_URL` to the App Store address →
+  `npx vercel --prod`. Until then the invitation page says the app is in
+  private testing, which is right for TestFlight and wrong once it is public.
+- Then **Release This Version** in App Store Connect.
+- A lawyer reading the Privacy Policy and Terms is still advised: the facts
+  in them are accurate to the app as built; the legal framing has not been
+  checked by a lawyer.
 
 ---
 
-## 4. App Store Connect — what to enter
+## 3. App Privacy label (App Store Connect → App Privacy)
 
-**App name:** `Vintage Social` is the existing App Store Connect record; keep
-it unless `VINTAGE` is available when you check, in which case that is the
-better name. The name on the phone's home screen is `Vintage` either way.
+The same list is in the privacy manifest (`app.json` →
+`ios.privacyManifests`) and in the Privacy Policy;
+`tests/store-privacy.test.ts` fails if they drift apart.
+
+Every type below: **linked to the user: Yes · used for tracking: No**.
+
+| Category → type | Purpose | What it is in VINTAGE |
+| --- | --- | --- |
+| Contact Info → **Name** | App Functionality | the name a member chooses |
+| Contact Info → **Email Address** | App Functionality | the sign-in address |
+| Contact Info → **Other User Contact Info** | App Functionality | an application's "where your photographs live" (a handle or site), optional |
+| User Content → **Photos or Videos** | App Functionality | photographs and films posted; the portrait |
+| User Content → **Emails or Text Messages** | App Functionality | messages between members |
+| User Content → **Other User Content** | App Functionality | captions, comments, bio, application answers, likes, follows, tags |
+| Location → **Precise Location** | App Functionality | the point on the map for the place a member types on a post. Never the phone's position: the app never asks for location |
+| Location → **Coarse Location** | App Functionality | the city a member types on their profile or application |
+| Identifiers → **User ID** | App Functionality | the account and username |
+| Identifiers → **Device ID** | App Functionality | the push token, with the phone's make and model, if notifications are allowed |
+| Usage Data → **Product Interaction** | Analytics | the share notes: that a member began a share or made a link, and when the page is opened |
+
+**Not collected:** Health & Fitness, Financial Info, Contacts, Browsing
+History, Search History (search history stays on the phone), Purchases,
+Sensitive Info, Diagnostics (no crash or analytics SDK), Other Data. The
+photo library is **not** collected: the Memory Room reads it on the phone
+and only a photograph the member posts is uploaded.
+
+**Tracking: No.** No advertising, no data brokers, no IDFA.
+
+Service providers (not "third parties" for the label): Supabase (database,
+sign-in, storage), Expo and Apple (push delivery), Apple (map search),
+Vercel (web pages).
+
+---
+
+## 4. App Store Connect text
+
+**Name:** `Vintage Social` (the existing record). The home screen says
+`Vintage`.
 
 **Subtitle (≤ 30):** `Your best photos aren't new.`
 
-**Promotional text (≤ 170, optional):** `Membership by invitation.`
+**Promotional text (optional):** `Membership by invitation.`
 
 **Description:**
 
-> VINTAGE is a private photo club. Membership is by invitation, or by
+> VINTAGE is a private photo club. Membership is by invitation, or by an
 > application read by a person.
 >
 > Post a photograph or a short film with the look of a roll of film — a
 > small set of quiet filters, an optional date stamp taken from when the
 > shutter actually fired, and the place it was made. Your photographs hang
-> on a Timeline by the day they were taken, sit on a Map by where, and are
-> filed by the Places they were made, so a profile reads as a life in
-> pictures rather than a grid of thumbnails.
+> on a Timeline by the day they were taken, gather into Eras, sit on a Map
+> by where, and are filed by the Places they were made, so a profile reads
+> as a life in pictures rather than a grid of thumbnails.
+>
+> The Memory Room brings back photographs already on your phone, a few at
+> a time — this day in other years, a roll from anywhere, the edit of a
+> year — so the one worth sharing finds you. It reads your library on the
+> phone; nothing leaves it unless you post it.
 >
 > Follow the members you care about; your Home is only what they post,
 > newest first. Like, comment, tag the friends who were there, and send a
@@ -220,175 +526,272 @@ better name. The name on the phone's home screen is `Vintage` either way.
 >
 > No advertising. Nothing is sold. Your photographs stay yours.
 
-**Keywords (≤ 100 chars):**
+**Keywords (≤ 100 characters):**
 `photography,film,vintage,club,invitation,photos,members,timeline,analog,archive`
 
-**Primary category:** Photo & Video. **Secondary:** Social Networking.
+**Age rating.** In 2025 Apple replaced the 12+ and 17+ ratings with 13+,
+16+ and 18+ (the full set is now 4+, 9+, 13+, 16+, 18+). Answer the
+questionnaire honestly: user-generated content **Yes**; messaging and chat
+**Yes**; advertising **No**; unrestricted web access **No**; parental
+controls and age checks **No**; every content category (violence, sexual
+content, profanity, drugs, gambling, horror, medical) **None**, because
+the Terms forbid it and reports remove it. The Privacy Policy says
+members must be **17 or over** (the Terms do not mention age), and there
+is no 17+ any more.
+Recommended: where App Store Connect offers to set a higher rating than
+the one it calculated, choose **18+**, and change "17" to "18" in the
+Privacy Policy (one line in `src/legal/documents.ts`, then
+`npm run build:legal`; ask Claude), so the store and the policy say the
+same age. If you would rather keep 17, accept what Apple calculates as
+long as it is 16+ or higher. Never set it lower than Apple calculates. If
+your screen still offers 17+, choose 17+ and change nothing.
 
-**Age rating:** answer the questionnaire honestly for an app with unrestricted
-user-generated photographs and member-to-member messaging, with moderation
-(report, block, human review). Expect Apple to land on 17+/18+; accept it.
-The Privacy Policy already says members must be 17 or over. Do not claim
-anything younger.
+**App Review notes (paste):** (the sentences about Delete my account and
+the invitation's agreement line are true of a build made from a branch
+that has `r13-door` merged in; "Before you build" in section 2 says how
+to check)
 
-**Support URL:** `https://vintagesocial.app`
-**Privacy Policy URL:** `https://vintagesocial.app/privacy`
-**Marketing URL (optional):** `https://vintagesocial.app`
-**Copyright:** `© 2026` followed by the legal owner's name as it should appear.
-
-**App Review Information → Sign-in required: yes.**
-Username: `appreview@vintagesocial.app`. Password: as you hold it.
-
-**App Review Notes (paste):**
-
-> VINTAGE is a private, invitation-based social network for photographs.
-> New members join with an invitation from an existing member or apply and
-> are approved by a person. So that you can review everything without
-> waiting, the account above is already an approved member: sign in from
-> the first screen with "Sign in".
+> VINTAGE is a private, invitation-based club for photographs. New members
+> join with an invitation from a member, or apply and are approved by a
+> person. The account above is already an approved member: on the first
+> screen tap "Sign in".
 >
-> Once in: Home shows photographs from the 12 members this account follows;
-> Search finds members; the Post tab publishes a photograph or short film
-> from the library or camera (pick a filter, publish); Activity lists likes,
-> comments and follows; Profile shows your own photographs as a grid, a
-> Timeline, a Map and by Places. On any photograph you can like, comment,
-> tag members, send it in a message, and share it outside the app as a print
-> with a web link.
+> Once in: Home shows photographs from the accounts this account follows,
+> newest first. The accounts the review account follows are the club's own
+> house accounts: they are not people, they cannot sign in, and they show
+> public-domain and licensed photographs so that a new member's Home is
+> not empty. The Terms of Use say so. Search finds members. The Post tab has two ways in:
+> "Enter the Memory Room" shows photographs already in your library, a few
+> at a time by the date they were taken (it asks for photo access on its
+> first page; limited access works; nothing from the library leaves the
+> phone unless you post it), and "Choose a photograph" opens the system
+> picker. Pick a photograph, choose a filter, then "Share to VINTAGE".
+> Activity lists likes, comments, follows and tags. Profile shows your
+> photographs by date posted or taken, as a Timeline, as Eras, on a Map and
+> by Places.
 >
-> Account deletion: Profile → Settings (gear, top right) → Delete account.
-> Two confirmations, then the account and all its content are removed. If you
-> wish to keep reviewing, please use a second account for this — see below.
+> Safety (Guideline 1.2). How objectionable content is filtered: by
+> admission first. Nobody can post, comment or message without being let
+> in, either by a member's invitation (each member has only a few, and an
+> invitation is tied to the member who sent it) or by an application that
+> a person reads and approves. After that, by people: every report goes to
+> a human queue, admins remove content and warn or suspend members, and
+> any member can block another. A photograph a member
+> reports leaves their own feed, Explore and grids the moment the report is
+> sent, and does not come back for them. There is no automatic content
+> filter. Members accept the Terms of Use, which say there is no tolerance
+> for objectionable content or abuse, when they apply or accept an
+> invitation. Every photograph and
+> every member's profile has a "…" menu with Report; to report a comment,
+> press and hold it. A member's profile "…" menu also has Block member;
+> blocking hides each member's content from the other in both directions,
+> and Settings → Blocked members lists and unblocks. Reports go to a human
+> queue and are acted on within 24 hours; admins remove content, warn and
+> suspend. Support: Profile → Settings → Support, and
+> https://vintagesocial.app/support.html.
 >
-> Reporting and blocking: every post, comment and profile has a "…" menu
-> with Report; a member's profile "…" menu has Block member (also by long-
-> pressing Follow). Blocking hides all content in both directions. Settings →
-> Blocked members lists and unblocks. Reports go to a human queue and are
-> acted on within 24 hours.
+> Account deletion: Profile → Settings (gear, top right) → Delete account,
+> then two confirmations. The account and everything it posted are
+> removed. Please try this on a second account (below) so the review
+> account stays available. An account that has applied but has not been
+> let in is deleted from its waiting screen: Delete my account, then two
+> confirmations.
 >
-> To test joining: sign out (Settings → Sign out), choose "I have an
-> invitation", enter the code `applereview` with any new email and password.
-> That account is approved immediately. To see the application path, choose
-> "Apply for membership"; applications are read by a person and the screen
-> says "Application received" with a Check status button.
+> To test joining: Settings → Sign out → "I have an invitation" → enter
+> the invitation applereview, a name, a new username, any new email and a
+> password → "Accept the invitation" (the line beneath it says that
+> accepting agrees to the Terms of Use and Privacy Policy, both links).
+> That account is approved at once. "Apply for membership" shows the other
+> path: the application waits for a person, and the screen says so.
 >
-> Notifications are optional and asked for after the first sign-in. Photo
-> library access is asked for only when choosing a photograph. VINTAGE never
-> asks for or uses the device's location; a place on a post is typed or
-> chosen by name. There are no purchases, subscriptions or advertisements.
-> The app is iPhone-only, portrait, iOS 15.1 and later.
-
-**App Privacy questionnaire.** Data collected, linked to the user, not used
-for tracking, no third-party advertising:
-
-| Category | Answer |
-| --- | --- |
-| Contact Info → Email Address | collected, app functionality (account) |
-| User Content → Photos or Videos | collected, app functionality |
-| User Content → Other User Content | collected (captions, comments, messages, application answers) |
-| Identifiers → User ID | collected, app functionality |
-| Identifiers → Device ID | collected (push token), app functionality |
-| Location | **not collected** — never requested |
-| Usage Data, Diagnostics | not collected (no analytics or crash SDK) |
-| Tracking | **No** |
-
-Third-party services: Supabase (database, storage, auth), Expo (push
-delivery), Apple MapKit (maps and place search), Vercel (web pages).
-
-**Export compliance:** `ITSAppUsesNonExemptEncryption` is `false`; answer
-"No".
-
-**Content rights:** you hold the rights to the house-account photographs
-(`seed/CREDITS.md`).
+> Permissions: photo library (the Memory Room and choosing a photograph),
+> camera (taking a photograph), notifications (asked after the first
+> sign-in; optional). The add-to-Photos prompt appears only if you choose
+> Save Image or Save Video after sharing a photograph outside VINTAGE
+> (paper plane → Share outside VINTAGE → Share the print). VINTAGE never
+> asks for location: a place on a post is typed or chosen by name. The
+> privacy label lists Location only because that typed place is looked up
+> to a point on the map and kept with the post; the phone's own position
+> is never read. No
+> purchases, subscriptions, advertising or tracking. iPhone only, portrait.
 
 ---
 
-## 5. Screenshots (6.9" and 6.5" iPhone, portrait)
+## 5. Screenshots
 
-Take them on your own account (it has 102 photographs) in light appearance
-unless noted. Eight frames, short headline above each, nothing else drawn on
-them. Capture the real screen; do not stage any UI.
+App Store Connect needs one set for the largest iPhone display (6.9-inch:
+1320 × 2868 or 1290 × 2796, portrait); smaller iPhones are scaled from it.
+Take them on your own account, on the real screen, nothing staged. One
+short headline above each, nothing else drawn on them.
 
 | # | Screen | Headline |
 | --- | --- | --- |
-| 1 | Home feed, two posts visible with date stamps and place · date bylines | `Your best photos aren't new.` |
-| 2 | Your profile, Timeline view, zoomed to actual size, three or four entries | `A life in pictures.` |
-| 3 | Your profile, Map view | `Everywhere you've been.` |
-| 4 | Your profile, Posted grid, header with MEMBER · NO. 00001 | `Your archive.` |
-| 5 | A post opened, with two or three comments and a tag | `Friends, quietly.` |
-| 6 | Compose, a photograph in the darkroom with the filter tray | `Give it the look of film.` |
-| 7 | Share outside → the print preview (paper, wordmark, byline) — Dark appearance | `Share a print.` |
-| 8 | Invitations screen with your link and allowance | `Membership by invitation.` |
+| 1 | Home, two photographs with date stamps and place · date lines | `Your best photos aren't new.` |
+| 2 | The Memory Room, a photograph on the page with its signature line | `Rediscover what you already have.` |
+| 3 | Your profile, Timeline, three or four entries | `A life in pictures.` |
+| 4 | Your profile, Map | `Everywhere you've been.` |
+| 5 | A photograph opened, with two or three comments and a tag | `Friends, quietly.` |
+| 6 | The editor, a photograph with the filter tray | `Give it the look of film.` |
+| 7 | Share outside → the print, in Dark (black) | `Share a print.` |
+| 8 | Invitations, with your link and allowance | `Membership by invitation.` |
 
-If you want six, drop 4 and 6.
-
----
-
-## 6. Manual iPhone QA (30–45 minutes, on the final TestFlight build)
-
-Have two devices or a second Apple ID ready for the invitation and message
-steps; otherwise use your own account where it says "second account".
-
-**Fresh install (3 min)**
-1. Delete the app, install from TestFlight, open. Landing shows the V, three ways in, Privacy · Terms. No black flash.
-2. Tap Privacy, then Terms: both open and come back.
-
-**Application (3 min)**
-3. Apply for membership with a throwaway email. Lands on APPLICATION RECEIVED. Tap Check status: "Still waiting · checked <time>". Sign out returns to the landing.
-4. On your own phone: Profile → shield → Applications → Approve it. Back on the applicant: within 30 s (or on Check status) it enters the app.
-
-**Invitation (3 min)**
-5. Sign out. I have an invitation → code `applereview` (or your own) → new email → Accept. Straight into Home. Profile shows MEMBER · NO. with the next number.
-
-**Sign in (1 min)**
-6. Sign out. Sign in with your own account. From every tab, a swipe from the left edge does **not** leave the app; swiping between tabs works.
-
-**Feed and follow (3 min)**
-7. Home scrolls; pull to refresh. Open a member from a post → Follow → Following. Unfollow.
-8. Pinch a photograph in the feed: it grows under your fingers and springs back; the tabs do not move.
-
-**Post a photograph (5 min)**
-9. Post tab → library → pick a portrait-shaped photo → it stays its shape in the darkroom → choose None, then a filter → Date stamp on → place: type three letters, pick a result → tag a member → Share to VINTAGE. It appears at the top of Home within a few seconds, square in the feed, full shape when opened.
-10. Post a short video the same way. It plays when opened.
-
-**Like, comment, message, notification (5 min)**
-11. From the second account: like and comment on your new post. Your Activity shows both; a push arrives if you allowed notifications.
-12. On your post: tap the like count → the list of who liked it (own posts only).
-13. Send the post to the second account in a message. Open the thread from Home → paper plane; reply.
-
-**Profile views (5 min)**
-14. Profile → Posted, Taken, Timeline, Map, Places. Places opens already placed (no "Placing…" wait on second open).
-15. Timeline: pinch to zoom; the header stays still; one finger drags the magnified line; Actual size resets. Open another member's profile and repeat; a swipe from the left edge still goes back when at actual size.
-16. Change your profile photo in Settings; it updates everywhere at once.
-
-**Search (1 min)**
-17. Search a name: people you follow come first; a stranger appears below.
-
-**Share outside (3 min)**
-18. Post → … → Share outside → Story and Print both render with the wordmark, MEMBER · NO. and "Members only". Copy the link; open it in Safari: the page **and the photograph** show (after §3 item 1). Turn the link off in the app; reload: "no longer open".
-
-**Block and report (3 min)**
-19. From the second account's profile: … → Block member. Their posts vanish from Home and Search; their profile no longer shows yours. Settings → Blocked members → Unblock; posts return.
-20. On any post: … → Report → a reason → sent. Your admin Reports queue shows it.
-
-**Delete account (2 min)**
-21. On the throwaway account from step 3 or 5: Settings → Delete account → two confirmations → lands on the landing. Sign-in with that email now fails.
+If you want six, drop 6 and 8.
 
 ---
 
-## 7. Known and accepted for 1.0 (not blockers)
+## 6. On your iPhone, on the final TestFlight build (45 minutes)
 
-- The review account has no membership number (it was created by script, not
-  approved through the sequence), so its profile shows no MEMBER line. Left
-  as is: assigning one would spend a number in the permanent sequence.
-- Universal links are not configured (no associated domains in `app.json`,
-  no Team ID on Vercel). Invitation links open the web page, which deep-links
-  into the app with `vintage://` when installed.
+Have a second account (or a second phone) for steps 9–13 and 17.
+
+**First open**
+1. Delete the app, install from TestFlight, open. The landing page shows
+   the V and three ways in, and Privacy · Terms at the foot. No flash of
+   the wrong colour, in Light and in Dark.
+2. Privacy, then Terms: both open, dated November 6, 2026, and come back.
+
+**Joining**
+3. Apply for membership with a throwaway email. It lands on Application
+   received. Check status says it is still waiting. Sign out.
+4. On your own phone: Profile → shield → Applications → Approve (this
+   gives the throwaway account a permanent membership number). On the
+   applicant: within 30 seconds (or on Check status) it goes in.
+
+   Then sign out, apply once more with a second throwaway email, and on
+   Application received tap **Delete my account**. "Delete your account?"
+   → Delete account → "Are you sure?" → first tap **Keep my account**: you
+   stay on Application received. Tap Delete my account again and answer
+   Delete account, then Yes, delete my account → back at the landing page. Signing in with that email now fails
+   (Guideline 5.1.1(v)). Nothing is approved, so no number is spent.
+5. Sign out. I have an invitation: the card opens with "A member has put
+   your name forward", never with "That invitation isn’t one we know"
+   (this is the screen the review notes send Apple to). Type an
+   invitation: once you stop typing, it names who sent it. Then a new
+   email. Under
+   Accept the invitation the screen says "By accepting you agree to the
+   Terms of Use and Privacy Policy"; tap Terms of Use, it opens, come back
+   (Guideline 1.2) → Accept the invitation. Straight into Home, with the
+   next member number. This spends one of the inviter's invitations and a
+   permanent membership number, which is never reissued, whichever
+   invitation you use. Delete this account afterwards in step 19 if you
+   like; its number stays spent.
+
+**Every day**
+6. Sign in with your own account. Home scrolls and pulls to refresh;
+   photographs come in sharp; nothing stutters.
+7. Post tab → Enter the Memory Room → Continue → allow access. Turn a few
+   pages; open CONTENTS; Develop one → editor → Share to VINTAGE. It
+   appears at the top of Home.
+8. Post a photograph from Choose a photograph, and a short film. Both play
+   and show when opened.
+9. From the second account: like and comment on it. Activity shows both;
+   a notification arrives if allowed.
+10. Send it to the second account (paper plane → a member). Reply from
+    the thread.
+11. Paper plane → Share outside VINTAGE → Share the print → **Save Image**.
+    iOS asks once, with "When you choose Save Image or Save Video in the
+    share sheet, VINTAGE adds that print to your library…". Allow; it is in
+    Photos. Copy the link instead and open it in Safari: the page and the
+    photograph show.
+12. Profile → Posted, Taken, Timeline, Eras, Map, Places all open.
+13. Settings → Appearance → Dark: the page is black, type white. Back to
+    Automatic.
+
+**Safety**
+14. On the second account's profile: … → Block member. Their photographs
+    leave Home and Search. Settings → Blocked members → Unblock.
+15. On any photograph: … → Report → a reason → sent. Press and hold a
+    comment → Report comment. Both appear in Profile → shield → Reports.
+16. Settings shows **Support** with your address (step 1). Tap it: Mail
+    opens addressed to you.
+
+**Addresses and text size**
+17. On the second account (not an admin), type `vintage://admin/members`
+    into Safari's address bar and open it in VINTAGE: it goes to Home,
+    with no Suspend or Warn buttons. Then `vintage://no-such-page`: Home
+    again, never a page titled "Unmatched Route" or a list of routes.
+18. Settings (the phone's) → Accessibility → Display & Text Size → Larger
+    Text → turn on Larger Accessibility Sizes and drag the slider all the
+    way. Sign out: the landing scrolls to Sign in and Privacy · Terms.
+    Apply with a throwaway email: Application received scrolls to Sign
+    out and Delete my account (delete it there). Set the text size back.
+
+**Leaving**
+19. On the throwaway account: Settings → Delete account → two
+    confirmations → back at the landing page. Signing in with that email
+    now fails.
+
+---
+
+## 7. Decide before you submit: the house accounts
+
+**What they are.** 150 accounts made by script
+(`supabase/production/08_house_accounts.sql`), under invented names,
+showing 908 photographs taken by other photographers. They are most of
+what a new member sees: 908 of the 1,139 posts, and all 12 accounts the
+review account follows. Nothing in the app labels them.
+
+**What this pass did.** The Terms now say plainly that some accounts are
+the club's own house accounts, show public-domain and licensed
+photographs, and are not members. The review notes say the same. The
+Content Rights answer (step 9) no longer says the photographs are yours.
+
+**What is still yours to decide** (a lawyer's view is worth having):
+
+- 679 of the 908 are Unsplash photographs (fetched through Lorem Picsum).
+  The Unsplash Licence lets anyone use them free, commercially and without
+  credit, but it also says it does not include the right to compile photos
+  from Unsplash to replicate a similar or competing service. A photo
+  club whose Home is mostly Unsplash photographs, posted by invented
+  accounts, is close to what that sentence describes. Read the current
+  licence at unsplash.com/license before you answer Content Rights.
+  (This summary of the licence is from knowledge, not from reading the
+  page today.)
+- The other 229 are public domain (143), CC0 (70) or marked "no
+  restrictions" (16), which carry no such condition.
+
+Three ways forward, and the Content Rights answer follows the one you
+choose:
+
+1. **Keep them as they are.** The disclosure in the Terms and the review
+   notes stays.
+2. **Keep only the 229** public-domain, CC0 and "no restrictions"
+   photographs and remove the 679 Unsplash ones. Nothing has been written
+   for this; ask Claude for a reviewed SQL file to run in the SQL Editor,
+   like the others.
+3. **Remove the house accounts altogether**: the one-line rollback is in
+   `supabase/production/README.md` under "House accounts". First have the
+   review account follow two or three real members, or its Home is empty,
+   and take the house-accounts sentences out of the review notes and the
+   Terms (ask Claude; the Terms change is one paragraph in
+   `src/legal/documents.ts`, then `npm run build:legal`).
+
+---
+
+## 8. Known and accepted for 1.0
+
+- The review account has no membership number (it was made by script, not
+  approved through the sequence), so its profile shows no MEMBER line.
+  Giving it one would spend a number in the permanent sequence.
+- Universal links are not configured. Invitation links open the web page,
+  which opens the app with `vintage://` when it is installed.
 - `.env.staging` is committed with the **staging** project's publishable
-  (anon) key, by design and documented in the file. No production value is
-  in the repository.
-- Production's migration ledger does not list the hand-applied files (0009,
-  0010, 0012, 0019, 0020). Harmless; verified by object instead.
-- Media and thumbnail buckets are public-by-URL (unguessable UUID paths), as
-  the app has always worked; the share server adds no new exposure.
-- Anonymous direct reads of `posts` / `profiles` error instead of returning
+  key, by design. No production value is in the repository.
+- Media and thumbnail storage is public-by-address (long random paths), as
+  it has always been; the share page adds no exposure.
+- Anonymous reads of `posts` and `profiles` error instead of returning
   nothing; nothing anonymous reads them, and no row is exposed.
+- The location purpose sentences stay in the app although it never asks
+  for location: the linked map and location code is checked by Apple at
+  upload for a sentence for each, and they say the app does not track.
+- There is no automatic content filter. The review notes say how content
+  is filtered: by admission (invitation or an application a person
+  reads), then by people (reports, admin removal, blocking). A photograph a
+  member reports leaves their own screens the moment the report is sent;
+  it stays out of everything they read afterwards only once migration
+  0033 is applied (step 4). Until then it comes back the next time those
+  screens are read, until an admin acts.
+- A report outlives the member who filed it only once migration 0031 is
+  applied (step 4); until then, deleting an account deletes the reports
+  that member filed, even one still open. The Privacy Policy already says
+  they are kept without the account attached (a test holds the policy to
+  the migrations), so apply 0031 with the rest before you submit.

@@ -4,10 +4,14 @@ import * as demo from "@/demo/store";
 import type { CommentWithAuthor, PostRow, PostWithAuthor, ProfileRow } from "@/types/db";
 import { ROWS_PER_READ } from "@/utils/eraEdits";
 import { withTimeout } from "@/utils/retry";
+import { readInChunks } from "./batch";
+import { pageAfter, type Cursor } from "./keyset";
+import { functionMissing } from "./rpcMissing";
+import { withAuthors } from "@/components/hiddenAuthors";
 
 export const FEED_PAGE_SIZE = 12;
 
-const POST_WITH_AUTHOR = "*, author:profiles!posts_author_id_fkey(id, username, full_name, avatar_url)";
+export const POST_WITH_AUTHOR = "*, author:profiles!posts_author_id_fkey(id, username, full_name, avatar_url)";
 
 /**
  * Who the member follows, remembered for a minute.
@@ -39,22 +43,129 @@ async function followingIds(userId: string): Promise<string[]> {
 }
 
 /**
+ * Until when the database is known to have no feed_page (migration 0025
+ * not yet applied there): the feed is read the old way meanwhile, and the
+ * function is looked for again after.
+ */
+let feedPageMissingUntil = 0;
+const FEED_PAGE_RECHECK_MS = 10 * 60_000;
+
+/** Forget whether feed_page is there (tests). */
+export function forgetFeedPageMissing(): void {
+  feedPageMissingUntil = 0;
+}
+
+/**
+ * Where the next page of the feed starts: the last post the reader holds,
+ * by the two things the feed is ordered by (./keyset).
+ */
+export type FeedCursor = Cursor;
+
+/** The cursor after a page: its last post, or none when the page ended the feed. */
+export function nextFeedCursor(page: Pick<PostRow, "id" | "created_at">[]): FeedCursor | undefined {
+  if (page.length < FEED_PAGE_SIZE) return undefined;
+  const last = page[page.length - 1];
+  return { at: last.created_at, id: last.id };
+}
+
+/**
  * The home feed: strictly chronological, only accounts the member follows
  * (plus their own posts). No ranking, no suggestions.
+ *
+ * Asked of feed_page (migration 0025), which reads who the member follows
+ * inside the database. The old way, below, puts every member followed
+ * into the request's URL, which a few hundred follows outgrow (./batch):
+ * the most engaged members' home feed stopped loading. The old way stays
+ * for a database that does not have the function yet.
+ *
+ * A page is the posts after `before`, the last post of the page before
+ * (none for the first). Counted by offset instead, a post deleted between
+ * two pages made the next one skip a post, and a post arriving between
+ * them made it repeat one.
  */
-export async function fetchFeedPage(userId: string, page: number): Promise<PostWithAuthor[]> {
-  if (isDemoMode()) return demo.demoFetchFeedPage(userId, page, FEED_PAGE_SIZE);
+export async function fetchFeedPage(userId: string, before: FeedCursor | null): Promise<PostWithAuthor[]> {
+  if (isDemoMode()) return demo.demoFetchFeedPage(userId, before, FEED_PAGE_SIZE);
+
+  // A page is twelve photographs with their authors. A photograph whose
+  // author the reader may not see comes without one (withAuthors) and is
+  // left out; the page is then made up from the rows after it, so that a
+  // page of fewer than twelve still means the feed has ended
+  // (nextFeedCursor). Read on until the page is whole or a read comes
+  // back short (the end): rows whose author is hidden are rare (none on
+  // production in November 2026), so this is nearly always one read, and
+  // a long run of them is crossed in reads that grow (feedFillSize)
+  // rather than taken for the end of the feed. It used to stop after
+  // four reads of twelve, and a run of thirty-seven or more such rows
+  // ended the reader's feed there, without a word.
+  const shown: PostWithAuthor[] = [];
+  let after = before;
+  for (let read = 0; ; read++) {
+    const size = feedFillSize(read);
+    const rows = await readFeedRows(userId, after, size);
+    shown.push(...withAuthors(rows));
+    if (rows.length < size || shown.length >= FEED_PAGE_SIZE) break;
+    const last = rows[rows.length - 1];
+    // A read that ends where the one before did has not moved on (it
+    // never should, by the cursor): the page stops rather than ask again.
+    if (after && last.id === after.id && last.created_at === after.at) break;
+    after = { at: last.created_at, id: last.id };
+  }
+  return shown.slice(0, FEED_PAGE_SIZE);
+}
+
+/**
+ * The most rows one read of the feed asks for: feed_page's own ceiling
+ * (0025, least(..., 100)). Asking for more would bring back a hundred,
+ * which would be taken for a short read, the end of the feed.
+ */
+export const FEED_FILL_MAX = 100;
+
+/** How many rows read number `read` (from 0) of one page asks for: a page, a page again, then twice as many each time, up to FEED_FILL_MAX. */
+export function feedFillSize(read: number): number {
+  return Math.min(FEED_FILL_MAX, FEED_PAGE_SIZE * 2 ** Math.max(0, read - 1));
+}
+
+// A photograph stays readable while its author's profile may not be (an
+// author outside the club: the posts read policy asks only that the
+// photograph be live and not private to the reader, the profiles policy
+// that the profile be a member's), and such a row arrives with `author`
+// null: a card with no name, no face and nowhere to go
+// (src/components/hiddenAuthors.ts). It is not shown at all instead.
+// Asking the database to leave them out (the posts policy requiring a
+// visible author) would read every member's profile once for every read
+// of photographs (a hashed subplan over all of profiles, planned at
+// 1,000 members), so it is done here, on the page.
+
+/** One read of the feed's rows after `before`, `size` of them at most, authors and all. */
+async function readFeedRows(userId: string, before: FeedCursor | null, size: number): Promise<PostWithAuthor[]> {
+  if (Date.now() >= feedPageMissingUntil) {
+    // The order is asked of PostgREST too: the function's own order is
+    // not promised to survive the query PostgREST wraps around it to join
+    // the author, and sorting a page of twelve costs nothing.
+    const { data, error } = await supabase
+      .rpc(
+        "feed_page",
+        before ? { p_limit: size, p_before_at: before.at, p_before_id: before.id } : { p_limit: size },
+      )
+      .select(POST_WITH_AUTHOR)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
+    if (!error) return (data ?? []) as unknown as PostWithAuthor[];
+    if (!functionMissing(error)) throw error;
+    feedPageMissingUntil = Date.now() + FEED_PAGE_RECHECK_MS;
+  }
 
   const authorIds = [userId, ...(await followingIds(userId))];
-  const from = page * FEED_PAGE_SIZE;
 
-  const { data, error } = await supabase
+  const query = supabase
     .from("posts")
     .select(POST_WITH_AUTHOR)
     .in("author_id", authorIds)
-    .is("removed_at", null)
+    .is("removed_at", null);
+  const { data, error } = await pageAfter(query, "created_at", "id", before)
     .order("created_at", { ascending: false })
-    .range(from, from + FEED_PAGE_SIZE - 1);
+    .order("id", { ascending: false })
+    .limit(size);
   if (error) throw error;
   return (data ?? []) as unknown as PostWithAuthor[];
 }
@@ -108,7 +219,10 @@ export async function fetchPost(postId: string): Promise<PostWithAuthor | null> 
     .eq("id", postId)
     .maybeSingle();
   if (error) throw error;
-  return (data as unknown as PostWithAuthor) ?? null;
+  const post = (data as unknown as PostWithAuthor | null) ?? null;
+  // A photograph whose author the reader may not see (withAuthors) is,
+  // for them, not there: the screen says so, as for one deleted.
+  return post && post.author != null ? post : null;
 }
 
 export interface NewPost {
@@ -284,18 +398,25 @@ export async function fetchLikers(postId: string): Promise<Pick<ProfileRow, "id"
     .filter((p): p is Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url"> => Boolean(p));
 }
 
-/** Which of these posts has the viewer liked? Returns a set of post ids. */
+/**
+ * Which of these posts has the viewer liked? Returns a set of post ids.
+ * Asked a hundred posts at a time: a gallery or a long scroll can hold
+ * more ids than one request's URL can carry (./batch).
+ */
 export async function fetchMyLikes(userId: string, postIds: string[]): Promise<Set<string>> {
   if (postIds.length === 0) return new Set();
   if (isDemoMode()) return demo.demoFetchMyLikes(userId, postIds);
 
-  const { data, error } = await supabase
-    .from("likes")
-    .select("post_id")
-    .eq("user_id", userId)
-    .in("post_id", postIds);
-  if (error) throw error;
-  return new Set((data ?? []).map((r) => r.post_id as string));
+  const rows = await readInChunks(postIds, async (chunk) => {
+    const { data, error } = await supabase
+      .from("likes")
+      .select("post_id")
+      .eq("user_id", userId)
+      .in("post_id", chunk);
+    if (error) throw error;
+    return (data ?? []) as { post_id: string }[];
+  });
+  return new Set(rows.map((r) => r.post_id));
 }
 
 export async function likePost(userId: string, postId: string): Promise<void> {
@@ -320,23 +441,42 @@ export async function unlikePost(userId: string, postId: string): Promise<void> 
   if (error) throw error;
 }
 
+/**
+ * A photograph's conversation, oldest first. PostgREST stops at max_rows
+ * (1000, ROWS_PER_READ) without saying so, and it used to stop at the
+ * oldest thousand: on a photograph with more, the newest comments - the
+ * ones people had just written - never appeared. It now reads the newest
+ * thousand and turns them round, which is the same list whenever there
+ * are fewer.
+ */
 export async function fetchComments(postId: string): Promise<CommentWithAuthor[]> {
   if (isDemoMode()) return demo.demoFetchComments(postId);
 
   const { data, error } = await supabase
     .from("comments")
-    .select("*, author:profiles!comments_author_id_fkey(id, username, avatar_url)")
+    .select(PREVIEW_COMMENT)
     .eq("post_id", postId)
     .is("removed_at", null)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false })
+    .limit(ROWS_PER_READ);
   if (error) throw error;
-  return (data ?? []) as unknown as CommentWithAuthor[];
+  return ((data ?? []) as unknown as CommentWithAuthor[]).reverse();
 }
+
+/** A comment as the app shows it: the row, and who wrote it. */
+const PREVIEW_COMMENT = "*, author:profiles!comments_author_id_fkey(id, username, avatar_url)";
 
 /**
  * The newest comments on each of these posts, for the previews under a
- * photograph in the feed. One query for the whole page rather than one per
- * card — a feed of twenty posts shouldn't cost twenty round trips.
+ * photograph in the feed. One query for a hundred cards rather than one
+ * per card — a feed of twenty posts shouldn't cost twenty round trips.
+ *
+ * Each post brings at most `perPost` comments, the newest, chosen by the
+ * database (an embedded resource's order and limit apply per post). It
+ * used to bring every comment on every post in the list and keep the
+ * last few: a photograph with hundreds of comments sent all of them on
+ * every page of the feed, and past max_rows (1000) the list was cut from
+ * the newest end, so the previews showed old comments as the latest.
  */
 export async function fetchCommentPreviews(
   postIds: string[],
@@ -345,19 +485,23 @@ export async function fetchCommentPreviews(
   if (postIds.length === 0) return {};
   if (isDemoMode()) return demo.demoCommentPreviews(postIds, perPost);
 
-  const { data, error } = await supabase
-    .from("comments")
-    .select("*, author:profiles!comments_author_id_fkey(id, username, avatar_url)")
-    .in("post_id", postIds)
-    .is("removed_at", null)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
+  const rows = await readInChunks(postIds, async (chunk) => {
+    const { data, error } = await supabase
+      .from("posts")
+      .select(`id, comments!comments_post_id_fkey(${PREVIEW_COMMENT})`)
+      .in("id", chunk)
+      .is("comments.removed_at", null)
+      .order("created_at", { referencedTable: "comments", ascending: false })
+      .limit(perPost, { referencedTable: "comments" });
+    if (error) throw error;
+    return (data ?? []) as unknown as { id: string; comments: CommentWithAuthor[] | null }[];
+  });
 
   const out: Record<string, CommentWithAuthor[]> = {};
-  for (const c of (data ?? []) as unknown as CommentWithAuthor[]) {
-    (out[c.post_id] ??= []).push(c);
+  for (const post of rows) {
+    const newestFirst = post.comments ?? [];
+    if (newestFirst.length > 0) out[post.id] = [...newestFirst].reverse();
   }
-  for (const id of Object.keys(out)) out[id] = out[id].slice(-perPost);
   return out;
 }
 

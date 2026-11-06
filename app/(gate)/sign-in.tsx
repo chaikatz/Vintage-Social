@@ -9,7 +9,14 @@ import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import { demoSignIn } from "@/demo/store";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { enterApp } from "@/providers/SessionProvider";
+
+// A page at the door that breaks breaks only itself, not the whole app.
+// There is no header and no tab bar here, so the way back is on the page
+// (src/navigation/Recover.tsx): to the page before, or to Home, whose
+// guard sends anyone not yet let in to the door or the waiting room.
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /** Coming back to a place you already belong to. Two lines and a key. */
 export default function SignIn() {
@@ -19,6 +26,12 @@ export default function SignIn() {
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
+    // Asked with a field empty, the server answers in its own shorthand
+    // ("missing email or phone"); the page says it first, in its own words.
+    if (!email.trim() || !password) {
+      showAlert("Sign in failed", "Enter your email and password.");
+      return;
+    }
     setBusy(true);
     try {
       if (isDemoMode()) {
@@ -32,7 +45,10 @@ export default function SignIn() {
       }
       await enterApp();
     } catch (err) {
-      showAlert("Sign in failed", err instanceof Error ? err.message : String(err));
+      // A wrong password is Supabase Auth's own refusal, "Invalid login
+      // credentials", which errorMessage lets through; an outage, or the
+      // database talking, is the page's words instead.
+      showAlert("Sign in failed", errorMessage(err, "Check your connection and try again."));
     } finally {
       setBusy(false);
     }

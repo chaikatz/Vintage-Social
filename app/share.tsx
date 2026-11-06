@@ -1,23 +1,28 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { memberLabel } from "@/components/memberLabel";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
-import { fetchFollowing } from "@/api/profiles";
+import { fetchFollowPage, type FollowCursor } from "@/api/profiles";
 import { mediaUrl } from "@/api/media";
 import { sharePostWith } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import { useNameFace } from "@/utils/nameFace";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+
+// A sheet has no back button: its recover page carries one (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * Send a photograph to someone. Members you follow, a line to go with it,
@@ -44,11 +49,16 @@ export default function Share() {
     queryFn: () => fetchPost(postId ?? ""),
     enabled: Boolean(postId),
   });
-  const peopleQ = useQuery({
-    queryKey: ["following", userId],
-    queryFn: () => fetchFollowing(userId),
+  // Who the member follows, fifty at a time as the list is scrolled: every
+  // one of them reachable, however many, none cut off at a thousand.
+  const peopleQ = useInfiniteQuery({
+    queryKey: ["following", userId, "pages"],
+    queryFn: ({ pageParam }) => fetchFollowPage("following", userId, pageParam),
+    initialPageParam: null as FollowCursor | null,
+    getNextPageParam: (last) => last.next,
     enabled: Boolean(userId),
   });
+  const people = useMemo(() => (peopleQ.data?.pages ?? []).flatMap((p) => p.members), [peopleQ.data]);
 
   const post = postQ.data;
   const thumb = useMemo(
@@ -56,11 +66,16 @@ export default function Share() {
     [post],
   );
 
+  // Checked and set in the tap itself: the bar only goes quiet once React
+  // has rendered, and a second tap in that moment sent every letter twice.
+  const sending = useRef(false);
+
   const toggle = (id: string) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const send = async () => {
-    if (!postId || selected.length === 0) return;
+    if (!postId || selected.length === 0 || sending.current) return;
+    sending.current = true;
     setBusy(true);
     try {
       // One at a time, each taken off the list as it lands, so a failure
@@ -81,6 +96,7 @@ export default function Share() {
         [why, "The members still ticked have not had it; send again to reach them."].filter(Boolean).join("\n\n"),
       );
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
@@ -90,7 +106,8 @@ export default function Share() {
       <View style={styles.preview}>
         {thumb ? <Image source={thumb} style={styles.previewImage} contentFit="cover" /> : null}
         <View style={styles.previewText}>
-          <Text style={[styles.previewAuthor, face]}>{post?.author.username ?? ""}</Text>
+          {/* A post whose member is kept back comes naming nobody (src/components/hiddenAuthors.ts). */}
+          <Text style={[styles.previewAuthor, face]}>{post?.author?.username ?? ""}</Text>
           <Text style={styles.previewCaption} numberOfLines={2}>
             {post?.caption || "A photograph"}
           </Text>
@@ -126,12 +143,21 @@ export default function Share() {
       />
 
       <FlatList
-        data={peopleQ.data ?? []}
+        data={people}
         keyExtractor={(p) => p.id}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.list}
+        onEndReached={() => {
+          if (peopleQ.hasNextPage && !peopleQ.isFetchingNextPage && !peopleQ.isFetchNextPageError) peopleQ.fetchNextPage();
+        }}
+        onEndReachedThreshold={1}
+        ListFooterComponent={
+          peopleQ.isFetchNextPageError ? <LoadFailed what="the rest" onRetry={() => peopleQ.fetchNextPage()} /> : null
+        }
         ListEmptyComponent={
-          peopleQ.isFetched ? (
+          peopleQ.isError ? (
+            <LoadFailed what="who you follow" onRetry={() => peopleQ.refetch()} />
+          ) : peopleQ.isFetched ? (
             <EmptyState
               title="Nobody to send to yet"
               body="Follow a few members and you can pass photographs along to them."
@@ -141,7 +167,13 @@ export default function Share() {
         renderItem={({ item }) => {
           const on = selected.includes(item.id);
           return (
-            <Pressable style={styles.row} onPress={() => toggle(item.id)}>
+            <Pressable
+              style={styles.row}
+              onPress={() => toggle(item.id)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={memberLabel(item.username, item.full_name)}
+            >
               <Avatar path={item.avatar_url} username={item.username} size={40} />
               <View style={styles.rowText}>
                 <Text style={[styles.username, face]}>{item.username}</Text>
@@ -159,6 +191,8 @@ export default function Share() {
         style={[styles.sendBar, selected.length === 0 && styles.sendBarOff]}
         disabled={selected.length === 0 || busy}
         onPress={send}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: selected.length === 0 || busy, busy }}
       >
         <Text style={styles.sendText}>
           {selected.length === 0

@@ -12,6 +12,11 @@ import { EraSheetBody } from "@/components/EraMoveSheet";
 import { LoadFailed } from "@/components/LoadFailed";
 import { eraMoveStage, eraSheetView, madeNote, movedNote, takenOutNote, type EraSheetState } from "@/components/eraSheet";
 
+// A row that breaks this sheet breaks only this sheet, not the whole app, with
+// the way back on its page: the sheet draws its own head, and a broken one
+// has none (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Add to an era, from the "…" on a photograph of your own, wherever it is
  * shown: the sheet your Eras page arranges them in, opened on this

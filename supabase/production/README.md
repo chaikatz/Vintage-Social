@@ -276,12 +276,15 @@ Your first real invitation is still `FOUNDING MEMBER · NO. 00002`.
 `npm run test:rls` asserts exactly this, including that the sequence does
 not move.
 
-**The photographs are public domain or CC0.** They are curated from
-Wikimedia Commons by `seed/curate.mjs`, which keeps only licences carrying
-no attribution condition and no share-alike obligation — the latter matters
-because VINTAGE applies a filter to what it shows, which makes every frame
-a derivative work. `seed/CREDITS.md` lists every source file anyway, so
-provenance is traceable. Photographs are referenced by their original url
+**The photographs are public domain, CC0 or under the Unsplash Licence.**
+`seed/curate.mjs` chooses them: 679 Unsplash photographs through Lorem
+Picsum, and 229 from Wikimedia Commons, where it keeps only licences
+carrying no attribution condition and no share-alike obligation — the
+latter matters because VINTAGE applies a filter to what it shows, which
+makes every frame a derivative work. Whether the Unsplash Licence fits a
+feed like this one is still yours to decide: see "What is still yours to
+decide" in `APP_STORE_LAUNCH.md`. `seed/CREDITS.md` lists every source file
+and counts each licence, so provenance is traceable. Photographs are referenced by their original url
 rather than copied into your storage, so this costs you no storage and no
 egress.
 

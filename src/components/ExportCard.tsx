@@ -34,6 +34,13 @@ export function exportPalette(paper: ExportPaper) {
  * at three sizes. Nothing here is dynamic colour: a print is one paper.
  * The label says where, when and whose — and says nothing where there is
  * nothing to say.
+ *
+ * Its words keep the print's sizes whatever text size the phone is set
+ * to (`allowFontScaling={false}`): each sits in a box `exportLayout`
+ * measured, and the film's label is drawn natively at those sizes. At a
+ * larger text size the wordmark and the credit outgrew their boxes and
+ * were cut short ("VINTA…") on the shared print; at a smaller one the
+ * print no longer matched its own film.
  */
 export function ExportCard({ post, source, format, paper, width, memberNo, onReady }: Props) {
   const ratio = printRatio(post.width, post.height);
@@ -58,6 +65,7 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
       </View>
       {post.show_date_stamp ? (
         <Text
+          allowFontScaling={false}
           style={[
             styles.abs,
             rect(L.stamp),
@@ -72,6 +80,7 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
 
       <View style={[styles.abs, rect(L.rule), { backgroundColor: c.rule }]} />
       <Text
+        allowFontScaling={false}
         style={[
           styles.abs,
           rect(L.wordmark),
@@ -88,6 +97,7 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
         VINTAGE
       </Text>
       <Text
+        allowFontScaling={false}
         style={[
           styles.abs,
           rect(L.tagline),
@@ -106,6 +116,7 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
       </Text>
       {words.place ? (
         <Text
+          allowFontScaling={false}
           style={[
             styles.abs,
             rect(L.place),
@@ -124,6 +135,7 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
         </Text>
       ) : null}
       <Text
+        allowFontScaling={false}
         style={[
           styles.abs,
           rect(L.byline),
@@ -141,6 +153,7 @@ export function ExportCard({ post, source, format, paper, width, memberNo, onRea
         {words.date}
       </Text>
       <Text
+        allowFontScaling={false}
         style={[
           styles.abs,
           rect(L.credit),

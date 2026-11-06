@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Platform } from "react-native";
+import { Image } from "expo-image";
 import * as MediaLibrary from "expo-media-library";
 import {
   choiceOf,
@@ -19,6 +20,7 @@ import {
   type Where,
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, editReader, surpriseReader } from "@/components/darkroom/dealer";
+import { Drawn } from "@/components/darkroom/drawn";
 import { Visit } from "@/components/darkroom/visit";
 import type { DayState, EmptyWhy } from "@/components/darkroom/words";
 import { readAccess, requestAccess, type LibraryAccess } from "./access";
@@ -116,6 +118,18 @@ export interface RoomParams {
 
 const isGranted = (a: LibraryAccess | "checking") => a === "full" || a === "limited";
 
+/**
+ * Lets go of the photographs decoded and kept in expo-image's memory cache
+ * (see `drawn.ts`). The plates on screen keep what they show.
+ */
+function releaseDrawn(): void {
+  try {
+    void Image.clearMemoryCache().catch(() => undefined);
+  } catch {
+    // Nothing kept, or nothing to let go of it with.
+  }
+}
+
 export function useDarkroom(params: RoomParams) {
   const source = useMemo(() => darkroomSource(), []);
   const visit = useMemo(() => (source ? new Visit(source) : null), [source]);
@@ -147,8 +161,8 @@ export function useDarkroom(params: RoomParams) {
   /** The first-visit word has been said and iOS asked, and the room has not yet gone in. */
   const asking = useRef(false);
   const afterFirst = useRef(false);
-  /** Prints whose full image has drawn this visit. */
-  const loaded = useRef(new Set<string>());
+  /** Prints whose full image has drawn this visit, and when to let go of the copies kept in memory. */
+  const loaded = useRef(new Drawn());
   const [loadTick, setLoadTick] = useState(0);
 
   const patch = useCallback((p: Partial<DarkroomState> | ((s: DarkroomState) => Partial<DarkroomState>)) => {
@@ -211,13 +225,18 @@ export function useDarkroom(params: RoomParams) {
     });
   }, [patch, waitingForYears]);
 
+  /**
+   * The year index. `background` is for reading the room does of its own
+   * accord (after the first print, or when the library changed): it waits
+   * in the gate's back line, behind the prints a chapter is dealing.
+   */
   const loadYears = useCallback(
-    async (force = false): Promise<YearCount[] | null> => {
+    async (force = false, background = false): Promise<YearCount[] | null> => {
       if (!visit) return null;
       yearsReading.current += 1;
       reconsiderRoll();
       try {
-        const years = await visit.years(force);
+        const years = await visit.years(force, background);
         if (live.current.years !== years) patch({ years });
         return years;
       } catch {
@@ -232,10 +251,10 @@ export function useDarkroom(params: RoomParams) {
   );
 
   const loadMonths = useCallback(
-    async (year: number) => {
+    async (year: number, background = false) => {
       if (!visit) return;
       try {
-        const counts = await visit.months(year);
+        const counts = await visit.months(year, background);
         patch({ months: { year, counts } });
       } catch {
         // Contents shows no month strip until it can.
@@ -244,9 +263,9 @@ export function useDarkroom(params: RoomParams) {
     [visit, patch],
   );
 
-  const askDay = useCallback(async () => {
+  const askDay = useCallback(async (background = false) => {
     if (!visit) throw new Error("No library");
-    const result = await visit.askDay();
+    const result = await visit.askDay(background);
     patch({ day: dayStateOf(result) });
     return result;
   }, [visit, patch]);
@@ -316,15 +335,19 @@ export function useDarkroom(params: RoomParams) {
 
   // --- showing -----------------------------------------------------------------
 
-  /** Reads that wait for the first print: the year index, the whole day, the open year's months. */
+  /**
+   * Reads that wait for the first print: the year index, the whole day,
+   * the open year's months. In the background, so the chapter on the
+   * stage deals its next prints ahead of them.
+   */
   const afterFirstPrint = useCallback(() => {
     if (afterFirst.current || !visit) return;
     afterFirst.current = true;
     setTimeout(() => {
       if (!mounted.current) return;
-      void loadYears();
+      void loadYears(false, true);
       if (!visit.knownDay()) {
-        askDay()
+        askDay(true)
           .then((result) => {
             if (!mounted.current) return;
             // A deck restored from disk without its reach learns it now, and
@@ -352,7 +375,7 @@ export function useDarkroom(params: RoomParams) {
           .catch(() => undefined);
       }
       const c = live.current.chapter;
-      if (c?.mode === "year" && c.year != null) void loadMonths(c.year);
+      if (c?.mode === "year" && c.year != null) void loadMonths(c.year, true);
     }, 0);
   }, [visit, loadYears, askDay, commit, loadMonths]);
 
@@ -748,7 +771,8 @@ export function useDarkroom(params: RoomParams) {
   /** The error page's TRY AGAIN: the year index rebuilt, and the way in tried again. */
   const retry = useCallback(() => {
     visit?.forgetAnswers();
-    void loadYears(true);
+    // Counted again behind the way in, which is what the member waits for.
+    void loadYears(true, true);
     const w = live.current.where;
     if (w) {
       void open({ mode: w.mode, year: w.year, month: w.month, fresh: true });
@@ -817,11 +841,20 @@ export function useDarkroom(params: RoomParams) {
 
   // --- images ------------------------------------------------------------------
 
-  /** A print's full image has drawn. A print that had been gone is back. */
+  /**
+   * A print's full image has drawn. A print that had been gone is back.
+   * Every so many new prints, the decoded copies kept in memory are let go
+   * of, all but the plates on screen (`drawn.ts`).
+   */
   const imageLoaded = useCallback(
     (id: string) => {
-      const first = !loaded.current.has(id);
-      loaded.current.add(id);
+      const { first, release } = loaded.current.add(id);
+      if (release) {
+        const c = live.current.chapter;
+        const onScreen = c ? c.prints.slice(Math.max(0, c.index - 1), c.index + 2).map((p) => p.id) : [];
+        loaded.current.released([...onScreen, id]);
+        releaseDrawn();
+      }
       if (live.current.missing.has(id)) {
         patch((s) => {
           const missing = new Set(s.missing);
@@ -930,7 +963,7 @@ export function useDarkroom(params: RoomParams) {
         void open({ mode: c.mode, year: c.year, month: c.month, fresh: true, keep: print, startId: print?.id ?? null });
       }
       // Counted again now if Contents has shown them; otherwise when it next opens.
-      if (before.years != null) void loadYears(true);
+      if (before.years != null) void loadYears(true, true);
     },
     [visit, commit, settleAccess, open, openDefault, begin, loadYears],
   );
@@ -982,6 +1015,8 @@ export function useDarkroom(params: RoomParams) {
       dealer.current?.release();
       dealer.current = null;
       mounted.current = false;
+      // The room has closed: the photographs it decoded are not kept in memory after it.
+      releaseDrawn();
     };
     // Once, for the life of the room.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -7,6 +7,7 @@ import { mediaUrl } from "@/api/media";
 import { getFilter } from "@/filters";
 import { cssFilterFor } from "@/filters/cssFilter";
 import { needsDisplayFilter } from "@/utils/displayFilter";
+import { useImageRetry } from "@/media/imageRetry";
 import type { PostRow } from "@/types/db";
 
 /** A grid row: the post, and whether it is here because its author tagged you. */
@@ -24,6 +25,8 @@ interface Props {
 }
 
 export const GRID_GAP = 2;
+/** Screens of squares the grid draws: three either side of the one in view. */
+const GRID_SCREENS = 7;
 
 /** The classic three-column square grid. */
 export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
@@ -39,6 +42,11 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
       refreshing={refreshing ?? false}
       columnWrapperStyle={{ gap: GRID_GAP }}
       contentContainerStyle={{ gap: GRID_GAP, backgroundColor: colors.paper }}
+      // Three screens of squares either side of the reader, as an era's
+      // sheet draws: the list's default, ten either side, fetched every
+      // square of a profile of a few hundred photographs the moment it
+      // opened, and held them all.
+      windowSize={GRID_SCREENS}
       renderItem={({ item }) => <PhotoTile post={item} size={size} onPress={() => onOpenPost(item)} />}
     />
   );
@@ -90,6 +98,8 @@ export function PhotoTile({
   // has come in over it, so nothing blinks or moves.
   const large = full && !isVideo ? mediaUrl("media", post.media_path) : null;
   const url = large ?? small;
+  // A square that fails to load is asked for again rather than left empty (src/media/imageRetry.ts).
+  const retry = useImageRetry(url);
   // Same rule as the feed: only unbaked media needs the filter applied
   // here, so a square matches the photograph it opens.
   const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
@@ -116,6 +126,13 @@ export function PhotoTile({
           style={[styles.cell, live ? ({ filter: live } as object) : null]}
           contentFit="cover"
           transition={60}
+          // Held in memory as well as on disk, as the feed's photographs
+          // are: the grid draws three screens either side and lets the rest
+          // go, and a square scrolled back to was read from disk and
+          // decoded again, blinking in with its fade.
+          cachePolicy="memory-disk"
+          key={retry.attempt}
+          onError={retry.onError}
         />
       ) : (
         <View style={[styles.cell, styles.empty]}>

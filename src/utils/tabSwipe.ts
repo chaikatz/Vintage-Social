@@ -31,6 +31,29 @@ export function holdTabSwipe(): () => void {
 }
 
 /**
+ * One gesture's hold on the pager, for a view whose gesture can be cut
+ * short. Taken as the gesture starts and let go as it ends, as
+ * `holdTabSwipe` is; and let go by the view itself as it leaves the
+ * screen. A card removed mid-pinch (the list read again, the post deleted
+ * or its author blocked, the screen closed) used to keep its hold for good:
+ * the count stayed above nought and the tabs would not swipe again until
+ * the app was closed. Taking it again while it is held keeps the one hold.
+ */
+export function gestureHold(): { take: () => void; release: () => void } {
+  let release: (() => void) | null = null;
+  return {
+    take() {
+      release ??= holdTabSwipe();
+    },
+    release() {
+      const held = release;
+      release = null;
+      held?.();
+    },
+  };
+}
+
+/**
  * Whether the timeline should hold the pager right now. Only while it is
  * on the screen in view and either being pinched or left magnified: a
  * magnified line is dragged sideways with one finger, which is the pager's

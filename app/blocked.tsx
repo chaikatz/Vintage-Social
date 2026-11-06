@@ -2,13 +2,20 @@ import React from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchBlockedProfiles, unblockMember } from "@/api/blocks";
 import { useSession } from "@/providers/SessionProvider";
 import { useNameFace } from "@/utils/nameFace";
+
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /** The members you have blocked, and the way back. */
 export default function Blocked() {
@@ -30,8 +37,16 @@ export default function Blocked() {
       queryClient.invalidateQueries({ queryKey: ["blocked", userId] });
       queryClient.invalidateQueries();
     },
-    onError: (err) => showAlert("Couldn’t unblock", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t unblock", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
+
+  if (blocked.isError && !blocked.data) {
+    return (
+      <Screen padded={false}>
+        <LoadFailed what="the members you blocked" onRetry={() => blocked.refetch()} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen padded={false}>
@@ -60,6 +75,7 @@ export default function Blocked() {
               onPress={() => unblock.mutate(item.id)}
               disabled={unblock.isPending}
               accessibilityRole="button"
+              accessibilityLabel={`Unblock ${item.username}`}
             >
               <Text style={styles.unblockText}>Unblock</Text>
             </Pressable>

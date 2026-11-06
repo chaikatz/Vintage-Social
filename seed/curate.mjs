@@ -13,13 +13,20 @@
  * its author where one is recorded, and its capture date where the file
  * carries one, so seed/CREDITS.md can be generated from the same data.
  *
+ * The contemporary photographs come from elsewhere: `--picsum` adds
+ * Unsplash photographs through Lorem Picsum, under the Unsplash Licence,
+ * which asks no attribution either (seed/CREDITS.md counts each licence).
+ *
  *   node seed/curate.mjs            # writes seed/photos.json
  *   node seed/curate.mjs --limit 40 # smaller run while iterating
+ *   node seed/curate.mjs --picsum   # adds the Unsplash photographs
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isLikelyPhotograph } from "./photoFilter.mjs";
+import { PICTURE_WIDTH, THUMB_WIDTH, commonsAt } from "./wikimediaThumb.mjs";
+import { picsumAvatar, picsumThumb } from "./picsumThumb.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const API = "https://commons.wikimedia.org/w/api.php";
@@ -140,7 +147,9 @@ async function search(term, offset) {
     `${API}?action=query&format=json&generator=search&gsrnamespace=6` +
     `&gsrlimit=${PER_THEME}&gsroffset=${offset}` +
     `&gsrsearch=${encodeURIComponent(`filetype:bitmap ${term} ${NEGATIVE}`)}` +
-    `&prop=imageinfo&iiprop=url|size|extmetadata&iiurlwidth=1400`;
+    // A width Commons serves (seed/wikimediaThumb.mjs): asked for 1400, it
+    // answered with 1920 anyway.
+    `&prop=imageinfo&iiprop=url|size|extmetadata&iiurlwidth=${PICTURE_WIDTH}`;
   // Commons occasionally accepts a connection and then never answers. A run
   // of 240 requests will meet that at least once, and with no deadline the
   // whole curation simply stops, with no error to show for it.
@@ -217,7 +226,10 @@ async function picsum() {
         theme: "modern",
         place: null,
         url: `https://picsum.photos/id/${item.id}/${w}/${h}`,
-        thumb: `https://picsum.photos/id/${item.id}/480/${Math.round(480 / ratio)}`,
+        // Its grid square at the size the app cuts a member's (short side 540), as 0034 asks on production.
+        thumb: picsumThumb(item.id, w, h),
+        // A member's portrait, should seed/build.mjs make this their face: smaller, as production's are.
+        avatar: picsumAvatar(item.id, w, h),
         width: w,
         height: h,
         licence: "Unsplash Licence",
@@ -292,7 +304,9 @@ for (const theme of THEMES) {
         theme: theme.key,
         place: theme.place,
         url: clean(info.thumburl ?? info.url),
-        thumb: clean(info.thumburl ?? info.url).replace("/1400px-", "/480px-"),
+        // The grid square at 500, a width Commons serves: the old rewrite,
+        // "/1400px-" to "/480px-", never matched, and left the full picture.
+        thumb: commonsAt(clean(info.thumburl ?? info.url), THUMB_WIDTH, info.width),
         width: info.thumbwidth ?? info.width,
         height: info.thumbheight ?? info.height,
         licence,
