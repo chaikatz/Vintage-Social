@@ -49,6 +49,14 @@ describe("Home's list", () => {
     expect(Number(grid.match(/const GRID_SCREENS = (\d+);/)?.[1])).toBe(7);
   });
 
+  it("keeps the grid's squares in memory, so a square scrolled back to is not read and decoded again", () => {
+    // expo-image's own default is the disk alone (ImageModule.swift: cachePolicy ?? .disk).
+    const grid = code("src/components/PhotoGrid.tsx");
+    const tile = grid.slice(grid.indexOf("export function PhotoTile("));
+    expect(tile.match(/<Image\b[\s\S]*?\/>/g)).toHaveLength(1);
+    expect(tile.match(/<Image\b[\s\S]*?\/>/)?.[0]).toMatch(/cachePolicy="memory-disk"/);
+  });
+
   it("fetches the first screen's photographs first", () => {
     expect(home).toMatch(/priority=\{index < FIRST_SCREEN \? "high" : "normal"\}/);
     expect(constant("FIRST_SCREEN")).toBe(2);

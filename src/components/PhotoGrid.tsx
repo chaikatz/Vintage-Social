@@ -126,6 +126,11 @@ export function PhotoTile({
           style={[styles.cell, live ? ({ filter: live } as object) : null]}
           contentFit="cover"
           transition={60}
+          // Held in memory as well as on disk, as the feed's photographs
+          // are: the grid draws three screens either side and lets the rest
+          // go, and a square scrolled back to was read from disk and
+          // decoded again, blinking in with its fade.
+          cachePolicy="memory-disk"
           key={retry.attempt}
           onError={retry.onError}
         />
