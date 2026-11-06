@@ -281,42 +281,85 @@ begin
 end
 $fn$;
 
--- The read the app made before 0025, for comparison (old_feed_sql in 12).
+-- The read the app made before 0025, for comparison (old_feed_sql in 12):
+-- a page by offset. feed_page is asked for the page after a post instead
+-- (its cursor), so each case names how many posts the reader holds; the
+-- cursor is the last of them, found by the old read, as the member.
+create or replace function tests.old_feed_sql_at(p_uid uuid, p_limit int, p_offset int)
+returns text language sql as $fn$
+  select format(
+    'select p.id from public.posts p
+      where p.author_id = any (array[%L::uuid] || array(select f.followee_id from public.follows f
+                                                         where f.follower_id = %L and f.status = ''accepted''))
+        and p.removed_at is null
+      order by p.created_at desc, p.id desc
+      limit %s offset %s', p_uid, p_uid, p_limit, p_offset)
+$fn$;
+
+create temp table feed_cases (label text primary key, uid uuid, held int);
+insert into feed_cases values
+  ('a member who follows nobody', 'feed5ca1-0000-4000-8000-000000000001', 0),
+  ('a typical member, first page', :'me', 0),
+  ('a typical member, second page', :'me', 12),
+  ('a member who follows the whole club', 'feed5ca1-0000-4000-8000-000000000002', 0),
+  ('the whole club, twenty pages in', 'feed5ca1-0000-4000-8000-000000000002', 240);
+-- Past the end: the reader holds every post of their feed.
+insert into feed_cases
+select 'past the end of a typical feed', :'me', count(*)
+from tests.posts_read(:'me', tests.old_feed_sql_at(:'me', 100000, 0)) r
+cross join lateral regexp_split_to_table(r.ids, ',');
+
+-- Each case's cursor: the last post the reader holds, as the old read gives it.
+create temp table feed_cursors as
+select c.label, p.created_at as at, p.id
+from feed_cases c
+cross join lateral tests.posts_read(c.uid, tests.old_feed_sql_at(c.uid, 1, c.held - 1)) r
+join public.posts p on p.id = r.ids::uuid
+where c.held > 0;
+
 create temp table feed_reads (label text primary key, rows_read bigint, ids text, ms numeric, old_ids text);
 insert into feed_reads
-select v.label, f.rows_read, f.ids, f.ms, o.ids
-from (values
-  ('a member who follows nobody', 'feed5ca1-0000-4000-8000-000000000001'::uuid, 0),
-  ('a typical member, first page', :'me'::uuid, 0),
-  ('past the end of a typical feed', :'me'::uuid, 100000),
-  ('a member who follows the whole club', 'feed5ca1-0000-4000-8000-000000000002'::uuid, 0),
-  ('the whole club, twenty pages in', 'feed5ca1-0000-4000-8000-000000000002'::uuid, 240)
-) v(label, uid, off)
-cross join lateral tests.posts_read(v.uid, format('select id from public.feed_page(12, %s)', v.off)) f
-cross join lateral tests.posts_read(v.uid, format(
-  'select p.id from public.posts p
-    where p.author_id = any (array[%L::uuid] || array(select f.followee_id from public.follows f
-                                                      where f.follower_id = %L and f.status = ''accepted''))
-      and p.removed_at is null
-    order by p.created_at desc, p.id desc limit 12 offset %s', v.uid, v.uid, v.off)) o;
+select c.label, f.rows_read, f.ids, f.ms, o.ids
+from feed_cases c
+left join feed_cursors k on k.label = c.label
+cross join lateral tests.posts_read(c.uid,
+  case when k.id is null then 'select id from public.feed_page(12)'
+       else format('select id from public.feed_page(12, %L, %L)', k.at, k.id) end) f
+cross join lateral tests.posts_read(c.uid, tests.old_feed_sql_at(c.uid, 12, c.held)) o;
 
 insert into tests.results (name, expected, actual)
 select 'scale: feed_page, ' || label || ', is the page the old read gave', 'true', (ids = old_ids)::text
 from feed_reads;
 
 insert into tests.results (name, expected, actual) values
+  ('scale: every case past the first page has its cursor', '3',
+   (select count(*)::text from feed_cursors)),
+  ('scale: past the end of a typical feed is no page at all', '-',
+   (select ids from feed_reads where label = 'past the end of a typical feed')),
   ('scale: feed_page for a member who follows nobody reads their own photographs, not the club''s', 'true',
    ((select rows_read from feed_reads where label = 'a member who follows nobody') <= 12)::text),
-  ('scale: feed_page past the end of a feed reads only its authors'' photographs', 'true',
-   ((select rows_read from feed_reads where label = 'past the end of a typical feed')
+  ('scale: feed_page for a typical member reads only its authors'' photographs', 'true',
+   ((select rows_read from feed_reads where label = 'a typical member, first page')
      <= (select count(*) from public.posts
           where author_id = :'me' or author_id in (select followee_id from public.follows
                                                     where follower_id = :'me' and status = 'accepted')))::text),
   ('scale: and that is a small part of the club', 'true',
-   ((select rows_read from feed_reads where label = 'past the end of a typical feed')
+   ((select rows_read from feed_reads where label = 'a typical member, first page')
      < (select count(*) / 10 from public.posts))::text),
+  -- From the cursor down: each page reads less than the one before it,
+  -- and past the end, where the offset read every post of the feed's
+  -- authors to find none, it reads none.
+  ('scale: feed_page, the second page reads no more than the first', 'true',
+   ((select rows_read from feed_reads where label = 'a typical member, second page')
+     <= (select rows_read from feed_reads where label = 'a typical member, first page'))::text),
+  ('scale: feed_page past the end of a feed reads nothing', 'true',
+   ((select rows_read from feed_reads where label = 'past the end of a typical feed') <= 2)::text),
   ('scale: feed_page for a member who follows everyone walks newest first and stops at the page', 'true',
-   ((select rows_read from feed_reads where label = 'a member who follows the whole club') <= 60)::text);
+   ((select rows_read from feed_reads where label = 'a member who follows the whole club') <= 60)::text),
+  -- Twenty pages in, by offset, it walked past the 240 posts before the
+  -- page (259 read); from a cursor it starts there.
+  ('scale: feed_page twenty pages in reads about a page, not the twenty before it', 'true',
+   ((select rows_read from feed_reads where label = 'the whole club, twenty pages in') <= 60)::text);
 
 select 'time: feed_page, ' || label || ' ' || ms || ' ms, ' || rows_read || ' photographs read' as note
 from feed_reads order by label;

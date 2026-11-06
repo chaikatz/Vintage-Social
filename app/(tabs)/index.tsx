@@ -9,7 +9,7 @@ import { PendingPostCard } from "@/components/PendingPostCard";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { PostSkeleton } from "@/components/Skeleton";
-import { FEED_PAGE_SIZE, fetchFeedPage } from "@/api/posts";
+import { fetchFeedPage, nextFeedCursor, type FeedCursor } from "@/api/posts";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { onHomeAgain } from "@/utils/homeRefresh";
@@ -23,10 +23,10 @@ import type { PostWithAuthor } from "@/types/db";
 /**
  * The feed's pages as one list, each post once.
  *
- * Pages are fetched by offset. A post just published is put on top of the
- * first page by hand (see src/uploads/feedCache.ts), which pushes every
- * later post along by one, so the next page fetched starts with a post the
- * list already has. Dropping repeats by id keeps that from showing twice.
+ * Each page starts after the last post of the one before, so pages read
+ * from the server do not overlap. A post just published is put on top of
+ * the first page by hand (see src/uploads/feedCache.ts); dropping repeats
+ * by id keeps it from showing twice should a page read later bring it too.
  */
 function flattenPages(pages: PostWithAuthor[][] | undefined): PostWithAuthor[] {
   const seen = new Set<string>();
@@ -47,9 +47,9 @@ function flattenPages(pages: PostWithAuthor[][] | undefined): PostWithAuthor[] {
  * where looking back is the point; the feed is for what is new.
  *
  * Above it, the member's own posts that are still on their way up. They
- * are a header, never rows of the feed: the feed pages by offset, and a
- * row the server does not know would shift every page and be offered to
- * likes and comments that cannot exist yet. When one is posted, the feed
+ * are a header, never rows of the feed: a row the server does not know
+ * could become where the next page starts, and would be offered to likes
+ * and comments that cannot exist yet. When one is posted, the feed
  * gets the real row and the card steps aside for it.
  */
 export default function Home() {
@@ -64,9 +64,11 @@ export default function Home() {
   const feed = useInfiniteQuery({
     queryKey: ["feed", userId],
     queryFn: ({ pageParam }) => fetchFeedPage(userId, pageParam),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, pages) =>
-      lastPage.length < FEED_PAGE_SIZE ? undefined : pages.length,
+    // Each page after the last post of the one before (a cursor), not
+    // after however many came before it: a post deleted or added between
+    // two pages then neither skips one nor repeats one.
+    initialPageParam: null as FeedCursor | null,
+    getNextPageParam: (lastPage) => nextFeedCursor(lastPage),
     enabled: Boolean(userId),
     // Coming back to the app, or back online, is decided below: left to
     // the query, it read every page loaded again, one after another.

@@ -251,7 +251,12 @@ const withAuthor = (post: PostRow): PostWithAuthor => ({ ...clone(post), author:
 // ---------------------------------------------------------------------------
 // posts / feed
 // ---------------------------------------------------------------------------
-export function demoFetchFeedPage(userId: string, page: number, pageSize: number): PostWithAuthor[] {
+/** The feed after `before` (the last post of the page before), as feed_page (0025) gives it. */
+export function demoFetchFeedPage(
+  userId: string,
+  before: { at: string; id: string } | null,
+  pageSize: number,
+): PostWithAuthor[] {
   const followees = new Set(
     state.follows
       .filter((f) => f.follower_id === userId && f.status === "accepted")
@@ -260,8 +265,9 @@ export function demoFetchFeedPage(userId: string, page: number, pageSize: number
   followees.add(userId);
   const feed = state.posts
     .filter((p) => followees.has(p.author_id) && !p.removed_at)
-    .sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return feed.slice(page * pageSize, (page + 1) * pageSize).map(withAuthor);
+    .filter((p) => !before || p.created_at < before.at || (p.created_at === before.at && p.id < before.id))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
+  return feed.slice(0, pageSize).map(withAuthor);
 }
 
 export function demoFetchUserPosts(authorId: string): PostRow[] {

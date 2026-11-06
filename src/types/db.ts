@@ -352,9 +352,9 @@ export type Database = {
         Args: { p_slug: string };
         Returns: boolean;
       };
-      /** The home feed, a page at a time, as the caller (migration 0025). */
+      /** The home feed, a page at a time after the post given, as the caller (migration 0025). */
       feed_page: {
-        Args: { p_limit?: number; p_offset?: number };
+        Args: { p_limit?: number; p_before_at?: string | null; p_before_id?: string | null };
         Returns: PostRow[];
       };
       redeem_invite_link: {

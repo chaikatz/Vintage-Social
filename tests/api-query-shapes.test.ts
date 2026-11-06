@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query";
 
 /**
  * What the app asks the database for, as the real client sends it.
@@ -17,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const h = vi.hoisted(() => ({
-  requests: [] as { url: URL; method: string }[],
+  requests: [] as { url: URL; method: string; body?: string }[],
   inFlight: 0,
   maxInFlight: 0,
   tables: {} as Record<string, Record<string, unknown>[]>,
@@ -46,15 +49,68 @@ function inList(value: string): string[] {
   return value.replace(/^\(|\)$/g, "").split(",").map((v) => v.replace(/^"|"$/g, ""));
 }
 
+/** A value as PostgREST reads it: in double quotes, with \\ and \" escaped, or bare. */
+function unquoted(value: string): string {
+  return /^".*"$/.test(value) ? value.slice(1, -1).replace(/\\(.)/g, "$1") : value;
+}
+
 function matches(row: Row, column: string, filter: string): boolean {
   const [op, ...rest] = filter.split(".");
-  const value = rest.join(".");
+  const raw = rest.join(".");
+  const value = unquoted(raw);
   const cell = row[column];
   if (op === "eq") return String(cell) === value;
   if (op === "neq") return String(cell) !== value;
-  if (op === "in") return inList(value).includes(String(cell));
+  if (op === "lt") return String(cell) < value;
+  if (op === "gt") return String(cell) > value;
+  if (op === "in") return inList(raw).includes(String(cell));
   if (op === "is") return value === "null" ? cell == null : String(cell) === value;
   throw new Error(`filter not modelled: ${column}=${filter}`);
+}
+
+/** Split at the commas of this level: not inside parentheses or double quotes. */
+function topLevel(list: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let quote = false;
+  let start = 0;
+  for (let i = 0; i < list.length; i++) {
+    const ch = list[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === '"') quote = false;
+      continue;
+    }
+    if (ch === '"') quote = true;
+    else if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "," && depth === 0) {
+      out.push(list.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(list.slice(start));
+  return out;
+}
+
+/**
+ * PostgREST's or=(…), with and(…) / or(…) inside it. A term is
+ * column.operator.value, and a value with "," "." ":" or parentheses in
+ * it must come in double quotes, or it is read wrong: a bare value here
+ * stops at its first "," or ")", as PostgREST's does.
+ */
+function logic(row: Row, kind: "or" | "and", list: string): boolean {
+  const terms = topLevel(list).map((term) => {
+    const nested = /^(and|or)\((.*)\)$/.exec(term);
+    if (nested) return logic(row, nested[1] as "or" | "and", nested[2]);
+    const [column, op, ...rest] = term.split(".");
+    const value = rest.join(".");
+    // PostgREST's documentation: a value with any of , . : ( ) in it goes in
+    // double quotes. Held to it here, so a bare time is caught.
+    if (!/^".*"$/.test(value) && /[,.:()]/.test(value)) throw new Error(`unquoted value in or(): ${term}`);
+    return matches(row, column, `${op}.${value}`);
+  });
+  return kind === "or" ? terms.some(Boolean) : terms.every(Boolean);
 }
 
 function ordered(rows: Row[], spec: string | null): Row[] {
@@ -108,11 +164,8 @@ function answer(url: URL): Row[] {
   for (const [key, value] of params) {
     if (["select", "order", "limit", "offset"].includes(key) || key.includes(".")) continue;
     if (key === "or") {
-      const alternatives = value.replace(/^\(|\)$/g, "").split(",").map((a) => {
-        const [column, ...f] = a.split(".");
-        return [column, f.join(".")];
-      });
-      rows = rows.filter((r) => alternatives.some(([c, f]) => matches(r, c, f)));
+      const list = value.replace(/^\(|\)$/g, "");
+      rows = rows.filter((r) => logic(r, "or", list));
       continue;
     }
     rows = rows.filter((r) => matches(r, key, value));
@@ -155,7 +208,7 @@ function answer(url: URL): Row[] {
 
 async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
-  h.requests.push({ url, method: init?.method ?? "GET" });
+  h.requests.push({ url, method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined });
   h.inFlight++;
   h.maxInFlight = Math.max(h.maxInFlight, h.inFlight);
   await new Promise((r) => setTimeout(r, 1));
@@ -167,8 +220,11 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
 }
 
 /** feed_page (0025) as the database answers it for the signed-in member, ME. */
-function feedPage(url: URL, args: { p_limit?: number; p_offset?: number }): Response {
-  if (h.feedPage === "missing") {
+function feedPage(url: URL, args: { p_limit?: number; p_before_at?: string | null; p_before_id?: string | null }): Response {
+  // PostgREST finds a function by the names of the arguments sent: there is
+  // no feed_page with an offset (0025 takes a cursor).
+  const known = ["p_limit", "p_before_at", "p_before_id"];
+  if (h.feedPage === "missing" || Object.keys(args).some((k) => !known.includes(k))) {
     return new Response(JSON.stringify({ code: "PGRST202", message: "Could not find the function public.feed_page" }), { status: 404 });
   }
   if (h.feedPage === "broken") {
@@ -178,7 +234,11 @@ function feedPage(url: URL, args: { p_limit?: number; p_offset?: number }): Resp
   const mine = (h.tables.posts ?? [])
     .filter((p) => p.removed_at == null && (p.author_id === ME || followed.has(p.author_id)))
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b.id).localeCompare(String(a.id)));
-  let page = mine.slice(args.p_offset ?? 0, (args.p_offset ?? 0) + Math.min(Math.max(args.p_limit ?? 12, 1), 100));
+  const at = args.p_before_at;
+  const after = at
+    ? mine.filter((p) => String(p.created_at) < at || (String(p.created_at) === at && args.p_before_id != null && String(p.id) < args.p_before_id))
+    : mine;
+  let page = after.slice(0, Math.min(Math.max(args.p_limit ?? 12, 1), 100));
   if (h.feedPage === "unordered") page = [...page.filter((_, i) => i % 2 === 1), ...page.filter((_, i) => i % 2 === 0)];
   // The select (and its embedded author) applies to the function's rows as to a table's.
   h.tables.__feed = page;
@@ -197,6 +257,7 @@ vi.mock("@/lib/supabase", async () => {
 });
 
 const posts = await import("@/api/posts");
+type FeedCursor = import("@/api/posts").FeedCursor;
 const tags = await import("@/api/tags");
 const messages = await import("@/api/messages");
 const { readInChunks, chunked, IDS_PER_REQUEST } = await import("@/api/batch");
@@ -497,9 +558,32 @@ describe("the home feed", () => {
     posts.forgetFollowingIds(ME);
   }
 
+  /** The member's whole feed, newest first, as the database holds it now. */
+  function truth(): string[] {
+    const followed = new Set((h.tables.follows ?? []).filter((f) => f.status === "accepted").map((f) => f.followee_id));
+    return (h.tables.posts ?? [])
+      .filter((p) => p.removed_at == null && (p.author_id === ME || followed.has(p.author_id)))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b.id).localeCompare(String(a.id)))
+      .map((p) => String(p.id));
+  }
+
+  /** Pages as Home asks for them: each after the last post of the one before, until one ends the feed. */
+  async function walk(most = 1000): Promise<string[][]> {
+    const pages: string[][] = [];
+    let cursor: FeedCursor | null = null;
+    for (let i = 0; i < most; i++) {
+      const page = await posts.fetchFeedPage(ME, cursor);
+      pages.push(page.map((x) => x.id));
+      const next = posts.nextFeedCursor(page);
+      if (!next) break;
+      cursor = next;
+    }
+    return pages;
+  }
+
   it("is asked of feed_page, with no list of who the member follows in the URL", async () => {
     club(800);
-    const page = await posts.fetchFeedPage(ME, 2);
+    const page = await posts.fetchFeedPage(ME, null);
     expect(page.length).toBe(posts.FEED_PAGE_SIZE);
     expect(h.requests.length).toBe(1);
     expect(h.requests[0].url.pathname).toBe("/rest/v1/rpc/feed_page");
@@ -511,36 +595,132 @@ describe("the home feed", () => {
     expect(page[0].author).toMatchObject({ username: expect.stringMatching(/^m\d+$/) });
   });
 
+  it("asks for the page after the last post held, by its time and id as the server gave them, never by an offset", async () => {
+    club(60);
+    const first = await posts.fetchFeedPage(ME, null);
+    expect(JSON.parse(h.requests[0].body ?? "{}")).toEqual({ p_limit: posts.FEED_PAGE_SIZE });
+    const cursor = posts.nextFeedCursor(first)!;
+    const last = first[first.length - 1];
+    // The server's own string, not one remade through a Date (which keeps
+    // milliseconds where created_at has microseconds).
+    expect(cursor).toEqual({ at: last.created_at, id: last.id });
+    h.requests.length = 0;
+    await posts.fetchFeedPage(ME, cursor);
+    const body = JSON.parse(h.requests[0].body ?? "{}");
+    expect(body).toEqual({ p_limit: posts.FEED_PAGE_SIZE, p_before_at: last.created_at, p_before_id: last.id });
+    expect(body).not.toHaveProperty("p_offset");
+    // A microsecond time goes back exactly as it came.
+    const micro = Array.from({ length: posts.FEED_PAGE_SIZE }, (_, i) => ({ id: `p${i}`, created_at: "2026-11-06T10:00:00.123456+00:00" }));
+    expect(posts.nextFeedCursor(micro)).toEqual({ at: "2026-11-06T10:00:00.123456+00:00", id: `p${posts.FEED_PAGE_SIZE - 1}` });
+  });
+
+  it("a page shorter than a page ends the feed; a full one does not", () => {
+    const row = (i: number) => ({ id: `p${i}`, created_at: at(100 - i) });
+    expect(posts.nextFeedCursor([])).toBeUndefined();
+    expect(posts.nextFeedCursor(Array.from({ length: posts.FEED_PAGE_SIZE - 1 }, (_, i) => row(i)))).toBeUndefined();
+    expect(posts.nextFeedCursor(Array.from({ length: posts.FEED_PAGE_SIZE }, (_, i) => row(i)))).toEqual({
+      at: at(100 - (posts.FEED_PAGE_SIZE - 1)),
+      id: `p${posts.FEED_PAGE_SIZE - 1}`,
+    });
+  });
+
+  it("walks the whole feed page by page, every post once, in order, across posts made in the same instant", async () => {
+    club(60);
+    // One post in three made in the same instant as another.
+    h.tables.posts.forEach((p, i) => {
+      if (i % 3 === 2) p.created_at = h.tables.posts[i - 1].created_at;
+    });
+    const pages = await walk();
+    expect(pages.flat()).toEqual(truth());
+    expect(new Set(pages.flat()).size).toBe(pages.flat().length);
+    expect(pages.length).toBeGreaterThan(5);
+    // Many posts share a time here: the walk crosses them by id.
+    const times = (h.tables.posts ?? []).map((p) => p.created_at);
+    expect(new Set(times).size).toBeLessThan(times.length);
+  });
+
+  it("a post deleted between two pages skips no other, and a post arriving between them repeats none", async () => {
+    club(60);
+    const before = truth();
+    const first = await posts.fetchFeedPage(ME, null);
+    // Two posts of the page held are deleted, and three new ones arrive above it.
+    h.tables.posts = h.tables.posts.filter((p) => p.id !== first[1].id && p.id !== first[3].id);
+    for (let k = 0; k < 3; k++) {
+      h.tables.posts.push({ id: id("f3", k), author_id: ME, created_at: at(10_000 + k), removed_at: null });
+    }
+    const second = await posts.fetchFeedPage(ME, posts.nextFeedCursor(first)!);
+    expect(second.map((x) => x.id)).toEqual(before.slice(posts.FEED_PAGE_SIZE, posts.FEED_PAGE_SIZE * 2));
+    expect(second.some((x) => first.some((y) => y.id === x.id))).toBe(false);
+  });
+
+  it("Home's query, paged as Home pages it, holds every post once while the club moves between pages", async () => {
+    club(60);
+    const before = truth();
+    const home = readFileSync(join(__dirname, "..", "app", "(tabs)", "index.tsx"), "utf8");
+    expect(home).toMatch(/initialPageParam: null as FeedCursor \| null,/);
+    expect(home).toMatch(/getNextPageParam: \(lastPage\) => nextFeedCursor\(lastPage\),/);
+    expect(home).not.toMatch(/pages\.length/);
+    const client = new QueryClient();
+    const feed = new InfiniteQueryObserver(client, {
+      queryKey: ["feed", ME],
+      queryFn: ({ pageParam }: { pageParam: FeedCursor | null }) => posts.fetchFeedPage(ME, pageParam),
+      initialPageParam: null as FeedCursor | null,
+      getNextPageParam: (lastPage: Awaited<ReturnType<typeof posts.fetchFeedPage>>) => posts.nextFeedCursor(lastPage),
+    });
+    await feed.refetch();
+    // Between the first and second page a post already seen is deleted;
+    // between the second and third, two new ones arrive at the top.
+    h.tables.posts = h.tables.posts.filter((p) => p.id !== before[3]);
+    await feed.fetchNextPage();
+    h.tables.posts.push(
+      { id: id("f4", 1), author_id: ME, created_at: at(20_000), removed_at: null },
+      { id: id("f4", 2), author_id: ME, created_at: at(20_001), removed_at: null },
+    );
+    const result = await feed.fetchNextPage();
+    const held = result.data!.pages.flat().map((p) => p.id);
+    expect(held).toEqual(before.slice(0, posts.FEED_PAGE_SIZE * 3));
+    client.clear();
+  });
+
   it("asks PostgREST for the order too, so a page is newest first whatever order the rows come in", async () => {
     club(60);
-    const expected = (await posts.fetchFeedPage(ME, 1)).map((x) => x.id);
+    const first = await posts.fetchFeedPage(ME, null);
+    const cursor = posts.nextFeedCursor(first)!;
+    const expected = (await posts.fetchFeedPage(ME, cursor)).map((x) => x.id);
     h.feedPage = "unordered";
     h.requests.length = 0;
-    const page = await posts.fetchFeedPage(ME, 1);
+    const page = await posts.fetchFeedPage(ME, cursor);
     expect(h.requests[0].url.searchParams.get("order")).toBe("created_at.desc,id.desc");
     expect(page.map((x) => x.id)).toEqual(expected);
     const times = page.map((x) => String(x.created_at));
     expect(times).toEqual([...times].sort().reverse());
   });
 
-  it("gives the same pages the old read gave, while the old read still worked", async () => {
+  it("gives the same pages the old read gives, where the database has no feed_page yet", async () => {
     club(60);
-    const viaFunction: string[][] = [];
-    for (let p = 0; p < 6; p++) viaFunction.push((await posts.fetchFeedPage(ME, p)).map((x) => x.id));
+    const viaFunction = await walk();
     h.feedPage = "missing";
     posts.forgetFeedPageMissing();
-    const theOldWay: string[][] = [];
-    for (let p = 0; p < 6; p++) theOldWay.push((await posts.fetchFeedPage(ME, p)).map((x) => x.id));
+    h.requests.length = 0;
+    const theOldWay = await walk();
     expect(viaFunction).toEqual(theOldWay);
     expect(viaFunction.flat().length).toBeGreaterThan(posts.FEED_PAGE_SIZE * 5);
+    // The old read asks after the same post, its time in quotes (it has "." and ":" in it).
+    const second = h.requests.filter((r) => r.url.pathname === "/rest/v1/posts")[1];
+    expect(second.url.searchParams.get("or")).toMatch(
+      /^\(created_at\.lt\."[^"]+",and\(created_at\.eq\."[^"]+",id\.lt\."[0-9a-f-]+"\)\)$/,
+    );
+    expect(second.url.searchParams.get("order")).toBe("created_at.desc,id.desc");
+    expect(second.url.searchParams.get("limit")).toBe(String(posts.FEED_PAGE_SIZE));
+    expect(second.url.searchParams.get("offset")).toBeNull();
   });
 
   it("falls back to the old read where the database has no feed_page yet, and does not keep asking", async () => {
     club(30);
     h.feedPage = "missing";
-    const first = await posts.fetchFeedPage(ME, 0);
+    const first = await posts.fetchFeedPage(ME, null);
     expect(first.length).toBe(posts.FEED_PAGE_SIZE);
-    await posts.fetchFeedPage(ME, 1);
+    await posts.fetchFeedPage(ME, posts.nextFeedCursor(first)!);
     const asked = h.requests.filter((r) => r.url.pathname === "/rest/v1/rpc/feed_page").length;
     expect(asked).toBe(1);
   });
@@ -548,12 +728,12 @@ describe("the home feed", () => {
   it("does not hide a real failure behind the fallback", async () => {
     club(30);
     h.feedPage = "broken";
-    await expect(posts.fetchFeedPage(ME, 0)).rejects.toMatchObject({ code: "57014" });
+    await expect(posts.fetchFeedPage(ME, null)).rejects.toMatchObject({ code: "57014" });
   });
 
   it("the old read, past a couple of hundred follows, could not be sent at all", async () => {
     club(800);
     h.feedPage = "missing";
-    await expect(posts.fetchFeedPage(ME, 0)).rejects.toBeTruthy();
+    await expect(posts.fetchFeedPage(ME, null)).rejects.toBeTruthy();
   });
 });
