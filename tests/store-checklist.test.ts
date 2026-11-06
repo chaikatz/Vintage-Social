@@ -123,6 +123,27 @@ describe("the house accounts, as Apple is told about them", () => {
     expect(flat(between(doc(), "- Content Rights:", "- **Age Rating**"))).not.toMatch(/header wrongly says/);
   });
 
+  it("seed/build.mjs writes that same header, so running it again does not take it back", () => {
+    const text = credits();
+    const rows = text.split("\n").filter((l) => /^\| \[/.test(l)).length;
+    const src = read("seed/build.mjs");
+    const from = src.indexOf("const credits = [") + "const credits = ".length;
+    const to = src.indexOf('"| File | Licence | Author |"', from);
+    expect(from, "the header in seed/build.mjs").toBeGreaterThan("const credits = ".length);
+    const header = new Function("used", "unsplash", "pd", "cc0", "none", `return ${src.slice(from, to)}];`)(
+      { size: rows },
+      count("Unsplash Licence"),
+      count("Public domain"),
+      count("CC0"),
+      count("No restrictions"),
+    ) as string[];
+    expect(header.join("\n")).toBe(text.slice(0, text.indexOf("| File |")).replace(/\n$/, ""));
+    // Counted whatever the case of the licence's spelling (photos.json has one "Public Domain"), and none left out.
+    expect(src).toMatch(/const licenceOf = \(p\) => \(photos\.find\(\(x\) => x\.url === p\.url\)\?\.licence \?\? ""\)\.toLowerCase\(\);/);
+    expect(src).toMatch(/if \(unsplash \+ pd \+ cc0 \+ none !== used\.size\) \{\s*throw new Error/);
+    expect(src).not.toMatch(/all public domain or CC0/);
+  });
+
   it("the review notes say the accounts the reviewer follows are the club's own, not people", () => {
     expect(read("supabase/migrations/0011_house_accounts.sql")).toMatch(/add column if not exists is_house/);
     const notes = flat(reviewNotes());
