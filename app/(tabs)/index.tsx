@@ -100,10 +100,15 @@ export default function Home() {
 
   // Likes and comment previews are read for the cards around the reader,
   // not every post loaded (see src/media/cardWindow.ts): the last card
-  // reported on screen, kept while nothing is.
+  // reported on screen, kept while nothing is. And for the list's first
+  // draw, which it keeps however far down the reader goes: without them
+  // those cards lost their previews and grew shorter above the reader.
   const [seenId, setSeenId] = useState<string | null>(null);
   const seenIndex = useMemo(() => (seenId ? postIds.indexOf(seenId) : -1), [postIds, seenId]);
-  const actionIds = useMemo(() => idsAround(postIds, Math.max(0, seenIndex)), [postIds, seenIndex]);
+  const actionIds = useMemo(
+    () => idsAround(postIds, Math.max(0, seenIndex), { keepFirst: HOME_FIRST_DRAW }),
+    [postIds, seenIndex],
+  );
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
     usePostActions(userId, actionIds);
 

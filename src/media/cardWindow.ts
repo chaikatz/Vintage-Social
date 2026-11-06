@@ -69,12 +69,29 @@ export const ACTION_STRETCH = 12;
  * always inside the stretches read, and a card far from them is not on
  * screen; the screens keep the last answer while the next stretch is read,
  * and that answer covers every card still on screen.
+ *
+ * Bar one kind of card: a list keeps the cards of its first draw for as
+ * long as it is open, wherever the reader is (VirtualizedList keeps its
+ * initial render region, for a quick return to the top). Read for the
+ * stretches alone, those cards lost their hearts and comment previews
+ * once the reader was two stretches down, and the previews standing in
+ * for "View all" made each of them shorter, above the reader, on a list
+ * that does not hold its place when something above it changes size: the
+ * feed jumped. `keepFirst` reads the first so many posts as well, always.
  */
-export function idsAround(ids: readonly string[], focus: number, stretch = ACTION_STRETCH): string[] {
+export function idsAround(
+  ids: readonly string[],
+  focus: number,
+  { keepFirst = 0, stretch = ACTION_STRETCH }: { keepFirst?: number; stretch?: number } = {},
+): string[] {
   if (ids.length === 0) return [];
   const at = Math.min(Math.max(Number.isFinite(focus) ? Math.floor(focus) : 0, 0), ids.length - 1);
   const k = Math.floor(at / stretch);
-  return ids.slice(Math.max(0, (k - 1) * stretch), (k + 2) * stretch);
+  const from = Math.max(0, (k - 1) * stretch);
+  const around = ids.slice(from, (k + 2) * stretch);
+  // The kept cards before the stretches, each once.
+  const kept = Math.min(Math.max(0, Math.floor(keepFirst)), from);
+  return kept > 0 ? [...ids.slice(0, kept), ...around] : around;
 }
 
 /**

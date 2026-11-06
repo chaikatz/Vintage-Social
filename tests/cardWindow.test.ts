@@ -128,6 +128,25 @@ describe("the posts whose likes and comment previews are read", () => {
     expect(address(idsAround(all, 500))).toBeLessThan(1_500);
   });
 
+  it("still hold the cards a list keeps from its first draw, however far down the reader is", () => {
+    const all = ids(500);
+    // Home keeps its first four cards drawn for good. Two stretches down
+    // (from card 24 on), the stretches alone no longer hold them.
+    expect(idsAround(all, 24)).not.toContain(all[0]);
+    for (const focus of [24, 30, 100, 499]) {
+      const read = idsAround(all, focus, { keepFirst: 4 });
+      for (const i of [0, 1, 2, 3]) expect(read).toContain(all[i]);
+      // The stretches are as they were, after them, each id once.
+      expect(read.slice(4)).toEqual(idsAround(all, focus));
+      expect(new Set(read).size).toBe(read.length);
+      expect(read.length).toBeLessThanOrEqual(3 * ACTION_STRETCH + 4);
+    }
+    // Near the top they are in the stretches already: the same request as without.
+    for (let focus = 0; focus < 24; focus++) expect(idsAround(all, focus, { keepFirst: 4 })).toEqual(idsAround(all, focus));
+    // One request per stretch still, so the likes are not read again on every card.
+    expect(idsAround(all, 30, { keepFirst: 4 }).join(",")).toBe(idsAround(all, 35, { keepFirst: 4 }).join(","));
+  });
+
   it("are nothing for an empty list, and the start for a focus that is not a number", () => {
     expect(idsAround([], 5)).toEqual([]);
     expect(idsAround(ids(30), Number.NaN)).toEqual(ids(30).slice(0, 24));
@@ -146,7 +165,11 @@ function code(file: string): string {
 describe("Home and the gallery", () => {
   it("read likes and comment previews for the cards around the reader only", () => {
     const home = code("app/(tabs)/index.tsx");
-    expect(home).toMatch(/const actionIds = useMemo\(\(\) => idsAround\(postIds, Math\.max\(0, seenIndex\)\), \[postIds, seenIndex\]\);/);
+    expect(home).toMatch(
+      /const actionIds = useMemo\(\s*\(\) => idsAround\(postIds, Math\.max\(0, seenIndex\), \{ keepFirst: HOME_FIRST_DRAW \}\),\s*\[postIds, seenIndex\],\s*\);/,
+    );
+    // The cards the list keeps for good are the ones its likes are kept for.
+    expect(home).toMatch(/initialNumToRender=\{HOME_FIRST_DRAW\}/);
     expect(home).toMatch(/usePostActions\(userId, actionIds\)/);
     expect(home).toMatch(/if \(id\) setSeenId\(id\);/);
     // The outbox still hears about every post the feed holds.
