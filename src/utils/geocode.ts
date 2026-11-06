@@ -82,6 +82,9 @@ export function knownPoints<T extends { id: string; location: string | null; lat
   return out;
 }
 
+/** A lookup that failed, as against one that found nothing. */
+const LOOKUP_FAILED = Symbol("lookup failed");
+
 /** Look a place up, remembering the answer for the session. */
 export async function geocodePlace(place: string, timeoutMs = 2500): Promise<Point | null> {
   load();
@@ -91,20 +94,25 @@ export async function geocodePlace(place: string, timeoutMs = 2500): Promise<Poi
   if (Platform.OS === "web") return null;
   let settled = false;
   const lookup = Location.geocodeAsync(place.trim())
-    .then((results) => {
+    .then((results): Point | null => {
       const first = results[0];
       if (!first || !Number.isFinite(first.latitude) || !Number.isFinite(first.longitude)) return null;
       return { lat: first.latitude, lng: first.longitude };
     })
-    .catch(() => null)
-    .then((point) => {
+    // The lookup failed rather than answered: no network, or the system
+    // geocoder holding back after many asks (iOS says both as a network
+    // error; "no such place" comes back as no results, above).
+    .catch((): typeof LOOKUP_FAILED => LOOKUP_FAILED)
+    .then((answer) => {
       settled = true;
       // Remember the answer — including "no such place" — but only when the
-      // lookup actually answered. A timeout stays unremembered so a later,
-      // calmer moment can try again.
-      setBounded(cache, k, point, POINTS_KEPT);
+      // lookup actually answered. A timeout or a failure stays unremembered
+      // so a later, calmer moment can try again; remembered, one visit to
+      // the places view with no signal lost those places for good.
+      if (answer === LOOKUP_FAILED) return null;
+      setBounded(cache, k, answer, POINTS_KEPT);
       persist();
-      return point;
+      return answer;
     });
   const point = await Promise.race([
     lookup,
