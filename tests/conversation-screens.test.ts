@@ -42,7 +42,11 @@ describe("opening a thread marks it read", () => {
   it("writes only then, and a write that fails is left for the next one", () => {
     const thread = read("app/messages/[id].tsx");
     expect(thread).toMatch(/const newestUnread = useMemo\(\(\) => newestUnreadFrom\(messagesQ\.data, userId\), \[messagesQ\.data, userId\]\);/);
-    expect(thread).toMatch(/if \(!id \|\| !userId \|\| !newestUnread\) return;\s*markConversationRead\(id, userId\)/);
+    // Nothing between the check and the write but taking note of what the
+    // write is for (src/utils/threadPoll.ts unreadIds).
+    expect(thread).toMatch(
+      /if \(!id \|\| !userId \|\| !newestUnread\) return;(\s*\/\/[^\n]*)*\s*const marking = unreadIds\([^\n]*\);\s*markConversationRead\(id, userId\)/,
+    );
     expect(thread).toMatch(/\.catch\(\(\) => undefined\);\s*\}, \[id, userId, newestUnread, queryClient\]\);/);
   });
 });
