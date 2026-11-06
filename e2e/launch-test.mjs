@@ -227,8 +227,20 @@ check(
     (await seen(page.getByRole("link", { name: "Terms of Use", exact: true })).count()) > 0 &&
     (await seen(page.getByRole("link", { name: "Privacy Policy", exact: true })).count()) > 0,
 );
+// The review notes send Apple here: opened empty, the card welcomes, and
+// does not open on "That invitation isn’t one we know".
+check(
+  "Opened empty, the invitation welcomes rather than refuses",
+  (await seen(page.getByText(/A member has put your name forward/)).count()) > 0 &&
+    (await seen(page.getByText(/isn’t one we know/)).count()) === 0,
+);
 const g = fields();
 await g.nth(0).fill(code);
+await wait(1400);
+check(
+  "Once the code is in, the invitation says who sent it",
+  (await seen(page.getByText(/Elena Marchetti invited you to VINTAGE/)).count()) > 0,
+);
 await g.nth(1).fill("Ada Fen");
 await g.nth(2).fill("ada.fen");
 await g.nth(3).fill("ada@example.com");

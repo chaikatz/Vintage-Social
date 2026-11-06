@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
 import { code, hooksAfterFirstReturn } from "./helpers/screenSource";
 
 /**
@@ -77,5 +78,126 @@ describe("B · the invitation says what is agreed to", () => {
     expect(style(src, "agree")).toBe(style(apply, "footnote"));
     expect(style(src, "agreeLink")).toBe(style(apply, "footLink"));
     expect(style(src, "agree")).not.toBe("");
+  });
+});
+
+/**
+ * The invitation as App Review first sees it. The review notes send Apple
+ * to "I have an invitation", which opens the card with the field empty.
+ * Asked about an empty code, invite_link_owner('') answers that nobody owns
+ * it, and the card opened on "That invitation isn’t one we know" before a
+ * letter was typed; it said the same at every keystroke from the third.
+ *
+ * The lookup is the screen's own effect, run here as written (its source,
+ * with the screen's helpers and state setters handed in), because nothing
+ * here can render a screen.
+ */
+describe("the invitation opens on its welcome, not on a refusal", () => {
+  const src = code("app/(gate)/invite.tsx");
+  const start = src.indexOf("useEffect(() => {\n    const slug = slugFromInput(code);");
+  const end = src.indexOf("}, [code, arrivedWith]);", start);
+  const body = src.slice(src.indexOf("{", start) + 1, end);
+  const pause = Number(src.match(/const TYPING_PAUSE_MS = (\d+);/)?.[1]);
+
+  type Owner = { inviter: string | null; open: boolean };
+  type Said = { inviter: string | null; closed: boolean; unknown: boolean };
+  function run(
+    typed: string,
+    arrivedWith = "",
+    owners: Record<string, Owner> = {},
+    state: Said = { inviter: null, closed: false, unknown: false },
+  ) {
+    const asked: string[] = [];
+    const effect = new Function(
+      "code",
+      "arrivedWith",
+      "slugFromInput",
+      "describeSlugProblem",
+      "fetchInviteOwner",
+      "setInviter",
+      "setClosed",
+      "setUnknown",
+      "TYPING_PAUSE_MS",
+      body,
+    ) as (...args: unknown[]) => (() => void) | undefined;
+    const cleanup = effect(
+      typed,
+      arrivedWith,
+      slugFromInput,
+      describeSlugProblem,
+      (slug: string) => {
+        asked.push(slug);
+        return Promise.resolve(owners[slug] ?? { inviter: null, open: false });
+      },
+      (v: string | null) => (state.inviter = v),
+      (v: boolean) => (state.closed = v),
+      (v: boolean) => (state.unknown = v),
+      pause,
+    );
+    return { asked, state, cleanup };
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("is the screen's own effect that runs here", () => {
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    expect(body).toContain("fetchInviteOwner(slug)");
+    expect(pause).toBeGreaterThan(0);
+    // Why the screen has to ask itself whether there is a code at all: the
+    // field's own rule says nothing about an empty one, on purpose.
+    expect(slugFromInput("")).toBe("");
+    expect(describeSlugProblem("")).toBeNull();
+  });
+
+  it("an empty field asks nothing and is not called unknown", async () => {
+    for (const typed of ["", "   ", "https://vintagesocial.app/i/"]) {
+      const { asked, state } = run(typed);
+      await vi.runAllTimersAsync();
+      expect(asked, JSON.stringify(typed)).toEqual([]);
+      expect(state.unknown, JSON.stringify(typed)).toBe(false);
+    }
+  });
+
+  it("a code being typed is asked about once the typing pauses, not at every letter", async () => {
+    const early = run("app");
+    await vi.advanceTimersByTimeAsync(pause - 1);
+    expect(early.asked).toEqual([]);
+    early.cleanup?.(); // the next letter arrives before the pause is over
+    await vi.runAllTimersAsync();
+    expect(early.asked).toEqual([]);
+    expect(early.state.unknown).toBe(false);
+
+    const typed = run("applereview", "", { applereview: { inviter: "Elena", open: true } });
+    await vi.advanceTimersByTimeAsync(pause);
+    expect(typed.asked).toEqual(["applereview"]);
+    expect(typed.state).toEqual({ inviter: "Elena", closed: false, unknown: false });
+  });
+
+  it("a code nobody owns is called unknown, once asked", async () => {
+    const { asked, state } = run("not-a-real-code");
+    await vi.runAllTimersAsync();
+    expect(asked).toEqual(["not-a-real-code"]);
+    expect(state.unknown).toBe(true);
+  });
+
+  it("what was said of the last code is not left standing while the next is typed", () => {
+    for (const typed of ["", "ap", "applerevie"]) {
+      for (const before of [
+        { inviter: "Elena", closed: true, unknown: false },
+        { inviter: null, closed: false, unknown: true },
+      ]) {
+        const { state } = run(typed, "", {}, { ...before });
+        expect(state, `${JSON.stringify(typed)} after ${JSON.stringify(before)}`).toEqual({ inviter: null, closed: false, unknown: false });
+      }
+    }
+  });
+
+  it("a code that came with the link is asked about at once", async () => {
+    const { asked, state } = run("chai", "chai", { chai: { inviter: "Chai", open: false } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked).toEqual(["chai"]);
+    expect(state).toEqual({ inviter: "Chai", closed: true, unknown: false });
   });
 });

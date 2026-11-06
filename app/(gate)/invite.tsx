@@ -29,6 +29,9 @@ import { useSession } from "@/providers/SessionProvider";
 import { backFromDoor } from "@/components/gate/door";
 import { useDoorClosesBehind } from "@/components/gate/useDoor";
 
+/** How long the typing pauses before the code typed so far is asked about. */
+const TYPING_PAUSE_MS = 350;
+
 /**
  * The invitation.
  *
@@ -46,7 +49,8 @@ export default function Invite() {
   // the field is filled in and the page can say who sent it before anyone
   // types anything. Pasted or typed by hand still works.
   const params = useLocalSearchParams<{ slug?: string }>();
-  const [code, setCode] = useState(params.slug ?? "");
+  const [arrivedWith] = useState(params.slug ?? "");
+  const [code, setCode] = useState(arrivedWith);
   const [inviter, setInviter] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
   // A well-formed code that nobody owns: a typo, or a link since replaced.
@@ -67,25 +71,37 @@ export default function Invite() {
   // wait until after the form is filled in.
   useEffect(() => {
     const slug = slugFromInput(code);
-    if (describeSlugProblem(slug)) {
-      setInviter(null);
-      setClosed(false);
-      setUnknown(false);
-      return;
-    }
+    // Whatever was said of the code before is not said of this one.
+    setInviter(null);
+    setClosed(false);
+    setUnknown(false);
+    // Nothing to ask about: an empty field, which is how "I have an
+    // invitation" opens this page (asked about "", the database answers that
+    // nobody owns it, and the page opened on "That invitation isn’t one we
+    // know"), or a code the database would refuse anyway.
+    if (!slug || describeSlugProblem(slug)) return;
     let live = true;
-    fetchInviteOwner(slug)
-      .then((owner) => {
-        if (!live) return;
-        setInviter(owner.inviter);
-        setClosed(Boolean(owner.inviter) && !owner.open);
-        setUnknown(owner.inviter === null);
-      })
-      .catch(() => undefined);
+    // A code that came with the link is asked about at once; one being
+    // typed, once the typing pauses, so a half-typed code is not called
+    // unknown at every letter and the database is not asked at every one.
+    const ask = setTimeout(
+      () => {
+        fetchInviteOwner(slug)
+          .then((owner) => {
+            if (!live) return;
+            setInviter(owner.inviter);
+            setClosed(Boolean(owner.inviter) && !owner.open);
+            setUnknown(owner.inviter === null);
+          })
+          .catch(() => undefined);
+      },
+      code === arrivedWith ? 0 : TYPING_PAUSE_MS,
+    );
     return () => {
       live = false;
+      clearTimeout(ask);
     };
-  }, [code]);
+  }, [code, arrivedWith]);
 
   const submit = async () => {
     const next: Record<string, string | null> = {
