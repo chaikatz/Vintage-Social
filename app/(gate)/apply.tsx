@@ -11,6 +11,7 @@ import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import { validateEmail, validatePassword, validateUsername } from "@/utils/validation";
 import { checkUsernameAvailable, submitApplication } from "@/api/membership";
+import { errorMessage } from "@/utils/errorMessage";
 import { useDoorClosesBehind } from "@/components/gate/useDoor";
 
 /**
@@ -93,7 +94,7 @@ export default function Apply() {
       });
       await goIn();
     } catch (err) {
-      showAlert("Application failed", err instanceof Error ? err.message : String(err));
+      showAlert("Application failed", errorMessage(err, "Your application didn’t reach us. Check your connection and try again."));
     } finally {
       setBusy(false);
     }

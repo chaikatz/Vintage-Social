@@ -24,6 +24,7 @@ import {
   validateUsername,
 } from "@/utils/validation";
 import { checkUsernameAvailable, fetchInviteOwner, joinWithInvite } from "@/api/membership";
+import { errorMessage } from "@/utils/errorMessage";
 import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
 import { useSession } from "@/providers/SessionProvider";
 import { backFromDoor } from "@/components/gate/door";
@@ -131,7 +132,9 @@ export default function Invite() {
       await refreshProfile();
       await goIn();
     } catch (err) {
-      showAlert("Couldn’t join", err instanceof Error ? err.message : String(err));
+      // joinWithInvite's own sentence ("… Your account has been created;
+      // enter a valid invitation to join.") comes through as it is.
+      showAlert("Couldn’t join", errorMessage(err, "Check your connection and try again."));
     } finally {
       setBusy(false);
     }

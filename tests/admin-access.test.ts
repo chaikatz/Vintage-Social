@@ -52,11 +52,27 @@ describe("every admin page", () => {
  * happen: a sentence our own SQL raised for them, or the screen's own
  * words for it (errorMessage). It used to be the error's text as it came:
  * the database talking, or "[object Object]" for a refusal from Supabase,
- * which is a plain object. (The dashboard, app/admin/index.tsx, belongs to
- * another part of the sweep and is handed on.)
+ * which is a plain object. Every admin page, and every page at the door.
  */
 describe("an alert about something that did not happen", () => {
-  const files = ["app/admin/applications.tsx", "app/admin/members.tsx", "app/admin/reports.tsx", "app/(gate)/pending.tsx"];
+  const files = [
+    "app/admin/index.tsx",
+    "app/admin/applications.tsx",
+    "app/admin/members.tsx",
+    "app/admin/reports.tsx",
+    "app/(gate)/pending.tsx",
+    "app/(gate)/sign-in.tsx",
+    "app/(gate)/apply.tsx",
+    "app/(gate)/invite.tsx",
+  ];
+
+  it("is checked on every admin page and every page at the door that catches an error", () => {
+    const door = readdirSync(path.join(root, "app/(gate)"))
+      .filter((f) => f.endsWith(".tsx"))
+      .map((f) => `app/(gate)/${f}`)
+      .filter((f) => /catch \(err\)|onError: \(err/.test(code(f)));
+    for (const file of [...pages, ...door]) expect(files, file).toContain(file);
+  });
 
   for (const file of files) {
     it(`${file} says it in the app's words`, () => {
@@ -76,6 +92,19 @@ describe("an alert about something that did not happen", () => {
     expect(src).toMatch(/onError: \(err, \{ suspended \}\) =>\s*showAlert\(suspended \? "Couldn’t suspend" : "Couldn’t reinstate", errorMessage\(err, "Nothing changed\. Try again in a moment\."\)\)/);
     expect(src).toContain('showAlert("Couldn’t change the invitations", errorMessage(err, "Nothing changed. Try again in a moment."))');
     expect(src).not.toMatch(/showAlert\("Failed"/);
+  });
+
+  it("the dashboard names what did not happen, and never counts a queue it could not read as empty", () => {
+    const src = code("app/admin/index.tsx");
+    expect(src).toContain('showAlert("Couldn’t change the invitations", errorMessage(err, "Nothing changed. Try again in a moment."))');
+    expect(src).not.toMatch(/showAlert\("Failed"/);
+    // "0 open" was said of a count that failed, and of one still being read.
+    expect(src).not.toMatch(/\.data \?\? 0\}/);
+    expect(src).toContain('sub: countLine(pendingApps, (n) => `${n} waiting for review`),');
+    expect(src).toContain('sub: countLine(openReports, (n) => `${n} open`),');
+    expect(src).toMatch(
+      /function countLine\([\s\S]*?\): string \{\s*if \(count\.data != null\) return say\(count\.data\);\s*return count\.isError \? "Couldn’t count them just now" : "\\u00a0";\s*\}/,
+    );
   });
 
   it("a list that could not be read says so, with Try again, on every admin page that has one", () => {

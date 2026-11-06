@@ -8,6 +8,19 @@ import { Screen } from "@/components/Screen";
 import { colors, radii, spacing, type } from "@/theme";
 import { countApplications, countReports, fetchDefaultInviteQuota, setDefaultInviteQuota } from "@/api/moderation";
 import { useSession } from "@/providers/SessionProvider";
+import { errorMessage } from "@/utils/errorMessage";
+
+/**
+ * A queue's count as its row says it. A count that could not be read said
+ * "0 open", and an admin with a report waiting was told there was none;
+ * one still being read said 0 too, and now says nothing yet (a space
+ * holds the line, so the row keeps its height). A count read before
+ * keeps showing while it is read again.
+ */
+function countLine(count: { data?: number; isError: boolean }, say: (n: number) => string): string {
+  if (count.data != null) return say(count.data);
+  return count.isError ? "Couldn’t count them just now" : "\u00a0";
+}
 
 /** The admin dashboard. Only profiles with role = admin can see this. */
 export default function AdminHome() {
@@ -36,7 +49,7 @@ export default function AdminHome() {
   const setDefault = useMutation({
     mutationFn: setDefaultInviteQuota,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-default-quota"] }),
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t change the invitations", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
   const promptDefault = () =>
     showPrompt(
@@ -59,13 +72,13 @@ export default function AdminHome() {
     {
       icon: "inbox" as const,
       title: "Applications",
-      sub: `${pendingApps.data ?? 0} waiting for review`,
+      sub: countLine(pendingApps, (n) => `${n} waiting for review`),
       href: "/admin/applications",
     },
     {
       icon: "flag" as const,
       title: "Reports",
-      sub: `${openReports.data ?? 0} open`,
+      sub: countLine(openReports, (n) => `${n} open`),
       href: "/admin/reports",
     },
     {
