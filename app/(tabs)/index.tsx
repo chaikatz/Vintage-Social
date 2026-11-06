@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FlatList, StyleSheet, View, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
-import { focusManager, onlineManager, useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { focusManager, onlineManager, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
 import { PendingPostCard } from "@/components/PendingPostCard";
@@ -17,7 +17,7 @@ import { notePostsInFeed, setOutboxProfileRefresher, usePendingPosts, type Pendi
 import { pendingNeedsTop } from "@/uploads/store";
 import { idsAround } from "@/media/cardWindow";
 import { commentsOrNone, likeCounted } from "@/media/stableCards";
-import { firstPageOnly, refreshOnReturn } from "@/media/feedPages";
+import { refreshFromFirstPage, refreshOnReturn } from "@/media/feedPages";
 import type { PostWithAuthor } from "@/types/db";
 
 /**
@@ -75,13 +75,14 @@ export default function Home() {
   });
 
   // A refresh starts the feed again from its newest page: one request,
-  // not one for every page the reader has loaded (src/media/feedPages.ts).
+  // not one for every page the reader has loaded, and those pages back as
+  // they were if it cannot be read (src/media/feedPages.ts).
   const queryClient = useQueryClient();
   const feedRefetch = feed.refetch;
-  const refreshFromTop = useCallback(() => {
-    queryClient.setQueryData<InfiniteData<PostWithAuthor[], number>>(["feed", userId], (d) => firstPageOnly(d));
-    return feedRefetch();
-  }, [queryClient, userId, feedRefetch]);
+  const refreshFromTop = useCallback(
+    () => refreshFromFirstPage(queryClient, ["feed", userId], feedRefetch),
+    [queryClient, userId, feedRefetch],
+  );
 
   const posts = useMemo(() => flattenPages(feed.data?.pages), [feed.data]);
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { InfiniteQueryObserver, QueryClient, type InfiniteData } from "@tanstack/query-core";
 import { describe, expect, it } from "vitest";
-import { NEAR_TOP, firstPageOnly, refreshOnReturn } from "@/media/feedPages";
+import { NEAR_TOP, firstPageOnly, refreshFromFirstPage, refreshOnReturn } from "@/media/feedPages";
 
 /**
  * Refreshing Home reads its newest page once, not every page loaded again
@@ -12,13 +12,14 @@ import { NEAR_TOP, firstPageOnly, refreshOnReturn } from "@/media/feedPages";
 
 const PAGE = 12;
 
-function feedQuery(total: number) {
+function feedQuery(total: number, net = { down: false }) {
   const calls: number[] = [];
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
   const observer = new InfiniteQueryObserver<string[], Error, InfiniteData<string[], number>, string[], number>(client, {
     queryKey: ["feed", "me"],
     queryFn: async ({ pageParam }) => {
       calls.push(pageParam);
+      if (net.down) throw new Error("Network request failed");
       const from = pageParam * PAGE;
       return Array.from({ length: Math.max(0, Math.min(PAGE, total - from)) }, (_, i) => `post-${from + i}`);
     },
@@ -63,6 +64,40 @@ describe("a refresh of the feed", () => {
     unsubscribe();
   });
 
+  it("reads the newest page once through the helper Home calls, and keeps it", async () => {
+    const { client, observer, calls, unsubscribe } = feedQuery(1000);
+    await scrollDown(observer, 20);
+    calls.length = 0;
+    const result = await refreshFromFirstPage(client, ["feed", "me"], () => observer.refetch());
+    expect(result.isError).toBe(false);
+    expect(calls).toEqual([0]);
+    expect(observer.getCurrentResult().data?.pages).toHaveLength(1);
+    unsubscribe();
+  });
+
+  it("puts every page back, as old as it was, when the newest cannot be read", async () => {
+    const net = { down: false };
+    const { client, observer, calls, unsubscribe } = feedQuery(1000, net);
+    await scrollDown(observer, 20);
+    const before = client.getQueryData<InfiniteData<string[], number>>(["feed", "me"]);
+    const updatedAt = client.getQueryState(["feed", "me"])?.dataUpdatedAt;
+    net.down = true;
+    calls.length = 0;
+    const result = await refreshFromFirstPage(client, ["feed", "me"], () => observer.refetch());
+    expect(result.isError).toBe(true);
+    expect(calls).toEqual([0]);
+    const after = observer.getCurrentResult();
+    expect(after.data).toEqual(before);
+    expect(after.data?.pages).toHaveLength(20);
+    // Still as stale as it was, so a return to the app asks again.
+    expect(client.getQueryState(["feed", "me"])?.dataUpdatedAt).toBe(updatedAt);
+    // And the reader scrolls on from where the pages end.
+    net.down = false;
+    await observer.fetchNextPage();
+    expect(calls).toEqual([0, 20]);
+    unsubscribe();
+  });
+
   it("leaves a feed of one page, or none, as it is", () => {
     expect(firstPageOnly(undefined)).toBeUndefined();
     const one = { pages: [["a"]], pageParams: [0] };
@@ -104,7 +139,8 @@ describe("Home", () => {
   const home = code("app/(tabs)/index.tsx");
 
   it("refreshes from its newest page when pulled and when Home is tapped again", () => {
-    expect(home).toMatch(/queryClient\.setQueryData<InfiniteData<PostWithAuthor\[\], number>>\(\["feed", userId\], \(d\) => firstPageOnly\(d\)\);\s*return feedRefetch\(\);/);
+    expect(home).toMatch(/const refreshFromTop = useCallback\(\s*\(\) => refreshFromFirstPage\(queryClient, \["feed", userId\], feedRefetch\),/);
+    expect(code("src/media/feedPages.ts")).toMatch(/const trimmed = firstPageOnly\(before\);\s*if \(trimmed === before\) return refetch\(\);\s*client\.setQueryData\(key, trimmed\);/);
     expect(home).toMatch(/onRefresh=\{\(\) => void refreshFromTop\(\)\}/);
     expect(home).toMatch(/refetchRef\.current = refreshFromTop;/);
     expect(home).not.toMatch(/onRefresh=\{\(\) => feed\.refetch\(\)\}/);

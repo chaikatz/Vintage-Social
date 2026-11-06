@@ -1,4 +1,4 @@
-import type { InfiniteData } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query";
 
 /**
  * Refreshing Home: from its newest page, in one request.
@@ -23,6 +23,32 @@ import type { InfiniteData } from "@tanstack/react-query";
 export function firstPageOnly<T, P>(data: InfiniteData<T, P> | undefined): InfiniteData<T, P> | undefined {
   if (!data || !Array.isArray(data.pages) || data.pages.length <= 1) return data;
   return { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) };
+}
+
+/**
+ * A refresh from the newest page: every page but the first let go, that
+ * one read again. Should the reading fail (offline, the server not
+ * answering), the pages the reader had are put back as they were, and
+ * as old as they were, so a refresh that could not happen costs nothing:
+ * left alone, the reader was down to the first page until they scrolled
+ * the rest back in, online.
+ */
+export async function refreshFromFirstPage<R extends { isError: boolean }>(
+  client: Pick<QueryClient, "getQueryData" | "getQueryState" | "setQueryData">,
+  key: QueryKey,
+  refetch: () => Promise<R>,
+): Promise<R> {
+  const before = client.getQueryData<InfiniteData<unknown, unknown>>(key);
+  const updatedAt = client.getQueryState(key)?.dataUpdatedAt;
+  const trimmed = firstPageOnly(before);
+  if (trimmed === before) return refetch();
+  client.setQueryData(key, trimmed);
+  // As the cache holds it (it shares what it can with what it held before).
+  const placed = client.getQueryData(key);
+  const result = await refetch();
+  // Put back only over the trimmed feed itself, never over anything newer.
+  if (result.isError && client.getQueryData(key) === placed) client.setQueryData(key, before, { updatedAt });
+  return result;
 }
 
 /** How far down the feed, in cards, a reader still counts as at the top. */
