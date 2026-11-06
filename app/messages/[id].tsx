@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Keyboard,
@@ -21,9 +21,11 @@ import { mediaUrl } from "@/api/media";
 import {
   fetchConversationPeer,
   fetchMessages,
+  fetchMessagesSince,
   markConversationRead,
   sendMessage,
 } from "@/api/messages";
+import { markedRead, readThread } from "@/utils/threadPoll";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -61,9 +63,25 @@ export default function Thread() {
     queryFn: () => fetchConversationPeer(id ?? "", userId),
     enabled: Boolean(id && userId),
   });
+  // When this screen last read the whole thread: it reads it whole as it
+  // opens, and then only what is new (src/utils/threadPoll.ts).
+  const lastWholeAt = useRef(0);
   const messagesQ = useQuery({
     queryKey: ["messages", id],
-    queryFn: () => fetchMessages(id ?? ""),
+    queryFn: async () => {
+      const key = ["messages", id];
+      const read = await readThread({
+        held: queryClient.getQueryData<MessageWithPost[]>(key),
+        // Something said the thread changed, or the last read failed.
+        invalidated: queryClient.getQueryState(key)?.isInvalidated ?? false,
+        lastWholeAt: lastWholeAt.current,
+        now: Date.now(),
+        whole: () => fetchMessages(id ?? ""),
+        since: (from, limit) => fetchMessagesSince(id ?? "", from, limit),
+      });
+      if (read.whole) lastWholeAt.current = Date.now();
+      return read.messages;
+    },
     enabled: Boolean(id),
     // A reply that arrives while the thread is open shows up on its own —
     // only while it is the screen on view.
@@ -84,6 +102,11 @@ export default function Thread() {
     if (!id || !userId || !newestUnread) return;
     markConversationRead(id, userId)
       .then(() => {
+        // Marked here too: the polls bring only new messages, and these
+        // would otherwise stay unread in the thread held, to be marked
+        // again the next time it is opened.
+        const at = new Date().toISOString();
+        queryClient.setQueryData<MessageWithPost[]>(["messages", id], (held) => (held ? markedRead(held, userId, at) : held));
         queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
         queryClient.invalidateQueries({ queryKey: ["unread-messages", userId] });
       })
@@ -105,7 +128,8 @@ export default function Thread() {
     mutationFn: () => sendMessage(id ?? "", userId, draft),
     onSuccess: () => {
       setDraft("");
-      queryClient.invalidateQueries({ queryKey: ["messages", id] });
+      // What is new, the message just sent with it: read now, not whole.
+      void queryClient.refetchQueries({ queryKey: ["messages", id] });
       queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
     },
     onError: (err) => showAlert("Couldn’t send", errorMessage(err, "Your words are still here. Try again in a moment.")),
