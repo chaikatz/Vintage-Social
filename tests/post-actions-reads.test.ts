@@ -109,13 +109,51 @@ describe("likes and comment previews over a long scroll of Home", () => {
     expect(stableChunks([], book)).toEqual([]);
   });
 
-  it("start the book afresh rather than let it grow without end", () => {
+  it("let go of the groups no longer asked about rather than let the book grow without end", () => {
     const book: ChunkBook = new Map();
     stableChunks(["a", "b"], book, { remember: 3 });
     expect(book.size).toBe(2);
     const again = stableChunks(["c", "d"], book, { remember: 3 });
     expect(book.size).toBe(2);
     expect(again).toEqual([["c", "d"]]);
+  });
+
+  it("keep the groups still on screen when the book makes room, so their hearts and previews stay drawn", () => {
+    // A long scroll of Home: the window of cards moves down page by page,
+    // the book fills, and the cards in the window keep their groups (and
+    // so their keys and their answers in the cache) through every turn.
+    const book: ChunkBook = new Map();
+    const remember = 60;
+    const all = Array.from({ length: 40 * PAGE }, (_, i) => `p${i}`);
+    let previous: (readonly string[])[] = [];
+    let rekeyed = 0;
+    let made = 0;
+    for (let seen = 0; seen < all.length; seen++) {
+      const loaded = Math.min(all.length, (Math.floor(seen / PAGE) + 2) * PAGE);
+      const ids = idsAround(all.slice(0, loaded), seen, { keepFirst: HOME_FIRST_DRAW });
+      const groups = stableChunks(ids, book, { remember });
+      for (const g of groups) if (!previous.includes(g)) made++;
+      // A card in the window both times must still be in the very same group.
+      for (const id of ids) {
+        const before = previous.find((g) => g.includes(id));
+        const now = groups.find((g) => g.includes(id));
+        if (before && now !== before) rekeyed++;
+      }
+      expect(book.size).toBeLessThanOrEqual(remember + ids.length);
+      previous = groups;
+    }
+    expect(made).toBeGreaterThan(0);
+    expect(rekeyed).toBe(0);
+  });
+
+  it("start afresh only when the groups asked about at once hold more than it keeps", () => {
+    const book: ChunkBook = new Map();
+    const many = Array.from({ length: 8 }, (_, i) => `m${i}`);
+    const first = stableChunks(many, book, { size: 2, remember: 5 });
+    const second = stableChunks(many, book, { size: 2, remember: 5 });
+    expect(second).toEqual(first);
+    expect(second[0]).not.toBe(first[0]);
+    expect(book.size).toBe(8);
   });
 
   it("are read so by every screen that shows a post's card", () => {
