@@ -142,6 +142,12 @@ describe("the two review blockers of 5 November", () => {
     expect(phone).toContain("tap **Delete my account**");
     expect(phone).toContain("Keep my account");
     expect(phone).toContain('"By accepting you agree to the Terms of Use and Privacy Policy"');
+    // The card Apple is sent to opens on its welcome, in the app's own words.
+    const invite = read("app/(gate)/invite.tsx");
+    for (const words of ["A member has put your name forward", "That invitation isn’t one we know"]) {
+      expect(invite, words).toContain(words);
+    }
+    expect(phone).toContain('the card opens with "A member has put your name forward", never with "That invitation isn’t one we know"');
     const notes = flat(reviewNotes());
     expect(notes).toContain("Delete my account, then two confirmations");
     expect(notes).toContain("accepting agrees to the Terms of Use and Privacy Policy");

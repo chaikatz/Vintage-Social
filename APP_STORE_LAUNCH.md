@@ -630,7 +630,11 @@ Have a second account (or a second phone) for steps 9–13 and 17.
    stay on Application received. Tap Delete my account again and answer
    Delete account, then Yes, delete everything → back at the landing page. Signing in with that email now fails
    (Guideline 5.1.1(v)). Nothing is approved, so no number is spent.
-5. Sign out. I have an invitation → an invitation → new email. Under
+5. Sign out. I have an invitation: the card opens with "A member has put
+   your name forward", never with "That invitation isn’t one we know"
+   (this is the screen the review notes send Apple to). Type an
+   invitation: once you stop typing, it names who sent it. Then a new
+   email. Under
    Accept the invitation the screen says "By accepting you agree to the
    Terms of Use and Privacy Policy"; tap Terms of Use, it opens, come back
    (Guideline 1.2) → Accept the invitation. Straight into Home, with the
