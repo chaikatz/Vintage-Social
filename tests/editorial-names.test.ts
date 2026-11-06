@@ -617,6 +617,7 @@ describe("the trial still comes out cleanly", () => {
         "app/settings.tsx",
         "tests/video-playback.test.ts",
         "tests/galleryLanding.test.ts",
+        "tests/stableCards.test.ts",
         "e2e/launch-test.mjs",
       ].sort(),
     );
