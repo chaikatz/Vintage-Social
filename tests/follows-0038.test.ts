@@ -219,9 +219,12 @@ describe("0038", () => {
       /create or replace function private\.follow_status_from_followee\(\)\s+returns trigger\s+language plpgsql\s+security definer\s+set search_path = ''/,
     );
     expect(s).toMatch(/if \(select auth\.uid\(\)\) is null then\s+return new;\s+end if;/);
+    // Read with the followee's row held, so a change of is_private and the follow wait for each other.
     expect(s).toMatch(
-      /new\.status := case\s+when exists \(select 1 from public\.profiles p where p\.id = new\.followee_id and p\.is_private\)\s+then 'pending'\s+else 'accepted'\s+end;/,
+      /select p\.is_private into v_private\s+from public\.profiles p\s+where p\.id = new\.followee_id\s+for no key update;\s+new\.status := case when coalesce\(v_private, false\) then 'pending' else 'accepted' end;/,
     );
+    // Not a share lock: two followers holding one would deadlock when both count the follow.
+    expect(s).not.toMatch(/followee_id\s+for (key )?share/);
     expect(s).toMatch(/revoke execute on function private\.follow_status_from_followee\(\) from public, anon, authenticated;/);
     expect(s).toMatch(
       /create trigger follows_status_from_followee\s+before insert on public\.follows\s+for each row execute function private\.follow_status_from_followee\(\);/,

@@ -134,16 +134,24 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_private boolean;
 begin
   -- No member: the owner's SQL or the service role. What it wrote stands.
   if (select auth.uid()) is null then
     return new;
   end if;
-  new.status := case
-    when exists (select 1 from public.profiles p where p.id = new.followee_id and p.is_private)
-      then 'pending'
-    else 'accepted'
-  end;
+  -- The followee's row is held while the follow is filed, so the follow and
+  -- a change of is_private (section 7) wait for each other: a request filed
+  -- as the account goes public is read after the change commits (and is
+  -- accepted), or is seen by the change's own update (which lets it in).
+  -- No key update, not share: two followers who both held a share lock and
+  -- then both counted the follow (bump_follow_counts) would deadlock.
+  select p.is_private into v_private
+    from public.profiles p
+   where p.id = new.followee_id
+     for no key update;
+  new.status := case when coalesce(v_private, false) then 'pending' else 'accepted' end;
   return new;
 end
 $$;
