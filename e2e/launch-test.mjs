@@ -172,7 +172,19 @@ await shot("06-reports");
 
 // 3. a member's invitation
 await back();
+// Who the last member looked for in Search is not left for the next one
+// (src/utils/searchHistory.ts keeps it in localStorage on the web).
+await page.evaluate(() =>
+  localStorage.setItem(
+    "vintage.recent-searches",
+    JSON.stringify([{ id: "someone", username: "looked.for", full_name: null, avatar_url: null }]),
+  ),
+);
 await signOutFromSettings();
+check(
+  "Sign out forgets the member's recent searches",
+  (await page.evaluate(() => localStorage.getItem("vintage.recent-searches"))) === "[]",
+);
 await signInAs("elena@vintage.club");
 await tab("profile");
 await tap("Invitations", 2600);
