@@ -23,8 +23,10 @@ import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 
-// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
-export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * One photograph on its own.

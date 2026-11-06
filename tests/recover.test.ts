@@ -19,30 +19,36 @@ describe("the recover pages", () => {
       "app/messages/index.tsx",
       "app/messages/[id].tsx",
       "app/comments.tsx",
-      "app/memories.tsx",
       "app/(tabs)/activity.tsx",
       "app/(tabs)/search.tsx",
-      // One bad row on these used to take the member out to the whole app's page.
+      // One bad row on these used to take the member out to the whole app's page. A tab's
+      // page is left by the tab bar.
       "app/(tabs)/index.tsx",
       "app/(tabs)/profile.tsx",
       "app/(tabs)/create.tsx",
-      "app/post/[id].tsx",
-      "app/user/[username].tsx",
-      "app/gallery.tsx",
-      "app/library-picker.tsx",
-      "app/settings.tsx",
-      "app/invites.tsx",
-      "app/requests.tsx",
-      "app/blocked.tsx",
-      "app/likes.tsx",
     ]) {
       expect(read(screen), screen).toMatch(/^export \{ RecoverPage as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
     }
   });
 
   it("put the way back on the page where the header cannot be counted on for it", () => {
-    // The editor hides its back button while a post develops, and its back swipe is off; a sheet has no back button.
-    for (const screen of ["app/compose.tsx", "app/export.tsx"]) {
+    // A screen opened straight from a link is the first in its stack, with no back button;
+    // the editor hides its back button while a post develops, and its back swipe is off; a
+    // sheet has no back button.
+    for (const screen of [
+      "app/post/[id].tsx",
+      "app/user/[username].tsx",
+      "app/gallery.tsx",
+      "app/memories.tsx",
+      "app/library-picker.tsx",
+      "app/settings.tsx",
+      "app/invites.tsx",
+      "app/requests.tsx",
+      "app/blocked.tsx",
+      "app/likes.tsx",
+      "app/compose.tsx",
+      "app/export.tsx",
+    ]) {
       expect(read(screen), screen).toMatch(/^export \{ RecoverPageWithBack as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
     }
     // The Memory Room has no header at all, and its back swipe is the left edge alone.

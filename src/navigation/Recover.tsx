@@ -22,10 +22,13 @@ import { queryClient } from "@/lib/queryClient";
  * Home, away from whatever broke, with every read made again rather than
  * drawn from what was held when it broke. `RecoverPage` stands in for one
  * screen, under its own header, so the way back stays where it always is.
- * Where a screen's header cannot be counted on for that (the editor hides
- * its back button while it develops; a sheet has none), `RecoverPageWithBack`
- * puts the way back on the page too; and the Memory Room, which has no
- * header at all, has `RecoverRoom`, which also keeps clear of the status bar.
+ * Where a screen's header cannot be counted on for that, `RecoverPageWithBack`
+ * puts the way back on the page too: a screen opened straight from a link
+ * is the first in its stack and has no back button, the editor hides its
+ * own while it develops, and a sheet has none. Going back from it returns
+ * to the screen before, or to Home when there is none. The Memory Room,
+ * which has no header at all, has `RecoverRoom`, which also keeps clear of
+ * the status bar. A tab's page needs neither: the tab bar is the way out.
  *
  * None of them reads the app's own providers (the session, the query
  * cache): the root one is drawn where they have been taken down with the
@@ -127,7 +130,10 @@ export function RecoverPage({ error, retry, withBack = false, top = 0 }: PagePro
   );
 }
 
-/** One screen's, whose header may not hold the way back: the editor while it develops, a sheet. */
+/**
+ * One screen's, whose header may not hold the way back: a screen opened
+ * straight from a link, the editor while it develops, a sheet.
+ */
 export function RecoverPageWithBack(props: ErrorBoundaryProps) {
   return <RecoverPage {...props} withBack />;
 }
