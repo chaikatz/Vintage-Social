@@ -1,10 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { removePostEverywhere, rewritePostEverywhere } from "@/utils/postCache";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { perfLog, shortId } from "@/utils/perf";
+import { stableChunks, type ChunkBook } from "@/utils/stableChunks";
 import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
 import { blockMember } from "@/api/blocks";
 import { holdPost, notePostDeleted } from "@/uploads";
@@ -29,25 +30,32 @@ export function usePostActions(userId: string, postIds: string[]) {
   // arrangement has been read and there is somewhere to keep a change.
   const erasReady = useEraEdits(userId).data?.ready === true;
 
-  const likesQuery = useQuery({
-    queryKey: ["my-likes", userId, postIds.join(",")],
-    queryFn: () => fetchMyLikes(userId, postIds),
-    enabled: Boolean(userId) && postIds.length > 0,
-    // A new page means a new key; the hearts already drawn keep their state
-    // while the wider answer arrives instead of blinking to outline.
-    placeholderData: keepPreviousData,
+  // Read in groups that keep their posts (src/utils/stableChunks.ts): a new
+  // page of the feed reads its own posts only, and the hearts and previews
+  // already drawn stay as they are, their groups unchanged in the cache.
+  const book = useRef<ChunkBook>(new Map());
+  const chunks = useMemo(() => stableChunks(postIds, book.current), [postIds]);
+
+  const liked = useQueries({
+    queries: chunks.map((ids) => ({
+      queryKey: ["my-likes", userId, ids.join(",")],
+      queryFn: () => fetchMyLikes(userId, [...ids]),
+      enabled: Boolean(userId),
+    })),
+    combine: likedIn,
   });
 
-  const previewsQuery = useQuery({
-    queryKey: ["comment-previews", postIds.join(",")],
-    queryFn: () => fetchCommentPreviews(postIds, INLINE_COMMENTS),
-    enabled: postIds.length > 0,
-    placeholderData: keepPreviousData,
+  const previews = useQueries({
+    queries: chunks.map((ids) => ({
+      queryKey: ["comment-previews", ids.join(",")],
+      queryFn: () => fetchCommentPreviews([...ids], INLINE_COMMENTS),
+    })),
+    combine: previewsIn,
   });
 
   const commentsFor = useCallback(
-    (post: { id: string }): CommentWithAuthor[] => previewsQuery.data?.[post.id] ?? [],
-    [previewsQuery.data],
+    (post: { id: string }): CommentWithAuthor[] => previews[post.id] ?? [],
+    [previews],
   );
 
   // Comments open on their own screen. Pushing the post again would show
@@ -98,8 +106,8 @@ export function usePostActions(userId: string, postIds: string[]) {
   const [deltas, setDeltas] = useState<Record<string, number>>({});
 
   const isLiked = useCallback(
-    (post: { id: string }) => overrides[post.id] ?? likesQuery.data?.has(post.id) ?? false,
-    [overrides, likesQuery.data],
+    (post: { id: string }) => overrides[post.id] ?? liked.has(post.id),
+    [overrides, liked],
   );
 
   const likeCountFor = useCallback(
@@ -253,4 +261,25 @@ export function usePostActions(userId: string, postIds: string[]) {
   );
 
   return { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenPost, onOpenLikes, commentsFor };
+}
+
+/**
+ * Every group's liked posts as one set. Declared once, outside the hook:
+ * react-query runs a `combine` again only when it or a group's answer
+ * changes, so the set, and every card drawn from it, stays the same
+ * object while nothing has.
+ */
+function likedIn(results: UseQueryResult<Set<string>>[]): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const r of results) for (const id of r.data ?? []) out.add(id);
+  return out;
+}
+
+/** Every group's comment previews, by post. Outside the hook for the same reason. */
+function previewsIn(
+  results: UseQueryResult<Record<string, CommentWithAuthor[]>>[],
+): Readonly<Record<string, CommentWithAuthor[]>> {
+  const out: Record<string, CommentWithAuthor[]> = {};
+  for (const r of results) if (r.data) Object.assign(out, r.data);
+  return out;
 }
