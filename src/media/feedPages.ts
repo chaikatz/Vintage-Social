@@ -1,4 +1,4 @@
-import { onlineManager, type InfiniteData, type QueryClient, type QueryKey } from "@tanstack/react-query";
+import { onlineManager, type InfiniteData, type Query, type QueryClient, type QueryKey } from "@tanstack/react-query";
 
 /**
  * Refreshing Home: from its newest page, in one request.
@@ -38,7 +38,9 @@ export function firstPageOnly<T, P>(data: InfiniteData<T, P> | undefined): Infin
  * for (null); Home refreshes a reader at the top once it is back. And a
  * read the signal drops once it is out, which then waits, is taken for
  * one that failed: the pages are put back and the read called off, and
- * the signal's return finds the feed as stale as it was.
+ * the signal's return finds the feed as stale as it was. What react-query
+ * says of a read called off between two tries is set right after it
+ * (clearLateWaits).
  */
 export async function refreshFromFirstPage<R extends { isError: boolean }>(
   client: Pick<QueryClient, "getQueryData" | "getQueryState" | "setQueryData" | "getQueryCache" | "cancelQueries">,
@@ -66,6 +68,7 @@ export async function refreshFromFirstPage<R extends { isError: boolean }>(
     // held last, and that is now the pages.
     putBack();
     void client.cancelQueries({ queryKey: key, exact: true });
+    if (query) clearLateWaits(client, query);
   });
   try {
     const result = await refetch();
@@ -74,6 +77,44 @@ export async function refreshFromFirstPage<R extends { isError: boolean }>(
   } finally {
     stop();
   }
+}
+
+/**
+ * How long, after a read is called off, react-query may still say late
+ * that it waits: its longest wait between two tries (30 seconds unless a
+ * query asks for less; the app's own reads wait 5 at most,
+ * src/lib/queryClient.ts).
+ */
+export const LATE_WAIT_MS = 30_000;
+
+/**
+ * React-query's late word on a read it called off while that read waited
+ * between two tries: once the wait is over with no signal, it says the
+ * read waits for one (fetchStatus "paused"), though the read is gone and
+ * nothing is out. A refresh meets it when the reader asked for the next
+ * page while it was out (which calls the refresh off), or when it called
+ * a next page off itself, and the read it calls off here may be between
+ * its tries as well. The feed then said a read was waiting until its next
+ * read, and a post confirmed meanwhile waited on that before it handed
+ * over (src/uploads/feedCache.ts).
+ *
+ * For a while after a read is called off here, a "waiting" said of the
+ * feed while it has no read out is set back to idle: nothing waits. What
+ * a read that is out says is left as it is.
+ */
+function clearLateWaits(client: Pick<QueryClient, "getQueryCache">, query: Query, ms = LATE_WAIT_MS): void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = client.getQueryCache().subscribe((event) => {
+    if (event.query !== query) return;
+    if (event.type === "removed") {
+      clearTimeout(timer);
+      stop();
+      return;
+    }
+    if (event.type !== "updated" || event.action.type !== "pause" || query.promise !== undefined) return;
+    query.setState({ fetchStatus: "idle" });
+  });
+  timer = setTimeout(stop, ms);
 }
 
 /** How far down the feed, in cards, a reader still counts as at the top. */

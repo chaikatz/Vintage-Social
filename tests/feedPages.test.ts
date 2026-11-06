@@ -3,7 +3,7 @@ import path from "node:path";
 import { InfiniteQueryObserver, QueryClient, onlineManager, type InfiniteData } from "@tanstack/query-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { retryRead } from "@/utils/retry";
-import { NEAR_TOP, firstPageOnly, refreshFromFirstPage, refreshOnReturn } from "@/media/feedPages";
+import { LATE_WAIT_MS, NEAR_TOP, firstPageOnly, refreshFromFirstPage, refreshOnReturn } from "@/media/feedPages";
 
 /**
  * Refreshing Home reads its newest page once, not every page loaded again
@@ -306,16 +306,22 @@ describe("a refresh of the feed with no signal", () => {
       calls.length = 0;
       const refresh = refreshFromFirstPage(client, ["feed", "me"], () => observer.refetch());
       await vi.advanceTimersByTimeAsync(10);
-      // The end of the one page left is reached: the next is asked for, which calls the refresh off.
+      // The end of the one page left is reached: the next is asked for,
+      // which calls the refresh off between its tries.
       const more = observer.fetchNextPage();
       await vi.advanceTimersByTimeAsync(10);
       onlineManager.setOnline(false);
       const out = await settled(Promise.all([refresh, more]), 10_000);
       expect(out.done).toBe(true);
+      expect(calls).toEqual([0, 1]);
       expect(observer.getCurrentResult().data).toEqual(before);
-      // Nothing is out. (The read called off for the next page still says
-      // "paused" once its wait is over: react-query's own, until the next read.)
+      // Nothing is out, and nothing says it waits: react-query's late
+      // "paused" for the next page's read, called off between its tries,
+      // is set right (it stayed until the next read).
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(client.getQueryCache().find({ queryKey: ["feed", "me"], exact: true })?.promise).toBeUndefined();
       expect(observer.getCurrentResult().isFetching).toBe(false);
+      expect(observer.getCurrentResult().fetchStatus).toBe("idle");
       const asked = calls.length;
       net.down = false;
       onlineManager.setOnline(true);
@@ -326,6 +332,77 @@ describe("a refresh of the feed with no signal", () => {
       expect(calls.at(-1)).toBe(5);
       expect(observer.getCurrentResult().data?.pages).toHaveLength(6);
       expect(observer.getCurrentResult().fetchStatus).toBe("idle");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("puts every page back, and leaves nothing 'waiting', when it called off a next page that was between its tries", async () => {
+    // The next page out and waiting between its tries when the reader
+    // pulls: the refresh calls it off, and that read's late "paused" comes
+    // while the refresh's own read is between its tries too.
+    const net = { down: false };
+    const { client, observer, calls, unsubscribe } = offlineFeed(net);
+    try {
+      await scrollDown(observer, 5);
+      const before = client.getQueryData<InfiniteData<string[], number>>(["feed", "me"]);
+      const updatedAt = client.getQueryState(["feed", "me"])?.dataUpdatedAt;
+      net.down = true;
+      calls.length = 0;
+      void observer.fetchNextPage();
+      await vi.advanceTimersByTimeAsync(10);
+      const refresh = refreshFromFirstPage(client, ["feed", "me"], () => observer.refetch());
+      await vi.advanceTimersByTimeAsync(10);
+      expect(calls).toEqual([5, 0]);
+      onlineManager.setOnline(false);
+      const out = await settled(refresh, 10_000);
+      expect(out.done).toBe(true);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const now = observer.getCurrentResult();
+      expect(now.data).toEqual(before);
+      expect(now.fetchStatus).toBe("idle");
+      expect(client.getQueryState(["feed", "me"])?.dataUpdatedAt).toBe(updatedAt);
+      // With the signal back, nothing was left waiting to undo it.
+      net.down = false;
+      onlineManager.setOnline(true);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(calls).toEqual([5, 0]);
+      expect(observer.getCurrentResult().data).toEqual(before);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("sets right only a 'waiting' said with no read out, and only for a while after it called a read off", async () => {
+    const net = { down: false };
+    const { client, observer, unsubscribe } = offlineFeed(net);
+    try {
+      await scrollDown(observer, 5);
+      net.down = true;
+      const refresh = refreshFromFirstPage(client, ["feed", "me"], () => observer.refetch());
+      await vi.advanceTimersByTimeAsync(10);
+      onlineManager.setOnline(false);
+      expect((await settled(refresh, 10_000)).done).toBe(true);
+      // A read asked for afterwards, still offline, waits for the signal: that one is out, and left to say so.
+      const more = observer.fetchNextPage();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(observer.getCurrentResult().fetchStatus).toBe("paused");
+      net.down = false;
+      onlineManager.setOnline(true);
+      expect((await settled(more, 10_000)).done).toBe(true);
+      expect(observer.getCurrentResult().fetchStatus).toBe("idle");
+      // Long after, nothing of the refresh still listens: a read called off
+      // between its tries by someone else then says it waits, late, as
+      // react-query has it.
+      await vi.advanceTimersByTimeAsync(LATE_WAIT_MS);
+      net.down = true;
+      void observer.fetchNextPage();
+      await vi.advanceTimersByTimeAsync(10);
+      void client.cancelQueries({ queryKey: ["feed", "me"], exact: true });
+      onlineManager.setOnline(false);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(client.getQueryCache().find({ queryKey: ["feed", "me"], exact: true })?.promise).toBeUndefined();
+      expect(observer.getCurrentResult().fetchStatus).toBe("paused");
     } finally {
       unsubscribe();
     }
