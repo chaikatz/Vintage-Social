@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { forgetUnwatchedReads } from "@/components/recoverReads";
 
 const read = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
+/** A file's code without its comments, so a guard reads what runs. */
+const code = (file: string) =>
+  read(file)
+    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
 
 /**
  * A page that breaks while it is drawn. Without a boundary React gives up
@@ -79,9 +87,85 @@ describe("the recover pages", () => {
     expect(styles).toMatch(/backgroundColor: colors\.paper,/);
   });
 
+  it("a screen's tries again from reads made afresh, not from the row it broke on", () => {
+    // RecoverPageWithBack and RecoverRoom are RecoverPage, so all three do.
+    expect(code("src/navigation/Recover.tsx")).toMatch(
+      /export function RecoverPage\(\{ error, retry, withBack = false, top = 0 \}: PageProps\) \{\s*useLogged\(error\);\s*const \{ trying, tryAgain \} = useRetry\(\(\) => \{\s*forgetUnwatchedReads\(queryClient\);\s*return retry\(\);\s*\}\);/,
+    );
+    expect(recover).toMatch(/^import \{ forgetUnwatchedReads \} from "@\/components\/recoverReads";$/m);
+  });
+
   it("the whole app's opens afresh: every read made again, not drawn from what broke", () => {
     expect(recover).toMatch(/useRetry\(\(\) => \{\s*queryClient\.clear\(\);\s*return retry\(\);\s*\}\)/);
     // Drawn where the providers have gone down with the layout: it reads none of them.
     expect(recover).not.toMatch(/useSession|useQueryClient|useRouter/);
+  });
+});
+
+/**
+ * A screen that broke on a bad row its read brought. react-query reads
+ * again only once a screen is on screen, and a screen that breaks as it is
+ * drawn never is: drawn again from the same cache, it broke again at once,
+ * and Try again did nothing until the cache let go of the row by itself.
+ * Here the cache as it stands when the member taps Try again: the broken
+ * screen was on screen once and its boundary has taken it down, and the
+ * screen under it in the stack is still watching its own read.
+ */
+describe("trying again on a screen's recover page", () => {
+  const bad = { id: "p1", author: null };
+  const good = { id: "p1", author: { username: "elena" } };
+
+  function scene() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
+    let reads = 0;
+    const post = {
+      queryKey: ["post", "p1"],
+      queryFn: async () => {
+        reads += 1;
+        return good;
+      },
+    };
+    const feed = { queryKey: ["feed", "me"], queryFn: async () => [{ id: "p0" }] };
+    client.setQueryData(post.queryKey, bad);
+    client.setQueryData(feed.queryKey, [{ id: "p0" }]);
+    // The screen under it, still on screen.
+    const under = new QueryObserver(client, feed);
+    const leave = under.subscribe(() => undefined);
+    // The broken screen: on screen once, then caught by its boundary.
+    new QueryObserver(client, post).subscribe(() => undefined)();
+    /** The screen drawn again: what its read hands it as it is drawn, before it is on screen. */
+    const redraw = () => {
+      const observer = new QueryObserver(client, post);
+      return { observer, drawn: observer.getOptimisticResult(client.defaultQueryOptions(post)).data };
+    };
+    return { client, redraw, reads: () => reads, leave };
+  }
+
+  it("left alone, the screen is drawn again from the row it broke on, and never read again", () => {
+    const { redraw, reads, leave } = scene();
+    expect(redraw().drawn).toBe(bad);
+    expect(reads()).toBe(0);
+    leave();
+  });
+
+  it("lets go of the broken screen's reads, so it is drawn from a read made afresh", async () => {
+    const { client, redraw, reads, leave } = scene();
+    forgetUnwatchedReads(client);
+    const { observer, drawn } = redraw();
+    // Drawn waiting, as it was the first time it opened, and read once it is on screen.
+    expect(drawn).toBeUndefined();
+    const stop = observer.subscribe(() => undefined);
+    await vi.waitFor(() => expect(observer.getCurrentResult().data).toBe(good));
+    expect(reads()).toBe(1);
+    stop();
+    leave();
+  });
+
+  it("keeps every read a screen still on screen watches", () => {
+    const { client, leave } = scene();
+    forgetUnwatchedReads(client);
+    expect(client.getQueryData(["feed", "me"])).toEqual([{ id: "p0" }]);
+    expect(client.getQueryData(["post", "p1"])).toBeUndefined();
+    leave();
   });
 });

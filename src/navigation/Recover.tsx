@@ -4,6 +4,7 @@ import { router, type ErrorBoundaryProps } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, spacing, type } from "@/theme";
 import { queryClient } from "@/lib/queryClient";
+import { forgetUnwatchedReads } from "@/components/recoverReads";
 
 /**
  * What the app shows when a page breaks while it is being drawn.
@@ -29,10 +30,13 @@ import { queryClient } from "@/lib/queryClient";
  * to the screen before, or to Home when there is none. The Memory Room,
  * which has no header at all, has `RecoverRoom`, which also keeps clear of
  * the status bar. A tab's page needs neither: the tab bar is the way out.
+ * Trying again on any of them draws the screen from reads made afresh, not
+ * from the row it broke on (src/components/recoverReads.ts).
  *
  * None of them reads the app's own providers (the session, the query
- * cache): the root one is drawn where they have been taken down with the
- * layout. The Memory Room's asks only where the status bar ends.
+ * cache's provider): the root one is drawn where they have been taken
+ * down with the layout, and the others reach the one cache directly. The
+ * Memory Room's asks only where the status bar ends.
  */
 
 declare const __DEV__: boolean | undefined;
@@ -117,7 +121,12 @@ interface PageProps extends ErrorBoundaryProps {
 /** One screen's: drawn under its header, which keeps the way back. */
 export function RecoverPage({ error, retry, withBack = false, top = 0 }: PageProps) {
   useLogged(error);
-  const { trying, tryAgain } = useRetry(retry);
+  // Drawn again from the reads it broke on, the screen would break again at
+  // once: those, which nothing watches now, are let go of and read afresh.
+  const { trying, tryAgain } = useRetry(() => {
+    forgetUnwatchedReads(queryClient);
+    return retry();
+  });
   return (
     <View style={[styles.screen, top > 0 && { paddingTop: top + PAGE_TOP }]}>
       <Text style={styles.title} accessibilityRole="header">
