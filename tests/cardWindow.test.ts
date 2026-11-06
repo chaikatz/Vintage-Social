@@ -12,6 +12,9 @@ import {
   pictureWindow,
   rowTops,
   STAND_INS_AROUND,
+  STAND_IN_STEP,
+  cardAtOffset,
+  nextStandInFocus,
   standInWindow,
   timelineWindow,
   type RowWindow,
@@ -113,6 +116,51 @@ describe("the gallery's small copies standing in", () => {
       expect(isWarm(landed, pictures)).toBe(false);
       expect(isWarm(landed, standIns)).toBe(true);
     }
+  });
+
+  it("follow the scroll itself: a quick scroll of twelve cards finds them already there", () => {
+    // Cards of 700 points under 8 of padding, in an 844-point view; the reader was on card 70.
+    const heights = new Map(Array.from({ length: 157 }, (_, i) => [i, 700] as const));
+    const heightOf = (i: number) => heights.get(i);
+    const middleOf = (card: number) => 8 + card * 700 + 350;
+    let focus: number | null = null;
+    focus = nextStandInFocus(focus, cardAtOffset(middleOf(70), 157, heightOf, 8));
+    expect(focus).toBe(70);
+    // A twelve-card flick, read as the list scrolls (every 100 points).
+    let moves = 0;
+    for (let y = middleOf(70); y <= middleOf(82); y += 100) {
+      const next = nextStandInFocus(focus, cardAtOffset(y, 157, heightOf, 8));
+      if (next !== focus) moves++;
+      focus = next;
+    }
+    // Moved every few cards on the way, not at every card.
+    expect(moves).toBeLessThanOrEqual(12 / STAND_IN_STEP);
+    const standIns = standInWindow({ ready: true, startIndex: 60, seenIndex: focus, count: 157 });
+    // Where the flick came to rest, and the card below it, already hold their small copies,
+    // though the card reported on screen is still 70 and its photographs stop at 73.
+    for (const landed of [82, 83]) expect(isWarm(landed, standIns)).toBe(true);
+    expect(isWarm(82, pictureWindow({ ready: true, startIndex: 60, seenIndex: 70, count: 157 }))).toBe(false);
+  });
+
+  it("find the card at a point of the list from the heights the cards gave, the rest at their average", () => {
+    const given = [500, 700, undefined, 900];
+    const heightOf = (i: number) => given[i];
+    expect(STAND_IN_STEP).toBe(3);
+    expect(cardAtOffset(0, 4, heightOf, 8)).toBe(0);
+    expect(cardAtOffset(507, 4, heightOf, 8)).toBe(0);
+    expect(cardAtOffset(508, 4, heightOf, 8)).toBe(1);
+    // The third card is counted at the average of the others (700).
+    expect(cardAtOffset(8 + 500 + 700 + 699, 4, heightOf, 8)).toBe(2);
+    expect(cardAtOffset(8 + 500 + 700 + 700, 4, heightOf, 8)).toBe(3);
+    expect(cardAtOffset(1e9, 4, heightOf, 8)).toBe(3);
+    // Nothing measured, or nothing at all: the first card.
+    expect(cardAtOffset(5000, 4, () => undefined, 8)).toBe(0);
+    expect(cardAtOffset(5000, 0, heightOf, 8)).toBe(0);
+    // Moved only a few cards on, either way.
+    expect(nextStandInFocus(null, 9)).toBe(9);
+    expect(nextStandInFocus(9, 11)).toBe(9);
+    expect(nextStandInFocus(9, 12)).toBe(12);
+    expect(nextStandInFocus(9, 6)).toBe(6);
   });
 
   it("stop at the ends of the list", () => {

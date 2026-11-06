@@ -62,7 +62,9 @@ export const STAND_INS_AROUND = 8;
  * frames until the window caught up and their photographs arrived. The
  * small copy is usually on the phone already, from the grid the gallery
  * was opened from, and it is small; it fills those frames at once, and
- * the photograph comes in over it as before.
+ * the photograph comes in over it as before. So the small copies follow
+ * the scroll itself (`seenIndex` here is the card the scroll is at, see
+ * cardAtOffset), not the card reported on screen.
  */
 export function standInWindow({
   ready,
@@ -77,6 +79,53 @@ export function standInWindow({
 }): WarmWindow {
   if (!ready) return { first: 0, last: -1 };
   return pictureWindow({ ready, startIndex, seenIndex, count, behind: STAND_INS_AROUND, ahead: STAND_INS_AROUND });
+}
+
+/** Cards the scroll goes past before the small copies move along with it. */
+export const STAND_IN_STEP = 3;
+
+/**
+ * The card at `offset` down a list's content, from the heights the cards
+ * reported (`heightOf`), counting any not yet measured at the measured
+ * cards' average; 0 before any is measured. `padding` is the space above
+ * the first card.
+ */
+export function cardAtOffset(
+  offset: number,
+  count: number,
+  heightOf: (index: number) => number | undefined,
+  padding = 0,
+): number {
+  if (count <= 0) return 0;
+  let sum = 0;
+  let measured = 0;
+  for (let i = 0; i < count; i++) {
+    const h = heightOf(i);
+    if (h != null && h > 0) {
+      sum += h;
+      measured++;
+    }
+  }
+  if (measured === 0) return 0;
+  const typical = sum / measured;
+  let bottom = padding;
+  for (let i = 0; i < count; i++) {
+    const h = heightOf(i);
+    bottom += h != null && h > 0 ? h : typical;
+    if (bottom > offset) return i;
+  }
+  return count - 1;
+}
+
+/**
+ * Where the small copies are centred, given where they were (`last`, null
+ * for nowhere yet) and the card the scroll is at: moved only once the
+ * scroll is a few cards on, so a scroll redraws the list every few cards,
+ * not at every card.
+ */
+export function nextStandInFocus(last: number | null, at: number): number {
+  if (last == null || Math.abs(at - last) >= STAND_IN_STEP) return at;
+  return last;
 }
 
 /**

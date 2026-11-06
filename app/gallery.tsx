@@ -19,7 +19,7 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { galleryEra, galleryRows } from "@/utils/profileViews";
 import { isWarm, videoFocus, warmWindow } from "@/utils/videoWindow";
-import { idsAround, pictureWindow, standInWindow } from "@/media/cardWindow";
+import { cardAtOffset, idsAround, nextStandInFocus, pictureWindow, standInWindow } from "@/media/cardWindow";
 import { commentsOrNone, likeCounted } from "@/media/stableCards";
 import {
   LANDING_STEP_MS,
@@ -137,9 +137,16 @@ export default function Gallery() {
   const content = useRef(0);
   const settled = useRef(false);
   const [ready, setReady] = useState(false);
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
   // The last card reported on screen once the list was showing; the clips
   // that have a player are the ones around it.
   const [seenId, setSeenId] = useState<string | null>(null);
+  // The card the scroll itself is at, moved every few cards: the small
+  // copies standing in follow it (see standInWindow), so a quick scroll
+  // finds them already there.
+  const [scrollFocus, setScrollFocus] = useState<number | null>(null);
+  const scrollFocusRef = useRef<number | null>(null);
   // Only the card on screen plays its video — see PostMedia for why. The
   // tapped row is on screen first, so it starts as the active card.
   const [visibleId, setVisibleId] = useState<string | null>(postId ?? null);
@@ -157,6 +164,8 @@ export default function Gallery() {
     settled.current = false;
     setReady(false);
     setSeenId(null);
+    scrollFocusRef.current = null;
+    setScrollFocus(null);
     setVisibleId(postId ?? null);
     onScreen.current = [];
     onTapped.current = true;
@@ -237,8 +246,20 @@ export default function Gallery() {
     if (h > 0) heights.current.set(id, h);
   }, []);
 
+  const postsRef = useRef(posts);
+  postsRef.current = posts;
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrolled.current = e.nativeEvent.contentOffset.y;
+    // Once it shows: the card at the middle of the view, from the heights
+    // the cards reported, for the small copies.
+    if (!readyRef.current) return;
+    const rows = postsRef.current;
+    const at = cardAtOffset(scrolled.current + viewport.current / 2, rows.length, (i) => heights.current.get(rows[i].id), LIST_PADDING);
+    const next = nextStandInFocus(scrollFocusRef.current, at);
+    if (next !== scrollFocusRef.current) {
+      scrollFocusRef.current = next;
+      setScrollFocus(next);
+    }
   }, []);
   const onListLayout = useCallback((e: LayoutChangeEvent) => {
     viewport.current = e.nativeEvent.layout.height;
@@ -269,8 +290,6 @@ export default function Gallery() {
   // window follows the card reported on screen once the list is showing:
   // what is reported while it is still hidden, being measured, is noted
   // and nothing more.
-  const readyRef = useRef(ready);
-  readyRef.current = ready;
   const tappedId = useRef(postId);
   tappedId.current = postId;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -287,10 +306,10 @@ export default function Gallery() {
   // And only the cards around the reader draw their photograph: the rest
   // are their frames, at the same height (see src/media/cardWindow.ts).
   const pictures = pictureWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
-  // Once it shows, the frames near the reader hold the grid's small copy
+  // Once it shows, the frames near the scroll hold the grid's small copy
   // until their photograph is drawn, so a quick scroll never comes to rest
   // on empty frames while the window catches up.
-  const standIns = standInWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
+  const standIns = standInWindow({ ready, startIndex, seenIndex: scrollFocus ?? (seenIndex < 0 ? null : seenIndex), count: posts.length });
 
   const loading = !postsQ.isFetched || !authorQ.isFetched || waiting;
 

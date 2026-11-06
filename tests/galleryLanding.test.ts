@@ -512,9 +512,18 @@ describe("the cards drawn only on the way down", () => {
     // The preview branch draws a FeedCard here (PostCard or its Editorial card).
     const cell = tags(gallery, "PostCard")[0] ?? tags(gallery, "FeedCard")[0] ?? "";
     expect(cell).toMatch(/standIn=\{isWarm\(index, standIns\)\}/);
+    // Centred on the card the scroll itself is at, not the card reported on screen a beat later.
     expect(gallery).toMatch(
-      /const standIns = standInWindow\(\{ ready, startIndex, seenIndex: seenIndex < 0 \? null : seenIndex, count: posts\.length \}\);/,
+      /const standIns = standInWindow\(\{ ready, startIndex, seenIndex: scrollFocus \?\? \(seenIndex < 0 \? null : seenIndex\), count: posts\.length \}\);/,
     );
+    const onScroll = gallery.slice(gallery.indexOf("const onScroll = useCallback("), gallery.indexOf("const onListLayout"));
+    expect(onScroll).toMatch(/scrolled\.current = e\.nativeEvent\.contentOffset\.y;\s*if \(!readyRef\.current\) return;/);
+    expect(onScroll).toMatch(
+      /const at = cardAtOffset\(scrolled\.current \+ viewport\.current \/ 2, rows\.length, \(i\) => heights\.current\.get\(rows\[i\]\.id\), LIST_PADDING\);/,
+    );
+    expect(onScroll).toMatch(/const next = nextStandInFocus\(scrollFocusRef\.current, at\);\s*if \(next !== scrollFocusRef\.current\) \{\s*scrollFocusRef\.current = next;\s*setScrollFocus\(next\);/);
+    // A new landing starts it afresh.
+    expect(gallery).toMatch(/setSeenId\(null\);\s*scrollFocusRef\.current = null;\s*setScrollFocus\(null\);/);
   });
 
   it("are drawn twenty at a time while the list is hidden, and as usual once it shows", () => {
