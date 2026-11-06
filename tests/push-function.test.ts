@@ -7,6 +7,7 @@ import {
   chunk,
   eachChunk,
   eachPageByKey,
+  goneTokens,
   memoryDays,
   pickMemories,
   sendToExpo,
@@ -145,6 +146,23 @@ describe("receipts: which devices turned out to be gone", () => {
       fetch: (_url, init) => new Promise((_resolve, reject) => init.signal?.addEventListener("abort", () => reject(new Error("aborted")))),
     });
     expect(hung).toEqual({ answered: [], dead: [] });
+  });
+
+  it("names each gone token with when its last undeliverable notice was sent, for a row not filed again since", () => {
+    const tickets = [
+      { id: "a1", token: "A", created_at: "2026-11-05T09:00:00.5+00:00" },
+      { id: "a2", token: "A", created_at: "2026-11-05T21:30:00.123456+00:00" },
+      { id: "a3", token: "A", created_at: "2026-11-05T12:00:00+00:00" },
+      { id: "b1", token: "B", created_at: "2026-11-05T10:00:00+00:00" },
+      { id: "c1", token: "C", created_at: "2026-11-05T11:00:00+00:00" },
+    ];
+    // C's notice reached its device; A's three and B's one did not.
+    const gone = goneTokens(tickets, ["a3", "a1", "b1", "a2", "unknown"]);
+    expect([...gone]).toEqual([
+      ["A", "2026-11-05T21:30:00.123456+00:00"],
+      ["B", "2026-11-05T10:00:00+00:00"],
+    ]);
+    expect(goneTokens(tickets, []).size).toBe(0);
   });
 });
 
@@ -319,9 +337,15 @@ describe("the function, read from its source", () => {
     const daily = source.slice(source.indexOf("async function handleMemories"), source.indexOf("async function sendMemories"));
     expect(daily).toMatch(/await sendMemories\(today\)/);
     expect(daily).toMatch(/await settleReceipts\(\)\.catch\(/);
-    const settle = source.slice(source.indexOf("async function settleReceipts"));
+    const settle = source.slice(source.indexOf("async function settleReceipts"), source.indexOf("async function send("));
     expect(settle).toMatch(/checkReceipts\(tickets\.map\(\(t\) => t\.id\)/);
-    expect(settle).toMatch(/await admin\.from\("push_tokens"\)\.delete\(\)\.in\("token", part\)/);
+    // A gone device's row goes only if it was not filed again after the
+    // notice: a stale receipt never takes the row a new member on the
+    // phone has just claimed (0036).
+    expect(settle).toMatch(/\.select\("id, token, created_at"\)/);
+    expect(settle).toMatch(/goneTokens\(tickets, dead\)/);
+    expect(settle).toMatch(/\.from\("push_tokens"\)\s*\.delete\(\)\s*\.eq\("token", token\)\s*\.lt\("updated_at", sentAt\)/);
+    expect(settle).not.toMatch(/\.from\("push_tokens"\)\.delete\(\)\.in\("token"/);
     expect(settle).toMatch(/await admin\.from\("push_tickets"\)\.delete\(\)\.lt\("created_at", before\)/);
     expect(settle).toMatch(/\{ size: ROWS_PER_READ, max: MAX_RECEIPTS_A_RUN \}/);
   });

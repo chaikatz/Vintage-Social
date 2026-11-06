@@ -223,6 +223,31 @@ export async function checkReceipts(
   return result;
 }
 
+/** A ticket as push_tickets keeps it (0027): also when its notice was sent, by the database's clock. */
+export interface KeptTicket extends Ticket {
+  created_at: string;
+}
+
+/**
+ * The tokens of devices a receipt says are gone, each with when the last
+ * notice found undeliverable was sent to it. A receipt describes the
+ * device as it was when the notice reached Apple or Google, not as it is
+ * now: a row filed again since (push_tokens.updated_at after that time)
+ * is a phone that came back, or one another member has signed in on
+ * since (claim_push_token, 0036, moves the row to them and dates it), and
+ * must be kept. So the row goes only if it was not filed after the notice.
+ */
+export function goneTokens(tickets: readonly KeptTicket[], dead: Iterable<string>): Map<string, string> {
+  const deadIds = new Set(dead);
+  const out = new Map<string, string>();
+  for (const t of tickets) {
+    if (!deadIds.has(t.id)) continue;
+    const kept = out.get(t.token);
+    if (kept === undefined || Date.parse(t.created_at) > Date.parse(kept)) out.set(t.token, t.created_at);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // long lists, a page at a time
 // ---------------------------------------------------------------------------
