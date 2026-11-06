@@ -8,12 +8,18 @@ begin;
 
 create temp table thumbs_start as select coalesce(max(seq), 0) as seq from tests.results;
 
--- A member's own photograph whose thumbnail is its picture, at a
--- Wikimedia address: not a house account's, so never touched.
+-- Two members' own photographs whose thumbnail is their picture, at a
+-- Wikimedia address of each shape 0034 rewrites (an original, and
+-- thumb.wikimedia.org's 1920-pixel rendering): not a house account's, so
+-- never touched, by either of its two updates.
 insert into public.posts (id, author_id, media_type, media_path, thumb_path, filter_id) values
   ('f5000000-0000-4000-8000-000000000001', '22222222-2222-2222-2222-222222222222', 'photo',
    'https://upload.wikimedia.org/wikipedia/commons/a/ab/A_member%27s_own.jpg',
-   'https://upload.wikimedia.org/wikipedia/commons/a/ab/A_member%27s_own.jpg', 'kodachrome');
+   'https://upload.wikimedia.org/wikipedia/commons/a/ab/A_member%27s_own.jpg', 'kodachrome'),
+  ('f5000000-0000-4000-8000-000000000002', '22222222-2222-2222-2222-222222222222', 'photo',
+   'https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cd/A_member%27s_rendering.jpg/1920px-A_member%27s_rendering.jpg',
+   'https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cd/A_member%27s_rendering.jpg/1920px-A_member%27s_rendering.jpg',
+   'kodachrome');
 
 create temp table thumbs_before as
 select p.id, p.media_path, p.thumb_path, a.is_house from public.posts p join public.profiles a on a.id = p.author_id;
@@ -52,8 +58,9 @@ insert into tests.results (name, expected, actual) values
   ('0034: no house photograph is left with its full picture as its thumbnail', '0',
    (select count(*)::text from public.posts p join public.profiles a on a.id = p.author_id
      where a.is_house and p.thumb_path = p.media_path and p.media_path ~ '^https://(thumb|upload)\.wikimedia\.org/')),
-  ('0034: the member''s own photograph is as it was', 'true',
-   (select (thumb_path = media_path)::text from public.posts where id = 'f5000000-0000-4000-8000-000000000001'));
+  ('0034: the members'' own photographs are as they were, an original''s and a rendering''s', 'true,true',
+   (select string_agg((thumb_path = media_path)::text, ',' order by id) from public.posts
+     where id in ('f5000000-0000-4000-8000-000000000001', 'f5000000-0000-4000-8000-000000000002')));
 
 create temp table thumbs_once as select id, thumb_path from public.posts;
 \o /dev/null

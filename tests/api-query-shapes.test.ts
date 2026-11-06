@@ -972,6 +972,24 @@ describe("the admin's queues", () => {
     expect(h.requests[2].url.searchParams.get("order")).toBe("created_at.desc,id.desc");
   });
 
+  it("every queue still to be worked reads oldest first, every record of what was decided newest first", async () => {
+    queue(10);
+    const order = async (read: () => Promise<unknown>) => {
+      h.requests.length = 0;
+      await read();
+      return h.requests[0].url.searchParams.get("order");
+    };
+    const oldest = "created_at.asc,id.asc";
+    const newest = "created_at.desc,id.desc";
+    expect(await order(() => moderation.fetchApplications("pending"))).toBe(oldest);
+    expect(await order(() => moderation.fetchApplications("waitlisted"))).toBe(oldest);
+    expect(await order(() => moderation.fetchApplications("approved"))).toBe(newest);
+    expect(await order(() => moderation.fetchApplications("rejected"))).toBe(newest);
+    expect(await order(() => moderation.fetchReports("open"))).toBe(oldest);
+    expect(await order(() => moderation.fetchReports("resolved"))).toBe(newest);
+    expect(await order(() => moderation.fetchReports("dismissed"))).toBe(newest);
+  });
+
   it("the dashboard counts what waits without reading a row of it", async () => {
     queue(1500);
     expect(await moderation.countReports("open")).toBe(h.tables.reports.filter((r) => r.status === "open").length);
