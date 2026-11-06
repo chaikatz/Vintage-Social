@@ -208,10 +208,15 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       // this run costs nothing.
       //
       // Posts still going up go with the session: their uploads are made
-      // as the member who has just left.
+      // as the member who has just left. So does what was read for them,
+      // as at "Sign out": a session ended on another device leaves the app
+      // running, and the next member to sign in on this phone would
+      // otherwise be shown the last one's posts, comments and threads
+      // from the cache (many of its keys do not name the reader).
       if (event === "SIGNED_OUT") {
         forgetOutbox();
         forgetMember();
+        queryClient.clear();
       }
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);

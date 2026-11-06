@@ -291,6 +291,11 @@ describe("the session provider", () => {
     expect(provider).toMatch(/retryOn: \(err\) => err instanceof NotSignedInYet \|\| isTransient\(err\)/);
   });
 
+  it("lets go of what was read for the member when the session ends on another device, as at Sign out", () => {
+    expect(provider).toMatch(/if \(event === "SIGNED_OUT"\) \{\s*forgetOutbox\(\);\s*forgetMember\(\);\s*queryClient\.clear\(\);\s*\}/);
+    expect(provider).toMatch(/const \{ error \} = await supabase\.auth\.signOut\(\);[\s\S]*?queryClient\.clear\(\);/);
+  });
+
   it("forgets the remembered profile wherever the session ends", () => {
     expect(provider).toMatch(/if \(event === "SIGNED_OUT"\) \{\s*forgetOutbox\(\);\s*forgetMember\(\);/);
     expect(provider).toMatch(/forgetOutbox\(\);\s*forgetMember\(\);\s*await leaveToLanding\(\);/);
