@@ -21,7 +21,9 @@ const actions = src.slice(src.indexOf('{tab === "open" ? ('), src.indexOf("</Vie
 
 describe("a reported comment", () => {
   it("can be removed from the queue, which removes the comment and then resolves the report", () => {
-    expect(actions).toMatch(/: item\.comment_id \? \(\s*<Button\s+title="Remove comment"[\s\S]*?onPress=\{\(\) => remove\(item, "removeComment"\)\}/);
+    expect(actions).toMatch(
+      /: item\.comment_id \? \(\s*<>\s*\{item\.comment \? \(\s*<Button title="View"[^>]*onPress=\{\(\) => openTarget\(item\)\}[^>]*\/>\s*\) : null\}\s*<Button\s+title="Remove comment"[\s\S]*?onPress=\{\(\) => remove\(item, "removeComment"\)\}/,
+    );
     expect(src).toMatch(
       /if \(action === "removeComment" && report\.comment_id\) await removeComment\(report\.comment_id, note\);\s*removed\.current\.add\(target\);\s*\}\s*await resolveReport\(report\.id, "resolved", "Content removed"\);/,
     );
@@ -29,8 +31,11 @@ describe("a reported comment", () => {
 });
 
 describe("a reported member", () => {
-  it("can be opened from the queue, found by id", () => {
+  it("can be opened from the queue, by the name the report carries, or found by id when it has none", () => {
     expect(actions).toMatch(/: item\.profile_id \? \(\s*<Button title="View member"[^>]*onPress=\{\(\) => openMember\(item\)\}/);
+    const open = src.slice(src.indexOf("const openMember = async"), src.indexOf("} catch (err)", src.indexOf("const openMember = async")));
+    expect(open).toMatch(/if \(report\.member\) \{\s*router\.push\(`\/user\/\$\{report\.member\.username\}`\);\s*return;\s*\}/);
+    expect(open.indexOf("report.member")).toBeLessThan(open.indexOf("fetchProfileById"));
     expect(src).toMatch(/const member = await fetchProfileById\(report\.profile_id\);\s*if \(member\) router\.push\(`\/user\/\$\{member\.username\}`\);/);
   });
 });
@@ -39,10 +44,10 @@ describe("every action", () => {
   it("goes through the one mutation, which takes the report off the open list at once and puts it back if refused", () => {
     expect(src).not.toMatch(/const resolve = useMutation|removeReportedPost/);
     expect(src).toMatch(
-      /onMutate: async \(\{ report, also \}\) => \{\s*const ids = \[report\.id, \.\.\.also\.map\(\(r\) => r\.id\)\];\s*setDeciding\(\(d\) => withIds\(d, ids\)\);\s*await queryClient\.cancelQueries\(\{ queryKey: openKey \}\);[\s\S]*?setQueryData<ReportWithRefs\[\]>\(openKey, \(rows\) => ids\.reduce\(\(list, id\) => withoutRow\(list, id\), rows\)\);/,
+      /onMutate: async \(\{ report, also \}\) => \{\s*const ids = \[report\.id, \.\.\.also\.map\(\(r\) => r\.id\)\];\s*setDeciding\(\(d\) => withIds\(d, ids\)\);\s*await queryClient\.cancelQueries\(\{ queryKey: openKey \}\);\s*const held = queryClient\.getQueryData<QueuePages<ReportWithRefs>>\(openKey\);\s*const order = rowsOf\(held\)\.map\(\(r\) => r\.id\);\s*const homes = pagesOf\(held, ids\);\s*queryClient\.setQueryData<QueuePages<ReportWithRefs>>\(openKey, \(pages\) => withoutRows\(pages, ids\)\);\s*return \{ order, homes \};/,
     );
     expect(src).toMatch(
-      /onError: \(err, \{ report, also \}, ctx\) => \{\s*queryClient\.setQueryData<ReportWithRefs\[\]>\(openKey, \(rows\) =>\s*\[report, \.\.\.also\]\.reduce\(\(list, r\) => withRowBack\(list, r, ctx\?\.order\), rows\),\s*\);\s*showAlert\(/,
+      /onError: \(err, \{ report, also \}, ctx\) => \{\s*queryClient\.setQueryData<QueuePages<ReportWithRefs>>\(openKey, \(pages\) =>\s*withRowsBack\(pages, \[report, \.\.\.also\], ctx\?\.order \?\? \[\], ctx\?\.homes \?\? \{\}\),\s*\);\s*showAlert\(/,
     );
     // Every button goes through it: two removals by way of `remove`, and Dismiss.
     expect(actions.match(/onPress=\{\(\) => remove\(item, "remove(Post|Comment)"\)\}/g)).toHaveLength(2);
@@ -52,10 +57,11 @@ describe("every action", () => {
 
   it("keeps reports off the list while their action is on its way, whatever a read brings back", () => {
     expect(src).toMatch(
-      /onSuccess: async \(_done, \{ report, also \}\) => \{\s*const ids = \[report\.id, \.\.\.also\.map\(\(r\) => r\.id\)\];\s*await queryClient\.cancelQueries\(\{ queryKey: openKey \}\);\s*queryClient\.setQueryData<ReportWithRefs\[\]>\(openKey, \(rows\) => ids\.reduce\(\(list, id\) => withoutRow\(list, id\), rows\)\);/,
+      /onSuccess: async \(_done, \{ report, also \}\) => \{\s*const ids = \[report\.id, \.\.\.also\.map\(\(r\) => r\.id\)\];\s*await queryClient\.cancelQueries\(\{ queryKey: openKey \}\);\s*queryClient\.setQueryData<QueuePages<ReportWithRefs>>\(openKey, \(pages\) => withoutRows\(pages, ids\)\);/,
     );
     expect(src).toMatch(/onSettled: \(_done, _err, \{ report, also \}\) => \{\s*setDeciding\(\(d\) => withoutIds\(d, \[report\.id, \.\.\.also\.map\(\(r\) => r\.id\)\]\)\);\s*return refresh\(\);/);
-    expect(src).toMatch(/const shown = undecided\(reports\.data, deciding\);/);
+    expect(src).toMatch(/const rows = useMemo\(\(\) => rowsOf\(reports\.data\), \[reports\.data\]\);/);
+    expect(src).toMatch(/const shown = undecided\(rows, deciding\);/);
     expect(src).toMatch(/data=\{shown\}/);
   });
 
@@ -92,7 +98,7 @@ describe("several reports on the same photograph or comment", () => {
   it("are closed together by one removal, which is never sent twice from the queue", () => {
     const fn = src.slice(src.indexOf("mutationFn: async"), src.indexOf("onMutate:"));
     // The content is removed only if this screen has not removed it already…
-    expect(fn).toMatch(/const target = removalTarget\(report\);\s*if \(target && !removed\.current\.has\(target\)\) \{/);
+    expect(fn).toMatch(/const target = removalTarget\(report\);\s*if \(target && !removed\.current\.has\(target\) && !report\.comment\?\.removed_at\) \{/);
     // …and remembered once it has been, before its report is closed.
     expect(fn.indexOf("removed.current.add(target);")).toBeGreaterThan(fn.indexOf("await removeComment(report.comment_id, note);"));
     expect(fn.indexOf("removed.current.add(target);")).toBeLessThan(fn.indexOf('await resolveReport(report.id, "resolved", "Content removed");'));
@@ -109,25 +115,28 @@ describe("the applications queue", () => {
   it("puts back the refused card alone, not the whole list as it was before the tap", () => {
     expect(apps).not.toMatch(/ctx\.before|const before =/);
     expect(apps).toMatch(
-      /onMutate: async \(\{ app \}\) => \{\s*setDeciding\(\(ids\) => withIds\(ids, \[app\.id\]\)\);\s*const key = \["admin-apps", tab\];\s*await queryClient\.cancelQueries\(\{ queryKey: key \}\);\s*const order = [^;]+;\s*queryClient\.setQueryData<ApplicationRow\[\]>\(key, \(rows\) => withoutRow\(rows, app\.id\)\);\s*return \{ key, order \};/,
+      /onMutate: async \(\{ app \}\) => \{\s*setDeciding\(\(ids\) => withIds\(ids, \[app\.id\]\)\);\s*const key = \["admin-apps", tab\];\s*await queryClient\.cancelQueries\(\{ queryKey: key \}\);\s*const held = queryClient\.getQueryData<QueuePages<ApplicationRow>>\(key\);\s*const order = rowsOf\(held\)\.map\(\(r\) => r\.id\);\s*const homes = pagesOf\(held, \[app\.id\]\);\s*queryClient\.setQueryData<QueuePages<ApplicationRow>>\(key, \(pages\) => withoutRows\(pages, \[app\.id\]\)\);\s*return \{ key, order, homes \};/,
     );
-    expect(apps).toMatch(/onError: \(err, \{ app \}, ctx\) => \{\s*if \(ctx\) queryClient\.setQueryData<ApplicationRow\[\]>\(ctx\.key, \(rows\) => withRowBack\(rows, app, ctx\.order\)\);/);
+    expect(apps).toMatch(
+      /onError: \(err, \{ app \}, ctx\) => \{\s*if \(ctx\) queryClient\.setQueryData<QueuePages<ApplicationRow>>\(ctx\.key, \(pages\) => withRowsBack\(pages, \[app\], ctx\.order, ctx\.homes\)\);/,
+    );
   });
 
   it("keeps a card off the list while its decision is on its way, whatever a read brings back", () => {
     expect(apps).toMatch(
-      /onSuccess: async \(_done, \{ app \}, ctx\) => \{\s*await queryClient\.cancelQueries\(\{ queryKey: ctx\.key \}\);\s*queryClient\.setQueryData<ApplicationRow\[\]>\(ctx\.key, \(rows\) => withoutRow\(rows, app\.id\)\);/,
+      /onSuccess: async \(_done, \{ app \}, ctx\) => \{\s*await queryClient\.cancelQueries\(\{ queryKey: ctx\.key \}\);\s*queryClient\.setQueryData<QueuePages<ApplicationRow>>\(ctx\.key, \(pages\) => withoutRows\(pages, \[app\.id\]\)\);/,
     );
     expect(apps).toMatch(/onSettled: \(_done, _err, \{ app \}\) => \{\s*setDeciding\(\(ids\) => withoutIds\(ids, \[app\.id\]\)\);\s*return queryClient\.invalidateQueries/);
-    expect(apps).toMatch(/data=\{undecided\(apps\.data, deciding\)\}/);
+    expect(apps).toMatch(/const rows = useMemo\(\(\) => rowsOf\(apps\.data\), \[apps\.data\]\);/);
+    expect(apps).toMatch(/data=\{undecided\(rows, deciding\)\}/);
     expect(apps.match(/decide\.mutate\(\{ app: item, decision: "(approved|waitlisted|rejected)" \}\)/g)).toHaveLength(3);
   });
 });
 
 describe("a queue that could not be read", () => {
   it("says so in reports and applications, rather than calling it empty", () => {
-    expect(src).toMatch(/reports\.isError \? \(\s*<LoadFailed what="the reports" onRetry=\{\(\) => reports\.refetch\(\)\} \/>/);
-    expect(code("app/admin/applications.tsx")).toMatch(/apps\.isError \? \(\s*<LoadFailed what="the applications" onRetry=\{\(\) => apps\.refetch\(\)\} \/>/);
+    expect(src).toMatch(/reports\.isError && !reports\.data \? \(\s*<LoadFailed what="the reports" onRetry=\{\(\) => reports\.refetch\(\)\} \/>/);
+    expect(code("app/admin/applications.tsx")).toMatch(/apps\.isError && !apps\.data \? \(\s*<LoadFailed what="the applications" onRetry=\{\(\) => apps\.refetch\(\)\} \/>/);
   });
 
   it("says so in members, where a failed read used to say 'No members found'", () => {

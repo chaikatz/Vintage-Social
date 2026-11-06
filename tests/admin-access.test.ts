@@ -31,7 +31,7 @@ describe("every admin page", () => {
       });
 
       it("reads nothing for someone who is not an admin", () => {
-        const queries = src.match(/useQuery\(\{[\s\S]*?\n {2}\}\);/g) ?? [];
+        const queries = src.match(/use(?:Infinite)?Query\(\{[\s\S]*?\n {2}\}\);/g) ?? [];
         expect(queries.length, "its reads").toBeGreaterThan(0);
         for (const q of queries) expect(q, q.split("\n")[1]).toMatch(/\n {4}enabled: isAdmin,\n/);
       });
@@ -108,9 +108,9 @@ describe("an alert about something that did not happen", () => {
   });
 
   it("a list that could not be read says so, with Try again, on every admin page that has one", () => {
-    expect(code("app/admin/applications.tsx")).toMatch(/apps\.isError \? \(\s*<LoadFailed what="the applications" onRetry=\{\(\) => apps\.refetch\(\)\} \/>/);
+    expect(code("app/admin/applications.tsx")).toMatch(/apps\.isError && !apps\.data \? \(\s*<LoadFailed what="the applications" onRetry=\{\(\) => apps\.refetch\(\)\} \/>/);
     expect(code("app/admin/members.tsx")).toMatch(/members\.isError \? \(\s*<LoadFailed what="the members" onRetry=\{\(\) => members\.refetch\(\)\} \/>/);
-    expect(code("app/admin/reports.tsx")).toMatch(/reports\.isError \? \(\s*<LoadFailed what="the reports" onRetry=\{\(\) => reports\.refetch\(\)\} \/>/);
+    expect(code("app/admin/reports.tsx")).toMatch(/reports\.isError && !reports\.data \? \(\s*<LoadFailed what="the reports" onRetry=\{\(\) => reports\.refetch\(\)\} \/>/);
   });
 });
 

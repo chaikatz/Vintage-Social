@@ -910,6 +910,11 @@ check(
   commentReports(queueNow) === 2 && (await byText("Remove comment").count()) === 2,
   `${commentReports(queueNow)} open reports on it`,
 );
+check(
+  "Each report on it shows the comment's own words, so it is never removed unseen",
+  (queueNow.match(/“The emptiness makes it\./g) ?? []).length === 2,
+  `${(queueNow.match(/“The emptiness makes it\./g) ?? []).length} shown`,
+);
 await shot("19-comment-report");
 await tap("Remove comment", 2600);
 const queueAfter = await text();
