@@ -14,12 +14,27 @@
 -- or a rejection again. Only a profile still outside the club is changed
 -- ("applied", "waitlisted" or "rejected"): an old application decided late
 -- never demotes a member let in since, by invitation or by an approval,
--- and never lifts or overrides a suspension. Approval is as before.
+-- and never lifts or overrides a suspension.
+--
+-- Approval is as before, but for one refusal: an application whose
+-- account is suspended is not approved ("This account is suspended", the
+-- words redeem_invite_link answers a suspended account with since 0016).
+-- An approval wrote 'approved' over whatever the profile said, so an
+-- application filed from a suspended account (a member let in by
+-- invitation has no application of their own, and the admin sees only
+-- the name they typed) lifted the suspension without the admin knowing
+-- whose it was. A suspension is lifted from Members, by Reinstate. The
+-- refusal comes before anything is written, and before a membership
+-- number could be drawn. Such an application can still be waitlisted or
+-- rejected, which leaves the suspension as it is.
 --
 -- Then the profiles this left behind: a profile at "applied" whose latest
 -- application was waitlisted or rejected is given that decision. Nothing
 -- else is touched; a profile with no application, or whose latest
--- application is still pending, stays at "applied".
+-- application is still pending, stays at "applied". Nor is a profile left
+-- at "waitlisted" (written by 0007, before 0011) whose later application
+-- was rejected: it stays "waitlisted", which the gate shows as a place in
+-- the queue. Production in November 2026 has none.
 --
 -- No table, column or policy changes. The function keeps its grants
 -- (members may call it; it refuses anyone not an admin, as before). No
@@ -38,8 +53,9 @@ language plpgsql volatile security definer set search_path = public
 as $$
 declare
   v_admin uuid := auth.uid();
-  v_app   public.applications%rowtype;
-  v_no    integer;
+  v_app    public.applications%rowtype;
+  v_no     integer;
+  v_status text;
 begin
   if not public.is_admin(v_admin) then
     raise exception 'Admins only';
@@ -51,6 +67,15 @@ begin
   select * into v_app from public.applications where id = p_application_id for update;
   if not found then
     raise exception 'Application not found';
+  end if;
+
+  -- An approval never lifts a suspension: that is Reinstate's, in
+  -- Members. Refused before anything is written or numbered.
+  if p_decision = 'approved' then
+    select status into v_status from public.profiles where id = v_app.user_id for update;
+    if v_status = 'suspended' then
+      raise exception 'This account is suspended';
+    end if;
   end if;
 
   update public.applications

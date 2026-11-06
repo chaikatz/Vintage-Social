@@ -65,7 +65,7 @@ describe("0028-0034, each", () => {
     expect(runner).toMatch(/"13_photograph_rows_0028\.sql"/);
     expect(runner).toMatch(/"14_moderation_0029_0033\.sql"/);
     expect(runner).toMatch(/15_seed_thumbnails_0034\.sql/);
-    expect(runner).toMatch(/rows\.length !== 33/);
+    expect(runner).toMatch(/rows\.length !== 34/);
   });
 });
 
@@ -79,9 +79,22 @@ describe("0029: a waitlist or a rejection reaches the profile", () => {
     );
   });
 
+  it("an approval refuses a suspended account, before anything is written or numbered", () => {
+    const body = fn(sql);
+    const refusal = body.search(
+      /if p_decision = 'approved' then\s+select status into v_status from public\.profiles where id = v_app\.user_id for update;\s+if v_status = 'suspended' then\s+raise exception 'This account is suspended';\s+end if;\s+end if;/,
+    );
+    expect(refusal).toBeGreaterThan(-1);
+    expect(refusal).toBeLessThan(body.indexOf("update public.applications"));
+    expect(refusal).toBeLessThan(body.indexOf("public.assign_member_no"));
+  });
+
   it("is otherwise 0011's function, approval and all", () => {
     const before = fn(code(read("supabase/migrations/0011_house_accounts.sql")));
-    const now = fn(sql).replace(/\s+if p_decision in \('waitlisted', 'rejected'\) then[\s\S]*?end if;\n/, "\n");
+    const now = fn(sql)
+      .replace(/\s+if p_decision in \('waitlisted', 'rejected'\) then[\s\S]*?end if;\n/, "\n")
+      .replace(/\s+if p_decision = 'approved' then\s+select status into v_status[\s\S]*?end if;\s+end if;\n/, "\n")
+      .replace(/\s+v_status text;/, "");
     expect(now.replace(/\s+/g, " ")).toBe(before.replace(/\s+/g, " "));
   });
 

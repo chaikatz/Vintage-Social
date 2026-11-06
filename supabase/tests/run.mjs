@@ -269,7 +269,7 @@ try {
     const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
     const failing = rows.filter((l) => !l.endsWith("|t"));
     const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l));
-    if (r.status !== 0 || rows.length !== 33 || failing.length > 0 || errors.length > 0) {
+    if (r.status !== 0 || rows.length !== 34 || failing.length > 0 || errors.length > 0) {
       console.log("FAILED");
       process.stdout.write(r.stdout ?? "");
       process.stderr.write(r.stderr ?? "");

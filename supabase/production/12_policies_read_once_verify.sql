@@ -247,28 +247,34 @@ with checks as (
                        'post_tags: only with their photograph')
     and qual ~ 'EXISTS' and qual ~ '\( SELECT auth\.uid\(\) AS uid\)'
   union all
-  -- 15. 0029: a waitlist or a rejection is written to the profile, and no
-  --     profile is left at "applied" after its application was decided.
+  -- 15. 0029: a waitlist or a rejection is written to the profile, an
+  --     approval never lifts a suspension, and no profile is left at
+  --     "applied" after its application was decided.
   select 26, '0029: decide_application writes a waitlist or rejection to the profile', count(*)::text, '1'
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'decide_application'
     and p.prosrc ~ 'p_decision in \(''waitlisted'', ''rejected''\)'
     and p.prosrc ~ 'status in \(''applied'', ''waitlisted'', ''rejected''\)'
   union all
-  select 27, '0029: profiles at applied whose latest application was decided', count(*)::text, '0'
+  select 27, '0029: an approval refuses a suspended account (never lifts a suspension)', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'decide_application'
+    and p.prosrc ~ 'if v_status = ''suspended'' then\s+[a-z]+ exception ''This account is suspended'''
+  union all
+  select 28, '0029: profiles at applied whose latest application was decided', count(*)::text, '0'
   from public.profiles pr
   join lateral (select a.status from public.applications a where a.user_id = pr.id
                 order by a.created_at desc, a.id desc limit 1) last on true
   where pr.status = 'applied' and last.status in ('waitlisted', 'rejected')
   union all
   -- 16. 0030: removing what is removed already records and tells nothing.
-  select 28, '0030: admin_remove_post / admin_remove_comment stop when removed already', count(*)::text, '2'
+  select 29, '0030: admin_remove_post / admin_remove_comment stop when removed already', count(*)::text, '2'
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname in ('admin_remove_post', 'admin_remove_comment')
     and p.prosrc ~ 'removed_at is null;\s+if not found then'
   union all
   -- 17. 0031: a report outlives its reporter.
-  select 29, '0031: reports.reporter_id set to null when the reporter goes, and may be',
+  select 30, '0031: reports.reporter_id set to null when the reporter goes, and may be',
          coalesce((select c.confdeltype::text from pg_constraint c
                     where c.conname = 'reports_reporter_id_fkey' and c.conrelid = 'public.reports'::regclass), 'none')
          || ',' || coalesce((select is_nullable from information_schema.columns
@@ -276,7 +282,7 @@ with checks as (
          'n,YES'
   union all
   -- 18. 0032: a report filed asks the push function to tell the admins.
-  select 30, '0032: report trigger present, its function nobody''s to call, reports.pushed_at there', count(*)::text, '1'
+  select 31, '0032: report trigger present, its function nobody''s to call, reports.pushed_at there', count(*)::text, '1'
   from pg_trigger t
   join pg_proc f on f.oid = t.tgfoid
   where t.tgname = 'reports_push_trigger' and t.tgrelid = 'public.reports'::regclass and not t.tgisinternal
@@ -287,19 +293,19 @@ with checks as (
                  where table_schema = 'public' and table_name = 'reports' and column_name = 'pushed_at')
   union all
   -- 19. 0033: a photograph a member reports leaves their own view.
-  select 31, '0033: what a member reports leaves their view (restrictive, read once a statement)', count(*)::text, '1'
+  select 32, '0033: what a member reports leaves their view (restrictive, read once a statement)', count(*)::text, '1'
   from pg_policies
   where schemaname = 'public' and tablename = 'posts' and policyname = 'posts: not what I reported'
     and permissive = 'RESTRICTIVE' and cmd = 'SELECT'
     and qual ~ '<> ALL' and qual ~ 'reporter_id = \( SELECT auth\.uid\(\) AS uid\)'
   union all
   -- 20. 0034: the house photographs' thumbnails at a Wikimedia standard width.
-  select 32, '0034: house photographs whose thumbnail is still the full Wikimedia picture', count(*)::text, '0'
+  select 33, '0034: house photographs whose thumbnail is still the full Wikimedia picture', count(*)::text, '0'
   from public.posts p join public.profiles a on a.id = p.author_id
   where a.is_house and p.thumb_path = p.media_path
     and p.media_path ~ '^https://(thumb|upload)\.wikimedia\.org/'
   union all
-  select 33, '0034: house thumbnails at a width Wikimedia does not serve', count(*)::text, '0'
+  select 34, '0034: house thumbnails at a width Wikimedia does not serve', count(*)::text, '0'
   from public.posts p join public.profiles a on a.id = p.author_id
   where a.is_house and p.thumb_path ~ '^https://(thumb|upload)\.wikimedia\.org/.*/[0-9]+px-[^/]+$'
     and substring(p.thumb_path from '/([0-9]+)px-[^/]+$')::int

@@ -77,6 +77,10 @@ insert into m_did values ('reject e03', tests.m_as('11111111-1111-1111-1111-1111
   'select public.decide_application(''e1000000-0000-4000-8000-000000000003'', ''rejected'')'));
 insert into m_did values ('waitlist e04', tests.m_as('11111111-1111-1111-1111-111111111111',
   'select public.decide_application(''e1000000-0000-4000-8000-000000000004'', ''waitlisted'')'));
+-- An application from a suspended account, approved: refused before
+-- anything is written or a number drawn, so this approval is safe here.
+insert into m_did values ('approve e04', tests.m_as('11111111-1111-1111-1111-111111111111',
+  'select public.decide_application(''e1000000-0000-4000-8000-000000000004'', ''approved'')'));
 insert into m_did values ('e03 decides', tests.m_as('e0000000-0000-4000-8000-000000000003',
   'select public.decide_application(''e1000000-0000-4000-8000-000000000001'', ''approved'')'));
 insert into m_did values ('reject e01 again', tests.m_as('11111111-1111-1111-1111-111111111111',
@@ -95,6 +99,13 @@ insert into tests.results (name, expected, actual) values
   ('0029: nor lifts or overrides a suspension', 'OK,suspended',
    (select answer from m_did where step = 'waitlist e04') || ',' ||
    (select status from public.profiles where id = 'e0000000-0000-4000-8000-000000000004')),
+  ('0029: an approval never lifts a suspension: refused, the profile and its number as they were',
+   'ERROR:This account is suspended,suspended,waitlisted,',
+   (select answer from m_did where step = 'approve e04') || ',' ||
+   (select status || ',' ||
+           (select a.status from public.applications a where a.id = 'e1000000-0000-4000-8000-000000000004') || ',' ||
+           coalesce(member_no::text, '')
+      from public.profiles where id = 'e0000000-0000-4000-8000-000000000004')),
   ('0029: the applications say so too, as before', 'rejected,waitlisted,rejected,waitlisted',
    (select string_agg(status, ',' order by id) from public.applications
      where id::text like 'e1000000-0000-4000-8000-00000000000_')),
