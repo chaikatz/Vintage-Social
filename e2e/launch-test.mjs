@@ -39,9 +39,13 @@ page.on("console", (m) => {
 // without it the menu is left as it was. Every dialog's words are kept.
 let promptAnswer = null;
 let promptChoice = null;
+// Answers for the next confirmations, in order: true is OK, false is
+// Cancel. Empty, every confirmation is accepted as before.
+const answers = [];
 const dialogs = [];
 page.on("dialog", (d) => {
   dialogs.push(d.message());
+  if (d.type() === "confirm" && answers.length) return answers.shift() ? d.accept() : d.dismiss();
   if (d.type() === "prompt" && promptChoice != null) {
     const line = d.message().split("\n").find((l) => l.trim().endsWith(promptChoice));
     return d.accept(line?.trim().match(/^\d+/)?.[0] ?? "");
@@ -138,6 +142,22 @@ check("Application lands on the waitlist screen", /Application received/i.test(p
 check("Applicant carries no membership number", !/NO\. \d{5}/.test(pendingText));
 await shot("03-pending");
 
+// Review blocker A (Guideline 5.1.1(v)): an applicant can delete the
+// account from the waiting screen, where Settings is out of reach. The two
+// questions are Settings' own; Keep my account at the second keeps it.
+check("The waiting screen offers Delete my account", (await byText("Delete my account").count()) > 0);
+{
+  const before = dialogs.length;
+  answers.push(true, false);
+  await tap("Delete my account", 1800);
+  const asked = dialogs.slice(before).map((m) => m.split("\n")[0]);
+  check(
+    "Delete my account asks Settings' two questions, and Keep my account keeps the account",
+    asked.join(" → ") === "Delete your account? → Are you sure?" && /Application received/i.test(await text()) && /\/pending/.test(page.url()),
+    asked.join(" → ") || "no dialog",
+  );
+}
+
 // 2. the founder approves
 await tap("Sign out", 2600);
 check("Signing out from the waitlist reaches the door", /Members only/.test(await text()));
@@ -200,6 +220,13 @@ await back();
 await signOutFromSettings();
 await tap("I have an invitation", 2500);
 check("Invitation screen is framed as an invitation", /By invitation/.test(await text()));
+// Review blocker B (Guideline 1.2): what is agreed to, before the account is made.
+check(
+  "The invitation says the Terms and the Privacy Policy are agreed to",
+  /By accepting you agree to the Terms of Use and Privacy Policy\./.test(await text()) &&
+    (await seen(page.getByRole("link", { name: "Terms of Use", exact: true })).count()) > 0 &&
+    (await seen(page.getByRole("link", { name: "Privacy Policy", exact: true })).count()) > 0,
+);
 const g = fields();
 await g.nth(0).fill(code);
 await g.nth(1).fill("Ada Fen");
@@ -710,6 +737,32 @@ check(
   page.url(),
 );
 
+// An admin page opened by its address by a member who is not an admin
+// sends them home: it used to show Suspend and Approve buttons whose calls
+// the database then refused.
+for (const admin of ["/admin/members", "/admin/applications", "/admin/reports"]) {
+  await go(admin, 3000);
+  check(
+    `A member who is not an admin, opening ${admin} by its address, is sent home`,
+    !/\/admin/.test(new URL(page.url()).pathname) &&
+      (await byText("Suspend").count()) === 0 &&
+      (await byText("Approve").count()) === 0 &&
+      (await byText("Dismiss").count()) === 0 &&
+      (await seen(page.locator('[role="tab"]')).count()) > 0,
+    page.url(),
+  );
+}
+// An address the app does not know goes home, signed in as here, never to
+// the router's own page with its sitemap of every route.
+await go("/no-such-page", 3000);
+check(
+  "Signed in, an unknown address goes home",
+  !/no-such-page/.test(page.url()) &&
+    (await seen(page.locator('[role="tab"]')).count()) > 0 &&
+    !/Unmatched Route|Sitemap/.test(await text()),
+  page.url(),
+);
+
 // The private account switch does what it says when it is flipped: it
 // used to wait for Save, and going back left the account as it was.
 const privateSwitch = () => byLabel("Private account").first();
@@ -810,6 +863,24 @@ check(
     "Opened on an invitation, the card's back mark leads to the door",
     onCard && (await card.getByText("Apply for membership", { exact: true }).locator("visible=true").count()) > 0,
     card.url(),
+  );
+  await fresh.close();
+}
+
+// Signed out, an unknown address goes to the door.
+{
+  const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const lost = await fresh.newPage();
+  lost.on("pageerror", (e) => errors.push("unknown address: " + e.message));
+  await lost.goto(B + "/no-such-page", { waitUntil: "networkidle" });
+  await lost.waitForTimeout(2600);
+  const body = (await lost.textContent("body")) ?? "";
+  check(
+    "Signed out, an unknown address goes to the door, never to the router's sitemap",
+    !/no-such-page/.test(lost.url()) &&
+      (await lost.getByText("Apply for membership", { exact: true }).locator("visible=true").count()) > 0 &&
+      !/Unmatched Route|Sitemap/.test(body),
+    lost.url(),
   );
   await fresh.close();
 }
