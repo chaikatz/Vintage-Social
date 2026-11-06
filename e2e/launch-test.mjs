@@ -766,6 +766,26 @@ const reportTheComment = async (first) => {
 };
 await reportTheComment(true);
 await reportTheComment(false);
+
+// A photograph she reports leaves her own feed the moment the report is
+// in (Guideline 1.2), and a read of the feed after does not bring it back.
+await tab("home");
+const ferryCards = () => cardOf("Last ferry of the evening").getByLabel("Post options", { exact: true }).count();
+const ferryBefore = await ferryCards();
+promptChoice = "Report post";
+await cardOf("Last ferry of the evening").getByLabel("Post options", { exact: true }).first().click();
+await wait(2200);
+promptChoice = null;
+const onReport = /\/report/.test(page.url());
+await tap("Spam or scam", 600);
+await tap("Send report", 2400);
+await toTabs();
+await tab("home", 3000);
+check(
+  "A photograph she reports leaves her own feed at once",
+  ferryBefore > 0 && onReport && /An admin will take a look/.test(dialogs.at(-1) ?? "") && (await ferryCards()) === 0,
+  `${ferryBefore} before, ${await ferryCards()} after`,
+);
 await signOutFromSettings();
 await signInAs("admin@vintage.club");
 await tab("profile");
