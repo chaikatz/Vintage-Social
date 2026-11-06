@@ -141,16 +141,25 @@ begin
   if (select auth.uid()) is null then
     return new;
   end if;
-  -- The followee's row is held while the follow is filed, so the follow and
-  -- a change of is_private (section 7) wait for each other: a request filed
-  -- as the account goes public is read after the change commits (and is
-  -- accepted), or is seen by the change's own update (which lets it in).
-  -- No key update, not share: two followers who both held a share lock and
-  -- then both counted the follow (bump_follow_counts) would deadlock.
   select p.is_private into v_private
     from public.profiles p
-   where p.id = new.followee_id
-     for no key update;
+   where p.id = new.followee_id;
+  -- A private followee: read again with its row held, so this request and a
+  -- change of is_private (section 7) wait for each other. A request filed as
+  -- the account goes public is read after the change commits (and is
+  -- accepted), or is seen by the change's own update (which lets it in).
+  -- Held only for a request, which counts nothing: a follow that counts
+  -- (bump_follow_counts locks the follower's row, then the followee's)
+  -- takes no lock here first, so it keeps that order and cannot deadlock
+  -- with Block, an unfollow, or a member following back at the same moment.
+  -- No key update, not share: two requesters who both held a share lock
+  -- and then both changed the row would deadlock.
+  if coalesce(v_private, false) then
+    select p.is_private into v_private
+      from public.profiles p
+     where p.id = new.followee_id
+       for no key update;
+  end if;
   new.status := case when coalesce(v_private, false) then 'pending' else 'accepted' end;
   return new;
 end
