@@ -9,17 +9,32 @@ import { retryRead } from "@/utils/retry";
  * A request that failed because the connection let go is tried again,
  * briefly spaced out, and one that ran out of time once; a refusal is
  * not. Coming back from the background re-reads what is on screen, and a
- * signal that returns resumes whatever was waiting on it — without
- * either, a brief drop left a screen on its empty state until someone
- * pulled to refresh.
+ * signal that returns reads again whatever could not load without it —
+ * without either, a brief drop left a screen on its empty state until
+ * someone pulled to refresh.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
+      // A read is tried even when the phone says it is offline. In
+      // react-query's own mode ("online") a read asked for with no signal
+      // waits, neither loading nor failed, and a screen opened that way
+      // (the app opened in a lift, on a plane) drew its empty state: Home
+      // said "A quiet start" to a member with a full feed, and a pull to
+      // refresh did nothing. Tried, it fails at once, and the screen says
+      // it could not load, with Try again.
+      networkMode: "always",
+      // That mode would also stop reading again when the signal comes
+      // back; this keeps it, so a screen that could not load fills in by
+      // itself once the phone is online.
+      refetchOnReconnect: true,
       // A stalled read is tried once more, not three times: each try is a
       // full request limit (src/lib/boundedFetch.ts) behind a skeleton.
-      retry: retryRead,
+      // With no signal at all it is not tried again: the signal's return
+      // reads it again (above), and the screen need not sit on its
+      // skeleton for ten seconds to say it could not load.
+      retry: (failures, error) => onlineManager.isOnline() && retryRead(failures, error),
       retryDelay: (attempt) => Math.min(800 * 2 ** attempt, 5000),
     },
   },
