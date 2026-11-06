@@ -126,10 +126,11 @@ support address shown in Settings" points at nothing.
   - An application is kept with the account as the record of the decision
     and deleted with it. (It used to say applications are kept only while
     waiting; nothing ever deletes one.)
-  - Deleting an account deletes the reports that member filed, and their
-    share links; the notes about their shares stay with no account
-    attached. (It used to say filed reports are kept; the database deletes
-    them with the reporter.)
+  - Deleting an account deletes that member's share links; the notes
+    about their shares stay with no account attached. The reports they
+    filed stay too, with no account attached, so that they can still be
+    acted on: migration 0031 keeps them (until it is applied, step 4, the
+    database deletes them with the reporter).
   - A share link shows that one photograph, its place, date and username
     to anyone who has the link, even from a private account, until it is
     turned off or the photograph deleted.
@@ -397,9 +398,11 @@ Open appstoreconnect.apple.com → **Apps** → **Vintage Social**.
 ### Step 10 · While in review, and after
 
 - Check **Profile → shield → Reports** at least once a day. The Terms
-  promise action within 24 hours, Apple reads that promise, and the app
-  does not notify you of a new report. (A push to admins on a new report
-  was proposed to the backend area; it is not built.)
+  promise action within 24 hours, and Apple reads that promise. Once
+  migration 0032 is applied and the `push` function redeployed (step 4),
+  each admin's phone with notifications on is told "A report is waiting."
+  when one is filed; until then nothing tells you, and an admin with
+  notifications off is never told.
 - If someone writes to the support address asking to delete an account
   that is not a member's (the Privacy Policy now promises this for
   applications that are waiting or were not accepted, and for suspended
@@ -754,9 +757,12 @@ choose:
 - There is no automatic content filter. The review notes say how content
   is filtered: by admission (invitation or an application a person
   reads), then by people (reports, admin removal, blocking). A photograph a
-  member reports stays visible to them until an admin acts; hiding it from
-  the reporter at once was proposed to the flows and backend areas.
-- Deleting an account deletes the reports that member filed, even one
-  still open. The Privacy Policy says so. Keeping them with no reporter
-  was proposed to the backend area; if it lands, the policy's sentence
-  changes with it (a test enforces that).
+  member reports leaves their own screens the moment the report is sent;
+  it stays out of everything they read afterwards only once migration
+  0033 is applied (step 4). Until then it comes back the next time those
+  screens are read, until an admin acts.
+- A report outlives the member who filed it only once migration 0031 is
+  applied (step 4); until then, deleting an account deletes the reports
+  that member filed, even one still open. The Privacy Policy already says
+  they are kept without the account attached (a test holds the policy to
+  the migrations), so apply 0031 with the rest before you submit.

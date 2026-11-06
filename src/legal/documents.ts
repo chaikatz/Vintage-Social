@@ -56,7 +56,7 @@ Data is stored with Supabase (database, authentication and file storage) and del
 
 ## Your choices
 
-As a member you can edit your profile, delete any photograph or comment you posted, remove yourself from a tag, turn each kind of notification off, block another member, and delete your account — all from within the app. Deleting your account removes your profile, photographs, comments, likes, follows, tags, messages, application and share links, and the reports you filed. The notes about your shares outside VINTAGE are kept without your account attached. Some records may persist in backups for a limited period.
+As a member you can edit your profile, delete any photograph or comment you posted, remove yourself from a tag, turn each kind of notification off, block another member, and delete your account — all from within the app. Deleting your account removes your profile, photographs, comments, likes, follows, tags, messages, application and share links. The reports you filed are kept without your account attached. Each holds only what was reported and the reason and note you gave, so that it can still be acted on after you leave. The notes about your shares outside VINTAGE are kept without your account attached. Some records may persist in backups for a limited period.
 
 If your application is still waiting or was not accepted, or your membership is suspended, the app opens on a screen that says so. Delete my account on that screen, confirmed twice, deletes your account and everything listed above with it. You can also write to the support address from your account’s email and we will delete your account for you.
 

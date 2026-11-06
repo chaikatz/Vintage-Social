@@ -227,7 +227,7 @@ describe("an account that is not a member's can be deleted", () => {
       "You can also write to the support address from your account’s email and we will delete your account for you.",
     );
     expect(renderSupportPage("help@vintagesocial.app")).toContain(
-      "Tap Delete my account there and confirm twice: everything above is removed in the same way.",
+      "Tap Delete my account there and confirm twice: your account is deleted in the same way.",
     );
     expect(TERMS_OF_USE).toContain(
       "You may delete your account at any time from within the app: a member from Settings, anyone else with Delete my account on the screen the app opens on.",

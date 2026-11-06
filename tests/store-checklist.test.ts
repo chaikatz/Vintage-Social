@@ -170,3 +170,54 @@ describe("the Support URL", () => {
     expect(flat(between(doc(), "### Step 9", "### Step 10"))).toContain("(only once step 3 shows your address on it)");
   });
 });
+
+/**
+ * What the checklist says of reports, held to the migrations the branch
+ * carries: kept when their reporter leaves (0031), told to the admins when
+ * filed (0032), and out of the reporter's own reads (0033). Each line says
+ * what is true with the migration and what production does until it is
+ * applied; without the migration in the branch, the line must not claim it.
+ */
+describe("the checklist on reports", () => {
+  const sql = () =>
+    readdirSync(path.join(root, "supabase/migrations"))
+      .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+      .sort()
+      .map((f) => read(`supabase/migrations/${f}`).replace(/--[^\n]*/g, ""))
+      .join("\n");
+
+  it("a report outlives its reporter only as the migrations say", () => {
+    const kept = /foreign key\s*\(reporter_id\)\s*references\s+public\.profiles\s*\(id\)\s*on delete set null/i.test(sql());
+    const text = flat(doc());
+    if (kept) {
+      expect(text).toContain("A report outlives the member who filed it only once migration 0031 is applied (step 4)");
+      expect(text).toContain("migration 0031 keeps them");
+      expect(text).not.toMatch(/Deleting an account deletes the reports that member filed/);
+    } else {
+      expect(text).not.toMatch(/0031/);
+      expect(text).toMatch(/Deleting an account deletes the reports that member filed/);
+    }
+  });
+
+  it("the admins are told of a new report only as the migrations say", () => {
+    const told = /create trigger\s+reports_push_trigger\b/i.test(sql());
+    const step10 = flat(between(doc(), "### Step 10", "\n---\n"));
+    if (told) {
+      expect(step10).toContain("Once migration 0032 is applied and the `push` function redeployed (step 4)");
+      expect(step10).not.toMatch(/it is not built/);
+    } else {
+      expect(step10).not.toMatch(/0032/);
+    }
+  });
+
+  it("a reported photograph leaves its reporter's reads only as the migrations say", () => {
+    const hidden = /create policy\s+"posts: not what I reported"/i.test(sql());
+    const text = flat(doc());
+    if (hidden) {
+      expect(text).toContain("it stays out of everything they read afterwards only once migration 0033 is applied (step 4)");
+      expect(text).not.toMatch(/stays visible to them until an admin acts/);
+    } else {
+      expect(text).not.toMatch(/0033/);
+    }
+  });
+});
