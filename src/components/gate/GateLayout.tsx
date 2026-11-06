@@ -78,6 +78,7 @@ export function GateLayout({
           style={[styles.back, { top: insets.top + spacing.sm }]}
           hitSlop={14}
           onPress={() => backFromDoor(router)}
+          accessibilityRole="button"
           accessibilityLabel="Back"
         >
           <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />

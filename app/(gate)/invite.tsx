@@ -166,7 +166,7 @@ export default function Invite() {
         >
           {/* The name, small, in the corner — back to the door is one tap left of it. */}
           <View style={styles.head}>
-            <Pressable hitSlop={14} onPress={() => backFromDoor(router)} accessibilityLabel="Back" style={styles.back}>
+            <Pressable hitSlop={14} onPress={() => backFromDoor(router)} accessibilityRole="button" accessibilityLabel="Back" style={styles.back}>
               <Feather name="chevron-left" size={22} color={colors.ink as unknown as string} />
             </Pressable>
             <Wordmark tagline="Members only" />

@@ -96,6 +96,12 @@ describe("the screens use them", () => {
     expect(layout).toMatch(/onPress=\{\(\) => backFromDoor\(router\)\}/);
     expect(invite).not.toMatch(/router\.back\(\)/);
     expect(layout).not.toMatch(/router\.back\(\)/);
+    // VoiceOver says what it is: "Back, button", as the Memory Room's back mark does.
+    for (const src of [invite, layout]) {
+      const marks = src.match(/<Pressable\b[^>]*onPress=\{\(\) => backFromDoor\(router\)\}[^>]*>/g) ?? [];
+      expect(marks).toHaveLength(1);
+      for (const mark of marks) expect(mark).toMatch(/accessibilityRole="button"\s+accessibilityLabel="Back"/);
+    }
   });
 });
 
