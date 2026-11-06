@@ -58,8 +58,12 @@ describe("who may arrange Eras", () => {
   });
 
   it("waits for the arrangement before drawing either page, so a name never changes under the reader", () => {
-    expect(eras(own)).toMatch(/loading=\{!posts\.isFetched \|\| !eraEdits\.isFetched\}/);
-    expect(eras(member)).toMatch(/loading=\{!postsQ\.isFetched \|\| !eraEdits\.isFetched\}/);
+    // Waiting until both the photographs and the arrangement have answered; a read
+    // of either that failed is said instead (tests/screen-states.test.ts).
+    expect(own).toMatch(/const eraRead = readState\(posts, eraEdits\);/);
+    expect(member).toMatch(/const eraRead = readState\(postsQ, eraEdits\);/);
+    expect(eras(own)).toMatch(/loading=\{eraRead === "waiting"\}/);
+    expect(eras(member)).toMatch(/loading=\{eraRead === "waiting"\}/);
   });
 
   it("tells the member, in our words, when a change does not save", () => {

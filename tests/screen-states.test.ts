@@ -114,6 +114,21 @@ describe("the screens that draw a read", () => {
     expect(src.match(/toggleFollow\.mutate\(/g)).toHaveLength(1);
   });
 
+  it("the Eras view: a read that failed is said, not eras drawn without the arrangement, nor a skeleton for good", () => {
+    const own = code("app/(tabs)/profile.tsx");
+    expect(own).toMatch(/const eraRead = readState\(posts, eraEdits\);/);
+    expect(own).toMatch(
+      /view === "eras" && eraRead === "failed" \? \(\s*<PhotoGrid\s+posts=\{\[\]\}\s+onOpenPost=\{openPost\}\s+header=\{header\}\s+empty=\{\s*<LoadFailed\s+what="your eras"\s+onRetry=\{\(\) => \{\s*posts\.refetch\(\);\s*eraEdits\.refetch\(\);\s*\}\}\s*\/>\s*\}\s*\/>\s*\) : view === "eras" \? \(\s*<EraList/,
+    );
+    const member = code("app/user/[username].tsx");
+    expect(member).toMatch(/const eraRead = readState\(postsQ, eraEdits\);/);
+    expect(member).toMatch(
+      /view === "eras" && !locked && eraRead === "failed" \? \(\s*<PhotoGrid\s+posts=\{\[\]\}\s+onOpenPost=\{openPost\}\s+header=\{header\}\s+empty=\{\s*<LoadFailed\s+what="their eras"\s+onRetry=\{\(\) => \{\s*postsQ\.refetch\(\);\s*eraEdits\.refetch\(\);\s*\}\}\s*\/>\s*\}\s*\/>\s*\) : view === "eras" && !locked \? \(\s*<EraList/,
+    );
+    // Neither waits on `isFetched` alone, which a first read made with no signal never sets.
+    for (const src of [own, member]) expect(src).not.toMatch(/loading=\{!posts(Q)?\.isFetched/);
+  });
+
   it("Likes: a re-read that fails leaves the likers on screen", () => {
     const src = code("app/likes.tsx");
     expect(src).toMatch(/\) : readState\(likers\) === "failed" \? \(\s*<LoadFailed what="the likes"/);

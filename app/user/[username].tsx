@@ -297,6 +297,8 @@ export default function UserProfile() {
   const shown = locked ? [] : rows;
   // Their photographs and the ones they were tagged in: empty only once both have answered.
   const gridRead = readState(postsQ, taggedQ);
+  // Their eras are their photographs as they arranged them: drawn once both have been read.
+  const eraRead = readState(postsQ, eraEdits);
 
   return (
     <Screen padded={false}>
@@ -307,6 +309,24 @@ export default function UserProfile() {
         <PlaceGroups posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
       ) : view === "timeline" && !locked ? (
         <Timeline posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
+      ) : view === "eras" && !locked && eraRead === "failed" ? (
+        // Their photographs or their arrangement could not be read: said, with
+        // the header kept to leave the view by, not eras drawn without their
+        // arrangement nor a skeleton for good.
+        <PhotoGrid
+          posts={[]}
+          onOpenPost={openPost}
+          header={header}
+          empty={
+            <LoadFailed
+              what="their eras"
+              onRetry={() => {
+                postsQ.refetch();
+                eraEdits.refetch();
+              }}
+            />
+          }
+        />
       ) : view === "eras" && !locked ? (
         // Their own photographs only, never the ones they were tagged in,
         // named and arranged as they left them, and never editable here.
@@ -318,7 +338,7 @@ export default function UserProfile() {
           onOpenPost={openEra}
           header={header}
           member={profile.username}
-          loading={!postsQ.isFetched || !eraEdits.isFetched}
+          loading={eraRead === "waiting"}
           refreshing={postsQ.isRefetching}
           onRefresh={() => {
             postsQ.refetch();
