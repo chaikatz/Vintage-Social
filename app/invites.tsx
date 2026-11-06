@@ -12,6 +12,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
@@ -31,6 +32,11 @@ import {
 } from "@/utils/inviteLink";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 import { ruleWidth } from "@/components/gate/rule";
+
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * Invitations.
@@ -70,8 +76,9 @@ export default function Invitations() {
   }, [link.data?.slug]);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["invite-link", myId] });
+  // The words our own SQL raised (a suffix taken, or reserved) are shown; never the database's own.
   const fail = (err: unknown) =>
-    showAlert("That didn't work", err instanceof Error ? err.message : String(err));
+    showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment."));
 
   const rename = useMutation({
     mutationFn: setInviteSlug,

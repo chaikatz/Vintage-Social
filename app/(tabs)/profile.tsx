@@ -12,12 +12,14 @@ import { PlaceGroups } from "@/components/PlaceGroups";
 import { EraList } from "@/components/EraList";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
+import { profileRows } from "@/components/profileRows";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
 import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
 import { colors, spacing } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
-import { sortByTaken } from "@/utils/memories";
 import { seedAuthor, seedPost } from "@/utils/profileSeed";
 import { opensGallery } from "@/utils/profileViews";
 import { clipTiming } from "@/utils/videoTiming";
@@ -25,6 +27,9 @@ import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 import { useEraEditor, useEraEdits } from "@/hooks/useEraEdits";
 import type { PostRow } from "@/types/db";
+
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * Your own page: the grid, the same photographs by the day they were
@@ -52,17 +57,16 @@ export default function OwnProfile() {
     queryFn: () => fetchTaggedPosts(userId),
     enabled: Boolean(userId),
   });
-  const rows: GridPost[] = useMemo(() => {
-    const mine = posts.data ?? [];
-    const theirs = (tagged.data ?? []).map((p) => ({ ...p, tagged_in: true }));
-    const all = [...mine, ...theirs].sort((a, b) => b.created_at.localeCompare(a.created_at));
-    return sort === "taken" ? sortByTaken(all) : all;
-  }, [posts.data, tagged.data, sort]);
+  const rows: GridPost[] = useMemo(() => profileRows(posts.data, tagged.data, sort), [posts.data, tagged.data, sort]);
   // The towns are looked up as the photographs arrive, so "Places" opens placed.
   usePlaceWarmup(posts.data ?? []);
   // Your eras as you arranged them, and, once that has been read, the means to arrange them.
   const eraEdits = useEraEdits(userId);
   const eraEditor = useEraEditor(userId, posts.data);
+  // The grid is your photographs and the ones you were tagged in: empty only once both have answered.
+  const gridRead = readState(posts, tagged);
+  // Your eras are your photographs as you arranged them: drawn once both have been read.
+  const eraRead = readState(posts, eraEdits);
 
   if (!profile) {
     return (
@@ -147,6 +151,24 @@ export default function OwnProfile() {
         <PlaceGroups posts={rows} onOpenPost={openPost} header={header} refreshing={posts.isRefetching} onRefresh={() => posts.refetch()} />
       ) : view === "timeline" ? (
         <Timeline posts={rows} onOpenPost={openPost} header={header} refreshing={posts.isRefetching} onRefresh={() => posts.refetch()} />
+      ) : view === "eras" && eraRead === "failed" ? (
+        // Your photographs or your arrangement could not be read: said, with the
+        // header kept to leave the view by, not eras drawn without your
+        // arrangement nor a skeleton for good.
+        <PhotoGrid
+          posts={[]}
+          onOpenPost={openPost}
+          header={header}
+          empty={
+            <LoadFailed
+              what="your eras"
+              onRetry={() => {
+                posts.refetch();
+                eraEdits.refetch();
+              }}
+            />
+          }
+        />
       ) : view === "eras" ? (
         // Your own photographs only, as On this day gathers them: not the ones you were tagged in.
         // Arranged as you left them, and yours to arrange: this page alone passes an editor.
@@ -156,7 +178,7 @@ export default function OwnProfile() {
           editor={eraEditor}
           onOpenPost={openEra}
           header={header}
-          loading={!posts.isFetched || !eraEdits.isFetched}
+          loading={eraRead === "waiting"}
           refreshing={posts.isRefetching}
           onRefresh={() => {
             posts.refetch();
@@ -173,8 +195,17 @@ export default function OwnProfile() {
             tagged.refetch();
             refreshProfile().catch(() => undefined);
           }}
+          // A read that failed says so: it is not "No photographs yet" (src/components/readState.ts).
           empty={
-            posts.isFetched ? (
+            gridRead === "failed" ? (
+              <LoadFailed
+                what="your photographs"
+                onRetry={() => {
+                  posts.refetch();
+                  tagged.refetch();
+                }}
+              />
+            ) : gridRead === "empty" ? (
               <EmptyState title="No photographs yet" body="Your grid starts with your first post." />
             ) : (
               <GridSkeleton />

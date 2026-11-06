@@ -14,6 +14,7 @@ import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { pickFromLibrary } from "@/utils/pickForCompose";
+import { showAlert } from "@/utils/alert";
 import { useReducedMotion } from "@/utils/useReducedMotion";
 import { useBoldText, useIncreaseContrast, useScreenReader } from "@/utils/useRoomAccessibility";
 import { useDarkroom, type RoomParams } from "@/darkroom/useDarkroom";
@@ -59,6 +60,10 @@ import {
   type RightAct,
   type StageAction,
 } from "@/components/darkroom/words";
+
+// A print that breaks the room breaks only the room, with the way back on its page,
+// which has no header (src/navigation/Recover.tsx).
+export { RecoverRoom as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * THE MEMORY ROOM, which the code still calls the Darkroom.
@@ -283,6 +288,12 @@ export default function Darkroom() {
       else develop.unclaim();
     } catch {
       develop.unclaim();
+      // The picker can refuse outright (an iCloud original that would not
+      // come down, a file that could not be read). The tap used to end in
+      // silence, as it did on the Post tab; it says so, in the same words.
+      if (mounted.current) {
+        showAlert("Couldn’t open that", "It couldn’t be read here. Try again in a moment, or choose another.");
+      }
     }
   };
 

@@ -18,6 +18,9 @@ import { countLabel } from "@/darkroom/labels";
 import { placeLine } from "@/darkroom/session";
 import { useSetAside } from "@/darkroom/setAside";
 
+// A page that breaks as it draws breaks only this tab (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Where a post begins.
  *

@@ -1,8 +1,12 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { byTimeDescending, sortByTaken, takenDate } from "@/utils/memories";
 import { buildTimeline } from "@/utils/timeline";
 import { editEras } from "@/utils/eraEdits";
 import { groupByPlace } from "@/utils/placeGroups";
+import { profileRows } from "@/components/profileRows";
+import type { PostRow } from "@/types/db";
 
 /** A grid of `n` in no particular order, some with no capture date and some taken at the same moment. */
 function grid(n: number) {
@@ -91,5 +95,39 @@ describe("the places view's order", () => {
       const before = [...when].sort((a, b) => b.localeCompare(a));
       expect(when).toEqual(before);
     }
+  });
+});
+
+describe("a profile grid's order", () => {
+  /** The grid's rows as PostRows: only what the order reads matters here. */
+  const rowsOf = (posts: ReturnType<typeof grid>) => posts as unknown as PostRow[];
+
+  it("compares the server's timestamps as they are, not through the locale, and orders as before", () => {
+    const own = rowsOf(grid(600));
+    const tagged = rowsOf(grid(90).map((p) => ({ ...p, id: `t${p.id}` })));
+    const collate = vi.spyOn(String.prototype, "localeCompare");
+    const rows = profileRows(own, tagged, "posted");
+    const onDates = collate.mock.contexts.filter((s) => /^\d{4}-\d\d-\d\dT/.test(String(s)));
+    collate.mockRestore();
+    // Every comparison of the sort used to collate two timestamps, on both profile pages.
+    expect(onDates).toHaveLength(0);
+    const before = [...own, ...tagged.map((p) => ({ ...p, tagged_in: true }))].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    expect(rows.map((p) => p.id)).toEqual(before.map((p) => p.id));
+  });
+
+  it("marks the photographs the member was tagged in, and orders by when taken on asking", () => {
+    const own = rowsOf(grid(40));
+    const tagged = rowsOf(grid(8).map((p) => ({ ...p, id: `t${p.id}` })));
+    const posted = profileRows(own, tagged, "posted");
+    expect(posted.filter((p) => p.tagged_in).map((p) => p.id).sort()).toEqual(tagged.map((p) => p.id).sort());
+    expect(posted.filter((p) => !p.tagged_in)).toHaveLength(40);
+    expect(profileRows(own, tagged, "taken").map((p) => p.id)).toEqual(sortByTaken(posted).map((p) => p.id));
+    expect(profileRows(undefined, undefined, "posted")).toEqual([]);
+  });
+
+  it("is what both profile pages draw", () => {
+    const read = (f: string) => readFileSync(path.resolve(import.meta.dirname, "..", f), "utf8");
+    expect(read("app/(tabs)/profile.tsx")).toMatch(/useMemo\(\(\) => profileRows\(posts\.data, tagged\.data, sort\), \[posts\.data, tagged\.data, sort\]\)/);
+    expect(read("app/user/[username].tsx")).toMatch(/useMemo\(\(\) => profileRows\(postsQ\.data, taggedQ\.data, sort\), \[postsQ\.data, taggedQ\.data, sort\]\)/);
   });
 });

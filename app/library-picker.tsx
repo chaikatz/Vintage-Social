@@ -6,6 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
 import { Screen } from "@/components/Screen";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { colors, spacing, type } from "@/theme";
 import { signatureDate } from "@/utils/time";
 import {
@@ -15,6 +17,11 @@ import {
   photosOnThisDay,
   type LibraryPhoto,
 } from "@/utils/library";
+
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * The member's own photographs, picked out of the library for a reason —
@@ -91,7 +98,10 @@ export default function LibraryPicker() {
         windowSize={PICKER_WINDOW}
         contentContainerStyle={{ gap: GAP, paddingBottom: spacing.xxl }}
         ListEmptyComponent={
-          photos.isFetched ? (
+          // A library that could not be read is not one with nothing from then (src/components/readState.ts).
+          readState(photos) === "failed" ? (
+            <LoadFailed what="your photographs" body="Try again in a moment." onRetry={() => photos.refetch()} />
+          ) : photos.isFetched ? (
             <EmptyState
               title="Nothing from then"
               body="VINTAGE can only look at the photographs it has been allowed to see."

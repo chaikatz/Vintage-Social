@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -13,6 +14,8 @@ import { EraList } from "@/components/EraList";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
+import { profileRows } from "@/components/profileRows";
 import { GridSkeleton, ProfileSkeleton } from "@/components/Skeleton";
 import { GridSortToggle, type ProfileView } from "@/components/GridSortToggle";
 import { Timeline } from "@/components/Timeline";
@@ -22,7 +25,6 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
 import { openConversation } from "@/api/messages";
 import { blockMember, fetchBlockedIds, unblockMember } from "@/api/blocks";
-import { sortByTaken } from "@/utils/memories";
 import { seedAuthor, seedPost } from "@/utils/profileSeed";
 import { opensGallery } from "@/utils/profileViews";
 import { clipTiming } from "@/utils/videoTiming";
@@ -31,6 +33,11 @@ import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
 import type { PostRow } from "@/types/db";
+
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 export default function UserProfile() {
   const router = useRouter();
@@ -55,6 +62,10 @@ export default function UserProfile() {
   });
 
   const status = followQ.data ?? null;
+  // Whether you follow them is known only once it has been read
+  // (src/components/readState.ts): until then the button offers no follow,
+  // which a member who already follows them would send a second time.
+  const followRead = readState(followQ);
   const isMe = profile?.id === myId;
 
   // Have I blocked this member? Their photographs are hidden by the
@@ -68,6 +79,9 @@ export default function UserProfile() {
 
   // A private member's photographs are theirs until they let you in.
   const locked = (Boolean(profile?.is_private) && !isMe && status !== "accepted") || blocked;
+  // Whether they have let you in could not be read: said, with a way to try
+  // again, rather than "Ask to follow" to a member who already follows them.
+  const standingUnread = Boolean(profile?.is_private) && !isMe && !blocked && followRead === "failed";
 
   const postsQ = useQuery({
     queryKey: ["user-posts", profile?.id],
@@ -79,12 +93,7 @@ export default function UserProfile() {
     queryFn: () => fetchTaggedPosts(profile!.id),
     enabled: Boolean(profile?.id) && !locked,
   });
-  const rows: GridPost[] = useMemo(() => {
-    const theirs = postsQ.data ?? [];
-    const taggedIn = (taggedQ.data ?? []).map((p) => ({ ...p, tagged_in: true }));
-    const all = [...theirs, ...taggedIn].sort((a, b) => b.created_at.localeCompare(a.created_at));
-    return sort === "taken" ? sortByTaken(all) : all;
-  }, [postsQ.data, taggedQ.data, sort]);
+  const rows: GridPost[] = useMemo(() => profileRows(postsQ.data, taggedQ.data, sort), [postsQ.data, taggedQ.data, sort]);
   // The towns are looked up as the photographs arrive, so "Places" opens placed.
   usePlaceWarmup(postsQ.data ?? []);
   // Their eras as they arranged them: read here, changed only on their own page.
@@ -108,7 +117,7 @@ export default function UserProfile() {
       // Your own following count lives on your profile row.
       refreshProfile().catch(() => undefined);
     },
-    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const message = async () => {
@@ -117,7 +126,7 @@ export default function UserProfile() {
       const conversationId = await openConversation(myId, profile.id);
       router.push(`/messages/${conversationId}`);
     } catch (err) {
-      showAlert("Couldn’t open the conversation", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t open the conversation", errorMessage(err, "Try again in a moment."));
     }
   };
 
@@ -139,7 +148,7 @@ export default function UserProfile() {
       else await blockMember(profile.id);
     },
     onSuccess: afterBlockChange,
-    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   if (!profile) {
@@ -220,11 +229,12 @@ export default function UserProfile() {
             <View style={styles.actions}>
               <View style={styles.followButton}>
                 <Button
-                  title={followLabel}
-                  variant={status ? "secondary" : "primary"}
+                  // A follow that could not be read is read again, never taken for "Follow".
+                  title={followRead === "failed" ? "Try again" : followLabel}
+                  variant={status || followRead === "failed" ? "secondary" : "primary"}
                   small
-                  loading={toggleFollow.isPending}
-                  onPress={() => toggleFollow.mutate(status === null)}
+                  loading={toggleFollow.isPending || (followRead !== "empty" && followQ.isFetching)}
+                  onPress={() => (followRead === "empty" ? toggleFollow.mutate(status === null) : void followQ.refetch())}
                   onLongPress={memberMenu}
                 />
               </View>
@@ -244,6 +254,8 @@ export default function UserProfile() {
           <Text style={styles.lockedTitle}>You blocked {profile.username}</Text>
           <Text style={styles.lockedBody}>Neither of you sees the other’s photographs. Unblock to change that.</Text>
         </View>
+      ) : standingUnread ? (
+        <LoadFailed what="their photographs" onRetry={() => followQ.refetch()} />
       ) : locked ? (
         <View style={styles.locked}>
           <Feather name="lock" size={18} color={colors.inkFaint} />
@@ -283,6 +295,10 @@ export default function UserProfile() {
     router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken", era } });
   };
   const shown = locked ? [] : rows;
+  // Their photographs and the ones they were tagged in: empty only once both have answered.
+  const gridRead = readState(postsQ, taggedQ);
+  // Their eras are their photographs as they arranged them: drawn once both have been read.
+  const eraRead = readState(postsQ, eraEdits);
 
   return (
     <Screen padded={false}>
@@ -293,6 +309,24 @@ export default function UserProfile() {
         <PlaceGroups posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
       ) : view === "timeline" && !locked ? (
         <Timeline posts={shown} onOpenPost={openPost} header={header} refreshing={postsQ.isRefetching} onRefresh={() => postsQ.refetch()} />
+      ) : view === "eras" && !locked && eraRead === "failed" ? (
+        // Their photographs or their arrangement could not be read: said, with
+        // the header kept to leave the view by, not eras drawn without their
+        // arrangement nor a skeleton for good.
+        <PhotoGrid
+          posts={[]}
+          onOpenPost={openPost}
+          header={header}
+          empty={
+            <LoadFailed
+              what="their eras"
+              onRetry={() => {
+                postsQ.refetch();
+                eraEdits.refetch();
+              }}
+            />
+          }
+        />
       ) : view === "eras" && !locked ? (
         // Their own photographs only, never the ones they were tagged in,
         // named and arranged as they left them, and never editable here.
@@ -304,7 +338,7 @@ export default function UserProfile() {
           onOpenPost={openEra}
           header={header}
           member={profile.username}
-          loading={!postsQ.isFetched || !eraEdits.isFetched}
+          loading={eraRead === "waiting"}
           refreshing={postsQ.isRefetching}
           onRefresh={() => {
             postsQ.refetch();
@@ -318,8 +352,17 @@ export default function UserProfile() {
           refreshing={postsQ.isRefetching}
           onRefresh={() => postsQ.refetch()}
           header={header}
+          // A read that failed says so: it is not "No photographs yet" (src/components/readState.ts).
           empty={
-            locked ? null : postsQ.isFetched ? (
+            locked ? null : gridRead === "failed" ? (
+              <LoadFailed
+                what="their photographs"
+                onRetry={() => {
+                  postsQ.refetch();
+                  taggedQ.refetch();
+                }}
+              />
+            ) : gridRead === "empty" ? (
               <EmptyState title="No photographs yet" />
             ) : (
               <GridSkeleton />

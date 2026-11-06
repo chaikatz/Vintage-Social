@@ -75,20 +75,62 @@ check(
   body.replace(/\s+/g, " ").slice(0, 160),
 );
 
-// 2. Something with no screen boundary of its own breaks: the whole app's page.
+// 2. Home breaks: only Home, above the tab bar, with the tabs' header still up.
 await breakDates(true);
 await go("/", 3000);
+body = await text();
+check("A broken Home tab shows its own recover page", /This page didn’t open/.test(body), body.replace(/\s+/g, " ").slice(0, 160));
+check("…not the whole app's", !/Something went wrong/.test(body));
+check("…with the tabs still there to leave by", (await page.locator('[role="tab"]').count()) >= 5);
+check("…and nothing escaped to the window", uncaught.length === 0, uncaught.join(" | "));
+await shot("recover-02-home");
+await breakDates(false);
+await byText("Try again").first().click();
+await wait(2600);
+body = await text();
+check("Try again brings the feed back", /elena\.marchetti|tomas\.lindqvist/.test(body) && !/This page didn’t open/.test(body), body.replace(/\s+/g, " ").slice(0, 160));
+
+// 3. A photograph's page, opened straight from a link, breaks: only that page. Being the
+// first in its stack, its header has no back button, so the way back is on the page.
+await breakDates(true);
+await go("/post/demo-post-01", 2600);
+body = await text();
+check("A broken photograph's page shows its own recover page", /This page didn’t open/.test(body) && !/Something went wrong/.test(body), body.replace(/\s+/g, " ").slice(0, 160));
+check("…with the way back on the page", (await byText("Go back").count()) === 1);
+check("…and says nothing of the runtime", !/broken on purpose|TypeError|undefined/.test(body));
+await shot("recover-03-post");
+await breakDates(false);
+await byText("Try again").first().click();
+await wait(2200);
+body = await text();
+check("Try again brings the photograph back", /The 19 tram/.test(body) && !/This page didn’t open/.test(body), body.replace(/\s+/g, " ").slice(0, 160));
+await breakDates(true);
+await go("/post/demo-post-01", 2600);
+await breakDates(false);
+await byText("Go back").first().click();
+await wait(2600);
+body = await text();
+check(
+  "Go back, with nothing before it, goes Home",
+  /elena\.marchetti|tomas\.lindqvist/.test(body) && !/This page didn’t open/.test(body) && (await page.locator('[role="tab"]').count()) >= 5,
+  body.replace(/\s+/g, " ").slice(0, 160),
+);
+
+// 4. Something with no screen boundary of its own breaks: the whole app's page.
+// "Add to an era" is a sheet drawn without a boundary of its own.
+await breakDates(true);
+await go("/era-move?postId=demo-post-01", 3000);
 body = await text();
 check("The app's own recover page stands in for the whole app", /Something went wrong/.test(body) && /VINTAGE/.test(body), body.slice(0, 120));
 check("…and says nothing of the runtime", !/broken on purpose|TypeError|undefined/.test(body));
 check("…and nothing escaped to the window", uncaught.length === 0, uncaught.join(" | "));
-await shot("recover-02-app");
+await shot("recover-04-app");
 await breakDates(false);
 await byText("Try again").first().click();
 await wait(3200);
 body = await text();
 check("Try again opens the app afresh, on the feed", /elena\.marchetti|tomas\.lindqvist/.test(body) && !/Something went wrong/.test(body));
-await shot("recover-03-back");
+await shot("recover-05-back");
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

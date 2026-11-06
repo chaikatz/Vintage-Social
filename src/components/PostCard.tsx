@@ -8,6 +8,7 @@ import { postedAgo, postedAgoSpoken, shortDate } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
 import { Avatar } from "./Avatar";
 import { PostMedia } from "./PostMedia";
+import { authorShown, withAuthors } from "./hiddenAuthors";
 import type { ClipSurface } from "@/utils/videoTiming";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 
@@ -74,12 +75,19 @@ export const PostCard = React.memo(function PostCard({
   priority = "normal",
   surface = "feed",
 }: Props) {
+  // A post whose author the reader may not see comes back naming nobody
+  // (src/components/hiddenAuthors.ts). The card draws nothing for it: not
+  // a photograph with no one's name, and never a read of a name that is
+  // not there, which replaced the whole feed with the recover page.
+  if (!authorShown(post)) return null;
+
   const like = (next: boolean) => {
     if (next && !likedByMe) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (next !== likedByMe) onToggleLike(post, next);
   };
 
-  const preview = (comments ?? []).slice(-INLINE_COMMENTS);
+  // A comment whose author the reader may not see is left out, as on the comments screen.
+  const preview = withAuthors(comments ?? []).slice(-INLINE_COMMENTS);
   const hidden = post.comment_count - preview.length;
 
   return (

@@ -31,6 +31,11 @@ import { deleteMyAccount } from "@/api/account";
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL, supportMailto } from "@/config/launch";
 import { createSettingWriter } from "@/components/settingWriter";
 
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Whether the club has an admin besides this one. The database refuses to
  * delete the only admin's account, but only after the app has already

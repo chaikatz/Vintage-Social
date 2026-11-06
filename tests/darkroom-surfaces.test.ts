@@ -431,11 +431,13 @@ describe("On this day", () => {
     expect(memories).toMatch(/mode: "on-this-day", year: String\(year\)/);
   });
 
-  it("keeps the library's thumbnails in memory only", () => {
+  it("keeps the library's thumbnails in their cells alone", () => {
     // The library's photographs are drawn from their ph:// address, `p.uri`; a post is drawn from its URL.
+    // Never on the app's disk, and never left in the shared memory cache, which nothing here would empty.
     const thumbs = memories.match(/<Image\s+source=\{p\.uri\}[\s\S]*?\/>/g) ?? [];
     expect(thumbs).toHaveLength(1);
-    expect(thumbs[0]).toContain('cachePolicy="memory"');
+    expect(thumbs[0]).toContain('cachePolicy="none"');
+    expect(thumbs[0]).not.toMatch(/cachePolicy="(memory|disk|memory-disk)"/);
     expect(memories.match(/\bp\.uri\b/g)).toHaveLength(1);
   });
 });

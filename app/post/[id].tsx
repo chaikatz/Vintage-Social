@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { PostSkeleton } from "@/components/Skeleton";
 import { Byline, INLINE_COMMENTS, PostedTime } from "@/components/PostCard";
+import { authorShown, withAuthors, withMembers } from "@/components/hiddenAuthors";
 import { colors, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
 import { fetchPostTags, removeTag } from "@/api/tags";
@@ -20,6 +21,12 @@ import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
+
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * One photograph on its own.
@@ -53,7 +60,7 @@ export default function PostDetail() {
       queryClient.invalidateQueries({ queryKey: ["post-tags", id] });
       queryClient.invalidateQueries({ queryKey: ["tagged-posts", userId] });
     },
-    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const postQ = useQuery({
@@ -82,7 +89,10 @@ export default function PostDetail() {
     staleTime: 10 * 60_000,
   });
 
-  if (!post) {
+  // A photograph whose author the reader may not see comes back naming
+  // nobody (src/components/hiddenAuthors.ts): to the reader it is gone, as
+  // it is in the feed, and nothing reads a name that is not there.
+  if (!post || !authorShown(post)) {
     return (
       <Screen padded={false}>
         <Stack.Screen options={{ title: "" }} />
@@ -103,11 +113,12 @@ export default function PostDetail() {
     if (next && !liked) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (next !== liked) toggleLike(post, next);
   };
-  const preview = commentsFor(post).slice(-INLINE_COMMENTS);
+  // Comments and tags naming a member the reader may not see are left out.
+  const preview = withAuthors(commentsFor(post)).slice(-INLINE_COMMENTS);
   const hidden = post.comment_count - preview.length;
   const sameNight = night.data?.length ?? 0;
   const openProfile = () => router.push(`/user/${post.author.username}`);
-  const shownTags = (tagsQ.data ?? []).filter((t) => t.status === "accepted" || t.user_id === userId);
+  const shownTags = withMembers(tagsQ.data ?? []).filter((t) => t.status === "accepted" || t.user_id === userId);
   const myTag = shownTags.find((t) => t.user_id === userId);
 
   return (

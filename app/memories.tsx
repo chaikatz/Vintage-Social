@@ -7,6 +7,8 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { Bone } from "@/components/Skeleton";
 import { colors, spacing, type } from "@/theme";
 import { fetchUserPosts } from "@/api/posts";
@@ -33,8 +35,10 @@ import { useSession } from "@/providers/SessionProvider";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import type { PostRow } from "@/types/db";
 
-// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
-export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * On this day.
@@ -57,8 +61,9 @@ export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
  * given, it offers the Darkroom's On this day instead, and the Darkroom's
  * own first page is the one place that asks. When only some photographs
  * were shared, it says so, with a way to share more. The library's
- * thumbnails are kept in memory only, so no copy of a photograph from the
- * library is written to the phone's disk by this screen.
+ * thumbnails are kept by their cells alone: no copy of a photograph from
+ * the library is written to the phone's disk by this screen, nor left in
+ * the image memory cache the whole app shares.
  */
 export default function Memories() {
   const router = useRouter();
@@ -176,11 +181,22 @@ export default function Memories() {
 
   const today = new Date();
   const libraryTotal = (library.data ?? []).reduce((n, d) => n + d.photos.length, 0);
+  // A read that failed is never taken for a day with nothing in it
+  // (src/components/readState.ts): your posts that could not be read say
+  // so where they would be, and so does a library that could not be
+  // looked through. Either way the page does not say there is nothing.
+  const postsRead = readState(posts);
+  const libraryFailed = readState(access) === "failed" || (granted && readState(library) === "failed");
+  const lookThroughAgain = () => {
+    if (access.isError) void access.refetch();
+    if (library.isError) void library.refetch();
+  };
   const nothing =
-    posts.isFetched &&
+    postsRead === "empty" &&
     eraEdits.isFetched &&
     memories.length === 0 &&
     eras.length === 0 &&
+    !libraryFailed &&
     (reach === "none" || libraryTotal === 0);
 
   const showLibrary = Platform.OS !== "web" && (reach !== "none" || darkroomAvailable());
@@ -237,7 +253,13 @@ export default function Memories() {
               source={p.uri}
               style={styles.sheetImage}
               contentFit="cover"
-              cachePolicy="memory"
+              // Kept by its cell alone, as in the library picker: never
+              // written to the app's disk, and never left in the memory
+              // cache all images share, which keeps every one it is handed
+              // after the cell is reused and after the page has closed.
+              // Photos keeps its own thumbnails, so one scrolled back to
+              // costs little.
+              cachePolicy="none"
               recyclingKey={p.id}
               accessibilityIgnoresInvertColors
             />
@@ -256,7 +278,9 @@ export default function Memories() {
     <>
       <Text style={styles.date}>{signatureDate(today.toISOString()).toUpperCase()}</Text>
 
-      {!posts.isFetched ? (
+      {postsRead === "failed" ? (
+        <LoadFailed what="your photographs" onRetry={() => posts.refetch()} />
+      ) : postsRead === "waiting" ? (
         <View style={styles.section}>
           <Bone style={styles.memoryBone} />
         </View>
@@ -335,6 +359,20 @@ export default function Memories() {
                 </Text>
               </View>
             </Pressable>
+          ) : libraryFailed && libraryTotal === 0 ? (
+            <View style={styles.limited}>
+              <Text style={styles.limitedLine}>Your library couldn’t be looked through just now.</Text>
+              <View style={styles.limitedWays}>
+                <Pressable
+                  onPress={lookThroughAgain}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={({ pressed }) => [styles.limitedWay, pressed && styles.pressed]}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.limitedWord}>Try again</Text>
+                </Pressable>
+              </View>
+            </View>
           ) : libraryTotal === 0 ? (
             <Text style={styles.quiet}>
               {library.isFetched ? "Nothing from this day in earlier years." : "Looking…"}

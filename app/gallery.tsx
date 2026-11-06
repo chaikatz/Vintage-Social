@@ -14,6 +14,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
@@ -33,6 +35,11 @@ import { usePostActions } from "@/hooks/usePostActions";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
 import type { PostWithAuthor } from "@/types/db";
+
+// A row that breaks this screen breaks only this screen, with the way back on its
+// page as well as in its header: a screen opened from a link has no back button
+// (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * A member's photographs, full size and scrollable.
@@ -312,6 +319,17 @@ export default function Gallery() {
   const standIns = standInWindow({ ready, startIndex, seenIndex: scrollFocus ?? (seenIndex < 0 ? null : seenIndex), count: posts.length });
 
   const loading = !postsQ.isFetched || !authorQ.isFetched || waiting;
+  // The photographs, whose they are and, opened from an era, how it is
+  // arranged: any of them that could not be read leaves nothing to draw,
+  // and says so (src/components/readState.ts). It was "This member hasn’t
+  // posted a photograph", and a read that failed with no signal left the
+  // skeleton up for good.
+  const read = era ? readState(postsQ, authorQ, eraEdits) : readState(postsQ, authorQ);
+  const readAgain = () => {
+    if (postsQ.isError) postsQ.refetch();
+    if (authorQ.isError) authorQ.refetch();
+    if (eraEdits.isError) eraEdits.refetch();
+  };
 
   return (
     <Screen padded={false}>
@@ -342,11 +360,16 @@ export default function Gallery() {
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         ListEmptyComponent={
-          loading ? (
+          read === "failed" ? (
+            <LoadFailed what="these photographs" onRetry={readAgain} />
+          ) : loading ? (
             <>
               <PostSkeleton />
               <PostSkeleton ratio={1} />
             </>
+          ) : !authorQ.data ? (
+            // Read, and not there: a member this one may not see, as their profile says.
+            <EmptyState title="Member not found" />
           ) : (
             <EmptyState title="Nothing here yet" body="This member hasn’t posted a photograph." />
           )
