@@ -211,7 +211,10 @@ export function usePostActions(userId: string, postIds: string[]) {
           { text: "Cancel", style: "cancel" },
         ]);
       } else {
-        showAlert(post.author.username, undefined, [
+        // A member row-level security hides from the reader comes back as
+        // no author; a tap handler that threw on it would close the app.
+        const name = post.author?.username ?? "this member";
+        showAlert(name, undefined, [
           {
             text: "Report post",
             style: "destructive",
@@ -219,11 +222,11 @@ export function usePostActions(userId: string, postIds: string[]) {
               router.push({ pathname: "/report", params: { targetType: "post", postId: post.id } }),
           },
           {
-            text: `Block ${post.author.username}`,
+            text: `Block ${name}`,
             style: "destructive",
             onPress: () =>
               showAlert(
-                `Block ${post.author.username}?`,
+                `Block ${name}?`,
                 "They won't see your photographs or profile, and you won't see theirs. You can unblock from Settings.",
                 [
                   {

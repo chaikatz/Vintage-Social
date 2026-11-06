@@ -100,4 +100,13 @@ describe("a row whose member the reader may not see", () => {
     const thread = read("app/messages/[id].tsx");
     expect(thread).toMatch(/\{shared\.author \? \(\s*<Text style=\{\[styles\.sharedCaption/);
   });
+
+  it("is named in a post's options without reading a member that is not there", () => {
+    // A throw in a tap handler closes the app in a release build; no
+    // error boundary catches it.
+    const actions = read("src/hooks/usePostActions.ts");
+    expect(actions).toMatch(/const name = post\.author\?\.username \?\? "this member";\s*showAlert\(name, undefined, \[/);
+    expect(actions).toMatch(/text: `Block \$\{name\}`/);
+    expect(actions).not.toMatch(/post\.author\.username/);
+  });
 });
