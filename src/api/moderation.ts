@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
-import { pageAfter, type Cursor } from "./keyset";
+import { demoKeysetPage, pageAfter, type Cursor } from "./keyset";
 import type {
   ApplicationRow,
   ApplicationStatus,
@@ -113,13 +113,7 @@ export async function countApplications(status: ApplicationStatus): Promise<numb
 
 /** The demo's queues, in the order the database would give them, a page at a time. */
 function demoPageOf<T extends { id: string; created_at: string }>(rows: T[], status: string, after: AdminCursor | null): T[] {
-  const ascending = OLDEST_FIRST.has(status);
-  const sorted = [...rows].sort((a, b) => {
-    const c = a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
-    return ascending ? c : -c;
-  });
-  const start = after ? sorted.findIndex((r) => r.id === after.id) + 1 : 0;
-  return sorted.slice(start, start + ADMIN_PAGE_SIZE);
+  return demoKeysetPage(rows, (r) => ({ at: r.created_at, id: r.id }), after, ADMIN_PAGE_SIZE, OLDEST_FIRST.has(status));
 }
 
 export async function decideApplication(

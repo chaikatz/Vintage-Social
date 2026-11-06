@@ -47,3 +47,25 @@ export function pageAfter<
   const bounded = ascending ? query.gte(timeColumn, cursor.at) : query.lte(timeColumn, cursor.at);
   return bounded.or(afterCursor(timeColumn, idColumn, cursor, ascending));
 }
+
+/** Two rows' (time, id) in the order the server reads them, oldest first. */
+function compareKeys(a: Cursor, b: Cursor): number {
+  if (a.at !== b.at) return a.at < b.at ? -1 : 1;
+  if (a.id !== b.id) return a.id < b.id ? -1 : 1;
+  return 0;
+}
+
+/**
+ * The demo's lists, in the order and a page at a time as the server reads
+ * them: sorted by (time, id), newest first unless `ascending`, and each
+ * page starting at the first row past the cursor, by the same rule as
+ * `afterCursor`, whether or not the cursor's own row is still in the list.
+ * (Finding the cursor's row by its id started the list again from the top
+ * once that row had left it, and every row came round twice.)
+ */
+export function demoKeysetPage<T>(rows: T[], keyOf: (row: T) => Cursor, cursor: Cursor | null | undefined, size: number, ascending = false): T[] {
+  const sorted = [...rows].sort((a, b) => (ascending ? 1 : -1) * compareKeys(keyOf(a), keyOf(b)));
+  if (!cursor) return sorted.slice(0, size);
+  const start = sorted.findIndex((row) => (ascending ? 1 : -1) * compareKeys(keyOf(row), cursor) > 0);
+  return start === -1 ? [] : sorted.slice(start, start + size);
+}

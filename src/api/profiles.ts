@@ -3,7 +3,7 @@ import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import { forgetFollowingIds } from "./posts";
 import { readInChunks } from "./batch";
-import { pageAfter, type Cursor } from "./keyset";
+import { demoKeysetPage, pageAfter, type Cursor } from "./keyset";
 import type { FollowStatus, ProfileRow } from "@/types/db";
 
 export async function fetchProfileByUsername(username: string): Promise<ProfileRow | null> {
@@ -189,8 +189,7 @@ export async function fetchFollowPage(
   before: FollowCursor | null,
 ): Promise<FollowPage> {
   if (isDemoMode()) {
-    const all = side === "followers" ? demo.demoFetchFollowers(userId) : demo.demoFetchFollowing(userId);
-    return demoPage(all, before);
+    return demoPage(demo.demoFollowRows(userId, side), before);
   }
 
   const { mine, theirs, fk } = SIDES[side];
@@ -212,14 +211,12 @@ export async function fetchFollowPage(
   };
 }
 
-/** The demo's lists, in their own order, a page at a time after the member held last. */
-function demoPage(all: ProfileRow[], before: FollowCursor | null): FollowPage {
-  const start = before ? all.findIndex((p) => p.id === before.id) + 1 : 0;
-  const members = all
-    .slice(start, start + FOLLOWS_PAGE_SIZE)
-    .map(({ id, username, full_name, avatar_url, city }) => ({ id, username, full_name, avatar_url, city }));
-  const last = members[members.length - 1];
-  return { members, next: members.length < FOLLOWS_PAGE_SIZE ? undefined : { at: "", id: last.id } };
+/** The demo's lists, in the server's order, a page at a time after the follow held last. */
+function demoPage(all: { at: string; member: ProfileRow }[], before: FollowCursor | null): FollowPage {
+  const page = demoKeysetPage(all, (r) => ({ at: r.at, id: r.member.id }), before, FOLLOWS_PAGE_SIZE);
+  const members = page.map(({ member: { id, username, full_name, avatar_url, city } }) => ({ id, username, full_name, avatar_url, city }));
+  const last = page[page.length - 1];
+  return { members, next: page.length < FOLLOWS_PAGE_SIZE ? undefined : { at: last.at, id: last.member.id } };
 }
 
 /**

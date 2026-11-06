@@ -514,6 +514,23 @@ export function demoFetchFollowers(userId: string): ProfileRow[] {
     .map(clone);
 }
 
+/**
+ * A member's accepted follows on one side, each with the time it was made,
+ * for fetchFollowPage: the server pages them newest follow first, ties
+ * by the other member's id.
+ */
+export function demoFollowRows(userId: string, side: "followers" | "following"): { at: string; member: ProfileRow }[] {
+  const rows: { at: string; member: ProfileRow }[] = [];
+  for (const f of state.follows) {
+    if (f.status !== "accepted") continue;
+    if ((side === "followers" ? f.followee_id : f.follower_id) !== userId) continue;
+    const other = side === "followers" ? f.follower_id : f.followee_id;
+    const member = state.profiles.find((p) => p.id === other);
+    if (member) rows.push({ at: f.created_at, member: clone(member) });
+  }
+  return rows;
+}
+
 export function demoPendingRequests(followeeId: string): ProfileRow[] {
   return state.follows
     .filter((f) => f.followee_id === followeeId && f.status === "pending")
