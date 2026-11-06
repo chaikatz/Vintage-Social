@@ -425,7 +425,10 @@ insert into tests.results (name, expected, actual) values
          ('comments', 'comments: only with their photograph'),
          ('likes', 'likes: only with their photograph'),
          ('post_tags', 'post_tags: only with their photograph'),
-         ('posts', 'posts: not what I reported')))),
+         ('posts', 'posts: not what I reported'),
+         ('follows', 'follows: followee accepts'),
+         ('follows', 'follows: followee removes'),
+         ('follows', 'follows: a request seen by its two members')))),
   ('every index that was there before 0023 is there, unchanged', '0',
    (select count(*)::text from before_0023.indexes b
      where not exists (select 1 from pg_indexes i

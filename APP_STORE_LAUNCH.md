@@ -64,9 +64,21 @@ or anywhere in the repository, and must never be.
   in the SQL editor (0009, 0010, 0012, 0019–0022) are not listed there, and
   that is harmless.
 - **Pending your approval:** the launch sweep's backend work adds new
-  migrations numbered from **0023 up** (0023 to 0037) and changes the
+  migrations numbered from **0023 up** (0023 to 0038) and changes the
   `push` function. Nothing has been applied. See step 4: run every one of them,
   in number order.
+- **Private accounts (read 6 November): apply 0038 before launch.** 7
+  accounts are private, all of them house accounts; they have 95
+  accepted follows between them, made by 79 accounts, all house
+  accounts, and 0 follows are waiting as requests. Until
+  0038 is applied, the database takes a follow's status from the app, so
+  any member could make themselves an accepted follower of a private
+  account and see its photographs, and a private member's Accept and
+  Decline change nothing. 0038 fixes both for every build, the one in
+  TestFlight included. It needs nothing 0023–0037 make, so if you want
+  the hole closed before you have read the others, apply 0038 by itself
+  first (step 4, item 3); running it again in its turn later does no
+  harm.
 - Edge function `push`: active (version 1). Daily job `vintage-memories`
   at 15:00 UTC: active. Live push tokens: 5.
 - Security advisor: the `SECURITY DEFINER` warnings are the app's RPC
@@ -83,7 +95,7 @@ or anywhere in the repository, and must never be.
 | Address | Answer |
 | --- | --- |
 | `https://vintagesocial.app/` | 200, the landing page. `http://` redirects (308) to `https://` |
-| `/privacy`, `/terms` | 200, **but the 22 October text** ("Last updated October 22, 2026", and it still says "Darkroom"). The repository's text is dated 5 November. Fixed by redeploying the web (step 3) |
+| `/privacy`, `/terms` | 200, **but the 22 October text** ("Last updated October 22, 2026", and it still says "Darkroom"). The repository's text is dated 6 November. Fixed by redeploying the web (step 3) |
 | `/support.html` | 200, **but it is not a support page yet**: any address the web does not know is answered with the app's web shell (title "Vintage", no contact details). It becomes the support page only after step 1 (the file is committed) and step 3 (the web is redeployed). Do not enter the Support URL in App Store Connect (step 9) before then |
 | `/i/applereview` | 200, the invitation page |
 | `/.well-known/apple-app-site-association` | 404, by design: universal links are not part of 1.0 |
@@ -191,6 +203,12 @@ and do not submit until it has.
 
 `npm test` checks both as well (`tests/review-blockers.test.ts`).
 
+Also check the message thread's **"…"** menu is in the branch: the
+review notes and the support page say a thread's "…" shows the other
+member's profile and lets you report or block them. It is added on branch
+`r16-client`. Check: `app/messages/[id].tsx` contains "Report member"
+and "Block member"; on the phone, open any thread and tap "…" at the top.
+
 Then do these in this order. Steps 1 and 2 must happen **before** the
 build, because the app reads those values when it is built.
 
@@ -274,10 +292,16 @@ notice, and how to undo it. If you approve, in the merged branch:
    "Success". Then the next number, and so on: **every file from 0023 up,
    one at a time, in number order**, to the last one in the folder. If
    one fails, stop there and ask Claude; do not skip it.
+   One exception is allowed: `0038_follows_respect_private_accounts.sql`
+   may be run **first, by itself**, to close the private-account hole
+   today (it needs nothing 0023–0037 make; the policy harness applies it
+   straight after 0022 and then 0023–0037, and every check passes). Then
+   the rest from 0023 up in number order as above, 0038 again in its
+   turn (it is safe to run twice).
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false).
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0037 in 39 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0038 in 48 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -294,14 +318,23 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0031 | A report outlives the member who filed it | 30 |
    | 0032 | A new report reaches the admins' phones (needs item 5) | 31 |
    | 0033 | A photograph a member reports leaves their own view | 32 |
-   | 0034 | The house photographs' grid squares at a grid's size: Wikimedia's at 500 pixels, Picsum's with a 540-pixel short side | 33–35 |
+   | 0034 | The house photographs' grid squares at a grid's size: Wikimedia's at 960 pixels wide, Picsum's with a 540-pixel short side | 33–35 |
    | 0035 | A member's own photograph files readable to them whatever their membership, so Delete my account removes them | 36 |
    | 0036 | A phone's push token belongs to whoever signed in on it last | 37 |
    | 0037 | Unread messages counted in the database | 38–39 |
+   | 0038 | Follows that respect private accounts: a follow of a private account is always a request, the account accepts or declines it, an answered request leaves Activity, an account made public lets its requests in, and only the two members see a request | 40–48 |
 
-5. Redeploy the `push` function, which changed in the sweep:
+5. Redeploy the `push` function, which changed in the sweep. It is now
+   **two files**, `index.ts` and `logic.ts` (`index.ts` imports
+   `logic.ts`), so deploy it from the repository with:
    `npx supabase functions deploy push --project-ref scfwowqsqrnzpknzurmm`
-   (or Supabase → **Edge Functions** → `push` → deploy the new code).
+   which uploads both. If you use the dashboard instead (Supabase →
+   **Edge Functions** → `push` → Code): replace `index.ts` with the
+   repository's `supabase/functions/push/index.ts`, add a second file
+   named `logic.ts` with the contents of `supabase/functions/push/logic.ts`,
+   then deploy. With `index.ts` alone the deploy fails ("module not found
+   ./logic.ts") and version 1 stays live. Afterwards, **Edge Functions** →
+   `push` must show **version 2 or higher, with both files**.
    0032 (reports reach the admins) needs this redeploy to send anything:
    until then the deployed function answers its calls with "Unknown kind".
 6. On a project whose house accounts are seeded after the migrations (a
@@ -430,15 +463,51 @@ Open appstoreconnect.apple.com → **Apps** → **Vintage Social**.
   each admin's phone with notifications on is told "A report is waiting."
   when one is filed; until then nothing tells you, and an admin with
   notifications off is never told.
-- If someone writes to the support address asking to delete an account
-  that is not a member's (the Privacy Policy now promises this for
+- If someone writes to the support address asking you to delete their
+  account (the Privacy Policy promises this, for members and for
   applications that are waiting or were not accepted, and for suspended
-  memberships): check the message comes from the account's own email, then
-  Supabase → Vintage-Production → **Authentication** → **Users** → search
-  the email → the row's **…** menu → **Delete user**. The profile and the
-  application go with it. If they added a portrait to their application,
-  also **Storage** → `avatars` → the folder named with their user ID (shown
-  in the Users list) → delete it. Reply when it is done.
+  memberships): first reply suggesting they sign in and use **Delete my
+  account** on the screen the app opens on (a member: Settings → Delete
+  account), which removes their files and their account itself (for a
+  suspended member, once 0035 is applied, step 4). If they cannot, or
+  would rather you did it, do it by hand, **whatever the account's
+  status**, in this order:
+  1. Check the message comes from the account's own email. Supabase →
+     Vintage-Production → **Authentication** → **Users** → search the
+     email, and copy their **user ID** (shown in the list).
+  2. **Storage**: in **each of the three buckets, `avatars`, `media` and
+     `thumbnails`**, open the folder named with that user ID, select
+     everything in it and delete; repeat until the folder is empty (a
+     long folder shows a page at a time). Skip a bucket only if it has no
+     such folder. Use the Storage screen, not SQL: deleting rows of
+     `storage.objects` in SQL leaves the files themselves in place, and
+     they are public by address.
+  3. Only then the user's row → **…** menu → **Delete user**. The profile,
+     application, posts, comments, likes, follows and messages go with
+     it; their files do not, which is why step 2 comes first.
+     If Delete user fails with a foreign key error, the account is still
+     named where Delete my account would have cleared it first: an admin's
+     decisions on applications, reports resolved, photographs or comments
+     removed and moderation actions taken, or an invitation code used
+     (production on 6 November: 6 applications and 2 reports name the one
+     admin; no code was used). Run these lines once in **SQL Editor**, with
+     the user ID in place of `USER_ID` everywhere, then Delete user again:
+
+     ```sql
+     update public.applications set decided_by = null where decided_by = 'USER_ID';
+     update public.invites set used_by = null where used_by = 'USER_ID';
+     update public.posts set removed_by = null where removed_by = 'USER_ID';
+     update public.comments set removed_by = null where removed_by = 'USER_ID';
+     update public.reports set resolved_by = null where resolved_by = 'USER_ID';
+     delete from public.moderation_actions where admin_id = 'USER_ID'
+       and not exists (select 1 from public.profiles where id = target_profile_id and id <> 'USER_ID');
+     update public.moderation_actions set admin_id = target_profile_id where admin_id = 'USER_ID';
+     ```
+
+     These are the lines Delete my account runs (`delete_my_account()`,
+     0018); the history stays, without the name. Never do this for the
+     club's only admin: the club would have no one to let anyone in.
+  4. Reply when it is done.
 - Apple's reviewer may join with the `applereview` invitation. Each join
   spends one of the review account's 5 invitations and gives the new
   account a real membership number, which is never reissued. Top the
@@ -560,7 +629,10 @@ to check)
 > newest first. The accounts the review account follows are the club's own
 > house accounts: they are not people, they cannot sign in, and they show
 > public-domain and licensed photographs so that a new member's Home is
-> not empty. The Terms of Use say so. Search finds members. The Post tab has two ways in:
+> not empty. They also follow, like and comment on one another's
+> photographs: those likes and comments (for example "Where is this?"
+> under a photograph in Home) were made by script when the accounts were
+> made, not written by people. The Terms of Use say so. Search finds members. The Post tab has two ways in:
 > "Enter the Memory Room" shows photographs already in your library, a few
 > at a time by the date they were taken (it asks for photo access on its
 > first page; limited access works; nothing from the library leaves the
@@ -583,7 +655,9 @@ to check)
 > for objectionable content or abuse, when they apply or accept an
 > invitation. Every photograph and
 > every member's profile has a "…" menu with Report; to report a comment,
-> press and hold it. A member's profile "…" menu also has Block member;
+> press and hold it. A message thread's "…" menu shows the other
+> member's profile and lets you report or block them. A member's profile
+> "…" menu also has Block member;
 > blocking hides each member's content from the other in both directions,
 > and Settings → Blocked members lists and unblocks. Reports go to a human
 > queue and are acted on within 24 hours; admins remove content, warn and
@@ -641,7 +715,7 @@ If you want six, drop 6 and 8.
 
 ## 6. On your iPhone, on the final TestFlight build (45 minutes)
 
-Have a second account (or a second phone) for steps 9–13 and 17.
+Have a second account (or a second phone) for steps 9–13, 16 and 18.
 
 **First open**
 1. Delete the app, install from TestFlight, open. The landing page shows
@@ -672,7 +746,7 @@ Have a second account (or a second phone) for steps 9–13 and 17.
    (Guideline 1.2) → Accept the invitation. Straight into Home, with the
    next member number. This spends one of the inviter's invitations and a
    permanent membership number, which is never reissued, whichever
-   invitation you use. Delete this account afterwards in step 19 if you
+   invitation you use. Delete this account afterwards in step 20 if you
    like; its number stays spent.
 
 **Every day**
@@ -701,22 +775,31 @@ Have a second account (or a second phone) for steps 9–13 and 17.
     leave Home and Search. Settings → Blocked members → Unblock.
 15. On any photograph: … → Report → a reason → sent. Press and hold a
     comment → Report comment. Both appear in Profile → shield → Reports.
-16. Settings shows **Support** with your address (step 1). Tap it: Mail
+    In the thread with the second account (step 10), "…" at the top has
+    View profile, Report member and Block member.
+16. Private accounts (once 0038 is applied, step 4): on the second account,
+    Settings → Private account on. From your own account, open its profile
+    (if you already follow it, unfollow first: a follow made before stays a
+    follow) → Follow: the button reads Requested, and its photographs stay
+    hidden. On the second account: Activity says you asked to follow;
+    Settings → 1 request waiting → Accept. The request leaves Activity, and
+    your account now sees its photographs. Then Private account off again.
+17. Settings shows **Support** with your address (step 1). Tap it: Mail
     opens addressed to you.
 
 **Addresses and text size**
-17. On the second account (not an admin), type `vintage://admin/members`
+18. On the second account (not an admin), type `vintage://admin/members`
     into Safari's address bar and open it in VINTAGE: it goes to Home,
     with no Suspend or Warn buttons. Then `vintage://no-such-page`: Home
     again, never a page titled "Unmatched Route" or a list of routes.
-18. Settings (the phone's) → Accessibility → Display & Text Size → Larger
+19. Settings (the phone's) → Accessibility → Display & Text Size → Larger
     Text → turn on Larger Accessibility Sizes and drag the slider all the
     way. Sign out: the landing scrolls to Sign in and Privacy · Terms.
     Apply with a throwaway email: Application received scrolls to Sign
     out and Delete my account (delete it there). Set the text size back.
 
 **Leaving**
-19. On the throwaway account: Settings → Delete account → two
+20. On the throwaway account: Settings → Delete account → two
     confirmations → back at the landing page. Signing in with that email
     now fails.
 
@@ -728,12 +811,21 @@ Have a second account (or a second phone) for steps 9–13 and 17.
 (`supabase/production/08_house_accounts.sql`), under invented names,
 showing 908 photographs taken by other photographers. They are most of
 what a new member sees: 908 of the 1,139 posts, and all 12 accounts the
-review account follows. Nothing in the app labels them.
+review account follows. Nothing in the app labels them. The same script
+also made them follow, like and comment on one another's photographs
+(read on production on 6 November): 1,778 follows, 11,138 likes and
+4,182 comments, all between house accounts, the comments from a fixed
+list ("Where is this?", "My favourite of yours."). On the 96 photographs
+in the review account's Home there are 1,183 of those likes and 450 of
+those comments.
 
 **What this pass did.** The Terms now say plainly that some accounts are
 the club's own house accounts, show public-domain and licensed
-photographs, and are not members. The review notes say the same. The
+photographs, follow, like and comment on one another's photographs by
+script, and are not members. The review notes say the same. The
 Content Rights answer (step 9) no longer says the photographs are yours.
+Nothing was deleted: whether the house accounts and their likes and
+comments stay is yours to decide, below.
 
 **What is still yours to decide** (a lawyer's view is worth having):
 
@@ -753,7 +845,7 @@ Three ways forward, and the Content Rights answer follows the one you
 choose:
 
 1. **Keep them as they are.** The disclosure in the Terms and the review
-   notes stays.
+   notes stays, likes and comments included.
 2. **Keep only the 229** public-domain, CC0 and "no restrictions"
    photographs and remove the 679 Unsplash ones. Nothing has been written
    for this; ask Claude for a reviewed SQL file to run in the SQL Editor,
@@ -764,6 +856,12 @@ choose:
    and take the house-accounts sentences out of the review notes and the
    Terms (ask Claude; the Terms change is one paragraph in
    `src/legal/documents.ts`, then `npm run build:legal`).
+
+Under 2 and 3 the likes and comments on the photographs removed go with
+them. To keep the photographs but remove the scripted likes and comments
+(those made by a house account on another house account's photograph),
+ask Claude for a reviewed SQL file; the like and comment counts recount
+themselves.
 
 ---
 

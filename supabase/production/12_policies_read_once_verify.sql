@@ -1,4 +1,4 @@
--- VINTAGE · production · verify 0023-0037 (policies read the caller once;
+-- VINTAGE · production · verify 0023-0038 (policies read the caller once;
 -- block checks answer only for the caller; the home feed in one piece,
 -- paged by cursor; a photograph's followers in order; Expo's receipts;
 -- comments, likes and tags only with their photograph; decisions reach
@@ -6,11 +6,12 @@
 -- the admins; what a member reports leaves their view; the house
 -- thumbnails at a standard size; a member's own files whatever their
 -- membership; a phone's push token under whoever signed in on it last;
--- unread messages counted in the database)
+-- unread messages counted in the database; follows that respect private
+-- accounts)
 --
 -- Run after applying, in number order, every file in supabase/migrations
 -- from 0023_policies_read_once.sql to
--- 0037_unread_counts_in_the_database.sql. Paste the whole file into
+-- 0038_follows_respect_private_accounts.sql. Paste the whole file into
 -- the SQL editor and run it once. Read-only: the block at the start only plans a query (EXPLAIN
 -- without ANALYZE runs nothing) as a member and keeps what it saw in a
 -- setting of this session, and the one SELECT at the end reads the
@@ -22,10 +23,12 @@
 -- SQL editor shows: each row says what it checked, what it found and
 -- what it should be. Every `ok` must read true. If any does not, do not
 -- ship the build that relies on them; the rollbacks are
--- supabase/tests/0023_rollback.sql and the notes at the top of 0024-0037,
+-- supabase/tests/0023_rollback.sql, supabase/tests/0038_rollback.sql
+-- and the notes at the top of 0024-0037,
 -- and none of 0023-0028 or 0030-0037 changes any member's data (0029
 -- repairs profiles left at "applied", 0034 the house photographs'
--- thumbnails; each says how to put them back). Run before the
+-- thumbnails, 0038 recounts follower and following counts that are off,
+-- none on production on 6 November; each says how to put them back). Run before the
 -- migrations, it runs just the same and says false where they have not
 -- been applied.
 
@@ -106,8 +109,9 @@ with checks as (
   union all
   -- 3. Every policy is still there: 70 on public, 8 on storage.objects,
   --    as before 0023 (0023 replaces policies; it adds and removes none),
-  --    and the four restrictive ones 0028 and 0033 add: 74.
-  select 4, 'policies on public', count(*)::text, '74'
+  --    the four restrictive ones 0028 and 0033 add, and the three 0038
+  --    adds (the followee's two, and a request seen by its two members): 77.
+  select 4, 'policies on public', count(*)::text, '77'
   from pg_policies where schemaname = 'public'
   union all
   select 5, 'policies on storage.objects (VINTAGE''s own)', count(*)::text, '8'
@@ -115,7 +119,7 @@ with checks as (
   where schemaname = 'storage' and tablename = 'objects'
     and policyname ~ '^(avatars|media): '
   union all
-  select 6, 'restrictive policies (blocking, 0028, 0033)', count(*)::text, '18'
+  select 6, 'restrictive policies (blocking, 0028, 0033, 0038)', count(*)::text, '19'
   from pg_policies where schemaname = 'public' and permissive = 'RESTRICTIVE'
   union all
   -- 4. 0023's three helpers: in the schema private, which the API does not
@@ -307,11 +311,14 @@ with checks as (
   where a.is_house and p.thumb_path = p.media_path
     and p.media_path ~ '^https://(thumb|upload)\.wikimedia\.org/'
   union all
-  select 34, '0034: house thumbnails at a width Wikimedia does not serve', count(*)::text, '0'
+  -- 960: the smallest width Wikimedia serves (20, 40, 60, 120, 250, 330,
+  -- 500, 960, 1280, 1920, 3840) whose short side is the app's 540 for
+  -- every shape up to 16:9 (src/uploads/thumbSize.ts); 500 drew soft.
+  select 34, '0034: house Wikimedia thumbnails at a width other than 960 (short side 540 up to 16:9)', count(*)::text, '0'
   from public.posts p join public.profiles a on a.id = p.author_id
-  where a.is_house and p.thumb_path ~ '^https://(thumb|upload)\.wikimedia\.org/.*/[0-9]+px-[^/]+$'
-    and substring(p.thumb_path from '/([0-9]+)px-[^/]+$')::int
-        not in (20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
+  where a.is_house and p.thumb_path <> p.media_path
+    and p.thumb_path ~ '^https://(thumb|upload)\.wikimedia\.org/.*/[0-9]+px-[^/]+$'
+    and substring(p.thumb_path from '/([0-9]+)px-[^/]+$')::int <> 960
   union all
   -- 0034, picsum: the house thumbnails cut as a member's are (short side
   -- 540), where the photograph is that large.
@@ -362,6 +369,118 @@ with checks as (
   join pg_class c on c.oid = i.indexrelid
   join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relname = 'messages_unread_idx' and i.indisvalid and i.indisready
+  union all
+  -- 24. 0038: follows that respect private accounts. (This script names
+  --     no writing command, so the trigger's events, the policies' commands
+  --     and the privileges are read from the catalogue's own letters: in
+  --     tgtype, 1 a row, 2 before, 4 a new row, 8 a removal, 16 a change;
+  --     in polcmd, r a read, w a change and d a removal; in an ACL, w the
+  --     privilege to change rows.)
+  select 40, '0038: a member''s new follow takes its status from the followee (a trigger as it is filed; its function in private, run as its owner, nobody''s to call)', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  join pg_namespace n on n.oid = f.pronamespace
+  where t.tgrelid = 'public.follows'::regclass and t.tgname = 'follows_status_from_followee' and not t.tgisinternal
+    and t.tgtype = 7
+    and n.nspname = 'private' and f.proname = 'follow_status_from_followee'
+    and f.prosecdef and f.proconfig @> array['search_path=""']
+    and not has_function_privilege('authenticated', f.oid, 'execute')
+    and not has_function_privilege('anon', f.oid, 'execute')
+  union all
+  select 41, '0038: the followee accepts a request (pending to accepted, nothing else) and may remove a follow', count(*)::text, '2'
+  from pg_policies pp
+  join pg_policy pol on pol.polrelid = 'public.follows'::regclass and pol.polname = pp.policyname
+  where pp.schemaname = 'public' and pp.tablename = 'follows'
+    and ((pp.policyname = 'follows: followee accepts' and pol.polcmd = 'w'
+          and pp.qual ~ 'followee_id = \( SELECT auth\.uid\(\) AS uid\)' and pp.qual ~ 'status = ''pending'''
+          and pp.with_check ~ 'followee_id = \( SELECT auth\.uid\(\) AS uid\)' and pp.with_check ~ 'status = ''accepted''')
+      or (pp.policyname = 'follows: followee removes' and pol.polcmd = 'd'
+          and pp.qual ~ 'followee_id = \( SELECT auth\.uid\(\) AS uid\)'))
+  union all
+  -- Whether members or visitors may change any column of follows; whether
+  -- members may change status; any other column; visitors, status.
+  select 42, '0038: members may change a follow''s status and nothing else; signed-out visitors nothing',
+         concat_ws(',',
+           (select coalesce(bool_or(split_part(split_part(a::text, '=', 2), '/', 1) ~ 'w'), false)
+              from pg_class c, unnest(c.relacl) a
+             where c.oid = 'public.follows'::regclass and split_part(a::text, '=', 1) in ('authenticated', 'anon'))::text,
+           (select coalesce(bool_or(split_part(split_part(a::text, '=', 2), '/', 1) ~ 'w'), false)
+              from pg_attribute c, unnest(c.attacl) a
+             where c.attrelid = 'public.follows'::regclass and c.attname = 'status'
+               and split_part(a::text, '=', 1) = 'authenticated')::text,
+           (select coalesce(bool_or(split_part(split_part(a::text, '=', 2), '/', 1) ~ 'w'), false)
+              from pg_attribute c, unnest(c.attacl) a
+             where c.attrelid = 'public.follows'::regclass and c.attnum > 0 and c.attname <> 'status'
+               and split_part(a::text, '=', 1) in ('authenticated', 'anon'))::text,
+           (select coalesce(bool_or(split_part(split_part(a::text, '=', 2), '/', 1) ~ 'w'), false)
+              from pg_attribute c, unnest(c.attacl) a
+             where c.attrelid = 'public.follows'::regclass and c.attname = 'status'
+               and split_part(a::text, '=', 1) = 'anon')::text),
+         'false,true,false,false'
+  union all
+  select 43, '0038: follower and following counts move with accepted follows only, and when a request is accepted', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  where t.tgrelid = 'public.follows'::regclass and t.tgname = 'follows_count_trigger' and not t.tgisinternal
+    and t.tgtype = 29
+    and t.tgattr::text = (select attnum::text from pg_attribute
+                           where attrelid = 'public.follows'::regclass and attname = 'status')
+    and f.proname = 'bump_follow_counts'
+    and f.prosrc ~ 'old\.status = ''accepted''' and f.prosrc ~ 'new\.status = ''accepted'''
+  union all
+  select 44, '0038: a request is filed in Activity as follow_request', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'notify_follow'
+    and p.prosrc ~ 'when new\.status = ''pending'' then ''follow_request'''
+  union all
+  select 45, '0038: profiles whose follower or following count is not their accepted follows', count(*)::text, '0'
+  from public.profiles p
+  where p.follower_count <> (select count(*) from public.follows f where f.followee_id = p.id and f.status = 'accepted')
+     or p.following_count <> (select count(*) from public.follows f where f.follower_id = p.id and f.status = 'accepted')
+  union all
+  -- After a change of a request's status, or its removal, and only while
+  -- it was a request (tgtype 25: a row, a removal, a change; of status).
+  select 46, '0038: a request accepted, declined or withdrawn takes its notice out of Activity (a trigger; its function in private, run as its owner, nobody''s to call)', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  join pg_namespace n on n.oid = f.pronamespace
+  where t.tgrelid = 'public.follows'::regclass and t.tgname = 'follows_request_notice_gone' and not t.tgisinternal
+    and t.tgtype = 25
+    and t.tgattr::text = (select attnum::text from pg_attribute
+                           where attrelid = 'public.follows'::regclass and attname = 'status')
+    and pg_get_triggerdef(t.oid) ~ 'old\.status = ''pending'''
+    and n.nspname = 'private' and f.proname = 'forget_follow_request'
+    and f.prosecdef and f.proconfig @> array['search_path=""']
+    and f.prosrc ~ 'public\.activity' and f.prosrc ~ 'follow_request'
+    and not has_function_privilege('authenticated', f.oid, 'execute')
+    and not has_function_privilege('anon', f.oid, 'execute')
+  union all
+  -- After a change of is_private (tgtype 17: a row, a change), and only
+  -- from private to public.
+  select 47, '0038: a private account made public lets its waiting requests in (a trigger; its function in private, run as its owner, nobody''s to call)', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  join pg_namespace n on n.oid = f.pronamespace
+  where t.tgrelid = 'public.profiles'::regclass and t.tgname = 'profiles_public_accepts_requests' and not t.tgisinternal
+    and t.tgtype = 17
+    and t.tgattr::text = (select attnum::text from pg_attribute
+                           where attrelid = 'public.profiles'::regclass and attname = 'is_private')
+    and pg_get_triggerdef(t.oid) ~ 'old\.is_private' and pg_get_triggerdef(t.oid) ~ 'NOT new\.is_private'
+    and n.nspname = 'private' and f.proname = 'accept_requests_when_public'
+    and f.prosecdef and f.proconfig @> array['search_path=""']
+    and f.prosrc ~ 'status = ''accepted''' and f.prosrc ~ 'status = ''pending'''
+    and not has_function_privilege('authenticated', f.oid, 'execute')
+    and not has_function_privilege('anon', f.oid, 'execute')
+  union all
+  select 48, '0038: a request is seen by the member who asked and the member asked, and nobody else (a restrictive read policy)', count(*)::text, '1'
+  from pg_policies pp
+  join pg_policy pol on pol.polrelid = 'public.follows'::regclass and pol.polname = pp.policyname
+  where pp.schemaname = 'public' and pp.tablename = 'follows'
+    and pp.policyname = 'follows: a request seen by its two members'
+    and not pol.polpermissive and pol.polcmd = 'r'
+    and pp.qual ~ 'status = ''accepted'''
+    and pp.qual ~ 'follower_id = \( SELECT auth\.uid\(\) AS uid\)'
+    and pp.qual ~ 'followee_id = \( SELECT auth\.uid\(\) AS uid\)'
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks

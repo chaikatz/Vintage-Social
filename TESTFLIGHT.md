@@ -105,3 +105,13 @@ the invitation says "By accepting you agree to the Terms of Use and Privacy
 Policy". Before you build, check the branch you build has both ("Before you
 build" at the top of section 2 of that file); steps 4 and 5 of its section 6
 try them on the phone.
+
+The database changes of the sweep (step 4 of section 2 there: every
+migration from 0023 up, then verify script 12, then the `push` function's
+redeploy, two files) are worth applying before anyone new joins, not only
+before review: 0038 stops any member making themselves an accepted
+follower of a private account (and so seeing its photographs), and lets
+a private member's Accept and Decline work. Both hold for the build
+already in TestFlight too, because the database decides them. 0038 needs
+nothing the others make, so it may be applied first, by itself, to close
+that today (step 4, item 3).

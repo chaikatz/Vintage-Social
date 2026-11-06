@@ -3,20 +3,25 @@ import {
   demoAddComment,
   demoCurrentProfile,
   demoDecideApplication,
+  demoDecideFollowRequest,
   demoFetchActivity,
   demoFetchApplications,
   demoFetchFeedPage,
+  demoFetchProfileById,
   demoFetchProfileByUsername,
   demoFollow,
   demoFollowState,
   demoJoinWithInvite,
   demoLike,
+  demoPendingRequests,
   demoReset,
   demoSearchProfiles,
   demoSignIn,
   demoSignOut,
   demoSubmitApplication,
+  demoUnfollow,
   demoUnlike,
+  demoUpdateProfile,
 } from "@/demo/store";
 import { DEMO_COMMENTS, DEMO_IDS, DEMO_POSTS, DEMO_PROFILES } from "@/demo/fixtures";
 
@@ -218,5 +223,62 @@ describe("demo media is bundled, not remote", () => {
     const withComments = new Set(DEMO_COMMENTS.map((c) => c.post_id));
     // Comfortably more than half the photographs have someone talking on them.
     expect(withComments.size).toBeGreaterThan(DEMO_POSTS.length / 2);
+  });
+});
+
+/**
+ * The demo answers a follow request as the database does once 0038 is
+ * applied (supabase/tests/17_follows_0038.sql proves the database half),
+ * so the web walk shows what a phone sees.
+ */
+describe("demo follow requests, as the database answers them (0038)", () => {
+  beforeEach(() => demoReset());
+
+  const otis = DEMO_IDS.otis; // private
+  const strangers = () =>
+    Object.values(DEMO_IDS).filter((id) => id !== otis && demoFollowState(id, otis) === null).slice(0, 3);
+  const requestNotices = (followerId: string) =>
+    demoFetchActivity(otis).filter((a) => a.type === "follow_request" && a.actor_id === followerId).length;
+
+  it("takes a request's notice out of Activity when it is accepted, declined or withdrawn", () => {
+    const [a, b, c] = strangers();
+    expect(c, "three members who do not follow Otis").toBeTruthy();
+    for (const id of [a, b, c]) {
+      expect(demoFollow(id, otis)).toBe("pending");
+      expect(requestNotices(id)).toBe(1);
+    }
+    demoDecideFollowRequest(a, otis, true);
+    expect(demoFollowState(a, otis)).toBe("accepted");
+    expect(requestNotices(a)).toBe(0);
+    demoDecideFollowRequest(b, otis, false);
+    expect(demoFollowState(b, otis)).toBeNull();
+    expect(requestNotices(b)).toBe(0);
+    demoUnfollow(c, otis);
+    expect(demoFollowState(c, otis)).toBeNull();
+    expect(requestNotices(c)).toBe(0);
+  });
+
+  it("leaves a follow's notice alone when the follow is undone (only a request's goes)", () => {
+    const june = DEMO_IDS.june;
+    const [a] = Object.values(DEMO_IDS).filter((id) => id !== june && demoFollowState(id, june) === null);
+    expect(demoFollow(a, june)).toBe("accepted");
+    demoUnfollow(a, june);
+    expect(demoFetchActivity(june).some((n) => n.type === "follow" && n.actor_id === a)).toBe(true);
+  });
+
+  it("lets a private account's waiting requests in when it is made public, and keeps them when it is private again", () => {
+    const [a, b] = strangers();
+    demoFollow(a, otis);
+    demoFollow(b, otis);
+    const before = demoFetchProfileById(otis)!.follower_count;
+    demoUpdateProfile(otis, { bio: "a new line" });
+    expect(demoFollowState(a, otis), "a change to the bio lets nobody in").toBe("pending");
+    demoUpdateProfile(otis, { is_private: false });
+    expect([demoFollowState(a, otis), demoFollowState(b, otis)]).toEqual(["accepted", "accepted"]);
+    expect(demoFetchProfileById(otis)!.follower_count).toBe(before + 2);
+    expect(requestNotices(a) + requestNotices(b)).toBe(0);
+    expect(demoPendingRequests(otis)).toEqual([]);
+    demoUpdateProfile(otis, { is_private: true });
+    expect([demoFollowState(a, otis), demoFollowState(b, otis)]).toEqual(["accepted", "accepted"]);
   });
 });

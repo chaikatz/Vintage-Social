@@ -74,7 +74,7 @@ export const TERMS_OF_USE = `These terms are the agreement between you and VINTA
 
 VINTAGE is by application or invitation. Membership can be declined, waitlisted, suspended or ended by the club's admins, and you can leave at any time by deleting your account. Each member is issued a permanent membership number; it is never reassigned.
 
-Some accounts are the club's own house accounts. They show public-domain and licensed photographs so that the club is not empty when you arrive. They are not members, and no one answers from them.
+Some accounts are the club's own house accounts. They show public-domain and licensed photographs so that the club is not empty when you arrive. They also follow, like and comment on one another's photographs: those likes and comments were made by script, not written by people. They are not members, and no one answers from them.
 
 ## Your photographs
 

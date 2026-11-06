@@ -1,7 +1,7 @@
 -- 0034 over the house seed (supabase/production/08_house_accounts.sql,
 -- which the runner applies after the migrations, as production had it
 -- before 0034): the 229 house photographs whose thumbnail is the full
--- picture get Wikimedia's 500-pixel rendering instead, the picsum ones a
+-- picture get Wikimedia's 960-pixel rendering instead, the picsum ones a
 -- thumbnail cut as the app cuts a member's (short side 540, the
 -- photograph's shape), and nothing else changes. Runs in one transaction
 -- and rolls back.
@@ -68,20 +68,20 @@ insert into tests.results (name, expected, actual) values
    (select count(*) filter (where is_house)::text || ',' || count(*) filter (where not is_house)::text from wiki_changed)),
   ('0034: the photograph itself is not touched', '0',
    (select count(*)::text from thumbs_changed where media_now is distinct from media_path)),
-  ('0034: each was the full picture, and is now Wikimedia''s 500-pixel rendering of it', '229',
+  ('0034: each was the full picture, and is now Wikimedia''s 960-pixel rendering of it', '229',
    (select count(*)::text from wiki_changed
      where old_thumb = media_path
-       and new_thumb ~ '^https://(thumb|upload)\.wikimedia\.org/wikipedia/commons/thumb/[0-9a-f]/[0-9a-f]{2}/[^/]+/500px-[^/]+$')),
+       and new_thumb ~ '^https://(thumb|upload)\.wikimedia\.org/wikipedia/commons/thumb/[0-9a-f]/[0-9a-f]{2}/[^/]+/960px-[^/]+$')),
   ('0034: 176 from thumb.wikimedia.org''s 1920-pixel rendering, 53 from originals', '176,53',
    (select count(*) filter (where media_path ~ '/1920px-')::text || ',' ||
            count(*) filter (where media_path ~ '^https://upload\.wikimedia\.org/wikipedia/commons/[0-9a-f]/')::text
       from wiki_changed)),
   ('0034: the same file, only its width changed', '0',
    (select count(*)::text from wiki_changed
-     where split_part(new_thumb, '/500px-', 2) <> regexp_replace(media_path, '^.*/(1920px-)?', ''))),
-  ('0034: one rendering, as Wikimedia addresses it', 'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/20/Vintage_Bentley_at_the_car_show%2C_Boscawen_Street%2C_Truro%2C_Cornwall_-_July_2024.jpg/500px-Vintage_Bentley_at_the_car_show%2C_Boscawen_Street%2C_Truro%2C_Cornwall_-_July_2024.jpg',
+     where split_part(new_thumb, '/960px-', 2) <> regexp_replace(media_path, '^.*/(1920px-)?', ''))),
+  ('0034: one rendering, as Wikimedia addresses it', 'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/20/Vintage_Bentley_at_the_car_show%2C_Boscawen_Street%2C_Truro%2C_Cornwall_-_July_2024.jpg/960px-Vintage_Bentley_at_the_car_show%2C_Boscawen_Street%2C_Truro%2C_Cornwall_-_July_2024.jpg',
    coalesce((select new_thumb from thumbs_changed where id = '00000001-0000-4000-8001-000000000002'), '<unchanged>')),
-  ('0034: and one original''s', 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Texas_%26_Pacific%2C_Maintenance_of_Way_Flat_Car_No._X-943_%2821272131504%29.jpg/500px-Texas_%26_Pacific%2C_Maintenance_of_Way_Flat_Car_No._X-943_%2821272131504%29.jpg',
+  ('0034: and one original''s', 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Texas_%26_Pacific%2C_Maintenance_of_Way_Flat_Car_No._X-943_%2821272131504%29.jpg/960px-Texas_%26_Pacific%2C_Maintenance_of_Way_Flat_Car_No._X-943_%2821272131504%29.jpg',
    coalesce((select new_thumb from thumbs_changed where id = '00000001-0000-4000-8001-000000000001'), '<unchanged>')),
   ('0034: no house photograph is left with its full picture as its thumbnail', '0',
    (select count(*)::text from public.posts p join public.profiles a on a.id = p.author_id
