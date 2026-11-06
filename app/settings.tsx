@@ -240,9 +240,9 @@ export default function Settings() {
           text: "Delete account",
           style: "destructive",
           onPress: () =>
-            showAlert("Are you sure?", "This is the last step. Everything is deleted now.", [
+            showAlert("Are you sure?", "This is the last step. Your account is deleted now.", [
               {
-                text: "Yes, delete everything",
+                text: "Yes, delete my account",
                 style: "destructive",
                 onPress: async () => {
                   const userId = session?.user?.id;

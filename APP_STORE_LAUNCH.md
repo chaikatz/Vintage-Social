@@ -658,7 +658,7 @@ Have a second account (or a second phone) for steps 9–13 and 17.
    Application received tap **Delete my account**. "Delete your account?"
    → Delete account → "Are you sure?" → first tap **Keep my account**: you
    stay on Application received. Tap Delete my account again and answer
-   Delete account, then Yes, delete everything → back at the landing page. Signing in with that email now fails
+   Delete account, then Yes, delete my account → back at the landing page. Signing in with that email now fails
    (Guideline 5.1.1(v)). Nothing is approved, so no number is spent.
 5. Sign out. I have an invitation: the card opens with "A member has put
    your name forward", never with "That invitation isn’t one we know"

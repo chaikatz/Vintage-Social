@@ -161,6 +161,11 @@ check("The waiting screen offers Delete my account", (await byText("Delete my ac
     /removed for good\. The reports you filed are kept without your account attached\. This cannot be undone\./.test(dialogs[before] ?? ""),
     (dialogs[before] ?? "no dialog").split("\n").slice(1).join(" "),
   );
+  check(
+    "…and its second says the account goes now, never that everything does",
+    /This is the last step\. Your account is deleted now\./.test(dialogs[before + 1] ?? "") && !/everything/i.test(dialogs[before + 1] ?? ""),
+    (dialogs[before + 1] ?? "no dialog").split("\n").slice(1).join(" "),
+  );
 }
 
 // 2. the founder approves

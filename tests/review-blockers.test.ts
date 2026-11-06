@@ -28,13 +28,20 @@ describe("A · the waiting screen deletes the account", () => {
 
   it("asks the same two questions as Settings, and Cancel or Keep my account leaves it as it was", () => {
     const settings = code("app/settings.tsx");
-    for (const words of ['"Delete your account?"', 'text: "Delete account"', '"Are you sure?"', '"This is the last step. Everything is deleted now."', 'text: "Yes, delete everything"', 'text: "Keep my account", style: "cancel"', 'text: "Cancel", style: "cancel"']) {
+    for (const words of ['"Delete your account?"', 'text: "Delete account"', '"Are you sure?"', '"This is the last step. Your account is deleted now."', 'text: "Yes, delete my account"', 'text: "Keep my account", style: "cancel"', 'text: "Cancel", style: "cancel"']) {
       expect(settings, words).toContain(words);
       expect(src, words).toContain(words);
     }
+    // The second question says no more than the first: the first keeps the reports filed
+    // (DELETION_KEEPS_REPORTS), so the second never says everything goes.
+    for (const screen of [settings, src]) {
+      const second = screen.slice(screen.indexOf('showAlert("Are you sure?"'), screen.indexOf("onPress: async () => {", screen.indexOf('showAlert("Are you sure?"')));
+      expect(screen).toContain("${DELETION_KEEPS_REPORTS}");
+      expect(second).not.toMatch(/everything/i);
+    }
     // The second question is asked from the first's destructive answer, and the deletion from the second's.
     expect(src).toMatch(
-      /text: "Delete account",\s*style: "destructive",\s*onPress: \(\) =>\s*showAlert\("Are you sure\?"[^[]*\[\s*\{\s*text: "Yes, delete everything",\s*style: "destructive",\s*onPress: async \(\) => \{/,
+      /text: "Delete account",\s*style: "destructive",\s*onPress: \(\) =>\s*showAlert\("Are you sure\?"[^[]*\[\s*\{\s*text: "Yes, delete my account",\s*style: "destructive",\s*onPress: async \(\) => \{/,
     );
   });
 
