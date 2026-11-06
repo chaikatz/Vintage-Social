@@ -82,9 +82,13 @@ export function idsAround(ids: readonly string[], focus: number, stretch = ACTIO
  * photograph off one line in a plain scroll view, which it needs whole to
  * magnify. It used to fetch and decode every one of them the moment it
  * was opened: a hundred and fifty pictures at once for the longest
- * history on production today. Now a row draws its picture once the
- * reader comes within a few screens of it, and keeps it; the frame is
- * there, at its size, before that.
+ * history on production today. Then a row drew its picture once the
+ * reader came within a few screens of it, and kept it for good: scrolled
+ * to the end, the line still held every picture decoded, half a megabyte
+ * or more each at a 3x phone's frame size, and that grows with the
+ * history. Now the rows around the reader draw their pictures, and a row
+ * the reader has left far behind (or never reached) lets its picture go;
+ * the frame stays, at its size, so nothing moves either way.
  */
 
 /**
@@ -107,21 +111,43 @@ export function rowTops(keys: readonly string[], known: ReadonlyMap<string, numb
 
 /** Rows that draw their picture from the start: the first screen or two. */
 export const TIMELINE_FIRST_ROWS = 8;
-/** Screens below the bottom of the view whose rows draw their pictures ahead of the reader. */
-export const TIMELINE_AHEAD_SCREENS = 2;
-/** Rows revealed past the last one needed, so the timeline is drawn again only every few rows. */
-export const TIMELINE_REVEAL_STEP = 6;
 
 /**
- * How many rows draw their picture, given where the reader is: never
- * fewer than before (`through`). `tops` are the rows' tops in the line's
- * own unscaled coordinates; the line sits `blockTop` down the page, scaled
- * by `scale` about its top and lifted by `lift` (never positive), as the
- * timeline draws it.
+ * Screens around the view, as [above it, below it]: the rows that always
+ * have their pictures; the rows drawn when the window moves, a screen
+ * more above and two more below, so it moves only every screen or two;
+ * and how far a row may be before it lets its picture go.
  */
-export function timelineReveal({
+export const TIMELINE_SCREENS = Object.freeze({
+  drawn: [1, 2] as const,
+  spare: [2, 4] as const,
+  kept: [4, 6] as const,
+});
+
+/** The rows that draw their picture: from `first` up to, and not including, `end`. */
+export interface RowWindow {
+  first: number;
+  end: number;
+}
+
+/** The rows drawn before any has said where it is: the first screen or two. */
+export const TIMELINE_FIRST_WINDOW: RowWindow = Object.freeze({ first: 0, end: TIMELINE_FIRST_ROWS });
+
+/**
+ * Which rows draw their picture, given where the reader is and which
+ * rows do now (`current`, handed back unchanged while it will do): never
+ * fewer than the rows from a screen above the view to two below it, and
+ * never a row more than four screens above it or six below. A row that
+ * has not said where it is is not drawn for being near, and is never let
+ * go for being far.
+ *
+ * `tops` are the rows' tops in the line's own unscaled coordinates; the
+ * line sits `blockTop` down the page, scaled by `scale` about its top and
+ * lifted by `lift` (never positive), as the timeline draws it.
+ */
+export function timelineWindow({
   tops,
-  through,
+  current,
   scrollY,
   viewport,
   blockTop,
@@ -129,23 +155,40 @@ export function timelineReveal({
   lift,
 }: {
   tops: readonly (number | undefined)[];
-  through: number;
+  current: RowWindow;
   scrollY: number;
   viewport: number;
   blockTop: number;
   scale: number;
   lift: number;
-}): number {
+}): RowWindow {
   const count = tops.length;
-  if (count === 0 || through >= count) return through;
-  const bottom = scrollY + viewport * (1 + TIMELINE_AHEAD_SCREENS);
-  const limit = (bottom - blockTop - Math.min(0, lift)) / Math.max(scale, 0.1);
-  let i = Math.max(0, through);
-  while (i < count) {
-    const top = tops[i];
-    if (top == null || top > limit) break;
-    i++;
-  }
-  if (i <= through) return through;
-  return Math.min(count, i + TIMELINE_REVEAL_STEP);
+  if (count === 0 || !(viewport > 0)) return current;
+  // Rows are placed only as far as their tops are known, from the first.
+  let known = 0;
+  while (known < count && tops[known] != null) known++;
+  if (known === 0) return current;
+  const at = (i: number) => tops[i] as number;
+  // A point on the page, on the line's own unscaled scale.
+  const onLine = (pageY: number) => (pageY - blockTop - Math.min(0, lift)) / Math.max(scale, 0.1);
+  // The rows any part of which lies within so many screens above and below
+  // the view. A row reaches down to the next one's top; the last placed
+  // row, on down.
+  const around = ([above, below]: readonly [number, number]): RowWindow => {
+    const from = onLine(scrollY - viewport * above);
+    const to = onLine(scrollY + viewport * (1 + below));
+    let first = 0;
+    while (first < known - 1 && at(first + 1) <= from) first++;
+    let end = 0;
+    while (end < known && at(end) <= to) end++;
+    return { first, end };
+  };
+  const needed = around(TIMELINE_SCREENS.drawn);
+  const kept = around(TIMELINE_SCREENS.kept);
+  if (known < count) kept.end = count;
+  const covers = current.first <= needed.first && current.end >= needed.end;
+  const near = current.first >= kept.first && current.end <= kept.end;
+  if (covers && near) return current;
+  const next = around(TIMELINE_SCREENS.spare);
+  return next.first === current.first && next.end === current.end ? current : next;
 }

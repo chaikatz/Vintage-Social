@@ -27,7 +27,7 @@ import { aspectRatio } from "./PostMedia";
 import { holdTabSwipe, shouldHoldTabSwipe } from "@/utils/tabSwipe";
 import { useIsFocused } from "@react-navigation/native";
 import { PhotoInspector } from "./PhotoInspector";
-import { TIMELINE_FIRST_ROWS, rowTops, timelineReveal } from "@/media/cardWindow";
+import { TIMELINE_FIRST_WINDOW, rowTops, timelineWindow, type RowWindow } from "@/media/cardWindow";
 import type { PostRow } from "@/types/db";
 
 interface Props {
@@ -117,31 +117,32 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const [pinching, setPinching] = useState(false);
   const [zoomed, setZoomed] = useState(false);
 
-  // Rows draw their picture as the reader comes within a few screens of
-  // them, and keep it (src/media/cardWindow.ts): opened, the timeline
-  // fetched every photograph at once. Each row reports its top; the view
-  // its height; the scroll, the pinch and the layout ask again. The tops
-  // are kept by row, so a new reading of the posts (a like, a refresh)
-  // keeps every row's place: a row that has not moved is not laid out
-  // again, and never says where it is a second time.
+  // The rows around the reader draw their picture, and a row left far
+  // behind or far ahead lets it go (src/media/cardWindow.ts): opened, the
+  // timeline fetched every photograph at once, and then it kept every one
+  // it had drawn. Each row reports its top; the view its height; the
+  // scroll, the pinch and the layout ask again. The tops are kept by row,
+  // so a new reading of the posts (a like, a refresh) keeps every row's
+  // place: a row that has not moved is not laid out again, and never says
+  // where it is a second time.
   const knownTops = useRef(new Map<string, number>()).current;
   const tops = useMemo(() => rowTops(rows.map((r) => r.key), knownTops), [rows, knownTops]);
   const viewportH = useRef(0);
-  const [through, setThrough] = useState(TIMELINE_FIRST_ROWS);
-  const throughRef = useRef(through);
+  const [drawnRows, setDrawnRows] = useState<RowWindow>(TIMELINE_FIRST_WINDOW);
+  const drawnRef = useRef(drawnRows);
   const reveal = useCallback(() => {
-    const next = timelineReveal({
+    const next = timelineWindow({
       tops,
-      through: throughRef.current,
+      current: drawnRef.current,
       scrollY: scrollY.current,
       viewport: viewportH.current,
       blockTop: blockTop.current,
       scale: live.scale,
       lift: live.lift,
     });
-    if (next > throughRef.current) {
-      throughRef.current = next;
-      setThrough(next);
+    if (next !== drawnRef.current) {
+      drawnRef.current = next;
+      setDrawnRows(next);
     }
   }, [tops, live]);
   const onRowTop = useCallback(
@@ -307,6 +308,8 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
     ]).start();
     setZoomed(false);
     setMagnified(false);
+    // Back at actual size the view takes in other rows: they draw, and the far ones let go.
+    reveal();
   };
 
   // The scaled block keeps the page the right length: its wrapper is as
@@ -375,7 +378,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
                   key={row.key}
                   row={row}
                   index={i}
-                  drawn={i < through}
+                  drawn={i >= drawnRows.first && i < drawnRows.end}
                   onTop={onRowTop}
                   frame={frame}
                   gap={gap}
@@ -409,7 +412,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
 /**
  * One row of the line. Drawn again only when what it is given changes, so
  * a row coming within reach draws its picture without the others being
- * drawn again. Until `drawn`, the frame stands at its size, empty.
+ * drawn again. While it is not `drawn`, the frame stands at its size, empty.
  */
 const Row = React.memo(function Row({
   row,

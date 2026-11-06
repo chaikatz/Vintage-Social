@@ -5,13 +5,14 @@ import {
   ACTION_STRETCH,
   PICTURES_AHEAD,
   PICTURES_BEHIND,
-  TIMELINE_AHEAD_SCREENS,
   TIMELINE_FIRST_ROWS,
-  TIMELINE_REVEAL_STEP,
+  TIMELINE_FIRST_WINDOW,
+  TIMELINE_SCREENS,
   idsAround,
   pictureWindow,
   rowTops,
-  timelineReveal,
+  timelineWindow,
+  type RowWindow,
 } from "@/media/cardWindow";
 import { isWarm, warmWindow, type WarmWindow } from "@/utils/videoWindow";
 
@@ -161,39 +162,97 @@ describe("Home and the gallery", () => {
 
 describe("the timeline's pictures", () => {
   // Rows of 230 points under a 350-point profile, in a 700-point view.
-  const tops = Array.from({ length: 157 }, (_, i) => i * 230);
-  const at = (scrollY: number, through = TIMELINE_FIRST_ROWS, more: Partial<{ scale: number; lift: number }> = {}) =>
-    timelineReveal({ tops, through, scrollY, viewport: 700, blockTop: 350, scale: 1, lift: 0, ...more });
+  const line = (n: number) => Array.from({ length: n }, (_, i) => i * 230);
+  const tops = line(157);
+  type More = Partial<{ scale: number; lift: number; viewport: number }>;
+  const at = (scrollY: number, current: RowWindow = TIMELINE_FIRST_WINDOW, more: More = {}, all: readonly (number | undefined)[] = tops) =>
+    timelineWindow({ tops: all, current, scrollY, viewport: 700, blockTop: 350, scale: 1, lift: 0, ...more });
+  const NONE: RowWindow = { first: 0, end: 0 };
+  /** The rows any part of which is in a 700-point view scrolled to `scrollY`. */
+  const inView = (scrollY: number, all: readonly number[] = tops) =>
+    all
+      .map((_, i) => i)
+      .filter((i) => 350 + all[i] < scrollY + 700 && 350 + (all[i + 1] ?? all[i] + 230) > scrollY);
+  const holds = (w: RowWindow, i: number) => i >= w.first && i < w.end;
 
   it("are the first screens' rows when it opens, not every photograph", () => {
     expect(TIMELINE_FIRST_ROWS).toBe(8);
-    expect(TIMELINE_AHEAD_SCREENS).toBe(2);
-    // The first eight already reach three screens down here, so nothing more yet.
-    expect(at(0)).toBe(TIMELINE_FIRST_ROWS);
-    // From none: the rows whose top is within three screens of the top of the page, and a step more.
-    expect(at(0, 0)).toBe(Math.floor((2100 - 350) / 230) + 1 + TIMELINE_REVEAL_STEP);
-    expect(at(0, 0)).toBeLessThan(20);
+    expect(TIMELINE_FIRST_WINDOW).toEqual({ first: 0, end: TIMELINE_FIRST_ROWS });
+    expect(TIMELINE_SCREENS).toEqual({ drawn: [1, 2], spare: [2, 4], kept: [4, 6] });
+    // The first eight already reach two screens below the view here: the same window, so nothing is drawn again.
+    expect(at(0)).toBe(TIMELINE_FIRST_WINDOW);
+    // From none: the rows whose top is within four screens below the view, the window's spare included.
+    expect(at(0, NONE)).toEqual({ first: 0, end: Math.floor((700 * 5 - 350) / 230) + 1 });
   });
 
-  it("come in a few screens ahead of the reader, and stay", () => {
+  it("come in a few screens ahead of the reader, let go of the rows far behind, and come back", () => {
     const down = at(5000);
-    expect(tops[down - 1 - TIMELINE_REVEAL_STEP]).toBeLessThanOrEqual(5000 + 2100 - 350);
-    expect(down).toBeGreaterThan(at(0));
-    // Scrolling back up never takes a picture away.
-    expect(at(0, down)).toBe(down);
+    for (const i of inView(5000)) expect(holds(down, i)).toBe(true);
+    // Two screens below the view, and more, are drawn ahead of the reader.
+    expect(350 + tops[down.end - 1]).toBeGreaterThan(5000 + 700 * 3 - 230);
+    // The rows at the top of the line, more than four screens up, have let their pictures go.
+    expect(down.first).toBeGreaterThan(0);
+    expect(350 + tops[down.first + 1]).toBeGreaterThan(5000 - 4 * 700);
+    // Scrolling back up draws them again.
+    const back = at(0, down);
+    expect(back.first).toBe(0);
+    for (const i of inView(0)) expect(holds(back, i)).toBe(true);
+  });
+
+  it("hold a few dozen pictures at most, however long the line, and always the ones in view", () => {
+    for (const n of [157, 1000]) {
+      const all = line(n);
+      const bottom = 350 + all[n - 1] + 230;
+      let w = TIMELINE_FIRST_WINDOW;
+      let changes = 0;
+      let most = 0;
+      const visit = (y: number) => {
+        const next = at(y, w, {}, all);
+        if (next !== w) changes++;
+        w = next;
+        most = Math.max(most, w.end - w.first);
+        for (const i of inView(y, all)) expect(holds(w, i)).toBe(true);
+      };
+      for (let y = 0; y <= bottom; y += 40) visit(y);
+      for (let y = bottom; y >= 0; y -= 40) visit(y);
+      // Seven screens of rows at most (about twenty-three here), not the whole line.
+      expect(most).toBeLessThanOrEqual(Math.ceil((7 * 700) / 230) + 2);
+      // And the line is drawn again every screen or two, not on every scroll:
+      // every two screens on the way down, every screen on the way back up.
+      const screens = bottom / 700;
+      expect(changes).toBeLessThanOrEqual(Math.ceil(screens / 2 + screens) + 2);
+    }
   });
 
   it("reach further when the line is shrunk, and follow it when it is lifted", () => {
-    expect(at(0, TIMELINE_FIRST_ROWS, { scale: 0.5 })).toBeGreaterThan(at(0));
-    expect(at(0, TIMELINE_FIRST_ROWS, { lift: -2000 })).toBeGreaterThan(at(0));
+    expect(at(0, NONE, { scale: 0.5 }).end).toBeGreaterThan(at(0, NONE).end);
+    expect(at(0, NONE, { lift: -2000 }).end).toBeGreaterThan(at(0, NONE).end);
+    // Lifted past the first rows, those are let go, as rows scrolled past are.
+    expect(at(0, at(0, NONE), { lift: -5000 }).first).toBeGreaterThan(0);
   });
 
-  it("wait for rows that have not said where they are", () => {
+  it("let go of the rows a magnified line has pushed far below the view", () => {
+    // Shrunk to half, the view surveys twice the rows, and draws them.
+    const shrunk = at(0, NONE, { scale: 0.5 });
+    expect(shrunk.end).toBeGreaterThan(at(0, NONE).end * 1.8);
+    // Pinched back out to two and a half times: the same rows are now
+    // more than six screens below, and let their pictures go.
+    const magnified = at(0, shrunk, { scale: 2.5 });
+    expect(magnified.end).toBeLessThan(shrunk.end / 2);
+    for (const i of [0, 1]) expect(holds(magnified, i)).toBe(true);
+  });
+
+  it("wait for rows that have not said where they are, and never let one of them go", () => {
     const partial = [0, 230, undefined, 690];
-    expect(timelineReveal({ tops: partial, through: 0, scrollY: 0, viewport: 700, blockTop: 0, scale: 1, lift: 0 })).toBe(
-      Math.min(4, 2 + TIMELINE_REVEAL_STEP),
-    );
-    expect(timelineReveal({ tops: [], through: 3, scrollY: 0, viewport: 700, blockTop: 0, scale: 1, lift: 0 })).toBe(3);
+    expect(at(0, NONE, {}, partial)).toEqual({ first: 0, end: 2 });
+    const some = { first: 0, end: 3 };
+    expect(at(0, some, {}, [])).toBe(some);
+    // No row placed yet, or the view not measured yet: as it was.
+    expect(at(0, TIMELINE_FIRST_WINDOW, {}, new Array<number | undefined>(10))).toBe(TIMELINE_FIRST_WINDOW);
+    expect(at(0, TIMELINE_FIRST_WINDOW, { viewport: 0 })).toBe(TIMELINE_FIRST_WINDOW);
+    // Rows further down that have not reported are kept, whatever they hold.
+    const half = [...line(40), ...new Array<number | undefined>(40)];
+    expect(at(0, { first: 0, end: 80 }, {}, half)).toEqual({ first: 0, end: 80 });
   });
 
   it("keep coming in after the posts are read again, with every row where it was", () => {
@@ -205,12 +264,15 @@ describe("the timeline's pictures", () => {
     const known = new Map(keys.map((k, i) => [k, i * 230] as const));
     const again = rowTops([...keys], known);
     expect(again).toEqual(keys.map((_, i) => i * 230));
-    // Scrolled to the end of the line after the reading: every row draws its picture.
-    const reach = (tops: readonly (number | undefined)[]) =>
-      timelineReveal({ tops, through: 14, scrollY: 12835, viewport: 844, blockTop: 350, scale: 1, lift: 0 });
-    expect(reach(again)).toBe(60);
+    // Scrolled to the end of the line after the reading: the rows there draw their pictures.
+    const drawnFrom = { first: 0, end: 14 };
+    const reach = (all: readonly (number | undefined)[]) =>
+      timelineWindow({ tops: all, current: drawnFrom, scrollY: 12835, viewport: 844, blockTop: 350, scale: 1, lift: 0 });
+    const w = reach(again);
+    expect(w.end).toBe(60);
+    for (let i = 54; i < 60; i++) expect(holds(w, i)).toBe(true);
     // What the timeline used to have after a reading: no row placed, and no picture past the ones drawn.
-    expect(reach(new Array<number | undefined>(60))).toBe(14);
+    expect(reach(new Array<number | undefined>(60))).toBe(drawnFrom);
   });
 
   it("place a row new to the line once it says where it is, and keep the others' places", () => {
@@ -222,19 +284,21 @@ describe("the timeline's pictures", () => {
     expect(rowTops([], known)).toEqual([]);
   });
 
-  it("are drawn only for the rows revealed, by a row that is a memo and reports its top", () => {
+  it("are drawn only for the rows in the window, by a row that is a memo and reports its top", () => {
     const timeline = code("src/components/Timeline.tsx");
     expect(timeline).toMatch(/const Row = React\.memo\(function Row\(\{/);
-    expect(timeline).toMatch(/drawn=\{i < through\}/);
+    expect(timeline).toMatch(/drawn=\{i >= drawnRows\.first && i < drawnRows\.end\}/);
+    expect(timeline).toMatch(/current: drawnRef\.current,/);
+    expect(timeline).toMatch(/if \(next !== drawnRef\.current\) \{\s*drawnRef\.current = next;\s*setDrawnRows\(next\);/);
     expect(timeline).toMatch(/\{url && drawn \? \(\s*<Image/);
     expect(timeline.match(/onLayout=\{onLayout\}/g)).toHaveLength(3);
+    expect(timeline).toMatch(/scrollY\.current = e\.nativeEvent\.contentOffset\.y;\s*reveal\(\);/);
+    expect(timeline).toMatch(/const inspect = useCallback\(/);
     // The tops are kept by row across readings of the posts, and each row reports its own key.
     expect(timeline).toMatch(/const knownTops = useRef\(new Map<string, number>\(\)\)\.current;/);
     expect(timeline).toMatch(/const tops = useMemo\(\(\) => rowTops\(rows\.map\(\(r\) => r\.key\), knownTops\), \[rows, knownTops\]\);/);
     expect(timeline).toMatch(/knownTops\.set\(key, top\);/);
     expect(timeline).toMatch(/onTop\(index, row\.key, e\.nativeEvent\.layout\.y\)/);
     expect(timeline).not.toMatch(/new Array<number \| undefined>\(rows\.length\)/);
-    expect(timeline).toMatch(/scrollY\.current = e\.nativeEvent\.contentOffset\.y;\s*reveal\(\);/);
-    expect(timeline).toMatch(/const inspect = useCallback\(/);
   });
 });
