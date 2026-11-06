@@ -27,6 +27,10 @@
  * failed"); the pattern is held to exactly that, because a bare "load
  * failed" also matches the end of "Upload failed …", which is a refusal.
  *
+ * "Signing in again" is a screen's read held back while auth cannot yet
+ * refresh the member's token (src/lib/unsignedRead.ts): it goes through
+ * once the refresh does.
+ *
  * A native upload task's own failure is not classified here by its text:
  * storageUpload reads the NSURLError code instead, which does not depend
  * on the wording or the phone's language.
@@ -36,7 +40,7 @@ export function isTransient(err: unknown): boolean {
   const e = err as Record<string, unknown>;
   const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
   if (
-    /network request failed|network error|failed to fetch|(^|: )load failed$|timed? ?out|socket|econnreset|etimedout|the internet connection appears to be offline|could not connect|network connection was lost|not connected to the internet|hostname could not be found/.test(
+    /network request failed|network error|failed to fetch|(^|: )load failed$|timed? ?out|socket|econnreset|etimedout|the internet connection appears to be offline|could not connect|network connection was lost|not connected to the internet|hostname could not be found|signing in again/.test(
       message,
     )
   ) {

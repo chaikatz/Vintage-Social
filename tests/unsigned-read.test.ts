@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { noteUnsignedReads, takeUnsignedRead } from "@/lib/unsignedRead";
+import { memberSignedIn, noteUnsignedReads, takeUnsignedRead } from "@/lib/unsignedRead";
+import { isTransient } from "@/utils/retry";
+import { errorMessage } from "@/utils/errorMessage";
 
 const read = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
 
@@ -54,8 +56,12 @@ describe("a read that goes out without the member's token", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     takeUnsignedRead();
+    memberSignedIn(false);
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    memberSignedIn(false);
+  });
 
   it("is noted when auth, unable to refresh a token that ran out, hands the client no session", async () => {
     const net = network();
@@ -80,6 +86,49 @@ describe("a read that goes out without the member's token", () => {
     // says the token went through.
     expect(takeUnsignedRead()).toBe(true);
     expect(takeUnsignedRead()).toBe(false);
+  });
+
+  it("is held back while a member is signed in: no visitor's empty answer, but a failure tried again like a dropped connection", async () => {
+    memberSignedIn(true);
+    const net = network();
+    const client = createClient(URL_, PUBLIC_KEY, {
+      auth: { storage: keychain(-60), persistSession: true, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: noteUnsignedReads(net.fetch, PUBLIC_KEY) },
+    });
+    const reading = client.from("posts").select("*");
+    await vi.advanceTimersByTimeAsync(31_000);
+    let settled = false;
+    const answered = reading.then((r) => {
+      settled = true;
+      return r;
+    });
+    // Handed back at once, not tried again by PostgREST itself.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
+    const { data, error } = await answered;
+    expect(data).toBeNull();
+    expect(error?.message).toMatch(/Signing in again/);
+    // Never sent: the database never answered it as a visitor's.
+    expect(net.sent.filter((r) => r.url.includes("/rest/v1/"))).toHaveLength(0);
+    // Tried again like a connection that let go; an alert says its own words.
+    expect(isTransient(error)).toBe(true);
+    expect(errorMessage(error, "Try again in a moment.")).toBe("Try again in a moment.");
+    // And read again once the token goes through.
+    expect(takeUnsignedRead()).toBe(true);
+  });
+
+  it("holds back only a screen's reads: writes, and requests with a signal of their own, go out as before", async () => {
+    memberSignedIn(true);
+    const passed = vi.fn(async () => new Response("[]"));
+    const watched = noteUnsignedReads(passed as unknown as typeof fetch, PUBLIC_KEY);
+    const anon = { Authorization: `Bearer ${PUBLIC_KEY}` };
+    await watched(`${URL_}/rest/v1/comments`, { method: "POST", headers: anon });
+    await watched(`${URL_}/rest/v1/posts?id=eq.p1`, { method: "GET", headers: anon, signal: new AbortController().signal });
+    expect(passed).toHaveBeenCalledTimes(2);
+    await expect(watched(`${URL_}/rest/v1/posts`, { method: "GET", headers: anon })).rejects.toThrow(/Signing in again/);
+    // The member's own token goes through as ever.
+    await watched(`${URL_}/rest/v1/posts`, { method: "GET", headers: { Authorization: "Bearer member-token" } });
+    expect(passed).toHaveBeenCalledTimes(3);
   });
 
   it("is not noted when the member's token went with it", async () => {
@@ -115,6 +164,8 @@ describe("the app", () => {
 
   it("reads everything again once the token goes through, after launch and after a return to the app alike", () => {
     const provider = read("src/providers/SessionProvider.tsx");
+    // And says whether a member is here, so their reads are never answered as a visitor's.
+    expect(provider).toMatch(/useEffect\(\(\) => memberSignedIn\(userId != null\), \[userId\]\);/);
     expect(provider).toMatch(
       /if \(next && \(event === "TOKEN_REFRESHED" \|\| event === "SIGNED_IN"\)\) \{\s*const unsigned = takeUnsignedRead\(\);\s*if \(authUnreachable\.current \|\| unsigned\) \{\s*authUnreachable\.current = false;\s*void queryClient\.invalidateQueries\(\);\s*if \(next\.user\?\.id === currentUser\.current\) void readProfileAgain\.current\(\);/,
     );

@@ -10,7 +10,7 @@ import React, {
 import { router } from "expo-router";
 import type { Session } from "@supabase/supabase-js";
 import { readStoredSession, supabase } from "@/lib/supabase";
-import { takeUnsignedRead } from "@/lib/unsignedRead";
+import { memberSignedIn, takeUnsignedRead } from "@/lib/unsignedRead";
 import { queryClient } from "@/lib/queryClient";
 import { isTransient, withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
@@ -225,6 +225,10 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
   const userId = session?.user?.id ?? null;
   const restoring = session === undefined;
   useDarkroomOwner(userId);
+  // While a member is here, a screen's read that auth would send without
+  // their token is held back rather than answered as a visitor's
+  // (src/lib/unsignedRead.ts).
+  useEffect(() => memberSignedIn(userId != null), [userId]);
 
   // One read at a time: a second call while the first is still retrying
   // joins it instead of stacking another behind it.
