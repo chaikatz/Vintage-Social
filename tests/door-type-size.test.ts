@@ -25,6 +25,21 @@ describe("at the door", () => {
     expect(style(button, "quiet")).toMatch(/minHeight: 0, paddingVertical: spacing\.md/);
   });
 
+  it("every screen scrolls when its words outgrow it, so the last way out is always in reach", () => {
+    // The waiting screen did not scroll: at the largest sizes Sign out and
+    // Delete my account, last of all, were below the bottom of the screen.
+    for (const f of ["apply", "invite", "landing", "pending", "sign-in"]) {
+      expect(read(`app/(gate)/${f}.tsx`), f).not.toMatch(/scroll=\{false\}/);
+    }
+    expect(read("app/(gate)/pending.tsx")).toMatch(/<GateLayout back=\{false\}>/);
+    expect(read("src/components/gate/GateLayout.tsx")).toMatch(/scroll = true/);
+    // The landing fills the screen as before and scrolls only when it must.
+    expect(landing).toMatch(/<ScrollView contentContainerStyle=\{styles\.scroll\} alwaysBounceVertical=\{false\}[^>]*>\s*<View style=\{\[styles\.content,/);
+    expect(style(landing, "scroll")).toMatch(/flexGrow: 1/);
+    expect(style(landing, "content")).toMatch(/flex: 1/);
+    expect(read("app/(gate)/invite.tsx")).toMatch(/<ScrollView\b/);
+  });
+
   it("the landing's ways in grow too, and Sign in keeps its own height", () => {
     expect(style(landing, "way")).toMatch(/minHeight: 44/);
     expect(style(landing, "way")).not.toMatch(/[^n]height:/i);

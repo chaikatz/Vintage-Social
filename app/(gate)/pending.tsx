@@ -184,7 +184,11 @@ export default function Pending() {
     );
 
   return (
-    <GateLayout back={false} scroll={false}>
+    // It scrolls, as the other screens at the door do: at the largest text
+    // sizes the words and the buttons are taller than the screen, and Sign
+    // out and Delete my account, last of all, were below its bottom edge.
+    // Where it all fits, the page is laid out exactly as before.
+    <GateLayout back={false}>
       <View style={styles.center}>
         <Wordmark size={34} lineHeight={44} tracking={9} rule={24} gap={spacing.lg} style={styles.wordmark} />
         <Text style={styles.title}>{copy.title}</Text>
