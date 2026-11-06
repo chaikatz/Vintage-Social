@@ -497,10 +497,33 @@ describe("the cards drawn only on the way down", () => {
   const card = code("src/components/PostCard.tsx");
   const media = code("src/components/PostMedia.tsx");
 
-  it("are frames without pictures until the gallery shows, and the tapped photograph loads first", () => {
+  it("are frames without pictures away from the reader, and the tapped photograph loads first", () => {
     const cell = tags(gallery, "PostCard")[0] ?? "";
-    expect(cell).toMatch(/frameOnly=\{!ready && index >= MEASURE_LIMIT && item\.id !== postId\}/);
+    // Only the cards around the reader draw their photograph (src/media/cardWindow.ts):
+    // around the tapped one while the gallery lands, around the card on screen after.
+    expect(cell).toMatch(/frameOnly=\{!isWarm\(index, pictures\)\}/);
+    expect(gallery).toMatch(
+      /const pictures = pictureWindow\(\{ ready, startIndex, seenIndex: seenIndex < 0 \? null : seenIndex, count: posts\.length \}\);/,
+    );
     expect(cell).toMatch(/priority=\{item\.id === postId \? "high" : "normal"\}/);
+  });
+
+  it("hold the grid's small copy near the reader once the gallery shows, so a quick scroll never rests on empty frames", () => {
+    // The preview branch draws a FeedCard here (PostCard or its Editorial card).
+    const cell = tags(gallery, "PostCard")[0] ?? tags(gallery, "FeedCard")[0] ?? "";
+    expect(cell).toMatch(/standIn=\{isWarm\(index, standIns\)\}/);
+    // Centred on the card the scroll itself is at, not the card reported on screen a beat later.
+    expect(gallery).toMatch(
+      /const standIns = standInWindow\(\{ ready, startIndex, seenIndex: scrollFocus \?\? \(seenIndex < 0 \? null : seenIndex\), count: posts\.length \}\);/,
+    );
+    const onScroll = gallery.slice(gallery.indexOf("const onScroll = useCallback("), gallery.indexOf("const onListLayout"));
+    expect(onScroll).toMatch(/scrolled\.current = e\.nativeEvent\.contentOffset\.y;\s*if \(!readyRef\.current\) return;/);
+    expect(onScroll).toMatch(
+      /const at = cardAtOffset\(scrolled\.current \+ viewport\.current \/ 2, rows\.length, \(i\) => heights\.current\.get\(rows\[i\]\.id\), LIST_PADDING\);/,
+    );
+    expect(onScroll).toMatch(/const next = nextStandInFocus\(scrollFocusRef\.current, at\);\s*if \(next !== scrollFocusRef\.current\) \{\s*scrollFocusRef\.current = next;\s*setScrollFocus\(next\);/);
+    // A new landing starts it afresh.
+    expect(gallery).toMatch(/setSeenId\(null\);\s*scrollFocusRef\.current = null;\s*setScrollFocus\(null\);/);
   });
 
   it("are drawn twenty at a time while the list is hidden, and as usual once it shows", () => {
@@ -510,19 +533,27 @@ describe("the cards drawn only on the way down", () => {
 
   it("are passed through the card to its picture, and nowhere else", () => {
     expect(card).toMatch(/^\s*frameOnly = false,$/m);
+    expect(card).toMatch(/^\s*standIn = false,$/m);
     expect(card).toMatch(/^\s*priority = "normal",$/m);
     const picture = tags(card, "PostMedia")[0] ?? "";
     expect(picture).toMatch(/frameOnly=\{frameOnly\}/);
+    expect(picture).toMatch(/standIn=\{standIn\}/);
     expect(picture).toMatch(/priority=\{priority\}/);
   });
 
-  it("draw the frame at the picture's own height, with no picture and no poster in it", () => {
+  it("draw the frame at the picture's own height, with no picture and no poster in it, or only the small copy standing in", () => {
     expect(media).toMatch(/^\s*frameOnly = false,$/m);
+    expect(media).toMatch(/^\s*standIn = false,$/m);
     // The frame is its own shape whatever is in it; the picture fills it from inside.
     expect(media).toMatch(/const frame = \[styles\.media, bare && styles\.bare, \{ aspectRatio: ratio \}\];/);
-    expect(media).toMatch(/\{url && !frameOnly \? \(\s*<Animated\.View style=\{\[StyleSheet\.absoluteFill, zoomStyle\]\}>\s*<Image\s+source=\{url\}/);
+    // Frame only: the small copy when it stands in, else nothing. One image either way,
+    // so the small copy gives way to the photograph by a change of source.
+    expect(media).toMatch(/const inFrame = frameOnly \? \(standIn \? thumb : null\) : url;/);
+    expect(media).toMatch(/\{inFrame \? \(\s*<Animated\.View style=\{\[StyleSheet\.absoluteFill, zoomStyle\]\}>\s*<Image\s+source=\{inFrame\}/);
+    expect(media).toMatch(/placeholder=\{thumb && thumb !== inFrame \? thumb : undefined\}/);
+    expect(media.match(/<Image\b/g)).toHaveLength(3);
     const poster = tags(media, "VideoPoster")[0] ?? "";
-    expect(poster).toMatch(/poster=\{frameOnly \? null : post\.thumb_path\}/);
+    expect(poster).toMatch(/poster=\{frameOnly && !standIn \? null : post\.thumb_path\}/);
     // A clip with its player is never held back.
     expect(tags(media, "VideoMedia")[0]).not.toMatch(/frameOnly/);
   });

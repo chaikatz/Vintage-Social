@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Animated,
   PanResponder,
@@ -10,6 +10,7 @@ import {
   View,
   useWindowDimensions,
   type GestureResponderEvent,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
@@ -26,6 +27,7 @@ import { aspectRatio } from "./PostMedia";
 import { holdTabSwipe, shouldHoldTabSwipe } from "@/utils/tabSwipe";
 import { useIsFocused } from "@react-navigation/native";
 import { PhotoInspector } from "./PhotoInspector";
+import { TIMELINE_FIRST_WINDOW, rowTops, timelineWindow, type RowWindow } from "@/media/cardWindow";
 import type { PostRow } from "@/types/db";
 
 interface Props {
@@ -74,10 +76,13 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   // The photographs alone, in the order they hang, for paging through them close.
   const photos = useMemo(() => rows.flatMap((r) => (r.kind === "post" ? [r.post] : [])), [rows]);
   const [inspecting, setInspecting] = useState<number | null>(null);
-  const inspect = (post: PostRow) => {
-    const i = photos.findIndex((p) => p.id === post.id);
-    setInspecting(i < 0 ? null : i);
-  };
+  const inspect = useCallback(
+    (post: PostRow) => {
+      const i = photos.findIndex((p) => p.id === post.id);
+      setInspecting(i < 0 ? null : i);
+    },
+    [photos],
+  );
 
   // Each half of the page holds either the photograph or its words. The
   // frame takes most of its half; the size is set once and stays.
@@ -111,6 +116,43 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   const drag = useRef({ active: false, shift: 0, lift: 0 }).current;
   const [pinching, setPinching] = useState(false);
   const [zoomed, setZoomed] = useState(false);
+
+  // The rows around the reader draw their picture, and a row left far
+  // behind or far ahead lets it go (src/media/cardWindow.ts): opened, the
+  // timeline fetched every photograph at once, and then it kept every one
+  // it had drawn. Each row reports its top; the view its height; the
+  // scroll, the pinch and the layout ask again. The tops are kept by row,
+  // so a new reading of the posts (a like, a refresh) keeps every row's
+  // place: a row that has not moved is not laid out again, and never says
+  // where it is a second time.
+  const knownTops = useRef(new Map<string, number>()).current;
+  const tops = useMemo(() => rowTops(rows.map((r) => r.key), knownTops), [rows, knownTops]);
+  const viewportH = useRef(0);
+  const [drawnRows, setDrawnRows] = useState<RowWindow>(TIMELINE_FIRST_WINDOW);
+  const drawnRef = useRef(drawnRows);
+  const reveal = useCallback(() => {
+    const next = timelineWindow({
+      tops,
+      current: drawnRef.current,
+      scrollY: scrollY.current,
+      viewport: viewportH.current,
+      blockTop: blockTop.current,
+      scale: live.scale,
+      lift: live.lift,
+    });
+    if (next !== drawnRef.current) {
+      drawnRef.current = next;
+      setDrawnRows(next);
+    }
+  }, [tops, live]);
+  const onRowTop = useCallback(
+    (index: number, key: string, top: number) => {
+      knownTops.set(key, top);
+      tops[index] = top;
+      reveal();
+    },
+    [knownTops, tops, reveal],
+  );
 
   // The tab pager reads sideways movement as a swipe to the next tab. Two
   // fingers never reach it (the native side keeps it to one finger), but a
@@ -243,15 +285,17 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         setPinching(false);
         setZoomed(Math.abs(live.scale - 1) > 0.02);
         setMagnified(live.scale > 1.02);
+        reveal();
       },
       onPanResponderTerminate: () => {
         drag.active = false;
         setPinching(false);
         setZoomed(Math.abs(live.scale - 1) > 0.02);
         setMagnified(live.scale > 1.02);
+        reveal();
       },
     });
-  }, [width, base, scale, shift, lift, live, pinch, drag]);
+  }, [width, base, scale, shift, lift, live, pinch, drag, reveal]);
 
   const actualSize = () => {
     live.scale = 1;
@@ -264,6 +308,8 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
     ]).start();
     setZoomed(false);
     setMagnified(false);
+    // Back at actual size the view takes in other rows: they draw, and the far ones let go.
+    reveal();
   };
 
   // The scaled block keeps the page the right length: its wrapper is as
@@ -277,11 +323,13 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
       ref={root}
       style={styles.root}
       {...responder.panHandlers}
-      onLayout={() => {
+      onLayout={(e) => {
         // Measured on screen: where the page begins, for the pinch's arithmetic.
         root.current?.measureInWindow((_x, y) => {
           rootTop.current = y;
         });
+        viewportH.current = e.nativeEvent.layout.height;
+        reveal();
       }}
     >
       <ScrollView
@@ -294,6 +342,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
         horizontal={false}
         onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
           scrollY.current = e.nativeEvent.contentOffset.y;
+          reveal();
         }}
         scrollEventThrottle={16}
         refreshControl={
@@ -310,6 +359,7 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
             style={[styles.block, measured ? { height: blockHeight } : null]}
             onLayout={(e) => {
               blockTop.current = e.nativeEvent.layout.y;
+              reveal();
             }}
           >
             <Animated.View
@@ -323,8 +373,18 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
                 }
               }}
             >
-              {rows.map((row) => (
-                <Row key={row.key} row={row} frame={frame} gap={gap} onOpenPost={onOpenPost} onInspect={inspect} />
+              {rows.map((row, i) => (
+                <Row
+                  key={row.key}
+                  row={row}
+                  index={i}
+                  drawn={i >= drawnRows.first && i < drawnRows.end}
+                  onTop={onRowTop}
+                  frame={frame}
+                  gap={gap}
+                  onOpenPost={onOpenPost}
+                  onInspect={inspect}
+                />
               ))}
             </Animated.View>
           </Animated.View>
@@ -349,23 +409,35 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   );
 }
 
-function Row({
+/**
+ * One row of the line. Drawn again only when what it is given changes, so
+ * a row coming within reach draws its picture without the others being
+ * drawn again. While it is not `drawn`, the frame stands at its size, empty.
+ */
+const Row = React.memo(function Row({
   row,
+  index,
+  drawn,
+  onTop,
   frame,
   gap,
   onOpenPost,
   onInspect,
 }: {
   row: TimelineRow;
+  index: number;
+  drawn: boolean;
+  onTop: (index: number, key: string, top: number) => void;
   frame: number;
   gap: number;
   onOpenPost: (post: PostRow) => void;
   onInspect: (post: PostRow) => void;
 }) {
   const lastTap = useRef(0);
+  const onLayout = (e: LayoutChangeEvent) => onTop(index, row.key, e.nativeEvent.layout.y);
   if (row.kind === "year") {
     return (
-      <View style={styles.marker}>
+      <View style={styles.marker} onLayout={onLayout}>
         <View style={styles.line} />
         <Text style={styles.year}>{row.year}</Text>
       </View>
@@ -373,7 +445,7 @@ function Row({
   }
   if (row.kind === "gap") {
     return (
-      <View style={styles.gap}>
+      <View style={styles.gap} onLayout={onLayout}>
         <View style={styles.gapLine} />
         <Text style={styles.gapText}>{row.label}</Text>
       </View>
@@ -412,7 +484,7 @@ function Row({
       accessibilityRole="imagebutton"
       accessibilityLabel={caption ?? "Photograph"}
     >
-      {url ? (
+      {url && drawn ? (
         <Image
           source={url}
           style={[StyleSheet.absoluteFill, live ? ({ filter: live } as object) : null]}
@@ -462,7 +534,7 @@ function Row({
   const armTop = frameHeight / 2;
 
   return (
-    <View style={[styles.row, { paddingVertical: gap }]}>
+    <View style={[styles.row, { paddingVertical: gap }]} onLayout={onLayout}>
       <View style={styles.line} />
       <View style={[styles.node, { top: gap + armTop }]} />
       <View style={[styles.half, styles.halfLeft]}>
@@ -493,7 +565,7 @@ function Row({
       </View>
     </View>
   );
-}
+});
 
 const ARM = 10;
 

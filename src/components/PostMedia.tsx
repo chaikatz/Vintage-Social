@@ -14,6 +14,7 @@ import { cssFilterFor } from "@/filters/cssFilter";
 import { needsDisplayFilter } from "@/utils/displayFilter";
 import { useVideoMuted, toggleVideoMuted } from "@/utils/videoSound";
 import { clipTiming, type ClipSurface } from "@/utils/videoTiming";
+import { useImageRetry } from "@/media/imageRetry";
 import { DateStamp } from "./DateStamp";
 import { FilterOverlay } from "./FilterOverlay";
 import type { PostRow } from "@/types/db";
@@ -79,6 +80,14 @@ interface Props {
    * Defaults to false.
    */
   frameOnly?: boolean;
+  /**
+   * With `frameOnly`: the grid's small copy stands in the frame instead of
+   * nothing, a clip's poster in a clip's. Small, and usually on the phone
+   * already; the photograph comes in over it once the card draws it. The
+   * gallery asks for it once it shows, for the cards near the reader
+   * (src/media/cardWindow.ts, standInWindow). Defaults to false.
+   */
+  standIn?: boolean;
   /** Where the card is, for the development build's start-up timings only (src/utils/videoTiming.ts). */
   surface?: ClipSurface;
 }
@@ -114,6 +123,7 @@ export function PostMedia({
   recyclingKey,
   warm = true,
   frameOnly = false,
+  standIn = false,
   surface,
 }: Props) {
   const lastTap = React.useRef(0);
@@ -205,6 +215,9 @@ export function PostMedia({
 
   const frame = [styles.media, bare && styles.bare, { aspectRatio: ratio }];
   const pictureKey = recyclingKey ?? post.media_path;
+  // A photograph that fails to load is asked for again, the small copy
+  // standing in meanwhile (src/media/imageRetry.ts).
+  const photoRetry = useImageRetry(isVideo ? null : post.media_path);
 
   // Pinch a photograph to look closer. It grows about the point between
   // the fingers and springs back when they lift — a look, not a mode. Two
@@ -298,7 +311,7 @@ export function PostMedia({
           />
         ) : (
           <VideoPoster
-            poster={frameOnly ? null : post.thumb_path}
+            poster={frameOnly && !standIn ? null : post.thumb_path}
             cssFilter={live?.filter ?? null}
             onPress={handlePress}
             cachePolicy={cachePolicy}
@@ -313,6 +326,10 @@ export function PostMedia({
 
   const url = mediaUrl("media", post.media_path);
   const thumb = mediaUrl("thumbnails", post.thumb_path);
+  // What the frame draws: the photograph, or (frame only) the small copy
+  // standing in for it, or nothing. One image either way, so the step from
+  // the small copy to the photograph is a change of source, not a blank.
+  const inFrame = frameOnly ? (standIn ? thumb : null) : url;
   // The pinch's handlers sit on a plain View around the Pressable: a
   // Pressable spreads its own responder handlers last and would override
   // them, leaving a pinch to be read as a press.
@@ -326,13 +343,13 @@ export function PostMedia({
       {...pinchResponder.panHandlers}
     >
     <Pressable onPress={handlePress} style={StyleSheet.absoluteFill}>
-      {url && !frameOnly ? (
+      {inFrame ? (
         <Animated.View style={[StyleSheet.absoluteFill, zoomStyle]}>
           <Image
-            source={url}
+            source={inFrame}
             // The grid's small square is almost always already on disk, so
             // it stands in while the full frame arrives instead of a blank.
-            placeholder={thumb && thumb !== url ? thumb : undefined}
+            placeholder={thumb && thumb !== inFrame ? thumb : undefined}
             placeholderContentFit="cover"
             style={[StyleSheet.absoluteFill, live ? ({ filter: live.filter } as object) : null]}
             contentFit="cover"
@@ -340,6 +357,8 @@ export function PostMedia({
             priority={priority}
             cachePolicy={cachePolicy}
             recyclingKey={pictureKey}
+            key={photoRetry.attempt}
+            onError={photoRetry.onError}
           />
         </Animated.View>
       ) : null}
@@ -450,6 +469,7 @@ function VideoMedia({
   useClipTiming(path, active, isPlaying, surface, recyclingKey);
 
   const posterUrl = mediaUrl("thumbnails", poster);
+  const posterRetry = useImageRetry(posterUrl);
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -459,6 +479,8 @@ function VideoMedia({
           style={[StyleSheet.absoluteFill, cssFilter ? ({ filter: cssFilter } as object) : null]}
           contentFit="cover"
           cachePolicy={cachePolicy}
+          key={posterRetry.attempt}
+          onError={posterRetry.onError}
         />
       ) : null}
       <Pressable
@@ -516,6 +538,7 @@ function VideoPoster({
   cachePolicy: "memory" | "memory-disk";
 }) {
   const posterUrl = mediaUrl("thumbnails", poster);
+  const posterRetry = useImageRetry(posterUrl);
   return (
     <Pressable onPress={onPress} style={StyleSheet.absoluteFill}>
       {posterUrl ? (
@@ -524,6 +547,8 @@ function VideoPoster({
           style={[StyleSheet.absoluteFill, cssFilter ? ({ filter: cssFilter } as object) : null]}
           contentFit="cover"
           cachePolicy={cachePolicy}
+          key={posterRetry.attempt}
+          onError={posterRetry.onError}
         />
       ) : null}
     </Pressable>

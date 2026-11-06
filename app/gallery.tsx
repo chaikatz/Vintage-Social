@@ -18,7 +18,9 @@ import { PostSkeleton } from "@/components/Skeleton";
 import { fetchUserPosts } from "@/api/posts";
 import { fetchProfileById } from "@/api/profiles";
 import { galleryEra, galleryRows } from "@/utils/profileViews";
-import { isWarm, warmWindow } from "@/utils/videoWindow";
+import { isWarm, videoFocus, warmWindow } from "@/utils/videoWindow";
+import { cardAtOffset, idsAround, nextStandInFocus, pictureWindow, standInWindow } from "@/media/cardWindow";
+import { commentsOrNone, likeCounted } from "@/media/stableCards";
 import {
   LANDING_STEP_MS,
   approachOffset,
@@ -135,9 +137,16 @@ export default function Gallery() {
   const content = useRef(0);
   const settled = useRef(false);
   const [ready, setReady] = useState(false);
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
   // The last card reported on screen once the list was showing; the clips
   // that have a player are the ones around it.
   const [seenId, setSeenId] = useState<string | null>(null);
+  // The card the scroll itself is at, moved every few cards: the small
+  // copies standing in follow it (see standInWindow), so a quick scroll
+  // finds them already there.
+  const [scrollFocus, setScrollFocus] = useState<number | null>(null);
+  const scrollFocusRef = useRef<number | null>(null);
   // Only the card on screen plays its video — see PostMedia for why. The
   // tapped row is on screen first, so it starts as the active card.
   const [visibleId, setVisibleId] = useState<string | null>(postId ?? null);
@@ -155,6 +164,8 @@ export default function Gallery() {
     settled.current = false;
     setReady(false);
     setSeenId(null);
+    scrollFocusRef.current = null;
+    setScrollFocus(null);
     setVisibleId(postId ?? null);
     onScreen.current = [];
     onTapped.current = true;
@@ -235,8 +246,20 @@ export default function Gallery() {
     if (h > 0) heights.current.set(id, h);
   }, []);
 
+  const postsRef = useRef(posts);
+  postsRef.current = posts;
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrolled.current = e.nativeEvent.contentOffset.y;
+    // Once it shows: the card at the middle of the view, from the heights
+    // the cards reported, for the small copies.
+    if (!readyRef.current) return;
+    const rows = postsRef.current;
+    const at = cardAtOffset(scrolled.current + viewport.current / 2, rows.length, (i) => heights.current.get(rows[i].id), LIST_PADDING);
+    const next = nextStandInFocus(scrollFocusRef.current, at);
+    if (next !== scrollFocusRef.current) {
+      scrollFocusRef.current = next;
+      setScrollFocus(next);
+    }
   }, []);
   const onListLayout = useCallback((e: LayoutChangeEvent) => {
     viewport.current = e.nativeEvent.layout.height;
@@ -246,16 +269,27 @@ export default function Gallery() {
   }, []);
 
   const postIds = useMemo(() => posts.map((p) => p.id), [posts]);
+  const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
+  // Likes and comment previews for the cards around the reader, not the
+  // author's every photograph (see src/media/cardWindow.ts).
+  const actionIds = useMemo(
+    () => idsAround(postIds, videoFocus({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex })),
+    [postIds, ready, startIndex, seenIndex],
+  );
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
-    usePostActions(userId, postIds);
+    usePostActions(userId, actionIds);
+  // The same objects for a card while nothing about it has changed, so the
+  // list drawing again draws again only the cards that did change (see
+  // src/media/stableCards.ts).
+  const [counted] = useState(likeCounted);
+  const openProfile = useCallback((username: string) => router.push(`/user/${username}`), [router]);
+  const more = useCallback((p: PostWithAuthor) => onMore(p, () => router.back()), [onMore, router]);
 
   // Only the card on screen plays (visibleId, above), and only it and its
   // neighbours have a player at all (see src/utils/videoWindow.ts). The
   // window follows the card reported on screen once the list is showing:
   // what is reported while it is still hidden, being measured, is noted
   // and nothing more.
-  const readyRef = useRef(ready);
-  readyRef.current = ready;
   const tappedId = useRef(postId);
   tappedId.current = postId;
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -268,8 +302,14 @@ export default function Gallery() {
     if (id) setSeenId(id);
   }).current;
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 120 }).current;
-  const seenIndex = seenId ? posts.findIndex((p) => p.id === seenId) : -1;
   const warm = warmWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
+  // And only the cards around the reader draw their photograph: the rest
+  // are their frames, at the same height (see src/media/cardWindow.ts).
+  const pictures = pictureWindow({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex, count: posts.length });
+  // Once it shows, the frames near the scroll hold the grid's small copy
+  // until their photograph is drawn, so a quick scroll never comes to rest
+  // on empty frames while the window catches up.
+  const standIns = standInWindow({ ready, startIndex, seenIndex: scrollFocus ?? (seenIndex < 0 ? null : seenIndex), count: posts.length });
 
   const loading = !postsQ.isFetched || !authorQ.isFetched || waiting;
 
@@ -287,8 +327,9 @@ export default function Gallery() {
         // tapped one is there to measure straight away and nothing above
         // it is drawn later, under the reader. Capped so a very long
         // history does not draw itself entirely at once; past the cap the
-        // list draws its way down to the tapped card, out of sight. A clip
-        // among them is its poster, at its own height, and makes no player.
+        // list draws its way down to the tapped card, out of sight. Only the
+        // cards around the tapped one draw their photograph; the rest are
+        // frames at their own height, and a clip among them makes no player.
         initialNumToRender={Math.min(startIndex + 3, MEASURE_LIMIT)}
         // While it is hidden it draws twice as many cards at a time: no one
         // is scrolling it, and the cards it walks past are frames, quick to
@@ -313,21 +354,23 @@ export default function Gallery() {
         renderItem={({ item, index }) => (
           <View ref={item.id === postId ? tapped : undefined} onLayout={(e) => onCardLayout(item.id, e)}>
             <PostCard
-              post={{ ...item, like_count: likeCountFor(item) }}
+              post={counted(item, likeCountFor(item))}
               likedByMe={isLiked(item)}
               onToggleLike={toggleLike}
               onOpenComments={onOpenComments}
-              onOpenProfile={(username) => router.push(`/user/${username}`)}
+              onOpenProfile={openProfile}
               onShare={onShare}
-        onOpenLikes={onOpenLikes}
-              comments={commentsFor(item)}
-              onMore={(p) => onMore(p, () => router.back())}
+              onOpenLikes={onOpenLikes}
+              comments={commentsOrNone(commentsFor(item))}
+              onMore={more}
               active={ready && focused && item.id === visibleId}
               warm={isWarm(index, warm)}
-              // A card drawn only on the way down to the tapped one is its
-              // frame, the same height, until the gallery shows: nobody sees
-              // it, and its picture would only hold the tapped one back.
-              frameOnly={!ready && index >= MEASURE_LIMIT && item.id !== postId}
+              // A card away from the reader is its frame, the same height:
+              // on the way down to the tapped one nobody sees it, and its
+              // picture would only hold the tapped one back; once the
+              // gallery shows, the photographs come in a few cards ahead.
+              frameOnly={!isWarm(index, pictures)}
+              standIn={isWarm(index, standIns)}
               priority={item.id === postId ? "high" : "normal"}
               surface="gallery"
             />

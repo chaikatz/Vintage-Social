@@ -39,13 +39,25 @@ interface Props {
    * props hands it straight on.
    */
   frameOnly?: boolean;
+  /** With `frameOnly`, the grid's small copy stands in the frame; see PostMedia. Defaults to false. */
+  standIn?: boolean;
   /** Load this card's picture ahead of the others'; see PostMedia. Defaults to "normal". */
   priority?: "high" | "normal";
   /** Where the card is, for the development build's start-up timings only. */
   surface?: ClipSurface;
 }
 
-export function PostCard({
+/**
+ * A post in a list: who, the picture, the quiet row of actions, the words.
+ *
+ * Drawn again only when something it is given has changed. A list draws
+ * every card it holds again whenever it draws, and Home's draws each time
+ * a different card comes on screen (only that card plays); without this
+ * every card held, each with its picture, avatar and comments, was drawn
+ * again each time the reader moved on by one photograph. The screens hand
+ * it the same objects while nothing has changed (src/media/stableCards.ts).
+ */
+export const PostCard = React.memo(function PostCard({
   post,
   likedByMe,
   onToggleLike,
@@ -58,6 +70,7 @@ export function PostCard({
   active = true,
   warm = true,
   frameOnly = false,
+  standIn = false,
   priority = "normal",
   surface = "feed",
 }: Props) {
@@ -94,6 +107,7 @@ export function PostCard({
         recyclingKey={post.id}
         warm={warm}
         frameOnly={frameOnly}
+        standIn={standIn}
         priority={priority}
         surface={surface}
       />
@@ -159,7 +173,7 @@ export function PostCard({
       <PostedTime at={post.created_at} />
     </View>
   );
-}
+});
 
 /**
  * `29m ago` — when a post went up, at the foot of its card, in the byline's
