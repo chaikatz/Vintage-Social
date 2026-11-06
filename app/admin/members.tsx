@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { FlatList, StyleSheet, TextInput, View } from "react-native";
 import { showAlert, showPrompt } from "@/utils/alert";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/providers/SessionProvider";
 import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
@@ -29,12 +30,16 @@ function memberSubtitle(member: ProfileRow): string {
  */
 export default function AdminMembers() {
   const router = useRouter();
+  // Opened by a link (vintage://admin/members) by someone who is not an
+  // admin: nothing is read for them, and they are sent home below.
+  const { isAdmin, profileLoaded } = useSession();
   const queryClient = useQueryClient();
   const [q, setQ] = useState("");
 
   const members = useQuery({
     queryKey: ["admin-members", q],
     queryFn: () => fetchMembers(q),
+    enabled: isAdmin,
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-members"] });
@@ -107,6 +112,9 @@ export default function AdminMembers() {
       ],
     );
   };
+
+  // After every hook: a member who is not an admin never sees this, even from a link.
+  if (profileLoaded && !isAdmin) return <Redirect href="/(tabs)" />;
 
   return (
     <Screen padded={false}>

@@ -1,8 +1,9 @@
 import React, { useRef, useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/providers/SessionProvider";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
@@ -28,12 +29,16 @@ const TABS: ReportStatus[] = ["open", "resolved", "dismissed"];
 
 export default function AdminReports() {
   const router = useRouter();
+  // Opened by a link by someone who is not an admin: nothing is read for
+  // them, and they are sent home below.
+  const { isAdmin, profileLoaded } = useSession();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ReportStatus>("open");
 
   const reports = useQuery({
     queryKey: ["admin-reports", tab],
     queryFn: () => fetchReports(tab),
+    enabled: isAdmin,
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
@@ -113,6 +118,9 @@ export default function AdminReports() {
       showAlert("Couldn’t open the member", errorMessage(err, "Try again in a moment."));
     }
   };
+
+  // After every hook: a member who is not an admin never sees this, even from a link.
+  if (profileLoaded && !isAdmin) return <Redirect href="/(tabs)" />;
 
   return (
     <Screen padded={false}>
