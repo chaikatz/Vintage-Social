@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Dimensions, FlatList, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Dimensions, FlatList, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -15,6 +15,7 @@ import { memoryHeadline, onThisDay } from "@/utils/memories";
 import { editEras } from "@/utils/eraEdits";
 import { signatureDate } from "@/utils/time";
 import { showAlert } from "@/utils/alert";
+import { onReturnFromBackground } from "@/utils/appReturn";
 import {
   chooseMorePhotos,
   composeParamsFor,
@@ -120,13 +121,13 @@ export default function Memories() {
     }, [lookAgain]),
   );
 
-  // Coming back from Settings.
+  // Coming back from Settings: a return from the background only. Control
+  // Center or a system question over the page used to count too, and read
+  // the access and, under a chosen selection, the day's photographs again
+  // across every year in the library (appReturn.ts).
   useEffect(() => {
     if (Platform.OS === "web") return;
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") lookAgain(reachNow.current === "limited");
-    });
-    return () => sub.remove();
+    return onReturnFromBackground(() => lookAgain(reachNow.current === "limited"));
   }, [lookAgain]);
 
   // iOS's sheet for sharing more says nothing when it closes; the library
