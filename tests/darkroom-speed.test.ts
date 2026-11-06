@@ -263,6 +263,32 @@ describe("a visit's reading", () => {
     const onePass = lib.pages - pages0;
     expect(onePass).toBeGreaterThan(10);
   }, 30_000);
+
+  it("reads the library afresh once it changes, even while a count or the day is still being read", async () => {
+    vi.useFakeTimers({ now: NOW });
+    const lib = new SerialLibrary(bigLibrary());
+    const visit = new Visit(lib);
+    visit.libraryChanged(true);
+    await settle(visit.oldest());
+
+    // Photos says the library changed part way through the year count.
+    const counting = visit.years(false, true);
+    await vi.advanceTimersByTimeAsync(100);
+    visit.libraryChanged(false);
+    const recounted = visit.years();
+    const [before, after] = await settle(Promise.all([counting, recounted]));
+    // The first count answers its own callers; the next ask is a new count of the library as it is now.
+    expect(after).not.toBe(before);
+    expect(after).toEqual(before);
+
+    // And part way through the whole day.
+    const reading = visit.askDay(true);
+    await vi.advanceTimersByTimeAsync(100);
+    visit.libraryChanged(true);
+    const reread = visit.askDay();
+    const [day1, day2] = await settle(Promise.all([reading, reread]));
+    expect(day2).not.toBe(day1);
+  }, 30_000);
 });
 
 describe("the room asks for what it reads of its own accord in the back line", () => {
@@ -596,7 +622,10 @@ describe("the room's photographs in memory", () => {
     expect(room).toMatch(/void Image\.clearMemoryCache\(\)\.catch\(\(\) => undefined\)/);
     const loaded = room.slice(room.indexOf("const imageLoaded = useCallback"), room.indexOf("const hasLoaded = useCallback"));
     expect(loaded).toMatch(/const \{ first, release \} = loaded\.current\.add\(id\);/);
-    expect(loaded).toMatch(/if \(release\) \{[\s\S]*?c\.prints\.slice\(Math\.max\(0, c\.index - 1\), c\.index \+ 2\)[\s\S]*?releaseDrawn\(\);/);
+    // The plates on screen (the one in front and one either side) keep their photographs, and stay counted as drawn.
+    expect(loaded).toMatch(
+      /if \(release\) \{\s*const c = live\.current\.chapter;\s*const onScreen = c \? c\.prints\.slice\(Math\.max\(0, c\.index - 1\), c\.index \+ 2\)\.map\(\(p\) => p\.id\) : \[\];\s*loaded\.current\.released\(\[\.\.\.onScreen, id\]\);\s*releaseDrawn\(\);/,
+    );
     const unmount = room.slice(room.indexOf("// --- mount and unmount"));
     expect(unmount).toMatch(/mounted\.current = false;\s*\/\/[^\n]*\n\s*releaseDrawn\(\);/);
   });
