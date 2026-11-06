@@ -31,6 +31,13 @@ export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 /** Where the member stands with a search's results, kept under "follows" so a follow reads it again. */
 const followsAmongKey = (userId: string, ids: string[]) => ["follows", userId, "among", ids.join(",")] as const;
 const FOLLOWS_AMONG_STALE_MS = 60_000;
+/**
+ * How long the results wait for that read before they are shown anyway,
+ * unranked, to take their order when it lands. Enough for it on a good
+ * connection; on a slow one, a ranking read that hangs must not hold the
+ * results back until the request's own deadline.
+ */
+const FOLLOWS_AMONG_WAIT_MS = 1200;
 
 /**
  * Find people, or look at what the rest of VINTAGE has been shooting.
@@ -62,14 +69,19 @@ export default function Search() {
       const found = await searchProfiles(settledQ);
       // Where the member stands with these results comes with them, so
       // they are drawn in their order at once (below). A failure there
-      // only leaves them unranked: prefetchQuery does not throw.
+      // only leaves them unranked: prefetchQuery does not throw. Waited
+      // for a moment at most (FOLLOWS_AMONG_WAIT_MS): a read still going
+      // goes on, and circleQ, under the same key, takes its answer.
       const ids = found.map((p) => p.id);
       if (userId && ids.length > 0) {
-        await queryClient.prefetchQuery({
+        const ranking = queryClient.prefetchQuery({
           queryKey: followsAmongKey(userId, ids),
           queryFn: () => fetchFollowsAmong(userId, ids),
           staleTime: FOLLOWS_AMONG_STALE_MS,
         });
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([ranking, new Promise<void>((done) => (timer = setTimeout(done, FOLLOWS_AMONG_WAIT_MS)))]);
+        clearTimeout(timer);
       }
       return found;
     },
