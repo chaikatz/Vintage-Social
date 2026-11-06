@@ -11,6 +11,7 @@ import { describeRedeem, fetchMyApplication, redeemInviteLink } from "@/api/memb
 import { slugFromInput } from "@/utils/inviteLink";
 import { showAlert, showPrompt } from "@/utils/alert";
 import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
+import { awaitsDecision, takesInvitation, waitingRoomState } from "@/components/gate/waitingRoom";
 
 const COPY: Record<string, { title: string; body: string }> = {
   applied: {
@@ -29,12 +30,21 @@ const COPY: Record<string, { title: string; body: string }> = {
     title: "Account suspended",
     body: "Your membership is currently suspended. If you believe this is a mistake, write to us.",
   },
+  // An account with no application of its own: an invitation refused after
+  // the account was made, or an application that never reached the admins.
+  none: {
+    title: "NO APPLICATION YET",
+    body: "Your account is made, but no application or invitation of yours has reached us.\nIf a member invited you, enter the invitation below.",
+  },
 };
 
 export default function Pending() {
   const { session, profile, refreshProfile, signOut } = useSession();
 
-  useQuery({
+  // Read for what it says (waitingRoom.ts): the profile alone told a
+  // rejected applicant, and an account that never applied, that an
+  // application had been received.
+  const application = useQuery({
     queryKey: ["my-application", session?.user?.id],
     queryFn: () => fetchMyApplication(session!.user.id),
     enabled: Boolean(session?.user?.id),
@@ -81,13 +91,13 @@ export default function Pending() {
 
   if (session === null) return <Redirect href="/(gate)/landing" />;
 
-  const status = profile?.status ?? "applied";
+  const status = waitingRoomState(profile?.status, application.isSuccess ? application.data : undefined);
   const copy = COPY[status] ?? COPY.applied;
 
   const checkAgain = async () => {
     setChecking(true);
     try {
-      const ok = await refreshProfile();
+      const [ok] = await Promise.all([refreshProfile(), application.refetch()]);
       setCheckFailed(!ok);
       setCheckedAt(new Date());
     } finally {
@@ -126,16 +136,20 @@ export default function Pending() {
         <Wordmark size={34} lineHeight={44} tracking={9} rule={24} gap={spacing.lg} style={styles.wordmark} />
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.body}>{copy.body}</Text>
-        {status === "applied" || status === "waitlisted" ? (
+        {takesInvitation(status) && status !== "none" ? (
           <View style={styles.inviteNote}>
             <Text style={styles.inviteLead}>Already know a member?</Text>
             <Text style={styles.inviteBody}>An invitation grants access.</Text>
           </View>
         ) : null}
-        {status === "suspended" && SUPPORT_EMAIL ? (
+        {(status === "suspended" || status === "none") && SUPPORT_EMAIL ? (
           <Text
             style={[styles.body, styles.link]}
-            onPress={() => Linking.openURL(supportMailto("VINTAGE membership") ?? "")}
+            onPress={() =>
+              Linking.openURL(supportMailto("VINTAGE membership") ?? "").catch(() =>
+                showAlert("Write to us", `No mail account is set up on this phone. Our address is ${SUPPORT_EMAIL}.`),
+              )
+            }
             accessibilityRole="link"
           >
             {SUPPORT_EMAIL}
@@ -143,9 +157,11 @@ export default function Pending() {
         ) : null}
       </View>
       <View style={styles.actions}>
-        {status === "applied" || status === "waitlisted" ? (
+        {takesInvitation(status) ? (
+          <GateButton title="I have an invitation" variant="solid" onPress={enterInvitation} loading={redeeming} />
+        ) : null}
+        {awaitsDecision(status) ? (
           <>
-            <GateButton title="I have an invitation" variant="solid" onPress={enterInvitation} loading={redeeming} />
             <GateButton title="Check status" onPress={checkAgain} loading={checking} style={styles.gap} />
             {checkedAt ? (
               <Text style={styles.checked}>
