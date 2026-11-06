@@ -60,6 +60,16 @@ describe("the screens use them", () => {
     expect(invite).not.toMatch(/enterApp/);
   });
 
+  it("the application goes in through the same hook: sent, or with its account made and the application refused", () => {
+    // Left on the form after a failure that came after the account was
+    // made, every further try was "That username is taken": the new
+    // account's own profile holds the name (handle_new_user).
+    const apply = code("app/(gate)/apply.tsx");
+    expect(apply).toMatch(/const goIn = useDoorClosesBehind\(busy\);/);
+    expect(apply).toMatch(/await submitApplication\(\{[\s\S]*?\}\);\s*await goIn\(\);/);
+    expect(apply).not.toMatch(/router\.replace\("\/\(gate\)\/pending"\)|enterApp/);
+  });
+
   it("the hook waits on busy, asks the rule, and enters the app", () => {
     expect(hook).toMatch(/if \(shouldGoIn\(signedIn, busy, gone\.current\)\) void goIn\(\);/);
     expect(hook).toMatch(/\[signedIn, busy, goIn\]/);

@@ -11,6 +11,7 @@ import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import { validateEmail, validatePassword, validateUsername } from "@/utils/validation";
 import { checkUsernameAvailable, submitApplication } from "@/api/membership";
+import { useDoorClosesBehind } from "@/components/gate/useDoor";
 
 /**
  * The application.
@@ -32,6 +33,13 @@ export default function Apply() {
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
+  // Signed in, the application goes through the door as the invitation
+  // does (door.ts): sent, to the waiting room. And when the account was
+  // made but the application did not reach us (a dropped connection on the
+  // portrait or the last insert), to the waiting room too, where the
+  // account can be deleted or an invitation entered. Left here, every
+  // further try was "That username is taken": by their own new account.
+  const goIn = useDoorClosesBehind(busy);
 
   const pickAvatar = async () => {
     try {
@@ -78,7 +86,7 @@ export default function Apply() {
         inviter,
         reason,
       });
-      router.replace("/(gate)/pending");
+      await goIn();
     } catch (err) {
       showAlert("Application failed", err instanceof Error ? err.message : String(err));
     } finally {
