@@ -173,7 +173,7 @@ describe("0033: what a member reports leaves their view", () => {
 describe("0034: the house thumbnails at a standard width", () => {
   const sql = code(migration("0034"));
   const updates = sql.split(";").filter((s) => /update public\.posts/.test(s));
-  it("changes only house photographs whose thumbnail is the full Wikimedia picture, to 500 pixels", () => {
+  it("changes only house photographs whose thumbnail is the full Wikimedia picture, to 960 pixels", () => {
     const wikimedia = updates.filter((u) => /wikimedia/.test(u));
     expect(wikimedia.length).toBe(2);
     for (const u of wikimedia) {
@@ -181,7 +181,9 @@ describe("0034: the house thumbnails at a standard width", () => {
       expect(u).toMatch(/and p\.thumb_path = p\.media_path/);
       expect(u).toMatch(/set thumb_path = regexp_replace\(/);
       expect(u).not.toMatch(/set[^=]*media_path\s*=/);
-      expect(u).toMatch(/500px-/);
+      expect(u).toMatch(/960px-/);
+      // 500 gave a landscape a short side under the app's 540 (src/uploads/thumbSize.ts).
+      expect(u).not.toMatch(/500px-/);
     }
     // A width Wikimedia serves (https://w.wiki/GHai): 480 is refused.
     expect(sql).not.toMatch(/480px-/);

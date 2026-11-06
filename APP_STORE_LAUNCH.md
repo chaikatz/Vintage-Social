@@ -302,7 +302,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0031 | A report outlives the member who filed it | 30 |
    | 0032 | A new report reaches the admins' phones (needs item 5) | 31 |
    | 0033 | A photograph a member reports leaves their own view | 32 |
-   | 0034 | The house photographs' grid squares at a grid's size: Wikimedia's at 500 pixels, Picsum's with a 540-pixel short side | 33–35 |
+   | 0034 | The house photographs' grid squares at a grid's size: Wikimedia's at 960 pixels wide, Picsum's with a 540-pixel short side | 33–35 |
    | 0035 | A member's own photograph files readable to them whatever their membership, so Delete my account removes them | 36 |
    | 0036 | A phone's push token belongs to whoever signed in on it last | 37 |
    | 0037 | Unread messages counted in the database | 38–39 |

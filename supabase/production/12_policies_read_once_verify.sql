@@ -310,11 +310,14 @@ with checks as (
   where a.is_house and p.thumb_path = p.media_path
     and p.media_path ~ '^https://(thumb|upload)\.wikimedia\.org/'
   union all
-  select 34, '0034: house thumbnails at a width Wikimedia does not serve', count(*)::text, '0'
+  -- 960: the smallest width Wikimedia serves (20, 40, 60, 120, 250, 330,
+  -- 500, 960, 1280, 1920, 3840) whose short side is the app's 540 for
+  -- every shape up to 16:9 (src/uploads/thumbSize.ts); 500 drew soft.
+  select 34, '0034: house Wikimedia thumbnails at a width other than 960 (short side 540 up to 16:9)', count(*)::text, '0'
   from public.posts p join public.profiles a on a.id = p.author_id
-  where a.is_house and p.thumb_path ~ '^https://(thumb|upload)\.wikimedia\.org/.*/[0-9]+px-[^/]+$'
-    and substring(p.thumb_path from '/([0-9]+)px-[^/]+$')::int
-        not in (20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
+  where a.is_house and p.thumb_path <> p.media_path
+    and p.thumb_path ~ '^https://(thumb|upload)\.wikimedia\.org/.*/[0-9]+px-[^/]+$'
+    and substring(p.thumb_path from '/([0-9]+)px-[^/]+$')::int <> 960
   union all
   -- 0034, picsum: the house thumbnails cut as a member's are (short side
   -- 540), where the photograph is that large.

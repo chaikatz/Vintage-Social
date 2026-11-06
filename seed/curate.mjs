@@ -304,7 +304,7 @@ for (const theme of THEMES) {
         theme: theme.key,
         place: theme.place,
         url: clean(info.thumburl ?? info.url),
-        // The grid square at 500, a width Commons serves: the old rewrite,
+        // The grid square at 960, a width Commons serves: the old rewrite,
         // "/1400px-" to "/480px-", never matched, and left the full picture.
         thumb: commonsAt(clean(info.thumburl ?? info.url), THUMB_WIDTH, info.width),
         width: info.thumbwidth ?? info.width,
