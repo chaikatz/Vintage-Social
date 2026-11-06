@@ -18,8 +18,9 @@ const root = path.resolve(import.meta.dirname, "..");
 const migrationsDir = path.join(root, "supabase", "migrations");
 const read = (f: string) => readFileSync(path.join(root, f), "utf8");
 const code = (sql: string) => sql.replace(/--[^\n]*/g, "");
+// This file's seven; 0035 on have their own (migrations-0035-0037.test.ts).
 const later = readdirSync(migrationsDir)
-  .filter((f) => /^\d{4}_.*\.sql$/.test(f) && Number(f.slice(0, 4)) >= 28)
+  .filter((f) => /^\d{4}_.*\.sql$/.test(f) && Number(f.slice(0, 4)) >= 28 && Number(f.slice(0, 4)) <= 34)
   .sort();
 const migration = (n: string) => {
   const f = later.find((x) => x.startsWith(n));
@@ -65,7 +66,7 @@ describe("0028-0034, each", () => {
     expect(runner).toMatch(/"13_photograph_rows_0028\.sql"/);
     expect(runner).toMatch(/"14_moderation_0029_0033\.sql"/);
     expect(runner).toMatch(/15_seed_thumbnails_0034\.sql/);
-    expect(runner).toMatch(/rows\.length !== 34/);
+    expect(runner).toMatch(/rows\.length !== 39/);
   });
 });
 
@@ -171,10 +172,11 @@ describe("0033: what a member reports leaves their view", () => {
 
 describe("0034: the house thumbnails at a standard width", () => {
   const sql = code(migration("0034"));
+  const updates = sql.split(";").filter((s) => /update public\.posts/.test(s));
   it("changes only house photographs whose thumbnail is the full Wikimedia picture, to 500 pixels", () => {
-    const updates = sql.split(";").filter((s) => /update public\.posts/.test(s));
-    expect(updates.length).toBe(2);
-    for (const u of updates) {
+    const wikimedia = updates.filter((u) => /wikimedia/.test(u));
+    expect(wikimedia.length).toBe(2);
+    for (const u of wikimedia) {
       expect(u).toMatch(/and a\.is_house/);
       expect(u).toMatch(/and p\.thumb_path = p\.media_path/);
       expect(u).toMatch(/set thumb_path = regexp_replace\(/);
@@ -183,5 +185,22 @@ describe("0034: the house thumbnails at a standard width", () => {
     }
     // A width Wikimedia serves (https://w.wiki/GHai): 480 is refused.
     expect(sql).not.toMatch(/480px-/);
+  });
+
+  it("asks picsum for the house thumbnails at the size the app cuts a member's", async () => {
+    const { THUMB_SHORT, THUMB_LONG_MAX } = await import("@/uploads/thumbSize");
+    expect(updates.length).toBe(3);
+    const picsum = updates.find((u) => /picsum/.test(u))!;
+    // House accounts' only, the same picture as the photograph, its size
+    // read from the photograph's own address, never larger than it.
+    expect(picsum).toContain("where a.is_house");
+    expect(picsum).toContain("and split_part(p.thumb_path, '/', 5) = m[1]");
+    expect(picsum).toContain("regexp_match(p.media_path, '^https://picsum\\.photos/id/([0-9]+)/([0-9]+)/([0-9]+)$') m");
+    expect(picsum).toContain(`where least(w, h) >= ${THUMB_SHORT}`);
+    expect(picsum).toContain(`least(${THUMB_LONG_MAX}, ceil(${THUMB_SHORT}.0 * greatest(w, h) / least(w, h)))::int as long_side`);
+    expect(picsum).toContain(`case when long_side < ${THUMB_LONG_MAX} then ${THUMB_SHORT} else round(${THUMB_LONG_MAX}.0 * h / w)::int end`);
+    expect(picsum).not.toMatch(/set[^=]*media_path\s*=/);
+    // Run again, nothing changes: only a thumbnail not already at its size.
+    expect(picsum).toContain("and p.thumb_path is distinct from asked.thumb");
   });
 });

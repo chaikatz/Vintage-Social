@@ -463,11 +463,15 @@ insert into tests.results (name, expected, actual) values
   -- would hand a member the ids of everyone who blocked them.
   -- (A trigger function a later migration adds, which nobody may call,
   -- is not published: on_report_push, 0032.)
+  -- Bar the one a later migration publishes on purpose, named here:
+  -- claim_push_token (0036), which moves a phone's token to the member
+  -- calling it and answers nothing (16_launch_data_0035_0037.sql).
   ('0023 puts no SECURITY DEFINER function in public, where the API publishes it', '<none>',
    coalesce((select string_agg(p.oid::regprocedure::text, ', ' order by 1)
              from pg_proc p join pg_namespace n on n.oid = p.pronamespace
              where n.nspname = 'public' and p.prosecdef
                and p.oid::regprocedure::text not in (select signature from before_0023.functions)
+               and p.oid::regprocedure::text not in ('claim_push_token(text,text,text)')
                and (has_function_privilege('authenticated', p.oid, 'execute')
                     or has_function_privilege('anon', p.oid, 'execute'))), '<none>')),
   ('its three helpers live in private, run as their owner, members only', '3',

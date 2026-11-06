@@ -12,6 +12,12 @@
 -- One transaction: no table is ever without its policies. Run as a whole
 -- in the SQL editor, or with psql -f. Nothing else in the database is
 -- touched; no data changes.
+--
+-- One policy here was replaced again after 0023: "media: read own
+-- folder", by 0035 (a member's own files whatever their membership, so
+-- Delete my account can remove a suspended member's photographs). This
+-- puts back 0009's version, with the membership check; apply
+-- 0035_own_files_whatever_the_membership.sql again after it.
 
 begin;
 

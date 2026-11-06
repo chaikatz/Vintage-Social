@@ -8,7 +8,7 @@
 -- was after the first time: the migration is safe to run twice, and safe
 -- to run after its own rollback.
 --
--- Leaves the database as 0023 made it.
+-- Leaves the database as 0023 made it, with 0035 over it as before.
 
 create temp table rollback_start as select coalesce(max(seq), 0) as seq from tests.results;
 
@@ -94,9 +94,13 @@ insert into tests.results (name, expected, actual) values
   ('and so is the private schema it made for them', '0',
    (select count(*)::text from pg_namespace where nspname = 'private'));
 
--- And forward again.
+-- And forward again, followed, as on the project, by the later migrations
+-- that replace a policy 0023 made: 0035 ("media: read own folder", a
+-- member's own files whatever their membership). The rollback put 0009's
+-- version back (checked above); 0023 makes 0023's, and 0035 its own.
 \o /dev/null
 \ir ../migrations/0023_policies_read_once.sql
+\ir ../migrations/0035_own_files_whatever_the_membership.sql
 \o
 
 insert into tests.results (name, expected, actual) values
@@ -121,9 +125,10 @@ insert into tests.results (name, expected, actual) values
        except select * from indexes_first)
     ) d));
 
--- And once more on top of itself.
+-- And once more on top of itself, 0035 after it as above.
 \o /dev/null
 \ir ../migrations/0023_policies_read_once.sql
+\ir ../migrations/0035_own_files_whatever_the_membership.sql
 \o
 
 insert into tests.results (name, expected, actual) values

@@ -1,14 +1,16 @@
--- VINTAGE · production · verify 0023-0034 (policies read the caller once;
+-- VINTAGE · production · verify 0023-0037 (policies read the caller once;
 -- block checks answer only for the caller; the home feed in one piece,
 -- paged by cursor; a photograph's followers in order; Expo's receipts;
 -- comments, likes and tags only with their photograph; decisions reach
 -- the profile; a removal once; reports outlive their reporter and reach
 -- the admins; what a member reports leaves their view; the house
--- thumbnails at a standard width)
+-- thumbnails at a standard size; a member's own files whatever their
+-- membership; a phone's push token under whoever signed in on it last;
+-- unread messages counted in the database)
 --
 -- Run after applying, in number order, every file in supabase/migrations
 -- from 0023_policies_read_once.sql to
--- 0034_seed_thumbnails_at_a_standard_width.sql. Paste the whole file into
+-- 0037_unread_counts_in_the_database.sql. Paste the whole file into
 -- the SQL editor and run it once. Read-only: the block at the start only plans a query (EXPLAIN
 -- without ANALYZE runs nothing) as a member and keeps what it saw in a
 -- setting of this session, and the one SELECT at the end reads the
@@ -20,8 +22,8 @@
 -- SQL editor shows: each row says what it checked, what it found and
 -- what it should be. Every `ok` must read true. If any does not, do not
 -- ship the build that relies on them; the rollbacks are
--- supabase/tests/0023_rollback.sql and the notes at the top of 0024-0027,
--- and none of 0023-0028 or 0030-0033 changes any member's data (0029
+-- supabase/tests/0023_rollback.sql and the notes at the top of 0024-0037,
+-- and none of 0023-0028 or 0030-0037 changes any member's data (0029
 -- repairs profiles left at "applied", 0034 the house photographs'
 -- thumbnails; each says how to put them back). Run before the
 -- migrations, it runs just the same and says false where they have not
@@ -310,6 +312,56 @@ with checks as (
   where a.is_house and p.thumb_path ~ '^https://(thumb|upload)\.wikimedia\.org/.*/[0-9]+px-[^/]+$'
     and substring(p.thumb_path from '/([0-9]+)px-[^/]+$')::int
         not in (20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
+  union all
+  -- 0034, picsum: the house thumbnails cut as a member's are (short side
+  -- 540), where the photograph is that large.
+  select 35, '0034: house picsum thumbnails under the standard size (short side 540)', count(*)::text, '0'
+  from public.posts p join public.profiles a on a.id = p.author_id
+  where a.is_house
+    and p.thumb_path ~ '^https://picsum\.photos/id/[0-9]+/[0-9]+/[0-9]+$'
+    and p.media_path ~ '^https://picsum\.photos/id/[0-9]+/[0-9]+/[0-9]+$'
+    and split_part(p.thumb_path, '/', 5) = split_part(p.media_path, '/', 5)
+    and least(split_part(p.thumb_path, '/', 6)::int, split_part(p.thumb_path, '/', 7)::int) < 540
+    and least(split_part(p.media_path, '/', 6)::int, split_part(p.media_path, '/', 7)::int) >= 540
+    and greatest(split_part(p.media_path, '/', 6)::int, split_part(p.media_path, '/', 7)::int)
+        <= 2 * least(split_part(p.media_path, '/', 6)::int, split_part(p.media_path, '/', 7)::int)
+  union all
+  -- 21. 0035: a member reads their own media and thumbnails rows whatever
+  --     their membership, so Delete my account can list and remove them;
+  --     putting or changing a file there still needs an active member.
+  select 36, '0035: own media and thumbnails readable whatever the membership; writing them still members only', count(*)::text, '3'
+  from pg_policies
+  where schemaname = 'storage' and tablename = 'objects'
+    and ((policyname = 'media: read own folder' and cmd = 'SELECT' and roles = '{authenticated}'
+          and qual ~ 'foldername' and qual ~ '\( SELECT auth\.uid\(\) AS uid\)' and qual !~ 'is_active_member')
+      -- the two that put a file there or change one, the only others of
+      -- the media policies that ask for membership (this script names no
+      -- writing command, so they are found that way)
+      or (policyname ~ '^media: ' and cmd <> 'SELECT'
+          and coalesce(qual, '') || coalesce(with_check, '') ~ 'is_active_member'))
+  union all
+  -- 22. 0036: a phone's token is filed under whoever signed in on it last.
+  select 37, '0036: claim_push_token runs as its owner, with an empty search path, for members only', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'claim_push_token'
+    and pg_get_function_identity_arguments(p.oid) = 'p_token text, p_platform text, p_device text'
+    and p.prosecdef and p.proconfig @> array['search_path=""']
+    and has_function_privilege('authenticated', p.oid, 'execute')
+    and not has_function_privilege('anon', p.oid, 'execute')
+  union all
+  -- 23. 0037: unread messages counted in the database, as the reader.
+  select 38, '0037: unread_message_counts runs as the caller, read only, for members only', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'unread_message_counts'
+    and not p.prosecdef and p.provolatile = 's'
+    and has_function_privilege('authenticated', p.oid, 'execute')
+    and not has_function_privilege('anon', p.oid, 'execute')
+  union all
+  select 39, '0037: it finds a thread''s unread messages by messages_unread_idx (present and valid)', count(*)::text, '1'
+  from pg_index i
+  join pg_class c on c.oid = i.indexrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relname = 'messages_unread_idx' and i.indisvalid and i.indisready
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks
