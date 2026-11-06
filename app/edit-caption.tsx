@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } fro
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
 import { colors, spacing, type } from "@/theme";
@@ -43,7 +44,10 @@ export default function EditCaption() {
       queryClient.invalidateQueries({ queryKey: ["post", postId] });
       router.back();
     },
-    onError: (err) => showAlert("Couldn’t save", err instanceof Error ? err.message : String(err)),
+    // In our words: "Only the author can change a caption." (updateCaption) is
+    // shown as it is; the database's own text, or an error object printed as
+    // "[object Object]", never is (src/utils/errorMessage.ts).
+    onError: (err) => showAlert("Couldn’t save", errorMessage(err, "Your words are still here. Try again in a moment.")),
   });
 
   return (
