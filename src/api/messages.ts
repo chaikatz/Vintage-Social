@@ -35,6 +35,15 @@ import type {
  * were not counted as unread. Now each thread brings only its newest
  * message (an embedded resource's order and limit apply per thread), and
  * the unread counts are counted by the database (unreadCounts).
+ *
+ * At most the newest INBOX_THREADS threads, asked for by name rather than
+ * left to PostgREST's own cut at max_rows, which would make the same cut
+ * without saying so. A member with more threads than that sees the
+ * newest thousand; an older one comes back to the top, and into the
+ * inbox, with its next message (last_message_at moves with every
+ * message), and is always reachable from the other member's profile. An
+ * unread thread is a thread with a new message, so it is among the
+ * newest; the badge counts every thread all the same (0037).
  */
 export async function fetchConversations(userId: string): Promise<ConversationWithPeer[]> {
   if (isDemoMode()) return demo.demoFetchConversations(userId);
@@ -45,7 +54,8 @@ export async function fetchConversations(userId: string): Promise<ConversationWi
     .or(`user_a.eq.${userId},user_b.eq.${userId}`)
     .order("last_message_at", { ascending: false })
     .order("created_at", { referencedTable: "messages", ascending: false })
-    .limit(1, { referencedTable: "messages" });
+    .limit(1, { referencedTable: "messages" })
+    .limit(INBOX_THREADS);
   if (error) throw error;
 
   const rows = (data ?? []) as unknown as (ConversationRow & { messages: MessageRow[] | null })[];
@@ -77,6 +87,9 @@ export async function fetchConversations(userId: string): Promise<ConversationWi
   });
 }
 
+/** The most threads the inbox reads: PostgREST's max_rows, newest first (fetchConversations). */
+export const INBOX_THREADS = ROWS_PER_READ;
+
 /**
  * How many unread messages are waiting, for the badge on the tab bar.
  *
@@ -97,7 +110,10 @@ export async function fetchUnreadMessageCount(userId: string): Promise<number> {
   const { data, error } = await supabase
     .from("conversations")
     .select("id")
-    .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+    .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+    // The same newest thousand as the inbox, should there be more.
+    .order("last_message_at", { ascending: false })
+    .limit(INBOX_THREADS);
   if (error) throw error;
   const ids = (data ?? []).map((c) => c.id as string);
   if (ids.length === 0) return 0;

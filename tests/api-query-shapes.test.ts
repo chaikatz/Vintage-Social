@@ -611,6 +611,32 @@ describe("the inbox", () => {
     expect(h.requests.map((r) => `${r.method} ${r.url.pathname}`)).toEqual(["POST /rest/v1/rpc/unread_message_counts"]);
   });
 
+  it("reads the newest thousand threads by name, so a member with more sees their newest, not an arbitrary thousand", async () => {
+    const many = Array.from({ length: 1100 }, (_, i) => id("d4", i + 2));
+    h.tables.profiles = [{ id: ME, username: "me", full_name: null, avatar_url: null }];
+    h.tables.conversations = many.map((p, i) => {
+      const [a, b] = ME < p ? [ME, p] : [p, ME];
+      // Stored oldest first, so a cut made without the order would keep the oldest.
+      return { id: id("d5", i), user_a: a, user_b: b, created_at: at(0), last_message_at: at(i) };
+    });
+    h.tables.messages = [];
+    const list = await messages.fetchConversations(ME);
+    expect(list.length).toBe(messages.INBOX_THREADS);
+    expect(list[0].id).toBe(id("d5", 1099));
+    expect(list.at(-1)!.id).toBe(id("d5", 100));
+    const read = h.requests.find((r) => r.url.pathname === "/rest/v1/conversations")!;
+    expect(read.url.searchParams.get("limit")).toBe(String(messages.INBOX_THREADS));
+    expect(read.url.searchParams.get("order")).toBe("last_message_at.desc");
+    // The badge's old way, for a database without 0037, reads the same newest thousand.
+    h.unreadCounts = "missing";
+    forgetRpcMissing();
+    h.requests.length = 0;
+    await messages.fetchUnreadMessageCount(ME);
+    const ids = h.requests.find((r) => r.url.pathname === "/rest/v1/conversations")!;
+    expect(ids.url.searchParams.get("limit")).toBe(String(messages.INBOX_THREADS));
+    expect(ids.url.searchParams.get("order")).toBe("last_message_at.desc");
+  });
+
   it("counts no badge for a member with no threads, in one read", async () => {
     inbox();
     h.tables.conversations = [];
