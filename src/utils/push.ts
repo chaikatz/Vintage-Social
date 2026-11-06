@@ -7,7 +7,8 @@ import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { registerPushToken, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
-import { routeForNotification } from "./pushRoute";
+import { tapFollower, tokenFiler } from "./pushRoute";
+import { onReturnFromBackground } from "./appReturn";
 
 /**
  * The phone's side of notifications.
@@ -64,8 +65,11 @@ export async function registerForPush(userId: string): Promise<string | null> {
     if (!token) return null;
     const platform = Platform.OS === "ios" ? "ios" : "android";
     const device = [Device.manufacturer, Device.modelName].filter(Boolean).join(" ") || null;
-    await registerPushToken(userId, token, platform, device);
+    // Known before it is filed: a filing that fails (no signal, a token
+    // that had run out) leaves the row an earlier launch filed, and
+    // signing out must still be able to take it away.
     currentToken = token;
+    await registerPushToken(userId, token, platform, device);
     return token;
   } catch (err) {
     // A push that cannot be set up is a push that will not arrive; the
@@ -87,16 +91,24 @@ export async function forgetPushToken(): Promise<void> {
   }
 }
 
-/** Register when an approved member is present; once per member per launch. */
+/**
+ * Register when an approved member is present, and again on each return
+ * to the app until it has worked (pushRoute.ts). Kept with the tabs, so a
+ * member who signs out and back in is filed afresh.
+ */
 export function usePushRegistration(userId: string | null | undefined, approved: boolean): void {
-  const done = useRef<string | null>(null);
+  const file = useRef<((userId: string) => void) | null>(null);
+  file.current ??= tokenFiler(registerForPush);
   useEffect(() => {
     if (!userId || !approved) return;
-    if (done.current === userId) return;
-    done.current = userId;
-    registerForPush(userId);
+    const want = () => file.current?.(userId);
+    want();
+    return onReturnFromBackground(want);
   }, [userId, approved]);
 }
+
+/** The app's one follower of taps (see useNotificationTaps). */
+let follow: ReturnType<typeof tapFollower> | null = null;
 
 /**
  * Follow a tapped notice to the thing it is about, and keep Activity
@@ -108,16 +120,20 @@ export function useNotificationTaps(): void {
   useEffect(() => {
     if (Platform.OS === "web" || isDemoMode()) return;
 
-    const go = (response: Notifications.NotificationResponse | null | undefined) => {
-      const data = response?.notification.request.content.data as Record<string, unknown> | undefined;
-      const route = routeForNotification(data);
-      if (route) router.push(route as never);
-    };
+    // Each tap followed once, and waited for if the navigator is not up
+    // yet (pushRoute.ts). Kept for the life of the app, not of this
+    // effect, so a tap already followed is never followed again.
+    const go = (follow ??= tapFollower({
+      navigate: (route) => router.push(route as never),
+      clear: () => Notifications.clearLastNotificationResponse(),
+    }));
 
     // The tap that opened the app from cold, if there was one.
-    Notifications.getLastNotificationResponseAsync().then((last) => {
-      if (last) go(last);
-    });
+    Notifications.getLastNotificationResponseAsync()
+      .then((last) => {
+        if (last) go(last);
+      })
+      .catch(() => undefined);
     const tapped = Notifications.addNotificationResponseReceivedListener(go);
     // A notice arriving while the app is open: what it describes is new,
     // so Activity and the unread count go and look.

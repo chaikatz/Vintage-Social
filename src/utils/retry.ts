@@ -27,6 +27,10 @@
  * failed"); the pattern is held to exactly that, because a bare "load
  * failed" also matches the end of "Upload failed …", which is a refusal.
  *
+ * "Signing in again" is a screen's read held back while auth cannot yet
+ * refresh the member's token (src/lib/unsignedRead.ts): it goes through
+ * once the refresh does.
+ *
  * A native upload task's own failure is not classified here by its text:
  * storageUpload reads the NSURLError code instead, which does not depend
  * on the wording or the phone's language.
@@ -36,7 +40,7 @@ export function isTransient(err: unknown): boolean {
   const e = err as Record<string, unknown>;
   const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
   if (
-    /network request failed|network error|failed to fetch|(^|: )load failed$|timed? ?out|socket|econnreset|etimedout|the internet connection appears to be offline|could not connect|network connection was lost|not connected to the internet|hostname could not be found/.test(
+    /network request failed|network error|failed to fetch|(^|: )load failed$|timed? ?out|socket|econnreset|etimedout|the internet connection appears to be offline|could not connect|network connection was lost|not connected to the internet|hostname could not be found|signing in again/.test(
       message,
     )
   ) {
@@ -44,6 +48,43 @@ export function isTransient(err: unknown): boolean {
   }
   const status = Number(e.statusCode ?? e.status ?? NaN);
   return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+}
+
+/**
+ * A request that ran out of time, as against one the connection dropped
+ * at once: our own limits ("… timed out"), and NSURLSession's ("The
+ * request timed out."). Worth one more go, not three: each try of a
+ * stalled connection is a full limit's wait behind a skeleton.
+ */
+export function isTimedOut(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as Record<string, unknown>;
+  if (e.name === "TimeoutError") return true;
+  const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
+  return /timed? ?out/.test(message);
+}
+
+/** A screen's read held back while auth cannot yet refresh the member's token (src/lib/unsignedRead.ts). */
+export function isSigningInAgain(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const message = (err as { message?: unknown }).message;
+  return typeof message === "string" && /signing in again/i.test(message);
+}
+
+/**
+ * Whether a screen's read is tried again (react-query's `retry`, given
+ * the failures so far, from 0): a connection that let go, up to three
+ * times, briefly spaced; one that ran out of time, once; a refusal, never.
+ * One held back while signing in again is tried for about a minute and a
+ * half, spaced at most five seconds apart: as long as auth takes to get a
+ * refresh through after the signal returns (it keeps a failed refresh for
+ * a minute, and tries every half minute). Given up sooner, a screen that
+ * waits for an answer before saying it is empty would say so meanwhile.
+ */
+export function retryRead(failureCount: number, error: unknown): boolean {
+  if (!isTransient(error)) return false;
+  if (isSigningInAgain(error)) return failureCount < 20;
+  return failureCount < (isTimedOut(error) ? 1 : 3);
 }
 
 /**

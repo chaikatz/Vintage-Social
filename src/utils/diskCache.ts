@@ -84,3 +84,25 @@ export function makeLazyWriter(write: () => void, delayMs = 1000): () => void {
     }, delayMs);
   };
 }
+
+/**
+ * A map kept to its `max` newest entries, for a cache that is written to
+ * disk whole: without a bound it grows with everything ever looked at,
+ * and is read whole at launch and written whole as it changes, all on the
+ * JavaScript thread. Setting an entry makes it the newest; the oldest set
+ * go first.
+ */
+export function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
+  map.delete(key);
+  map.set(key, value);
+  trimOldest(map, max);
+}
+
+/** Drop the oldest-set entries until at most `max` are left. */
+export function trimOldest<K, V>(map: Map<K, V>, max: number): void {
+  while (map.size > max) {
+    const oldest = map.keys().next();
+    if (oldest.done) break;
+    map.delete(oldest.value);
+  }
+}

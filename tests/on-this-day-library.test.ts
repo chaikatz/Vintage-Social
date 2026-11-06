@@ -493,8 +493,8 @@ describe("the On this day page", () => {
   it("looks again once more photographs are shared, or the access changes", () => {
     expect(page).toMatch(/watchLibrary\(\(\) => lookAgain\(true\)\)/);
     expect(page).toMatch(/queryKey: \["library-on-this-day", dayKey, reach\]/);
-    expect(page).toMatch(/AppState\.addEventListener\("change"/);
-    expect(page).toMatch(/if \(state === "active"\) lookAgain\(reachNow\.current === "limited"\)/);
+    // Back from Settings: a return from the background (src/utils/appReturn.ts).
+    expect(page).toMatch(/return onReturnFromBackground\(\(\) => lookAgain\(reachNow\.current === "limited"\)\);/);
   });
 
   it("names each photograph and each year for VoiceOver", () => {

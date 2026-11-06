@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Keyboard,
@@ -15,6 +15,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
@@ -24,9 +25,14 @@ import { addComment, deleteOwnComment, fetchComments, fetchPost } from "@/api/po
 import { removeComment } from "@/api/moderation";
 import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
+import { useMinute } from "@/utils/useMinute";
+import { rewritePostEverywhere } from "@/utils/postCache";
 import { MAX_COMMENT_LENGTH } from "@/utils/validation";
-import type { CommentWithAuthor } from "@/types/db";
+import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * The comments on one photograph.
@@ -59,6 +65,26 @@ export default function Comments() {
   });
 
   const post = postQ.data;
+  // A comment whose author the reader may not see (a profile row-level
+  // security keeps from them) comes back without one: left out, rather
+  // than breaking the page on a name that is not there.
+  const comments = useMemo(() => (commentsQ.data ?? []).filter((c) => c.author != null), [commentsQ.data]);
+
+  // The count under the photograph, moved by one wherever the post is on
+  // screen. The feed used to be re-read for it: every page loaded, one
+  // after another, for one number. It is marked stale instead, so its
+  // next ordinary read confirms the count.
+  const countComment = useCallback(
+    (step: 1 | -1) => {
+      if (!postId) return;
+      rewritePostEverywhere<PostWithAuthor>(queryClient, postId, (p) => ({
+        ...p,
+        comment_count: Math.max(0, p.comment_count + step),
+      }));
+      void queryClient.invalidateQueries({ queryKey: ["feed"], refetchType: "none" });
+    },
+    [postId, queryClient],
+  );
 
   const send = useMutation({
     mutationFn: () => addComment(userId, postId ?? "", draft),
@@ -67,12 +93,16 @@ export default function Comments() {
       queryClient.invalidateQueries({ queryKey: ["comments", postId] });
       queryClient.invalidateQueries({ queryKey: ["comment-previews"] });
       queryClient.invalidateQueries({ queryKey: ["post", postId] });
-      queryClient.invalidateQueries({ queryKey: ["feed"] });
+      countComment(1);
     },
-    onError: (err) => showAlert("Couldn’t post the comment", err instanceof Error ? err.message : String(err)),
+    // In our words: the server's are an object, which read "[object Object]".
+    onError: (err) => showAlert("Couldn’t post the comment", errorMessage(err, "Your words are still here. Try again in a moment.")),
   });
 
-  const onCommentLongPress = (comment: CommentWithAuthor) => {
+  // One function each for every row, so typing in the field below, which
+  // draws this screen again on each letter, leaves the comments as they are.
+  const openAuthor = useCallback((username: string) => router.push(`/user/${username}`), [router]);
+  const onCommentLongPress = useCallback((comment: CommentWithAuthor) => {
     const own = comment.author_id === userId;
     if (own || isAdmin) {
       showAlert("Comment", undefined, [
@@ -84,14 +114,14 @@ export default function Comments() {
               if (own) await deleteOwnComment(comment.id);
               else await removeComment(comment.id, "Removed from the comments view");
             } catch (err) {
-              showAlert("Couldn’t remove the comment", err instanceof Error ? err.message : String(err));
+              showAlert("Couldn’t remove the comment", errorMessage(err, "It’s still there. Try again in a moment."));
               return;
             }
             queryClient.invalidateQueries({ queryKey: ["comments", postId] });
             queryClient.invalidateQueries({ queryKey: ["comment-previews"] });
             // The count under the photograph lives on the post row.
             queryClient.invalidateQueries({ queryKey: ["post", postId] });
-            queryClient.invalidateQueries({ queryKey: ["feed"] });
+            countComment(-1);
           },
         },
         { text: "Cancel", style: "cancel" },
@@ -110,7 +140,13 @@ export default function Comments() {
         { text: "Cancel", style: "cancel" },
       ]);
     }
-  };
+  }, [userId, isAdmin, postId, queryClient, router, countComment]);
+  const renderComment = useCallback(
+    ({ item }: { item: CommentWithAuthor }) => (
+      <CommentRow comment={item} onLongPress={onCommentLongPress} onOpenAuthor={openAuthor} />
+    ),
+    [onCommentLongPress, openAuthor],
+  );
 
   if (!post) {
     return (
@@ -131,12 +167,12 @@ export default function Comments() {
       keyboardVerticalOffset={headerHeight}
     >
       <FlatList
-        data={commentsQ.data ?? []}
+        data={comments}
         keyExtractor={(c) => c.id}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
-          post.caption ? (
+          post.caption && post.author ? (
             <View style={styles.captionRow}>
               <Pressable onPress={() => router.push(`/user/${post.author.username}`)}>
                 <Avatar
@@ -155,23 +191,14 @@ export default function Comments() {
           ) : null
         }
         ListEmptyComponent={
-          commentsQ.isFetched ? (
+          // A read that failed is no answer: "No comments yet" would not be true.
+          commentsQ.isError ? (
+            <LoadFailed what="the comments" onRetry={() => commentsQ.refetch()} />
+          ) : commentsQ.isFetched ? (
             <EmptyState title="No comments yet" body="Be the first to say something." />
           ) : null
         }
-        renderItem={({ item }) => (
-          <Pressable style={styles.comment} onLongPress={() => onCommentLongPress(item)}>
-            <Pressable onPress={() => router.push(`/user/${item.author.username}`)}>
-              <Avatar path={item.author.avatar_url} username={item.author.username} size={28} />
-            </Pressable>
-            <View style={styles.body}>
-              <Text style={styles.text}>
-                <Text style={styles.author}>{item.author.username}</Text> {item.body}
-              </Text>
-              <Text style={styles.age}>{postAge(item.created_at)}</Text>
-            </View>
-          </Pressable>
-        )}
+        renderItem={renderComment}
       />
       <View
         style={[
@@ -201,6 +228,32 @@ export default function Comments() {
     </KeyboardAvoidingView>
   );
 }
+
+const CommentRow = React.memo(function CommentRow({
+  comment,
+  onLongPress,
+  onOpenAuthor,
+}: {
+  comment: CommentWithAuthor;
+  onLongPress: (comment: CommentWithAuthor) => void;
+  onOpenAuthor: (username: string) => void;
+}) {
+  // Its age moves on with the app's one clock, not with the typing below.
+  const now = new Date(useMinute());
+  return (
+    <Pressable style={styles.comment} onLongPress={() => onLongPress(comment)}>
+      <Pressable onPress={() => onOpenAuthor(comment.author.username)}>
+        <Avatar path={comment.author.avatar_url} username={comment.author.username} size={28} />
+      </Pressable>
+      <View style={styles.body}>
+        <Text style={styles.text}>
+          <Text style={styles.author}>{comment.author.username}</Text> {comment.body}
+        </Text>
+        <Text style={styles.age}>{postAge(comment.created_at, now)}</Text>
+      </View>
+    </Pressable>
+  );
+});
 
 /** Keeps the composer clear of the keyboard, and of the home indicator without it. */
 function useKeyboardShown(): boolean {

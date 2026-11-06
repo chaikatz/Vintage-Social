@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Keyboard,
@@ -27,11 +27,15 @@ import {
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
-import { PHOTOGRAPH_UNAVAILABLE, photographUnavailable } from "@/utils/messageText";
+import { PHOTOGRAPH_UNAVAILABLE, newestUnreadFrom, photographUnavailable } from "@/utils/messageText";
 import { postAge } from "@/utils/time";
+import { useMinute } from "@/utils/useMinute";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 
 /**
  * One conversation. Messages are plain: words, or a photograph passed along
@@ -69,15 +73,32 @@ export default function Thread() {
   // received lands on screen rather than below it.
   const newestFirst = useMemo(() => [...(messagesQ.data ?? [])].reverse(), [messagesQ.data]);
 
-  // Opening the thread is what marks it read.
+  // Opening the thread is what marks it read: once there is something of
+  // theirs unread in it, and again for each new one that arrives, keyed
+  // on the newest (messageText.ts). It used to be written on every read
+  // of the thread, before it had even loaded, and each write sent the
+  // inbox and the badge to read every message again.
+  const newestUnread = useMemo(() => newestUnreadFrom(messagesQ.data, userId), [messagesQ.data, userId]);
   useEffect(() => {
-    if (id && userId) {
-      markConversationRead(id, userId).then(() => {
+    if (!id || !userId || !newestUnread) return;
+    markConversationRead(id, userId)
+      .then(() => {
         queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
         queryClient.invalidateQueries({ queryKey: ["unread-messages", userId] });
-      });
-    }
-  }, [id, userId, messagesQ.data, queryClient]);
+      })
+      // Not marked this time; the next message, or the next visit, marks it.
+      .catch(() => undefined);
+  }, [id, userId, newestUnread, queryClient]);
+
+  // The same function for every row, so typing in the field below, which
+  // draws this screen again on each letter, leaves the bubbles as they are.
+  const openPost = useCallback((postId: string) => router.push(`/post/${postId}`), [router]);
+  const renderBubble = useCallback(
+    ({ item }: { item: MessageWithPost }) => (
+      <Bubble message={item} mine={item.sender_id === userId} onOpenPost={openPost} />
+    ),
+    [userId, openPost],
+  );
 
   const send = useMutation({
     mutationFn: () => sendMessage(id ?? "", userId, draft),
@@ -102,13 +123,7 @@ export default function Thread() {
         keyExtractor={(m) => m.id}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => (
-          <Bubble
-            message={item}
-            mine={item.sender_id === userId}
-            onOpenPost={(postId) => router.push(`/post/${postId}`)}
-          />
-        )}
+        renderItem={renderBubble}
       />
       <View
         style={[
@@ -139,7 +154,7 @@ export default function Thread() {
   );
 }
 
-function Bubble({
+const Bubble = React.memo(function Bubble({
   message,
   mine,
   onOpenPost,
@@ -148,6 +163,9 @@ function Bubble({
   mine: boolean;
   onOpenPost: (postId: string) => void;
 }) {
+  // Its age moves on with the app's one clock, not with whatever else on
+  // the screen happens to be drawn again.
+  const now = new Date(useMinute());
   const shared = message.post;
   const thumb = shared
     ? mediaUrl("thumbnails", shared.thumb_path) ?? mediaUrl("media", shared.media_path)
@@ -159,9 +177,12 @@ function Bubble({
         {shared ? (
           <Pressable style={styles.shared} onPress={() => onOpenPost(shared.id)}>
             {thumb ? <Image source={thumb} style={styles.sharedImage} contentFit="cover" /> : null}
-            <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
-              {shared.author.username}
-            </Text>
+            {/* A photograph whose author the reader may not see comes without one. */}
+            {shared.author ? (
+              <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
+                {shared.author.username}
+              </Text>
+            ) : null}
           </Pressable>
         ) : null}
         {message.body ? (
@@ -170,11 +191,11 @@ function Bubble({
         {photographUnavailable(message) ? (
           <Text style={[styles.unavailable, mine && styles.unavailableMine]}>{PHOTOGRAPH_UNAVAILABLE}</Text>
         ) : null}
-        <Text style={[styles.age, mine && styles.ageMine]}>{postAge(message.created_at)}</Text>
+        <Text style={[styles.age, mine && styles.ageMine]}>{postAge(message.created_at, now)}</Text>
       </View>
     </View>
   );
-}
+});
 
 /** Keeps the composer clear of the keyboard, and of the home indicator without it. */
 function useKeyboardShown(): boolean {

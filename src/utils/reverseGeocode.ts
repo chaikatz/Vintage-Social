@@ -1,7 +1,7 @@
 import { Platform } from "react-native";
 import * as Location from "expo-location";
 import { cellKey, labelFromAddress, type PlaceLabel } from "./placeGroups";
-import { makeLazyWriter, readDiskCache, writeDiskCache } from "./diskCache";
+import { makeLazyWriter, readDiskCache, setBounded, trimOldest, writeDiskCache } from "./diskCache";
 
 /**
  * From a point back to the name of the town.
@@ -30,6 +30,9 @@ const KEY = "vintage.place-names";
 const cache = new Map<string, PlaceLabel | null>();
 let loaded = false;
 
+/** Towns kept, the most recently named; as the points in geocode.ts, for the same reason. */
+export const LABELS_KEPT = 2000;
+
 /** The stored names, checked field by field: a file from another build is not trusted blindly. */
 export function parseStoredLabels(raw: unknown): Record<string, PlaceLabel | null> | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -55,12 +58,13 @@ function load() {
   for (const [cell, label] of Object.entries(stored)) {
     if (!cache.has(cell)) cache.set(cell, label);
   }
+  trimOldest(cache, LABELS_KEPT);
 }
 
 const persist = makeLazyWriter(() => writeDiskCache(FILE, KEY, Object.fromEntries(cache)));
 
 function remember(cell: string, label: PlaceLabel | null) {
-  cache.set(cell, label);
+  setBounded(cache, cell, label, LABELS_KEPT);
   persist();
 }
 
