@@ -51,7 +51,12 @@ export async function refreshFromFirstPage<R extends { isError: boolean }>(
   const before = client.getQueryData<InfiniteData<unknown, unknown>>(key);
   const updatedAt = client.getQueryState(key)?.dataUpdatedAt;
   const trimmed = firstPageOnly(before);
-  if (trimmed === before) return refetch();
+  const query = client.getQueryCache().find({ queryKey: key, exact: true });
+  if (trimmed === before) {
+    // Nothing to let go. The read still calls off one between its tries.
+    if (query) clearLateWaits(client, query);
+    return refetch();
+  }
   client.setQueryData(key, trimmed);
   // As the cache holds it (it shares what it can with what it held before).
   const placed = client.getQueryData(key);
@@ -59,7 +64,6 @@ export async function refreshFromFirstPage<R extends { isError: boolean }>(
   const putBack = () => {
     if (client.getQueryData(key) === placed) client.setQueryData(key, before, { updatedAt });
   };
-  const query = client.getQueryCache().find({ queryKey: key, exact: true });
   let waiting = false;
   const stop = client.getQueryCache().subscribe((event) => {
     if (waiting || event.query !== query || event.type !== "updated" || event.action.type !== "pause") return;
@@ -76,6 +80,9 @@ export async function refreshFromFirstPage<R extends { isError: boolean }>(
     return result;
   } finally {
     stop();
+    // Landed, failed or called off by the reader's next page: a read it
+    // called off (or that page called off) may yet say, late, that it waits.
+    if (query && !waiting) clearLateWaits(client, query);
   }
 }
 
@@ -96,7 +103,11 @@ export const LATE_WAIT_MS = 30_000;
  * a next page off itself, and the read it calls off here may be between
  * its tries as well. The feed then said a read was waiting until its next
  * read, and a post confirmed meanwhile waited on that before it handed
- * over (src/uploads/feedCache.ts).
+ * over (src/uploads/feedCache.ts). The late word can come after the
+ * refresh itself is over (its read landed first, or the reader's next page
+ * called it off and landed), so the while starts when the refresh ends too,
+ * and before a refresh of a feed of one page, which calls a read off the
+ * same way.
  *
  * For a while after a read is called off here, a "waiting" said of the
  * feed while it has no read out is set back to idle: nothing waits. What

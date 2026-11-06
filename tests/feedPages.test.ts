@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { InfiniteQueryObserver, QueryClient, onlineManager, type InfiniteData } from "@tanstack/query-core";
+import { InfiniteQueryObserver, QueryClient, focusManager, onlineManager, type InfiniteData } from "@tanstack/query-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { retryRead } from "@/utils/retry";
 import { LATE_WAIT_MS, NEAR_TOP, firstPageOnly, refreshFromFirstPage, refreshOnReturn } from "@/media/feedPages";
+import { placeConfirmedPost } from "@/uploads/feedCache";
 
 /**
  * Refreshing Home reads its newest page once, not every page loaded again
@@ -149,7 +150,9 @@ describe("Home", () => {
     // Defined after usePostActions gives it, before anything uses it.
     expect(home.indexOf("const refreshFromTop")).toBeGreaterThan(home.indexOf("usePostActions(userId, actionIds)"));
     expect(home.indexOf("const refreshFromTop")).toBeLessThan(home.indexOf("useRef(refreshFromTop)"));
-    expect(code("src/media/feedPages.ts")).toMatch(/const trimmed = firstPageOnly\(before\);\s*if \(trimmed === before\) return refetch\(\);\s*client\.setQueryData\(key, trimmed\);/);
+    expect(code("src/media/feedPages.ts")).toMatch(
+      /const trimmed = firstPageOnly\(before\);\s*const query = [^\n]*;\s*if \(trimmed === before\) \{\s*if \(query\) clearLateWaits\(client, query\);\s*return refetch\(\);\s*\}\s*client\.setQueryData\(key, trimmed\);/,
+    );
     expect(home).toMatch(/onRefresh=\{\(\) => void refreshFromTop\(\)\}/);
     expect(home).toMatch(/refetchRef\.current = refreshFromTop;/);
     expect(home).not.toMatch(/onRefresh=\{\(\) => feed\.refetch\(\)\}/);
@@ -403,6 +406,84 @@ describe("a refresh of the feed with no signal", () => {
       await vi.advanceTimersByTimeAsync(10_000);
       expect(client.getQueryCache().find({ queryKey: ["feed", "me"], exact: true })?.promise).toBeUndefined();
       expect(observer.getCurrentResult().fetchStatus).toBe("paused");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("leaves nothing 'waiting' when its own read lands before the next page it called off says, late, that it waits", async () => {
+    // A next page between its tries when the reader pulls; the refresh
+    // calls it off and lands at once; the member leaves the app before
+    // the called-off read's wait is over, and comes back.
+    const net = { down: false };
+    const { client, observer, calls, unsubscribe } = offlineFeed(net);
+    try {
+      await scrollDown(observer, 5);
+      net.down = true;
+      calls.length = 0;
+      void observer.fetchNextPage();
+      await vi.advanceTimersByTimeAsync(10);
+      net.down = false;
+      const out = await settled(refreshFromFirstPage(client, ["feed", "me"], () => observer.refetch()), 10_000);
+      expect(out.done).toBe(true);
+      expect(out.value?.isError).toBe(false);
+      expect(calls).toEqual([5, 0]);
+      expect(observer.getCurrentResult().data?.pages).toHaveLength(1);
+      focusManager.setFocused(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      focusManager.setFocused(true);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(client.getQueryCache().find({ queryKey: ["feed", "me"], exact: true })?.promise).toBeUndefined();
+      expect(observer.getCurrentResult().fetchStatus).toBe("idle");
+      // So a post confirmed now hands over at once, not at the next read.
+      const placed = await settled(placeConfirmedPost(client as never, "me", { id: "new-post" } as never), 10_000);
+      expect(placed).toEqual({ done: true, value: true });
+    } finally {
+      focusManager.setFocused(undefined);
+      unsubscribe();
+    }
+  });
+
+  it("leaves nothing 'waiting' when the next page called it off between its tries and landed, and the signal then went", async () => {
+    const net = { down: false };
+    const { client, observer, calls, unsubscribe } = offlineFeed(net);
+    try {
+      await scrollDown(observer, 5);
+      net.down = true;
+      calls.length = 0;
+      const refresh = refreshFromFirstPage(client, ["feed", "me"], () => observer.refetch());
+      await vi.advanceTimersByTimeAsync(10);
+      net.down = false;
+      expect((await settled(observer.fetchNextPage(), 10_000)).done).toBe(true);
+      expect((await settled(refresh, 10_000)).done).toBe(true);
+      expect(calls).toEqual([0, 1]);
+      expect(observer.getCurrentResult().fetchStatus).toBe("idle");
+      onlineManager.setOnline(false);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(client.getQueryCache().find({ queryKey: ["feed", "me"], exact: true })?.promise).toBeUndefined();
+      expect(observer.getCurrentResult().fetchStatus).toBe("idle");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("leaves nothing 'waiting' after refreshing a feed of one page, which calls a read off between its tries too", async () => {
+    const net = { down: false };
+    const { client, observer, calls, unsubscribe } = offlineFeed(net);
+    try {
+      await scrollDown(observer, 1);
+      net.down = true;
+      calls.length = 0;
+      void observer.fetchNextPage();
+      await vi.advanceTimersByTimeAsync(10);
+      net.down = false;
+      const out = await settled(refreshFromFirstPage(client, ["feed", "me"], () => observer.refetch()), 10_000);
+      expect(out.done).toBe(true);
+      expect(calls).toEqual([1, 0]);
+      onlineManager.setOnline(false);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(client.getQueryCache().find({ queryKey: ["feed", "me"], exact: true })?.promise).toBeUndefined();
+      expect(observer.getCurrentResult().fetchStatus).toBe("idle");
     } finally {
       unsubscribe();
     }
