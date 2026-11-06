@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { PICTURE_WIDTH, THUMB_WIDTH, WIKIMEDIA_WIDTHS, commonsAt } from "../seed/wikimediaThumb.mjs";
+import { PICSUM_THUMB_LONG_MAX, PICSUM_THUMB_SHORT, picsumThumb } from "../seed/picsumThumb.mjs";
+import { THUMB_LONG_MAX, THUMB_SHORT, thumbLongSide } from "../src/uploads/thumbSize";
 
 /**
  * A regenerated seed keeps the house photographs' grid squares at a width
@@ -63,8 +65,51 @@ describe("a house photograph's grid square", () => {
   });
 });
 
+describe("a Picsum house photograph's grid square", () => {
+  const thumb = picsumThumb as (id: string | number, width: number, height: number) => string;
+  const size = (url: string) => url.match(/^https:\/\/picsum\.photos\/id\/(\d+)\/(\d+)\/(\d+)$/)?.slice(1).map(Number) ?? [];
+
+  it("is cut as the app cuts a member's: the short side at 540, the long side following the shape", () => {
+    expect(PICSUM_THUMB_SHORT).toBe(THUMB_SHORT);
+    expect(PICSUM_THUMB_LONG_MAX).toBe(THUMB_LONG_MAX);
+    // 0034's own examples: 810 by 540 for a 1200 by 800 photograph, 540 by 675 for 1200 by 1500.
+    expect(thumb(0, 1200, 800)).toBe("https://picsum.photos/id/0/810/540");
+    expect(thumb(12, 1200, 1500)).toBe("https://picsum.photos/id/12/540/675");
+    expect(thumb(7, 1200, 1200)).toBe("https://picsum.photos/id/7/540/540");
+    // Rounded up, so the short side is never under 540.
+    expect(thumb(3, 1200, 801)).toBe("https://picsum.photos/id/3/809/540");
+  });
+
+  it("keeps a panorama's long side at 1080, and never asks for more than the photograph", () => {
+    expect(thumb(5, 3000, 1000)).toBe("https://picsum.photos/id/5/1080/360");
+    expect(thumb(5, 1000, 3000)).toBe("https://picsum.photos/id/5/360/1080");
+    expect(thumb(9, 800, 500)).toBe("https://picsum.photos/id/9/800/500");
+  });
+
+  it("for every Picsum photograph the seed holds: the same picture, a short side of 540, the app's long side", () => {
+    const { photos } = JSON.parse(read("seed/photos.json")) as { photos: { url: string; width: number; height: number }[] };
+    const modern = photos.filter((p) => /picsum\.photos/.test(p.url));
+    expect(modern.length).toBeGreaterThan(500);
+    for (const p of modern) {
+      const [id, w, h] = size(p.url);
+      expect([w, h]).toEqual([p.width, p.height]);
+      const [tid, tw, th] = size(thumb(id, w, h));
+      expect(tid).toBe(id);
+      expect(Math.min(tw, th)).toBe(540);
+      expect(Math.max(tw, th)).toBe(thumbLongSide(w, h));
+      expect(tw >= th).toBe(w >= h);
+    }
+  });
+});
+
 describe("seed/curate.mjs", () => {
   const src = read("seed/curate.mjs").replace(/\/\/.*$/gm, "");
+
+  it("asks Picsum for the grid square at the app's size, not 480 wide", () => {
+    expect(src).toContain('import { picsumThumb } from "./picsumThumb.mjs";');
+    expect(src).toContain("thumb: picsumThumb(item.id, w, h),");
+    expect(src).not.toMatch(/\/480\//);
+  });
 
   it("asks Commons for a width it serves, and makes the square with the helper", () => {
     expect(src).toContain("&iiurlwidth=${PICTURE_WIDTH}`");

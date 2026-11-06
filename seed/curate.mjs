@@ -26,6 +26,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isLikelyPhotograph } from "./photoFilter.mjs";
 import { PICTURE_WIDTH, THUMB_WIDTH, commonsAt } from "./wikimediaThumb.mjs";
+import { picsumThumb } from "./picsumThumb.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const API = "https://commons.wikimedia.org/w/api.php";
@@ -225,7 +226,8 @@ async function picsum() {
         theme: "modern",
         place: null,
         url: `https://picsum.photos/id/${item.id}/${w}/${h}`,
-        thumb: `https://picsum.photos/id/${item.id}/480/${Math.round(480 / ratio)}`,
+        // Its grid square at the size the app cuts a member's (short side 540), as 0034 asks on production.
+        thumb: picsumThumb(item.id, w, h),
         width: w,
         height: h,
         licence: "Unsplash Licence",

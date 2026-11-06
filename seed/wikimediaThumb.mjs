@@ -19,7 +19,7 @@ export const WIKIMEDIA_WIDTHS = [20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920
 /** The picture itself: what the API answers a request for 1400 with today, and what production's rows hold. */
 export const PICTURE_WIDTH = 1920;
 
-/** The grid square: the standard width nearest the Picsum house thumbnails' 480 (0034). */
+/** The grid square: the standard width 0034 gives the house photographs' Commons squares on production, the nearest to the 480 the seed first asked for. */
 export const THUMB_WIDTH = 500;
 
 /**
