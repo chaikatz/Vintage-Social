@@ -299,7 +299,7 @@ function code(file: string): string {
 }
 
 describe("the pictures that try again", () => {
-  it("are the feed's photograph, a clip's poster with or without its player, and a grid square", () => {
+  it("are the feed's photograph, a clip's poster with or without its player, a grid square and an avatar", () => {
     const media = code("src/components/PostMedia.tsx");
     expect(media).toMatch(/const photoRetry = useImageRetry\(isVideo \? null : post\.media_path\);/);
     expect(media).toMatch(/recyclingKey=\{pictureKey\}\s*key=\{photoRetry\.attempt\}\s*onError=\{photoRetry\.onError\}/);
@@ -312,5 +312,11 @@ describe("the pictures that try again", () => {
     const grid = code("src/components/PhotoGrid.tsx");
     expect(grid).toMatch(/const retry = useImageRetry\(url\);/);
     expect(grid).toMatch(/key=\{retry\.attempt\}\s*onError=\{retry\.onError\}/);
+
+    // And a member's picture, its hook before the early return for no picture.
+    const avatar = code("src/components/Avatar.tsx");
+    expect(avatar).toMatch(/const retry = useImageRetry\(url\);/);
+    expect(avatar.indexOf("useImageRetry(url)")).toBeLessThan(avatar.indexOf("if (!url)"));
+    expect(avatar).toMatch(/cachePolicy="memory-disk"\s*key=\{retry\.attempt\}\s*onError=\{retry\.onError\}/);
   });
 });
