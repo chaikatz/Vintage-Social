@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -40,36 +40,41 @@ export default function Landing() {
   return (
     <View style={styles.root}>
       <StatusBar style="auto" />
-      <View style={[styles.content, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
-        <Wordmark style={{ ...styles.brand, top: insets.top + 22 }} />
+      {/* The page fills the screen as it always has, and scrolls only when
+          it cannot: at the largest text sizes the ways in and the Privacy
+          and Terms links beneath them were below the bottom edge. */}
+      <ScrollView contentContainerStyle={styles.scroll} alwaysBounceVertical={false} showsVerticalScrollIndicator={false}>
+        <View style={[styles.content, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+          <Wordmark style={{ ...styles.brand, top: insets.top + 22 }} />
 
-        <View style={[styles.space, { flex: short ? 0.5 : 1.1 }]} />
-        <View style={[styles.space, { flex: short ? 0.4 : 0.8 }]} />
+          <View style={[styles.space, { flex: short ? 0.5 : 1.1 }]} />
+          <View style={[styles.space, { flex: short ? 0.4 : 0.8 }]} />
 
-        <MarkStage height={stage} fill={1.3} style={styles.stage} />
+          <MarkStage height={stage} fill={1.3} style={styles.stage} />
 
-        <View style={[styles.space, { flex: short ? 0.5 : 1 }]} />
-        <View style={styles.actions}>
-          <Way label="Apply for membership" onPress={() => router.push("/(gate)/apply")} />
-          <Way label="I have an invitation" onPress={() => router.push("/(gate)/invite")} />
-          <Way label="Sign in" onPress={() => router.push("/(gate)/sign-in")} signIn />
-        </View>
-
-        <View style={[styles.space, { flex: short ? 0.3 : 0.6 }]} />
-        <View style={styles.foot}>
-          <Text style={styles.footText}>Members only · Est. 2026</Text>
-          <View style={styles.legalRow}>
-            <Pressable hitSlop={8} onPress={() => router.push("/legal/privacy")} accessibilityRole="link">
-              <Text style={styles.footText}>Privacy</Text>
-            </Pressable>
-            <Text style={styles.footText}>·</Text>
-            <Pressable hitSlop={8} onPress={() => router.push("/legal/terms")} accessibilityRole="link">
-              <Text style={styles.footText}>Terms</Text>
-            </Pressable>
+          <View style={[styles.space, { flex: short ? 0.5 : 1 }]} />
+          <View style={styles.actions}>
+            <Way label="Apply for membership" onPress={() => router.push("/(gate)/apply")} />
+            <Way label="I have an invitation" onPress={() => router.push("/(gate)/invite")} />
+            <Way label="Sign in" onPress={() => router.push("/(gate)/sign-in")} signIn />
           </View>
-          {isDemoMode() ? <Text style={styles.demoNote}>Review build · demo data · any sign-in works</Text> : null}
+
+          <View style={[styles.space, { flex: short ? 0.3 : 0.6 }]} />
+          <View style={styles.foot}>
+            <Text style={styles.footText}>Members only · Est. 2026</Text>
+            <View style={styles.legalRow}>
+              <Pressable hitSlop={8} onPress={() => router.push("/legal/privacy")} accessibilityRole="link">
+                <Text style={styles.footText}>Privacy</Text>
+              </Pressable>
+              <Text style={styles.footText}>·</Text>
+              <Pressable hitSlop={8} onPress={() => router.push("/legal/terms")} accessibilityRole="link">
+                <Text style={styles.footText}>Terms</Text>
+              </Pressable>
+            </View>
+            {isDemoMode() ? <Text style={styles.demoNote}>Review build · demo data · any sign-in works</Text> : null}
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -90,6 +95,7 @@ function Way({ label, onPress, signIn = false }: { label: string; onPress: () =>
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  scroll: { flexGrow: 1 },
   content: { flex: 1, paddingHorizontal: 40 },
 
   // The landing page's wordmark at 36%, the rule under the T (Wordmark).

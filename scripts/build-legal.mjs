@@ -106,8 +106,8 @@ export function renderSupportPage(email) {
     `<h2>Report or block</h2>`,
     `<p>Every photograph and every member’s profile has a “…” menu with Report; to report a comment, press and hold it. Reports are read by people and acted on within 24 hours. To block a member, open their profile → “…” → Block member; Settings → Blocked members undoes it.</p>`,
     `<h2>Delete your account</h2>`,
-    `<p>Profile → Settings → Delete account, then confirm twice. Your profile, photographs, comments, likes, follows, tags, messages, application and share links, and the reports you filed, are removed. You do not need to write to us first.</p>`,
-    `<p>If your application is still waiting or was not accepted, or your membership is suspended, write to the address above from your account’s email and we will delete your account and your application.</p>`,
+    `<p>Profile → Settings → Delete account, then confirm twice. Your profile, photographs, comments, likes, follows, tags, messages, application and share links are removed. The reports you filed stay, without your account attached, so that they can still be acted on. You do not need to write to us first.</p>`,
+    `<p>If your application is still waiting or was not accepted, or your membership is suspended, the app opens on a screen that says so. Tap Delete my account there and confirm twice: your account is deleted in the same way. Or write to the address above from your account’s email and we will delete your account for you.</p>`,
     `<h2>Your privacy</h2>`,
     `<p>What VINTAGE keeps and why is in the <a href="/privacy">Privacy Policy</a>; the rules of the club are in the <a href="/terms">Terms of Use</a>.</p>`,
   ].join("\n");

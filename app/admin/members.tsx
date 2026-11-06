@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { FlatList, StyleSheet, TextInput, View } from "react-native";
 import { showAlert, showPrompt } from "@/utils/alert";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/providers/SessionProvider";
 import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
@@ -11,6 +12,7 @@ import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing } from "@/theme";
 import { fetchMembers, setInviteQuota, setSuspension, warnMember } from "@/api/moderation";
 import { formatMemberNumber } from "@/utils/membership";
+import { errorMessage } from "@/utils/errorMessage";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
@@ -29,12 +31,16 @@ function memberSubtitle(member: ProfileRow): string {
  */
 export default function AdminMembers() {
   const router = useRouter();
+  // Opened by a link (vintage://admin/members) by someone who is not an
+  // admin: nothing is read for them, and they are sent home below.
+  const { isAdmin, profileLoaded } = useSession();
   const queryClient = useQueryClient();
   const [q, setQ] = useState("");
 
   const members = useQuery({
     queryKey: ["admin-members", q],
     queryFn: () => fetchMembers(q),
+    enabled: isAdmin,
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-members"] });
@@ -42,20 +48,21 @@ export default function AdminMembers() {
   const warn = useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) => warnMember(id, note),
     onSuccess: () => showAlert("Warning sent"),
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t send the warning", errorMessage(err, "The member hasn’t been warned. Try again in a moment.")),
   });
 
   const suspend = useMutation({
     mutationFn: ({ id, suspended, note }: { id: string; suspended: boolean; note: string }) =>
       setSuspension(id, suspended, note),
     onSuccess: refresh,
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err, { suspended }) =>
+      showAlert(suspended ? "Couldn’t suspend" : "Couldn’t reinstate", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const quota = useMutation({
     mutationFn: ({ id, n }: { id: string; n: number }) => setInviteQuota(id, n),
     onSuccess: refresh,
-    onError: (err) => showAlert("Failed", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t change the invitations", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   // The allowance as a whole number, typed: "8" means eight invitations,
@@ -107,6 +114,9 @@ export default function AdminMembers() {
       ],
     );
   };
+
+  // After every hook: a member who is not an admin never sees this, even from a link.
+  if (profileLoaded && !isAdmin) return <Redirect href="/(tabs)" />;
 
   return (
     <Screen padded={false}>

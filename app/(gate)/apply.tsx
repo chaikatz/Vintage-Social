@@ -11,6 +11,7 @@ import { GateButton } from "@/components/gate/GateButton";
 import { colors, spacing, type } from "@/theme";
 import { validateEmail, validatePassword, validateUsername } from "@/utils/validation";
 import { checkUsernameAvailable, submitApplication } from "@/api/membership";
+import { useDoorClosesBehind } from "@/components/gate/useDoor";
 
 /**
  * The application.
@@ -32,6 +33,17 @@ export default function Apply() {
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
+  // Once Submit has been pressed, the filled-in form stays until the
+  // application is sent. A try can fail after the account was made (the
+  // signal goes during the portrait or the application itself), and the
+  // way on is Submit again, which carries on with that account
+  // (submitApplication) rather than to the waiting room, which can take an
+  // invitation but not an application.
+  const [tried, setTried] = useState(false);
+  // Sent, the application goes in through the door as the invitation does
+  // (door.ts), once, to the waiting room. Signed in before anything was
+  // sent (opened by a link from inside the app), the page goes in at once.
+  const goIn = useDoorClosesBehind(busy || tried);
 
   const pickAvatar = async () => {
     try {
@@ -60,6 +72,7 @@ export default function Apply() {
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
 
+    setTried(true);
     setBusy(true);
     try {
       const available = await checkUsernameAvailable(username);
@@ -78,7 +91,7 @@ export default function Apply() {
         inviter,
         reason,
       });
-      router.replace("/(gate)/pending");
+      await goIn();
     } catch (err) {
       showAlert("Application failed", err instanceof Error ? err.message : String(err));
     } finally {
@@ -178,11 +191,11 @@ export default function Apply() {
       </Text>
       <Text style={styles.footnote}>
         By applying you agree to the{" "}
-        <Text style={styles.footLink} onPress={() => router.push("/legal/terms")}>
+        <Text style={styles.footLink} onPress={() => router.push("/legal/terms")} accessibilityRole="link">
           Terms of Use
         </Text>{" "}
         and{" "}
-        <Text style={styles.footLink} onPress={() => router.push("/legal/privacy")}>
+        <Text style={styles.footLink} onPress={() => router.push("/legal/privacy")} accessibilityRole="link">
           Privacy Policy
         </Text>
         .

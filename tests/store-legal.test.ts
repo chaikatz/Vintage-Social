@@ -214,15 +214,27 @@ describe("who can see a photograph shared outside VINTAGE", () => {
 });
 
 describe("an account that is not a member's can be deleted", () => {
-  it("says how, for as long as the waiting screen has no Delete of its own (Guideline 5.1.1(v))", () => {
-    if (/deleteMyAccount/.test(read("app/(gate)/pending.tsx"))) return; // the waiting screen deletes; writing in stays true as well
-    expect(PRIVACY_POLICY).toContain(
-      "If your application is still waiting or was not accepted, or your membership is suspended, write to the support address from your account’s email and we will delete your account and your application.",
+  it("from the waiting screen, and the documents name the button it has (Guideline 5.1.1(v))", () => {
+    // What the documents point at is on the screen, and deletes.
+    const pending = read("app/(gate)/pending.tsx");
+    expect(pending).toContain('title="Delete my account"');
+    expect(pending).toMatch(/await deleteMyAccount\(userId\);/);
+    expect(paragraph(PRIVACY_POLICY, "If your application is still waiting")).toContain(
+      "Delete my account on that screen, confirmed twice, deletes your account and everything listed above with it.",
+    );
+    // Writing in stays true as well.
+    expect(paragraph(PRIVACY_POLICY, "If your application is still waiting")).toContain(
+      "You can also write to the support address from your account’s email and we will delete your account for you.",
     );
     expect(renderSupportPage("help@vintagesocial.app")).toContain(
-      "write to the address above from your account’s email and we will delete your account and your application",
+      "Tap Delete my account there and confirm twice: your account is deleted in the same way.",
     );
-    expect(TERMS_OF_USE).toContain("You may delete your account at any time: a member from Settings, anyone else by writing to the support address.");
+    expect(TERMS_OF_USE).toContain(
+      "You may delete your account at any time from within the app: a member from Settings, anyone else with Delete my account on the screen the app opens on.",
+    );
+    // Nobody is told any more that writing in is the only way.
+    expect(PRIVACY_POLICY).not.toMatch(/suspended, write to the support address/);
+    expect(TERMS_OF_USE).not.toMatch(/anyone else by writing to the support address/);
   });
 });
 

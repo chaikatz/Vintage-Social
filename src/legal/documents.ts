@@ -18,7 +18,7 @@ export const LEGAL_TITLES: Record<LegalDoc, string> = {
   terms: "Terms of Use",
 };
 
-export const LEGAL_UPDATED = "November 5, 2026";
+export const LEGAL_UPDATED = "November 6, 2026";
 
 export const PRIVACY_POLICY = `VINTAGE is a small, invitation-only club for photographs. This policy says what we collect, why, and what you can do about it.
 
@@ -56,9 +56,9 @@ Data is stored with Supabase (database, authentication and file storage) and del
 
 ## Your choices
 
-As a member you can edit your profile, delete any photograph or comment you posted, remove yourself from a tag, turn each kind of notification off, block another member, and delete your account — all from within the app. Deleting your account removes your profile, photographs, comments, likes, follows, tags, messages, application and share links, and the reports you filed. The notes about your shares outside VINTAGE are kept without your account attached. Some records may persist in backups for a limited period.
+As a member you can edit your profile, delete any photograph or comment you posted, remove yourself from a tag, turn each kind of notification off, block another member, and delete your account — all from within the app. Deleting your account removes your profile, photographs, comments, likes, follows, tags, messages, application and share links. The reports you filed are kept without your account attached. Each holds only what was reported and the reason and note you gave, so that it can still be acted on after you leave. The notes about your shares outside VINTAGE are kept without your account attached. Some records may persist in backups for a limited period.
 
-If your application is still waiting or was not accepted, or your membership is suspended, write to the support address from your account’s email and we will delete your account and your application.
+If your application is still waiting or was not accepted, or your membership is suspended, the app opens on a screen that says so. Delete my account on that screen, confirmed twice, deletes your account and everything listed above with it. You can also write to the support address from your account’s email and we will delete your account for you.
 
 ## Children
 
@@ -96,7 +96,7 @@ VINTAGE is provided as it is. We work to keep it available and your photographs 
 
 ## Ending
 
-You may delete your account at any time: a member from Settings, anyone else by writing to the support address. We may end your membership for breaking these terms. Sections about your content, conduct and liability continue to apply to the period you were a member.
+You may delete your account at any time from within the app: a member from Settings, anyone else with Delete my account on the screen the app opens on. You can also write to the support address. We may end your membership for breaking these terms. Sections about your content, conduct and liability continue to apply to the period you were a member.
 
 ## Contact
 

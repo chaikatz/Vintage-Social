@@ -60,6 +60,31 @@ describe("the screens use them", () => {
     expect(invite).not.toMatch(/enterApp/);
   });
 
+  it("the application goes in through the same hook once sent, and a failed try keeps the filled-in form", () => {
+    // A try can fail after the account was made (the portrait, the
+    // application itself). Submit again carries on with that account
+    // (submitApplication), so the form is where the applicant belongs: the
+    // waiting room takes an invitation, not an application. Sent off to it
+    // instead, the applicant could finish only by deleting the account.
+    const apply = code("app/(gate)/apply.tsx");
+    expect(apply).toMatch(/const \[tried, setTried\] = useState\(false\);/);
+    expect(apply).toMatch(/const goIn = useDoorClosesBehind\(busy \|\| tried\);/);
+    expect(apply).toMatch(/setTried\(true\);\s*setBusy\(true\);\s*try \{/);
+    expect(apply).toMatch(/await submitApplication\(\{[\s\S]*?\}\);\s*await goIn\(\);\s*\} catch \(err\) \{/);
+    const failure = apply.slice(apply.indexOf("} catch (err) {"), apply.indexOf("} finally {"));
+    expect(failure).not.toMatch(/goIn|enterApp|router\./);
+    expect(apply).not.toMatch(/router\.replace\("\/\(gate\)\/pending"\)|enterApp/);
+    // The rule the hook asks: held by a try, the signed-in applicant stays.
+    expect(shouldGoIn(true, false || true, false)).toBe(false);
+  });
+
+  it("an account whose application never arrived is told how to apply after all", () => {
+    // Its username is its own profile's, so a new application starts from a new account.
+    const pending = code("app/(gate)/pending.tsx");
+    expect(pending).toContain("To apply instead, delete this account and apply again.");
+    expect(pending).toMatch(/<GateButton title="Delete my account"/);
+  });
+
   it("the hook waits on busy, asks the rule, and enters the app", () => {
     expect(hook).toMatch(/if \(shouldGoIn\(signedIn, busy, gone\.current\)\) void goIn\(\);/);
     expect(hook).toMatch(/\[signedIn, busy, goIn\]/);

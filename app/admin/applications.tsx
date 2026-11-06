@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
+import { Redirect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "@/providers/SessionProvider";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/Button";
@@ -9,6 +11,7 @@ import { LoadFailed } from "@/components/LoadFailed";
 import { undecided, withIds, withRowBack, withoutIds, withoutRow } from "@/components/decidedRows";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideApplication, fetchApplications } from "@/api/moderation";
+import { errorMessage } from "@/utils/errorMessage";
 import { postAge } from "@/utils/time";
 import type { ApplicationRow, ApplicationStatus } from "@/types/db";
 import { showAlert } from "@/utils/alert";
@@ -16,12 +19,16 @@ import { showAlert } from "@/utils/alert";
 const TABS: ApplicationStatus[] = ["pending", "waitlisted", "approved", "rejected"];
 
 export default function AdminApplications() {
+  // Opened by a link by someone who is not an admin: nothing is read for
+  // them, and they are sent home below.
+  const { isAdmin, profileLoaded } = useSession();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ApplicationStatus>("pending");
 
   const apps = useQuery({
     queryKey: ["admin-apps", tab],
     queryFn: () => fetchApplications(tab),
+    enabled: isAdmin,
   });
 
   // The card leaves the list the moment the decision is tapped and comes
@@ -50,13 +57,16 @@ export default function AdminApplications() {
     },
     onError: (err, { app }, ctx) => {
       if (ctx) queryClient.setQueryData<ApplicationRow[]>(ctx.key, (rows) => withRowBack(rows, app, ctx.order));
-      showAlert("That decision didn’t take", err instanceof Error ? err.message : String(err));
+      showAlert("That decision didn’t take", errorMessage(err, "The application is back in the list. Try again in a moment."));
     },
     onSettled: (_done, _err, { app }) => {
       setDeciding((ids) => withoutIds(ids, [app.id]));
       return queryClient.invalidateQueries({ queryKey: ["admin-apps"] });
     },
   });
+
+  // After every hook: a member who is not an admin never sees this, even from a link.
+  if (profileLoaded && !isAdmin) return <Redirect href="/(tabs)" />;
 
   return (
     <Screen padded={false}>
