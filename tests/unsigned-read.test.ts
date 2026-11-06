@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { memberSignedIn, noteUnsignedReads, takeUnsignedRead } from "@/lib/unsignedRead";
+import { READ_ONLY_RPCS, isScreenRead, memberSignedIn, noteUnsignedReads, rpcName, takeUnsignedRead } from "@/lib/unsignedRead";
 import { isTransient, retryRead } from "@/utils/retry";
 import { errorMessage } from "@/utils/errorMessage";
 
@@ -137,6 +137,83 @@ describe("a read that goes out without the member's token", () => {
     // The member's own token goes through as ever.
     await watched(`${URL_}/rest/v1/posts`, { method: "GET", headers: { Authorization: "Bearer member-token" } });
     expect(passed).toHaveBeenCalledTimes(3);
+  });
+
+  it("holds back a function that only reads, as the feed's, though supabase.rpc() sends it as a POST", async () => {
+    memberSignedIn(true);
+    const net = network();
+    const client = createClient(URL_, PUBLIC_KEY, {
+      auth: { storage: keychain(-60), persistSession: true, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: noteUnsignedReads(net.fetch, PUBLIC_KEY) },
+    });
+    // As src/api/posts.ts asks for Home's page.
+    const feed = client.rpc("feed_page", { p_limit: 12, p_offset: 0 }).select("*").order("created_at", { ascending: false });
+    // And a function that writes, which must still go out.
+    const block = client.rpc("block_member", { p_user: "u2" });
+    await vi.advanceTimersByTimeAsync(31_000);
+    const [read, write] = await Promise.all([feed, block]);
+    expect(read.data).toBeNull();
+    expect(read.error?.message).toMatch(/Signing in again/);
+    expect(isTransient(read.error)).toBe(true);
+    const toDatabase = net.sent.filter((r) => r.url.includes("/rest/v1/"));
+    expect(toDatabase.map((r) => new URL(r.url).pathname)).toEqual(["/rest/v1/rpc/block_member"]);
+    expect(write.error).toBeNull();
+    expect(takeUnsignedRead()).toBe(true);
+  });
+
+  it("names the read-only functions one by one, never every POST", () => {
+    expect(READ_ONLY_RPCS).toEqual(["feed_page", "default_invite_quota"]);
+    expect(rpcName(`${URL_}/rest/v1/rpc/feed_page?select=*&order=created_at.desc`)).toBe("feed_page");
+    expect(rpcName(`${URL_}/rest/v1/posts?id=eq.p1`)).toBeNull();
+    expect(isScreenRead("POST", `${URL_}/rest/v1/rpc/feed_page?select=*`)).toBe(true);
+    expect(isScreenRead("POST", `${URL_}/rest/v1/rpc/default_invite_quota`)).toBe(true);
+    // A name that only begins like one is another function.
+    expect(isScreenRead("POST", `${URL_}/rest/v1/rpc/feed_page_write`)).toBe(false);
+    // Writes, and functions whose answer is the same for anyone, go out.
+    for (const fn of ["block_member", "ensure_invite_link", "redeem_invite_link", "delete_my_account", "username_available", "invite_link_owner"]) {
+      expect(isScreenRead("POST", `${URL_}/rest/v1/rpc/${fn}`)).toBe(false);
+    }
+    expect(isScreenRead("POST", `${URL_}/rest/v1/comments`)).toBe(false);
+    expect(isScreenRead("PATCH", `${URL_}/rest/v1/rpc/feed_page`)).toBe(false);
+    expect(isScreenRead("GET", `${URL_}/rest/v1/posts`)).toBe(true);
+    expect(isScreenRead("HEAD", `${URL_}/rest/v1/posts`)).toBe(true);
+  });
+
+  it("knows every read-only function the app calls", () => {
+    // Each function called with supabase.rpc() in src/api, and whether it
+    // only reads as the member. A new one fails here until it is sorted.
+    const sorted: Record<string, "member read" | "anyone" | "writes"> = {
+      feed_page: "member read",
+      default_invite_quota: "member read",
+      username_available: "anyone",
+      invite_link_owner: "anyone",
+      delete_my_account: "writes",
+      redeem_invite_link: "writes",
+      ensure_invite_link: "writes",
+      set_invite_slug: "writes",
+      rotate_invite_link: "writes",
+      create_post_share: "writes",
+      revoke_post_share: "writes",
+      decide_application: "writes",
+      resolve_report: "writes",
+      admin_warn_member: "writes",
+      admin_set_suspension: "writes",
+      admin_remove_post: "writes",
+      admin_remove_comment: "writes",
+      admin_set_default_invite_quota: "writes",
+      admin_set_invite_quota: "writes",
+      block_member: "writes",
+      unblock_member: "writes",
+    };
+    const called = new Set<string>();
+    for (const file of readdirSync(path.resolve(import.meta.dirname, "..", "src/api"))) {
+      for (const m of read(`src/api/${file}`).matchAll(/\.rpc\(\s*"([a-z_]+)"/g)) called.add(m[1]);
+    }
+    expect([...called].sort()).toEqual(Object.keys(sorted).sort());
+    const memberReads = Object.entries(sorted)
+      .filter(([, kind]) => kind === "member read")
+      .map(([fn]) => fn);
+    expect([...READ_ONLY_RPCS].sort()).toEqual(memberReads.sort());
   });
 
   it("is not noted when the member's token went with it", async () => {
