@@ -36,7 +36,7 @@ import { PHOTOGRAPH_UNAVAILABLE, newestUnreadFrom, photographUnavailable } from 
 import { postAge } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
-import type { MessageWithPost } from "@/types/db";
+import type { MessageWithPost, ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 import { useImageRetry } from "@/media/imageRetry";
 
@@ -145,12 +145,15 @@ export default function Thread() {
     if (peer) router.push(`/user/${peer.username}`);
   }, [peer, router]);
   const block = useMutation({
-    mutationFn: (peerId: string) => blockMember(peerId),
-    onSuccess: (_done, peerId) => {
+    mutationFn: (member: Pick<ProfileRow, "id" | "username">) => blockMember(member.id),
+    onSuccess: (_done, member) => {
       // As at Block on their profile: neither sees the other's anything now.
       queryClient.invalidateQueries({ queryKey: ["blocked-ids", userId] });
       queryClient.invalidateQueries({ queryKey: ["blocked", userId] });
-      queryClient.invalidateQueries({ queryKey: ["follow-state", userId, peerId] });
+      queryClient.invalidateQueries({ queryKey: ["follow-state", userId, member.id] });
+      // Their profile and photographs, as last read for this member.
+      queryClient.invalidateQueries({ queryKey: ["profile", member.username] });
+      queryClient.invalidateQueries({ queryKey: ["user-posts", member.id] });
       queryClient.invalidateQueries({ queryKey: ["conversations", userId] });
       queryClient.invalidateQueries({ queryKey: ["unread-messages", userId] });
       queryClient.invalidateQueries({ queryKey: ["feed"] });
@@ -179,7 +182,7 @@ export default function Thread() {
             `Block ${peer.username}?`,
             "They won't see your photographs or profile, and you won't see theirs. Neither of you is told. You can unblock from Settings.",
             [
-              { text: "Block", style: "destructive", onPress: () => block.mutate(peer.id) },
+              { text: "Block", style: "destructive", onPress: () => block.mutate(peer) },
               { text: "Cancel", style: "cancel" },
             ],
           ),
@@ -220,7 +223,7 @@ export default function Thread() {
             : undefined,
           headerRight: peer
             ? () => (
-                <Pressable onPress={threadMenu} hitSlop={10} accessibilityLabel="More">
+                <Pressable onPress={threadMenu} hitSlop={10} accessibilityRole="button" accessibilityLabel="More">
                   <Feather name="more-horizontal" size={20} color={colors.ink} />
                 </Pressable>
               )

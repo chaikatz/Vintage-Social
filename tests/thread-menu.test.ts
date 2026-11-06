@@ -20,7 +20,7 @@ describe("the thread's header", () => {
   it("has a \"…\" once the member is known, and a title that opens their profile", () => {
     expect(thread).toMatch(/const peer = peerQ\.data \?\? null;/);
     expect(thread).toMatch(
-      /headerRight: peer\s*\?\s*\(\) => \(\s*<Pressable onPress=\{threadMenu\} hitSlop=\{10\} accessibilityLabel="More">\s*<Feather name="more-horizontal" size=\{20\} color=\{colors\.ink\} \/>/,
+      /headerRight: peer\s*\?\s*\(\) => \(\s*<Pressable onPress=\{threadMenu\} hitSlop=\{10\} accessibilityRole="button" accessibilityLabel="More">\s*<Feather name="more-horizontal" size=\{20\} color=\{colors\.ink\} \/>/,
     );
     expect(thread).toMatch(/headerTitle: peer\s*\?\s*\(\{ children, tintColor \}\) => \(\s*<Pressable onPress=\{openProfile\}[^>]*accessibilityRole="link"/);
     // Drawn as the stack draws a title: its serif at its size, over its own bold.
@@ -42,17 +42,39 @@ describe("the thread's header", () => {
     expect(said).toBeTruthy();
     expect(menu).toContain(said!);
     expect(menu).toMatch(/`Block \$\{peer\.username\}\?`/);
-    expect(menu).toMatch(/\{ text: "Block", style: "destructive", onPress: \(\) => block\.mutate\(peer\.id\) \}/);
+    // Block member asks first: its tap opens the question, and only the
+    // question's Block blocks.
+    expect(menu).toMatch(
+      /\{\s*text: "Block member",\s*style: "destructive",\s*onPress: \(\) =>\s*showAlert\(\s*`Block \$\{peer\.username\}\?`,/,
+    );
+    expect(menu).toMatch(/\{ text: "Block", style: "destructive", onPress: \(\) => block\.mutate\(peer\) \}/);
+    expect(menu.match(/block\.mutate\(/g)).toHaveLength(1);
     expect(menu).toMatch(/\{ text: "Cancel", style: "cancel" \},\s*\]\);\s*\}, \[/);
   });
 
   it("blocks through the same call, lets go of what the block changes, and leaves the thread", () => {
     expect(thread).toMatch(/import \{ blockMember \} from "@\/api\/blocks";/);
     const block = thread.slice(thread.indexOf("const block = useMutation("), thread.indexOf("const threadMenu = useCallback("));
-    expect(block).toMatch(/mutationFn: \(peerId: string\) => blockMember\(peerId\),/);
-    for (const key of ['\\["blocked-ids", userId\\]', '\\["blocked", userId\\]', '\\["conversations", userId\\]']) {
+    expect(block).toMatch(/mutationFn: \(member: Pick<ProfileRow, "id" \| "username">\) => blockMember\(member\.id\),/);
+    // What the profile's own Block lets go of (afterBlockChange), their
+    // profile and photographs among it, as this member last read them.
+    for (const key of [
+      '\\["blocked-ids", userId\\]',
+      '\\["blocked", userId\\]',
+      '\\["follow-state", userId, member\\.id\\]',
+      '\\["profile", member\\.username\\]',
+      '\\["user-posts", member\\.id\\]',
+      '\\["conversations", userId\\]',
+      '\\["feed"\\]',
+      '\\["explore"\\]',
+      '\\["activity"\\]',
+    ]) {
       expect(block).toMatch(new RegExp(`queryClient\\.invalidateQueries\\(\\{ queryKey: ${key} \\}\\);`));
     }
+    // The same keys the profile screen reads them under.
+    expect(profile).toMatch(/queryKey: \["profile", username\],/);
+    expect(profile).toMatch(/queryKey: \["user-posts", profile\?\.id\],/);
+    expect(profile).toMatch(/queryClient\.invalidateQueries\(\{ queryKey: \["user-posts", profile\?\.id\] \}\);/);
     expect(block).toMatch(/if \(router\.canGoBack\(\)\) router\.back\(\);\s*else router\.replace\("\/"\);/);
     expect(block).toMatch(/onError: \(err\) => showAlert\("That didn’t work", errorMessage\(err, "Nothing changed\. Try again in a moment\."\)\)/);
   });
