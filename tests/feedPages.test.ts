@@ -139,7 +139,15 @@ describe("Home", () => {
   const home = code("app/(tabs)/index.tsx");
 
   it("refreshes from its newest page when pulled and when Home is tapped again", () => {
-    expect(home).toMatch(/const refreshFromTop = useCallback\(\s*\(\) => refreshFromFirstPage\(queryClient, \["feed", userId\], feedRefetch\),/);
+    // And the hearts and comment previews of the cards on screen with it:
+    // their groups keep their keys, so nothing else reads them again.
+    expect(home).toMatch(
+      /const refreshFromTop = useCallback\(\(\) => \{\s*void rereadActions\(\);\s*return refreshFromFirstPage\(queryClient, \["feed", userId\], feedRefetch\);\s*\}, \[queryClient, userId, feedRefetch, rereadActions\]\);/,
+    );
+    expect(home).toMatch(/commentsFor, rereadActions \} =\s*usePostActions\(userId, actionIds\);/);
+    // Defined after usePostActions gives it, before anything uses it.
+    expect(home.indexOf("const refreshFromTop")).toBeGreaterThan(home.indexOf("usePostActions(userId, actionIds)"));
+    expect(home.indexOf("const refreshFromTop")).toBeLessThan(home.indexOf("useRef(refreshFromTop)"));
     expect(code("src/media/feedPages.ts")).toMatch(/const trimmed = firstPageOnly\(before\);\s*if \(trimmed === before\) return refetch\(\);\s*client\.setQueryData\(key, trimmed\);/);
     expect(home).toMatch(/onRefresh=\{\(\) => void refreshFromTop\(\)\}/);
     expect(home).toMatch(/refetchRef\.current = refreshFromTop;/);
@@ -152,5 +160,19 @@ describe("Home", () => {
     expect(home).toMatch(/focusManager\.subscribe\(/);
     expect(home).toMatch(/onlineManager\.subscribe\(/);
     expect(home).toMatch(/const stale = refreshOnReturn\(\{/);
+  });
+});
+
+describe("the notes on how the feed pages", () => {
+  const raw = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
+
+  it("say it pages by cursor, as it does, never by offset", () => {
+    // The feed pages after the last post held (src/api/posts.ts, 0025).
+    for (const file of ["src/media/feedPages.ts", "src/uploads/feedCache.ts"]) {
+      expect(raw(file), file).not.toMatch(/by offset/);
+    }
+    expect(raw("src/uploads/feedCache.ts")).toMatch(
+      /Each page starts after the last post of the\s+\* one before \(a cursor, src\/api\/posts\.ts\), so the prepended row moves no\s+\* page/,
+    );
   });
 });

@@ -124,11 +124,11 @@ function fetchSettled(queryClient: QueryClient, key: QueryKey): Promise<boolean>
 
 /**
  * Prepend into ['feed', userId] and ['user-posts', userId], then mark both
- * stale without refetching. The feed pages by offset: the prepended row
- * pushes everything along by one, so a refetch of every page now would be
- * wasted work, and the next page simply repeats one row, which Home drops
- * by id. When the feed has nothing loaded yet there is nothing to put the
- * row into, so that one query is refetched instead.
+ * stale without refetching. Each page starts after the last post of the
+ * one before (a cursor, src/api/posts.ts), so the prepended row moves no
+ * page; a refetch of every page now would be wasted work. When the feed
+ * has nothing loaded yet there is nothing to put the row into, so that
+ * one query is refetched instead.
  *
  * A pull to refresh or a next page already on its way would overwrite the
  * row (and the stale mark) when it lands, so where one is out the row is

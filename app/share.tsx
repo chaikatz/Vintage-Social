@@ -20,6 +20,9 @@ import { useSession } from "@/providers/SessionProvider";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 
+// A sheet has no back button: its recover page carries one (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Send a photograph to someone. Members you follow, a line to go with it,
  * and it lands in their messages — nothing is posted anywhere public by
@@ -100,7 +103,8 @@ export default function Share() {
       <View style={styles.preview}>
         {thumb ? <Image source={thumb} style={styles.previewImage} contentFit="cover" /> : null}
         <View style={styles.previewText}>
-          <Text style={styles.previewAuthor}>{post?.author.username ?? ""}</Text>
+          {/* A post whose member is kept back comes naming nobody (src/components/hiddenAuthors.ts). */}
+          <Text style={styles.previewAuthor}>{post?.author?.username ?? ""}</Text>
           <Text style={styles.previewCaption} numberOfLines={2}>
             {post?.caption || "A photograph"}
           </Text>

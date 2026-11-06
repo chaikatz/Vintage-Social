@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -29,7 +31,7 @@ const h = vi.hoisted(() => ({
   otherAdmins: 1,
   profileReads: 0,
   signedOut: 0,
-  /** Each step in the order it happened: "token", "rpc". */
+  /** Each step in the order it happened: "token" (were it let go by hand), "rpc", "signOut". */
   steps: [] as string[],
 }));
 
@@ -102,6 +104,7 @@ vi.mock("@/lib/supabase", () => {
       auth: {
         signOut: async () => {
           h.signedOut++;
+          h.steps.push("signOut");
           return { error: null };
         },
       },
@@ -185,11 +188,26 @@ describe("a folder that cannot be emptied stops the deletion with the account wh
     expect(h.steps).not.toContain("token");
   });
 
-  it("the phone stops taking the account's notices only once its files are gone, just before the account goes", async () => {
+  it("the phone's push token is not let go by hand: it goes with the account, and the phone stops as the session leaves", async () => {
     h.files.media = names(3, "p");
     await deleteMyAccount(ME, noWait);
-    expect(h.steps).toEqual(["token", "rpc"]);
+    expect(h.steps).toEqual(["rpc", "signOut"]);
     expect(h.files.media).toEqual([]);
+    // The tokens cascade from the profile (0017), and the session leaving
+    // says SIGNED_OUT to the listener made with the client, which stops
+    // this phone receiving (pushAfterSignedOut).
+    const push = readFileSync(path.resolve(import.meta.dirname, "..", "supabase/migrations/0017_push.sql"), "utf8");
+    expect(push).toMatch(/user_id\s+uuid not null references public\.profiles \(id\) on delete cascade/);
+    const client = readFileSync(path.resolve(import.meta.dirname, "..", "src/lib/supabase.ts"), "utf8");
+    expect(client).toMatch(/if \(event === "SIGNED_OUT"\) void pushAfterSignedOut\(\);/);
+  });
+
+  it("a deletion that fails at the last step leaves the account its notices", async () => {
+    h.files.media = names(3, "p");
+    h.rpcAnswers = [offline, offline, offline];
+    await expect(deleteMyAccount(ME, noWait)).rejects.toBeTruthy();
+    expect(h.steps).toEqual(["rpc", "rpc", "rpc"]);
+    expect(h.signedOut).toBe(0);
   });
 
   it("storage refusing a remove is not taken for done", async () => {

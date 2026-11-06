@@ -50,6 +50,9 @@ export const READ_ONLY_RPCS: readonly string[] = Object.freeze([
   "feed_page",
   // Admin: the invitations a new member is given (migration 0016).
   "default_invite_quota",
+  // The inbox's and the badge's unread counts (migration 0037): the
+  // member's own threads, nothing for a visitor.
+  "unread_message_counts",
 ]);
 
 /** The database function a request calls, or null for any other request. */

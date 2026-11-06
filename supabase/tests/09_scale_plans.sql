@@ -116,7 +116,12 @@ insert into plans values
      'select * from public.profiles where username = ''scale_77''')),
   ('searching names', tests.plan_as(:'me',
      'select * from public.profiles where status = ''approved''
-        and (username ilike ''%cale_12%'' or full_name ilike ''%cale_12%'') order by username limit 30'));
+        and (username ilike ''%cale_12%'' or full_name ilike ''%cale_12%'') order by username limit 30')),
+  -- 0037: the inbox's and the badge's unread counts. The function's own
+  -- query, as the member (EXPLAIN of the call shows only "Function Scan").
+  ('unread messages', tests.plan_as(:'me',
+     (select p.prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'unread_message_counts')));
 
 -- What deleting a photograph and a member look up, as the database runs
 -- them (no policies on these: the foreign keys' own queries).
@@ -203,6 +208,7 @@ from (values
   -- for a member with thousands, the newest-first one saves the sort.
   ('their followers', 'follows_followers_idx or follows_followers_by_id_idx'),
   ('a thread', 'messages_conversation_idx'),
+  ('unread messages', 'messages_unread_idx'),
   ('who I follow', 'follows_pkey'),
   ('did I like these', 'likes_pkey or likes_user_idx')
 ) v(label, want);

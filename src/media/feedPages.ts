@@ -8,8 +8,7 @@ import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query"
  * A member a few hundred photographs down who pulled to refresh, tapped
  * Home, came back to the app or came back online waited on one request
  * per page loaded (twenty pages, twenty round trips in a row) before
- * anything changed, and the deeper pages cost the database more each time
- * (they are read by offset).
+ * anything changed: one request per page.
  *
  * Now a refresh drops every page but the first and reads that one: the
  * newest photographs, which is what a refresh is for, and the rest load

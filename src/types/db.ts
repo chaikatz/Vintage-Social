@@ -460,6 +460,16 @@ export type Database = {
         Args: { p_username: string };
         Returns: boolean;
       };
+      /** 0036: files this phone's push token under the caller, from whoever held it. */
+      claim_push_token: {
+        Args: { p_token: string; p_platform: "ios" | "android" | "web"; p_device: string | null };
+        Returns: undefined;
+      };
+      /** 0037: the caller's threads with unread messages from the other member, and how many. */
+      unread_message_counts: {
+        Args: Record<string, never>;
+        Returns: { conversation_id: string; unread: number }[];
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

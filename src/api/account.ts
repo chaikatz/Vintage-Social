@@ -1,6 +1,5 @@
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
-import { forgetPushToken } from "@/utils/push";
 import { isTransient, withRetry } from "@/utils/retry";
 import type { Bucket } from "./media";
 
@@ -21,18 +20,25 @@ import type { Bucket } from "./media";
  *      to try again: the database's backstop (0018) deletes only the rows
  *      of files still there, not their bytes, so going on would have left
  *      their photographs in a public bucket after the account had gone.
- *   3. This phone stops taking the account's notices (its push token is
- *      let go), and not before: a deletion stopped at the files leaves
- *      the account as it was, notices and all.
- *   4. The database function removes the auth user and everything of
+ *   3. The database function removes the auth user and everything of
  *      theirs cascades from it: profile, photographs, comments, likes,
- *      follows, tags, messages, tokens, preferences, invitation link. The
- *      membership number is never reissued. A dropped connection here is
- *      tried again a couple of times before the member hears of it: by
- *      then their files are gone, and an account left without them is the
- *      worst place to stop. Asked again after it went through (the answer
- *      was lost), it finds nothing left to delete and says so as success.
- *   5. The phone forgets the session.
+ *      follows, tags, messages, push tokens (every phone's), preferences,
+ *      invitation link. The membership number is never reissued. A
+ *      dropped connection here is tried again a couple of times before
+ *      the member hears of it: by then their files are gone, and an
+ *      account left without them is the worst place to stop. Asked again
+ *      after it went through (the answer was lost), it finds nothing left
+ *      to delete and says so as success.
+ *   4. The phone forgets the session, and with it stops taking the
+ *      account's notices: auth says SIGNED_OUT, and the listener made
+ *      with the client unregisters this phone from push, its token kept
+ *      until then (pushAfterSignedOut, src/utils/pushKept.ts).
+ *
+ * The push token is not let go by hand before step 3. It was, and a
+ * deletion that then failed (no signal, a timeout) left the member signed
+ * in with their phone's row removed, or the phone unregistered, and no
+ * notices until the app next started from cold. Now a deletion that fails
+ * anywhere leaves the account as it was, notices and all.
  *
  * A retry after any failure starts again at 1 and finishes the deletion:
  * folders already empty list empty at once.
@@ -121,9 +127,8 @@ export async function deleteMyAccount(userId: string, options: DeleteOptions = {
   if (isDemoMode()) return;
   await refuseOnlyAdmin(userId);
   await removeOwnFiles(userId, options.sleep);
-  // Only now: a deletion stopped at the files leaves the account whole,
-  // its notices still coming to this phone. (forgetPushToken never throws.)
-  await forgetPushToken();
+  // The push tokens go with the account (they cascade from it), and this
+  // phone stops receiving when the session leaves it, below.
   await withRetry(
     async () => {
       const { error } = await supabase.rpc("delete_my_account");

@@ -37,7 +37,8 @@
 //     receipts, and that is where Apple or Google first says a device is
 //     gone. Each notice Expo takes is noted (push_tickets, 0027); once a
 //     day, after the memories, the receipts are asked for and the tokens
-//     of devices that are gone are deleted.
+//     of devices that are gone are deleted, unless filed again since the
+//     notice was sent (a phone that came back, or a new member on it).
 //   * On This Day asks for photographs taken on today's date in each
 //     earlier year (an index range each, posts_taken_idx in 0023) rather
 //     than every dated photograph in the club, which past a thousand
@@ -49,11 +50,13 @@ import {
   chunk,
   eachChunk,
   eachPageByKey,
+  goneTokens,
   IDS_PER_READ,
   memoryDays,
   pickMemories,
   sendToExpo,
   withDeadline,
+  type KeptTicket,
   type MemoryPost,
   type Message,
 } from "./logic.ts";
@@ -474,28 +477,41 @@ async function sendMemories(today: Date): Promise<Record<string, unknown>> {
  * Google says are gone, and let go of the tickets. Expo keeps receipts
  * for a day, and this runs once a day, so a ticket older than that is let
  * go unread; at most MAX_RECEIPTS_A_RUN are asked for, by ticket id.
+ *
+ * A token's row goes only if it was not filed again after the notice
+ * found undeliverable was sent (goneTokens). It went by the token alone:
+ * a phone signed out offline stops receiving, its notices meanwhile come
+ * back undeliverable, and the member who signs in on it next files the
+ * same token as theirs (claim_push_token, 0036); the receipt of a notice
+ * to the member before then deleted the new member's row, and they had
+ * no notices until the app next started from cold.
  */
 async function settleReceipts(): Promise<{ asked: number; gone: number }> {
   const before = new Date(Date.now() - RECEIPT_DELAY_MINUTES * 60_000).toISOString();
   let asked = 0;
   let gone = 0;
-  await eachPageByKey<{ id: string; token: string }>(
+  await eachPageByKey<KeptTicket>(
     async (after, size) => {
-      let query = admin.from("push_tickets").select("id, token").lt("created_at", before);
+      let query = admin.from("push_tickets").select("id, token, created_at").lt("created_at", before);
       if (after !== null) query = query.gt("id", after.id);
       const { data, error } = await query.order("id", { ascending: true }).limit(size);
       if (error) return null;
-      return (data ?? []) as { id: string; token: string }[];
+      return (data ?? []) as KeptTicket[];
     },
     async (tickets) => {
       asked += tickets.length;
       const { dead } = await checkReceipts(tickets.map((t) => t.id), { fetch: (url, init) => fetch(url, init) });
-      const deadIds = new Set(dead);
-      const tokens = tickets.filter((t) => deadIds.has(t.id)).map((t) => t.token);
-      for (const part of chunk(tokens, IDS_PER_READ)) {
-        await admin.from("push_tokens").delete().in("token", part);
-        gone += part.length;
-      }
+      // A token at a time, a few at once: each has its own time.
+      const found = [...goneTokens(tickets, dead)].map((entry) => [entry]);
+      await eachChunk(found, 4, async ([[token, sentAt]]) => {
+        const { data } = await admin
+          .from("push_tokens")
+          .delete()
+          .eq("token", token)
+          .lt("updated_at", sentAt)
+          .select("token");
+        gone += data?.length ?? 0;
+      });
     },
     { size: ROWS_PER_READ, max: MAX_RECEIPTS_A_RUN },
   );

@@ -21,6 +21,32 @@ function code(file: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+describe("Search", () => {
+  const src = code("app/(tabs)/search.tsx");
+
+  it("ranks results by where the member stands with them, read for the results only, not the whole lists", () => {
+    // The whole lists stop at PostgREST's thousand: past that, some of
+    // the members followed were ranked as strangers.
+    expect(src).not.toMatch(/fetchFollowers|fetchFollowing\b/);
+    expect(src).toMatch(/const followsAmongKey = \(userId: string, ids: string\[\]\) => \["follows", userId, "among", ids\.join\(","\)\] as const;/);
+    // Read with the results, so they are drawn in their order at once.
+    expect(src).toMatch(
+      /const ranking = queryClient\.prefetchQuery\(\{\s*queryKey: followsAmongKey\(userId, ids\),\s*queryFn: \(\) => fetchFollowsAmong\(userId, ids\),/,
+    );
+    // For a moment at most: a ranking read that hangs on a slow connection
+    // does not hold the results back; they come unranked and take their
+    // order when it lands.
+    expect(src).toMatch(/const FOLLOWS_AMONG_WAIT_MS = (\d+);/);
+    expect(Number(src.match(/const FOLLOWS_AMONG_WAIT_MS = (\d+);/)![1])).toBeLessThanOrEqual(1500);
+    expect(src).toMatch(
+      /await Promise\.race\(\[ranking, new Promise<void>\(\(done\) => \(timer = setTimeout\(done, FOLLOWS_AMONG_WAIT_MS\)\)\)\]\);\s*clearTimeout\(timer\);/,
+    );
+    expect(src).not.toMatch(/await queryClient\.prefetchQuery/);
+    expect(src).toMatch(/queryKey: followsAmongKey\(userId, resultIds\),\s*queryFn: \(\) => fetchFollowsAmong\(userId, resultIds\),/);
+    expect(src).toMatch(/followingIds: new Set\(circleQ\.data\?\.following \?\? \[\]\),\s*followerIds: new Set\(circleQ\.data\?\.followers \?\? \[\]\),/);
+  });
+});
+
 describe("Followers and Following", () => {
   const src = code("app/follows.tsx");
 

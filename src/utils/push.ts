@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
-import { registerPushToken, unregisterPushToken } from "@/api/notifications";
+import { registerPushToken, unregisterAllPushTokens, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
 import { tapFollower, tokenFiler } from "./pushRoute";
 import { onReturnFromBackground } from "./appReturn";
@@ -81,22 +81,61 @@ export async function registerForPush(userId: string): Promise<string | null> {
  * member who is leaving. Its token's row is removed, the token this
  * launch filed or, failing that, the one an earlier launch kept.
  *
- * When the row cannot be removed (no signal, the server refusing), or no
- * token is known while the phone may receive notifications, the phone
- * itself stops receiving them: it unregisters from Apple's push service,
- * so a phone left signed out is never told about the last member's likes
- * and messages. The next member to sign in registers it again.
+ * When the row cannot be removed (no signal, the server refusing, or a
+ * removal that took nothing: the row another member's, which row-level
+ * security neither removes nor reports), or no token is known while the
+ * phone may receive notifications, the phone itself stops receiving them:
+ * it unregisters from Apple's push service, so a phone left signed out is
+ * never told about the last member's likes and messages. The next member
+ * to sign in registers it again.
  */
 export async function forgetPushToken(): Promise<void> {
   const token = takeToken();
   if (token) {
     try {
-      await unregisterPushToken(token);
-      tokenRemoved();
-      return;
+      if ((await unregisterPushToken(token)) > 0) {
+        tokenRemoved();
+        return;
+      }
+      // Nothing removed: gone already, or not this member's to remove.
     } catch {
       // Offline, or refused: the row stays. The phone stops receiving instead.
     }
+  }
+  await stopReceiving(token != null);
+}
+
+/**
+ * On a sign-out that ends the member's sessions on every phone, while
+ * still signed in: this phone stops speaking for them, and so does every
+ * other phone of theirs. A phone whose session ended elsewhere hears of
+ * it only when its app next runs (pushAfterSignedOut), and was sent the
+ * member's likes and messages until then, for days if the app was not
+ * opened.
+ *
+ * One request: every row of the member's goes, this phone's with them
+ * when it is theirs, and the tokens that went come back. This phone is
+ * let go as forgetPushToken lets it go: its row among them, the token is
+ * done with; not among them (gone already, or another member's, which
+ * row-level security neither removes nor reports), or no answer, the
+ * phone stops receiving. It was two removals one after the other, two
+ * waits on a slow connection before the sign-out could go on.
+ *
+ * Without a signal the rows stay: so does the sign-out, which then ends
+ * only this phone's session (src/providers/SessionProvider.tsx), and the
+ * other phones, still signed in, keep their notices.
+ */
+export async function forgetPushTokensEverywhere(userId: string | null | undefined): Promise<void> {
+  if (!userId) return forgetPushToken();
+  const token = takeToken();
+  try {
+    const removed = await unregisterAllPushTokens(userId);
+    if (token && removed.includes(token)) {
+      tokenRemoved();
+      return;
+    }
+  } catch {
+    // Offline, or refused: see above.
   }
   await stopReceiving(token != null);
 }
