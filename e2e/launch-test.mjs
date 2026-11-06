@@ -999,7 +999,9 @@ check(
       const label = bar && [...bar.querySelectorAll('[dir="auto"]')].find((el) => /^sign in$/i.test(el.textContent ?? ""));
       const arrow = bar && [...bar.children].find((el) => el !== label && !el.contains(label));
       if (!bar || !label || !arrow) return null;
-      if (size) label.style.fontSize = `${size}px`;
+      // Each measure starts from the page's own size, whatever the one before it drew.
+      if (label.dataset.fs === undefined) label.dataset.fs = label.style.fontSize;
+      label.style.fontSize = size ? `${size}px` : label.dataset.fs;
       if (text) label.textContent = text;
       const b = bar.getBoundingClientRect();
       const l = label.getBoundingClientRect();
