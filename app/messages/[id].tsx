@@ -144,6 +144,14 @@ export default function Thread() {
   const openProfile = useCallback(() => {
     if (peer) router.push(`/user/${peer.username}`);
   }, [peer, router]);
+  // Out of the thread, which shows nothing of theirs now. Handed to the
+  // Block tap itself, not to the mutation: react-query drops a tap's own
+  // onSuccess once the screen has gone (swiped away while the block was
+  // out), so it never takes the member back from somewhere else.
+  const leaveThread = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
+  }, [router]);
   const block = useMutation({
     mutationFn: (member: Pick<ProfileRow, "id" | "username">) => blockMember(member.id),
     onSuccess: (_done, member) => {
@@ -159,14 +167,12 @@ export default function Thread() {
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["explore"] });
       queryClient.invalidateQueries({ queryKey: ["activity"] });
-      // Out of the thread, which shows nothing of theirs now.
-      if (router.canGoBack()) router.back();
-      else router.replace("/");
     },
     onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
   const threadMenu = useCallback(() => {
-    if (!peer) return;
+    // One block at a time: a second, sent while the first is out, would leave twice.
+    if (!peer || block.isPending) return;
     showAlert(peer.username, undefined, [
       { text: "View profile", onPress: openProfile },
       {
@@ -182,14 +188,14 @@ export default function Thread() {
             `Block ${peer.username}?`,
             "They won't see your photographs or profile, and you won't see theirs. Neither of you is told. You can unblock from Settings.",
             [
-              { text: "Block", style: "destructive", onPress: () => block.mutate(peer) },
+              { text: "Block", style: "destructive", onPress: () => block.mutate(peer, { onSuccess: leaveThread }) },
               { text: "Cancel", style: "cancel" },
             ],
           ),
       },
       { text: "Cancel", style: "cancel" },
     ]);
-  }, [peer, openProfile, router, block]);
+  }, [peer, openProfile, router, block, leaveThread]);
 
   const send = useMutation({
     mutationFn: () => sendMessage(id ?? "", userId, draft),

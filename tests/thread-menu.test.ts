@@ -47,7 +47,9 @@ describe("the thread's header", () => {
     expect(menu).toMatch(
       /\{\s*text: "Block member",\s*style: "destructive",\s*onPress: \(\) =>\s*showAlert\(\s*`Block \$\{peer\.username\}\?`,/,
     );
-    expect(menu).toMatch(/\{ text: "Block", style: "destructive", onPress: \(\) => block\.mutate\(peer\) \}/);
+    expect(menu).toMatch(/\{ text: "Block", style: "destructive", onPress: \(\) => block\.mutate\(peer, \{ onSuccess: leaveThread \}\) \}/);
+    // Not while a block is out: a second would leave the thread, then the screen under it.
+    expect(menu).toMatch(/^const threadMenu = useCallback\(\(\) => \{\s*(\/\/[^\n]*\s*)?if \(!peer \|\| block\.isPending\) return;/);
     expect(menu.match(/block\.mutate\(/g)).toHaveLength(1);
     expect(menu).toMatch(/\{ text: "Cancel", style: "cancel" \},\s*\]\);\s*\}, \[/);
   });
@@ -75,7 +77,11 @@ describe("the thread's header", () => {
     expect(profile).toMatch(/queryKey: \["profile", username\],/);
     expect(profile).toMatch(/queryKey: \["user-posts", profile\?\.id\],/);
     expect(profile).toMatch(/queryClient\.invalidateQueries\(\{ queryKey: \["user-posts", profile\?\.id\] \}\);/);
-    expect(block).toMatch(/if \(router\.canGoBack\(\)\) router\.back\(\);\s*else router\.replace\("\/"\);/);
+    // Leaving is the tap's own onSuccess, which react-query drops once the
+    // screen has gone; the mutation's would run anyway and go back from
+    // wherever the member is by then.
+    expect(block).not.toMatch(/router\./);
+    expect(thread).toMatch(/const leaveThread = useCallback\(\(\) => \{\s*if \(router\.canGoBack\(\)\) router\.back\(\);\s*else router\.replace\("\/"\);\s*\}, \[router\]\);/);
     expect(block).toMatch(/onError: \(err\) => showAlert\("That didn’t work", errorMessage\(err, "Nothing changed\. Try again in a moment\."\)\)/);
   });
 
