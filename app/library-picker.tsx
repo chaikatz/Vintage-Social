@@ -18,6 +18,9 @@ import {
   type LibraryPhoto,
 } from "@/utils/library";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * The member's own photographs, picked out of the library for a reason —
  * the rest of one night's roll, or every one from this day in earlier

@@ -22,6 +22,10 @@ import { shareUrl, shareUrlLabel } from "@/utils/shareLink";
 import { PRINT_WIDTH, STORY_WIDTH, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
 import { brandVideo, canBrandVideo, canExport, capturePrint, shareFile } from "@/utils/exportPost";
 
+// A row that breaks this sheet breaks only the sheet, with the way back on its page,
+// as a sheet's header has none (src/navigation/Recover.tsx).
+export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * A photograph leaves VINTAGE as a print.
  *

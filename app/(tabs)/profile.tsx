@@ -28,6 +28,9 @@ import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
 import { useEraEditor, useEraEdits } from "@/hooks/useEraEdits";
 import type { PostRow } from "@/types/db";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Your own page: the grid, the same photographs by the day they were
  * taken, hung on a timeline, gathered into eras, pinned on the world, or

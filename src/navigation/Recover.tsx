@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type { ErrorBoundaryProps } from "expo-router";
+import { router, type ErrorBoundaryProps } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, spacing, type } from "@/theme";
 import { queryClient } from "@/lib/queryClient";
 
@@ -21,9 +22,14 @@ import { queryClient } from "@/lib/queryClient";
  * Home, away from whatever broke, with every read made again rather than
  * drawn from what was held when it broke. `RecoverPage` stands in for one
  * screen, under its own header, so the way back stays where it always is.
+ * Where a screen's header cannot be counted on for that (the editor hides
+ * its back button while it develops; a sheet has none), `RecoverPageWithBack`
+ * puts the way back on the page too; and the Memory Room, which has no
+ * header at all, has `RecoverRoom`, which also keeps clear of the status bar.
  *
- * Neither reads anything from the app's providers: the root one is drawn
- * where they have been taken down with the layout.
+ * None of them reads the app's own providers (the session, the query
+ * cache): the root one is drawn where they have been taken down with the
+ * layout. The Memory Room's asks only where the status bar ends.
  */
 
 declare const __DEV__: boolean | undefined;
@@ -83,20 +89,57 @@ export function RecoverApp({ error, retry }: ErrorBoundaryProps) {
   );
 }
 
+/** Back to the screen before, or Home when there is none (a screen opened from a notification). */
+function leave() {
+  if (router.canGoBack()) router.back();
+  else router.replace("/(tabs)");
+}
+
+function GoBack() {
+  return (
+    <Pressable onPress={leave} hitSlop={10} style={styles.retry} accessibilityRole="button">
+      <Text style={styles.retryText}>Go back</Text>
+      <View style={styles.rule} />
+    </Pressable>
+  );
+}
+
+interface PageProps extends ErrorBoundaryProps {
+  /** Draw the way back on the page as well as Try again. */
+  withBack?: boolean;
+  /** Space kept above it where there is no header: the status bar's. */
+  top?: number;
+}
+
 /** One screen's: drawn under its header, which keeps the way back. */
-export function RecoverPage({ error, retry }: ErrorBoundaryProps) {
+export function RecoverPage({ error, retry, withBack = false, top = 0 }: PageProps) {
   useLogged(error);
   const { trying, tryAgain } = useRetry(retry);
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, top > 0 && { paddingTop: top + PAGE_TOP }]}>
       <Text style={styles.title} accessibilityRole="header">
         This page didn’t open
       </Text>
       <Text style={styles.body}>Nothing you’ve posted is lost. Try again, or go back.</Text>
       <TryAgain onPress={tryAgain} disabled={trying} />
+      {withBack ? <GoBack /> : null}
     </View>
   );
 }
+
+/** One screen's, whose header may not hold the way back: the editor while it develops, a sheet. */
+export function RecoverPageWithBack(props: ErrorBoundaryProps) {
+  return <RecoverPage {...props} withBack />;
+}
+
+/** The Memory Room's, which has no header: the way back on the page, clear of the status bar. */
+export function RecoverRoom(props: ErrorBoundaryProps) {
+  const insets = useSafeAreaInsets();
+  return <RecoverPage {...props} withBack top={insets.top} />;
+}
+
+/** Where a screen's recover page starts under its header. */
+const PAGE_TOP = spacing.xxl * 2;
 
 const styles = StyleSheet.create({
   page: {
@@ -109,7 +152,7 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     alignItems: "center",
-    paddingTop: spacing.xxl * 2,
+    paddingTop: PAGE_TOP,
     paddingHorizontal: spacing.xl,
     backgroundColor: colors.paper,
   },

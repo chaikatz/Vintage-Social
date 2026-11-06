@@ -60,6 +60,10 @@ import {
   type StageAction,
 } from "@/components/darkroom/words";
 
+// A print that breaks the room breaks only the room, with the way back on its page,
+// which has no header (src/navigation/Recover.tsx).
+export { RecoverRoom as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * THE MEMORY ROOM, which the code still calls the Darkroom.
  *

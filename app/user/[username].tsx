@@ -33,6 +33,9 @@ import { useEraEdits } from "@/hooks/useEraEdits";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
 import type { PostRow } from "@/types/db";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 export default function UserProfile() {
   const router = useRouter();
   const queryClient = useQueryClient();

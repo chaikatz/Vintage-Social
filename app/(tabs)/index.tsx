@@ -20,6 +20,9 @@ import { commentsOrNone, likeCounted } from "@/media/stableCards";
 import { refreshFromFirstPage, refreshOnReturn } from "@/media/feedPages";
 import type { PostWithAuthor } from "@/types/db";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * The feed's pages as one list, each post once.
  *

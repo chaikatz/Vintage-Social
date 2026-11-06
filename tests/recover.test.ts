@@ -22,9 +22,41 @@ describe("the recover pages", () => {
       "app/memories.tsx",
       "app/(tabs)/activity.tsx",
       "app/(tabs)/search.tsx",
+      // One bad row on these used to take the member out to the whole app's page.
+      "app/(tabs)/index.tsx",
+      "app/(tabs)/profile.tsx",
+      "app/(tabs)/create.tsx",
+      "app/post/[id].tsx",
+      "app/user/[username].tsx",
+      "app/gallery.tsx",
+      "app/library-picker.tsx",
+      "app/settings.tsx",
+      "app/invites.tsx",
+      "app/requests.tsx",
+      "app/blocked.tsx",
+      "app/likes.tsx",
     ]) {
       expect(read(screen), screen).toMatch(/^export \{ RecoverPage as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
     }
+  });
+
+  it("put the way back on the page where the header cannot be counted on for it", () => {
+    // The editor hides its back button while a post develops, and its back swipe is off; a sheet has no back button.
+    for (const screen of ["app/compose.tsx", "app/export.tsx"]) {
+      expect(read(screen), screen).toMatch(/^export \{ RecoverPageWithBack as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
+    }
+    // The Memory Room has no header at all, and its back swipe is the left edge alone.
+    expect(read("app/darkroom.tsx")).toMatch(/^export \{ RecoverRoom as ErrorBoundary \} from "@\/navigation\/Recover";$/m);
+    expect(recover).toMatch(/export function RecoverPageWithBack\(props: ErrorBoundaryProps\) \{\s*return <RecoverPage \{\.\.\.props\} withBack \/>;/);
+    expect(recover).toMatch(
+      /export function RecoverRoom\(props: ErrorBoundaryProps\) \{\s*const insets = useSafeAreaInsets\(\);\s*return <RecoverPage \{\.\.\.props\} withBack top=\{insets\.top\} \/>;/,
+    );
+    expect(recover).toMatch(/\{withBack \? <GoBack \/> : null\}/);
+    // Back where the member came from, or Home when the screen was opened from a notification.
+    expect(recover).toMatch(/function leave\(\) \{\s*if \(router\.canGoBack\(\)\) router\.back\(\);\s*else router\.replace\("\/\(tabs\)"\);\s*\}/);
+    expect(recover).toMatch(/<Pressable onPress=\{leave\}[^>]*accessibilityRole="button">\s*<Text style=\{styles\.retryText\}>Go back<\/Text>/);
+    // Clear of the status bar where there is no header to start under.
+    expect(recover).toMatch(/style=\{\[styles\.screen, top > 0 && \{ paddingTop: top \+ PAGE_TOP \}\]\}/);
   });
 
   it("say it in our words, never the runtime's, and offer one thing to do", () => {

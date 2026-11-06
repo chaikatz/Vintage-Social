@@ -10,6 +10,9 @@ import { colors, radii, spacing, type } from "@/theme";
 import { fetchBlockedProfiles, unblockMember } from "@/api/blocks";
 import { useSession } from "@/providers/SessionProvider";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /** The members you have blocked, and the way back. */
 export default function Blocked() {
   const queryClient = useQueryClient();

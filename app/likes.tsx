@@ -12,6 +12,9 @@ import { spacing } from "@/theme";
 import { fetchLikers } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Who liked one of your photographs, newest first.
  *

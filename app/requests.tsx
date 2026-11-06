@@ -14,6 +14,9 @@ import type { ProfileRow } from "@/types/db";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 
+// A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
+export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
+
 /**
  * Who has asked to follow you, while your account is private. Each one is a
  * decision you make by hand — nothing is accepted for you, and declining
