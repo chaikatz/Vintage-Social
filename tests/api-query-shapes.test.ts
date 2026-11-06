@@ -847,11 +847,35 @@ describe("followers and following", () => {
     const newest = truth("followers", STAR);
     // The fifty newest followers, none of them readable now.
     h.tables.profiles = h.tables.profiles.filter((p) => !newest.slice(0, 50).includes(String(p.id)));
+    h.requests.length = 0;
+    // A page of nobody readable is read through: the first answer brings
+    // the next fifty, so the list does not show as empty while they wait.
     const first = await profiles.fetchFollowPage("followers", STAR, null);
-    expect(first.members).toEqual([]);
+    expect(first.members.length).toBeGreaterThan(0);
+    expect(first.members.map((m) => m.id)).toEqual(newest.slice(50, 50 + first.members.length));
     expect(first.next).toBeDefined();
+    expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/follows").length).toBe(2);
     const rest = await walk("followers", STAR);
     expect(rest).toEqual(newest.slice(50));
+  });
+
+  it("a list whose every member cannot be read ends, empty; one far longer is read on ten pages a call, no more", async () => {
+    const reads = () => h.requests.filter((r) => r.url.pathname === "/rest/v1/follows").length;
+    crowd(120);
+    h.tables.profiles = h.tables.profiles.filter((p) => !truth("followers", STAR, false).includes(String(p.id)));
+    h.requests.length = 0;
+    const short = await profiles.fetchFollowPage("followers", STAR, null);
+    expect(short.members).toEqual([]);
+    expect(short.next).toBeUndefined();
+    expect(reads()).toBe(3);
+
+    crowd(900);
+    h.tables.profiles = h.tables.profiles.filter((p) => !truth("followers", STAR, false).includes(String(p.id)));
+    h.requests.length = 0;
+    const long = await profiles.fetchFollowPage("followers", STAR, null);
+    expect(long.members).toEqual([]);
+    expect(long.next).toBeDefined();
+    expect(reads()).toBe(10);
   });
 
   it("where I stand with the members on a page, in one read of those rows", async () => {

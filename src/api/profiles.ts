@@ -182,6 +182,12 @@ const SIDES = {
  * were nowhere. Accepted follows only; requests are not followers yet. A
  * follow whose member cannot be read (a block, say) is left out, and the
  * page still counts it, so it never ends the list early.
+ *
+ * A page whose every member is left out would come back with no member
+ * and more to come, and a list holding no row reads as empty ("No
+ * followers yet") while the rest waits unasked. So the next page is read
+ * at once, up to HIDDEN_PAGES_READ_ON in one call, until one brings a
+ * member or the list ends.
  */
 export async function fetchFollowPage(
   side: keyof typeof SIDES,
@@ -192,6 +198,17 @@ export async function fetchFollowPage(
     return demoPage(demo.demoFollowRows(userId, side), before);
   }
 
+  let page = await readFollowPage(side, userId, before);
+  for (let i = 1; i < HIDDEN_PAGES_READ_ON && page.members.length === 0 && page.next; i++) {
+    page = await readFollowPage(side, userId, page.next);
+  }
+  return page;
+}
+
+/** Pages of nobody readable read through in one call of fetchFollowPage. */
+const HIDDEN_PAGES_READ_ON = 10;
+
+async function readFollowPage(side: keyof typeof SIDES, userId: string, before: FollowCursor | null): Promise<FollowPage> {
   const { mine, theirs, fk } = SIDES[side];
   const query = supabase
     .from("follows")
