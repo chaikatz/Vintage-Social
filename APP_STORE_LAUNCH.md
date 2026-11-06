@@ -485,6 +485,28 @@ Open appstoreconnect.apple.com → **Apps** → **Vintage Social**.
   3. Only then the user's row → **…** menu → **Delete user**. The profile,
      application, posts, comments, likes, follows and messages go with
      it; their files do not, which is why step 2 comes first.
+     If Delete user fails with a foreign key error, the account is still
+     named where Delete my account would have cleared it first: an admin's
+     decisions on applications, reports resolved, photographs or comments
+     removed and moderation actions taken, or an invitation code used
+     (production on 6 November: 6 applications and 2 reports name the one
+     admin; no code was used). Run these lines once in **SQL Editor**, with
+     the user ID in place of `USER_ID` everywhere, then Delete user again:
+
+     ```sql
+     update public.applications set decided_by = null where decided_by = 'USER_ID';
+     update public.invites set used_by = null where used_by = 'USER_ID';
+     update public.posts set removed_by = null where removed_by = 'USER_ID';
+     update public.comments set removed_by = null where removed_by = 'USER_ID';
+     update public.reports set resolved_by = null where resolved_by = 'USER_ID';
+     delete from public.moderation_actions where admin_id = 'USER_ID'
+       and not exists (select 1 from public.profiles where id = target_profile_id and id <> 'USER_ID');
+     update public.moderation_actions set admin_id = target_profile_id where admin_id = 'USER_ID';
+     ```
+
+     These are the lines Delete my account runs (`delete_my_account()`,
+     0018); the history stays, without the name. Never do this for the
+     club's only admin: the club would have no one to let anyone in.
   4. Reply when it is done.
 - Apple's reviewer may join with the `applereview` invitation. Each join
   spends one of the review account's 5 invitations and gives the new

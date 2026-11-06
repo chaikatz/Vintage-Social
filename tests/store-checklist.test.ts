@@ -359,6 +359,39 @@ describe("deleting an account by hand", () => {
     const buckets = read("src/api/account.ts").match(/const BUCKETS: Bucket\[\] = \[([^\]]+)\]/)?.[1];
     expect(buckets?.split(",").map((b) => b.trim().replace(/"/g, "")).sort()).toEqual(["avatars", "media", "thumbnails"]);
   });
+
+  it("when Delete user meets a foreign key, runs what Delete my account runs first, for every reference that blocks it", () => {
+    const step10 = between(doc(), "### Step 10", "\n---\n");
+    const block = step10.match(/```sql\n([\s\S]*?)```/)?.[1];
+    expect(block, "the SQL lines in step 10").toBeTruthy();
+    expect(flat(step10)).toContain("If Delete user fails with a foreign key error");
+    expect(step10.indexOf("```sql")).toBeGreaterThan(step10.indexOf("**Delete user**"));
+    expect(flat(step10)).toContain("Never do this for the club's only admin");
+    // The lines are delete_my_account's own, word for word, with the user's id in place of v_user.
+    const fn = read("supabase/migrations/0018_launch_compliance.sql");
+    const body = fn.slice(fn.indexOf("create or replace function public.delete_my_account()"), fn.indexOf("delete from auth.users where id = v_user;"));
+    const released = (body.match(/^\s*(update public\.\w+ set \w+ = \w+ where \w+ = v_user;|delete from public\.moderation_actions[^;]+;)/gm) ?? [])
+      .map((l) => l.trim().replace(/\s+/g, " "));
+    const lines = block!.split(/;\s*\n/).map((l) => l.trim().replace(/\s+/g, " ")).filter(Boolean)
+      .map((l) => (l.endsWith(";") ? l : `${l};`).replace(/'USER_ID'/g, "v_user"));
+    expect(released.length).toBe(7);
+    expect(lines).toEqual(released);
+    // Every reference to a profile that does not go with it (NO ACTION) is one the lines release.
+    const schema = read("supabase/migrations/0001_schema.sql");
+    const tables = [...schema.matchAll(/create table public\.(\w+) \(([\s\S]*?)\n\);/g)];
+    const blocking: string[] = [];
+    for (const [, table, cols] of tables) {
+      for (const [, col] of cols.matchAll(/^\s+(\w+)\s+uuid[^,\n]*references public\.profiles \(id\)(?! on delete)/gm)) blocking.push(`${table}.${col}`);
+    }
+    expect(blocking.sort()).toEqual([
+      "applications.decided_by", "comments.removed_by", "invites.used_by",
+      "moderation_actions.admin_id", "posts.removed_by", "reports.resolved_by",
+    ]);
+    for (const ref of blocking) {
+      const [table, col] = ref.split(".");
+      expect(block, ref).toMatch(new RegExp(`public\\.${table} [^;]*where ${col} = 'USER_ID'`));
+    }
+  });
 });
 
 describe("the house accounts' likes and comments", () => {
