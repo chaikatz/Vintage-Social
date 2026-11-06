@@ -38,6 +38,23 @@ const phone = vi.hoisted(() => ({
   alerts: [] as { title: string; message?: string }[],
   /** What the photo library says about an asset; an Error is thrown. */
   assetInfo: null as null | Error | Record<string, unknown>,
+  /** The Memory Room's module, when the binary has it; and what its develop answers (a function is called). */
+  library: null as null | object,
+  develops: [] as { id: string; opts: Record<string, unknown> }[],
+  developAnswer: null as unknown,
+  cancelled: [] as string[],
+}));
+
+vi.mock("@/darkroom/nativeLibrary", () => ({
+  libraryModule: () => phone.library,
+  developImage: async (_mod: unknown, id: string, opts: Record<string, unknown>) => {
+    phone.develops.push({ id, opts });
+    const answer = phone.developAnswer;
+    return typeof answer === "function" ? answer() : answer;
+  },
+  cancelDevelop: (_mod: unknown, requestId: string) => {
+    phone.cancelled.push(requestId);
+  },
 }));
 
 vi.mock("react-native", () => ({
@@ -91,6 +108,10 @@ beforeEach(() => {
   phone.prepareAnswers.length = 0;
   phone.alerts.length = 0;
   phone.assetInfo = null;
+  phone.library = null;
+  phone.develops.length = 0;
+  phone.developAnswer = null;
+  phone.cancelled.length = 0;
 });
 
 // ---------------------------------------------------------------------------
@@ -603,6 +624,86 @@ describe("a photograph opened from On this day or That night", () => {
     phone.assetInfo = new Error("not in the library any more");
     expect(await composeParamsFor(photo)).toBeNull();
     expect(phone.prepareCalls).toEqual([]);
+  });
+
+  describe("with the Memory Room's module", () => {
+    const taken = Date.UTC(2019, 9, 22, 18, 30);
+    const shot = { ...photo, creationTime: taken };
+
+    it("asks Photos for the editor's size, from iCloud if it must, and never reads the original's file", async () => {
+      const { composeParamsFor } = await import("@/utils/library");
+      const { PICKED_MAX_SIDE } = await import("@/utils/pickForCompose");
+      phone.library = {};
+      phone.developAnswer = { status: "ok", uri: "file:///caches/darkroom/A.jpg", width: 2048, height: 1536 };
+      // Reading the file would have downloaded the whole original, and written out a Live Photo's video.
+      phone.assetInfo = new Error("the file was read");
+      const params = await composeParamsFor(shot);
+      expect(phone.develops).toEqual([{ id: "ASSET-9", opts: expect.objectContaining({ maxSide: PICKED_MAX_SIDE, allowNetwork: true }) }]);
+      expect(phone.prepareCalls).toEqual([]);
+      expect(params).toMatchObject({ uri: "file:///caches/darkroom/A.jpg", mediaType: "photo", width: "2048", height: "1536", duration: "0" });
+      expect(params?.takenAt).toBeTruthy();
+    });
+
+    it("opens nothing for a photograph gone from the library, and reads no file for it", async () => {
+      const { composeParamsFor } = await import("@/utils/library");
+      phone.library = {};
+      phone.developAnswer = { status: "missing" };
+      phone.assetInfo = { localUri: "file:///library/IMG_0042.HEIC", creationTime: 0 };
+      expect(await composeParamsFor(shot)).toBeNull();
+      expect(phone.prepareCalls).toEqual([]);
+    });
+
+    it("falls back to the photograph's own file when Photos could not make the copy", async () => {
+      const { composeParamsFor } = await import("@/utils/library");
+      phone.library = {};
+      phone.developAnswer = { status: "failed" };
+      phone.assetInfo = { localUri: "file:///library/IMG_0042.HEIC", creationTime: 0 };
+      const params = await composeParamsFor(shot);
+      expect(phone.prepareCalls.map((c) => c.uri)).toEqual(["file:///library/IMG_0042.HEIC"]);
+      expect(params?.uri).toBe("file:///library/IMG_0042.HEIC.prepared.jpg");
+    });
+
+    it("stops asking iCloud after a minute and opens nothing, rather than waiting for ever", async () => {
+      vi.useFakeTimers();
+      try {
+        const { composeParamsFor, OPEN_TIMEOUT_MS } = await import("@/utils/library");
+        phone.library = {};
+        phone.developAnswer = () => new Promise(() => undefined);
+        const opened = composeParamsFor(shot);
+        await vi.advanceTimersByTimeAsync(OPEN_TIMEOUT_MS + 1);
+        expect(await opened).toBeNull();
+        expect(phone.cancelled).toHaveLength(1);
+        expect(phone.prepareCalls).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  it("keeps the picker's thumbnails in their cells alone: never the app's disk cache, nor its memory cache", () => {
+    // The shared memory cache has no limit and nothing in the picker empties
+    // it; "memory" would keep every thumbnail decoded after the picker closes.
+    const picker = code("app/library-picker.tsx");
+    const images = picker.match(/<Image\s[^>]*\/>/g) ?? [];
+    expect(images.length).toBeGreaterThan(0);
+    for (const image of images) {
+      expect(image).toMatch(/cachePolicy="none"/);
+      expect(image).not.toMatch(/cachePolicy="(memory|disk|memory-disk)"/);
+    }
+  });
+
+  it("mounts the picker's rows a screen at a time, not the whole day at once", () => {
+    const picker = code("app/library-picker.tsx");
+    const list = picker.match(/<FlatList\s[\s\S]*?renderItem=/)?.[0] ?? "";
+    expect(list).toMatch(/initialNumToRender=\{PICKER_FIRST_ROWS\}/);
+    expect(list).toMatch(/maxToRenderPerBatch=\{PICKER_BATCH_ROWS\}/);
+    expect(list).toMatch(/windowSize=\{PICKER_WINDOW\}/);
+    const value = (name: string) => Number(picker.match(new RegExp(`const ${name} = (\\d+);`))?.[1] ?? NaN);
+    // FlatList's defaults are 10, 10 and 21: every row of a 120-photograph night at once.
+    expect(value("PICKER_FIRST_ROWS")).toBeLessThanOrEqual(8);
+    expect(value("PICKER_BATCH_ROWS")).toBeLessThanOrEqual(4);
+    expect(value("PICKER_WINDOW")).toBeLessThanOrEqual(5);
+    expect(value("PICKER_WINDOW")).toBeGreaterThanOrEqual(3);
   });
 });
 

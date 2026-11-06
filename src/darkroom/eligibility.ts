@@ -181,8 +181,12 @@ export const BUILD_AHEAD_MONTHS = 2;
 
 /** No page is longer than this. */
 export const MAX_PAGE = 150;
-/** No more than this many questions are put to the library at once. */
-export const MAX_IN_FLIGHT = 4;
+/**
+ * No more than this many questions are put to the library at once. Expo
+ * answers them one at a time on the queue every native module shares, so
+ * two keep it busy and a third would only keep the rest of the app waiting.
+ */
+export const MAX_IN_FLIGHT = 2;
 
 // ---------------------------------------------------------------------------
 // Eligibility

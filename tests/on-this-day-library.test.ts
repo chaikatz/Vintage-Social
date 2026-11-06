@@ -36,7 +36,20 @@ const phone = vi.hoisted(() => ({
   settings: 0,
   listeners: [] as ((event: unknown) => void)[],
   removed: 0,
+  /** When above 0, each read holds Expo’s one shared queue this long, one at a time, as on the phone. */
+  costMs: 0,
+  queueFree: 0,
+  inFlight: 0,
+  maxInFlight: 0,
 }));
+
+/** A call on Expo’s one shared async queue: it waits for everything asked before it, then holds the queue for `cost`. */
+function onQueue(cost: number): Promise<void> {
+  const now = Date.now();
+  const end = Math.max(now, phone.queueFree) + cost;
+  phone.queueFree = end;
+  return new Promise((resolve) => setTimeout(resolve, end - now));
+}
 
 vi.mock("react-native", () => ({
   Platform: {
@@ -59,6 +72,12 @@ function ms(v: unknown): number {
 vi.mock("expo-media-library", () => ({
   getAssetsAsync: async (options: Record<string, unknown>) => {
     phone.calls.push(options);
+    if (phone.costMs > 0) {
+      phone.inFlight += 1;
+      phone.maxInFlight = Math.max(phone.maxInFlight, phone.inFlight);
+      await onQueue(phone.costMs);
+      phone.inFlight -= 1;
+    }
     if (phone.calls.length > phone.failFrom) throw new Error("Couldn't find cursor");
     const type = (options.mediaType as string) ?? "photo";
     let list = phone.assets.filter((a) => a.mediaType === type);
@@ -111,6 +130,11 @@ vi.mock("expo-media-library", () => ({
 
 vi.mock("expo-image-picker", () => ({}));
 vi.mock("@/media/nativeMedia", () => ({ prepareImage: async () => ({ uri: "", width: 0, height: 0 }) }));
+vi.mock("@/darkroom/nativeLibrary", () => ({
+  libraryModule: () => null,
+  developImage: async () => ({ status: "failed" }),
+  cancelDevelop: () => undefined,
+}));
 vi.mock("@/utils/captureDate", () => ({ captureDateForAsset: async () => null }));
 vi.mock("@/utils/alert", () => ({ showAlert: () => undefined }));
 
@@ -126,6 +150,7 @@ import {
   photosOnThisDay,
   sameDayIn,
   watchLibrary,
+  YEARS_AT_ONCE,
   yearsToLook,
   type LibraryDay,
 } from "@/utils/library";
@@ -143,6 +168,10 @@ beforeEach(() => {
   phone.settings = 0;
   phone.listeners = [];
   phone.removed = 0;
+  phone.costMs = 0;
+  phone.queueFree = 0;
+  phone.inFlight = 0;
+  phone.maxInFlight = 0;
 });
 
 afterEach(() => {
@@ -283,6 +312,37 @@ describe("On this day from the library", () => {
     expect(days[0].yearsAgo).toBe(1);
     expect(days[0].photos.length).toBeGreaterThan(0);
     expect(days[0].photos.length).toBeLessThan(450);
+  });
+
+  it("keeps two years’ reads on Expo’s one queue at a time, so the rest of the app waits behind two, and the day takes no longer", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    phone.costMs = 40;
+    photo(new Date(2011, 0, 1)); // the oldest
+    for (let year = 2011; year <= 2025; year++) Array.from({ length: 30 }, (_, i) => photo(new Date(year, 10, 2, 8, i)));
+
+    let done: number | null = null;
+    const reading = photosOnThisDay(TODAY).then((days) => {
+      done = Date.now();
+      return days;
+    });
+    // Another module asks for something (the keychain, a file) part way through.
+    await vi.advanceTimersByTimeAsync(100);
+    const asked = Date.now();
+    let answered: number | null = null;
+    void onQueue(1).then(() => {
+      answered = Date.now();
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    const days = await reading;
+
+    expect(days).toHaveLength(15);
+    expect(YEARS_AT_ONCE).toBe(2);
+    expect(phone.maxInFlight).toBe(2);
+    // Behind the read being answered and the one waiting: 60 ms here, where four at once kept it 140 ms.
+    expect(answered! - asked - 1).toBeLessThanOrEqual(2 * phone.costMs);
+    // The queue is never idle: the oldest photograph and fifteen years, one page each, back to back, and the other call.
+    expect(done).toBe(16 * phone.costMs + 1);
   });
 
   it("is nothing on the web, which has no library", async () => {

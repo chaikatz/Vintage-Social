@@ -1162,7 +1162,7 @@ describe("a year as an edit", () => {
 // ---------------------------------------------------------------------------
 
 describe("the library is asked only bounded questions", () => {
-  it("never a page longer than 150, never a cursor, never more than four at once", async () => {
+  it("never a page longer than 150, never a cursor, never more than two at once", async () => {
     const prints: Print[] = [...series(at(2017, 9, 22, 8), 500, 100_000), print(at(1962, 9, 22, 9))];
     for (let y = 2008; y <= 2025; y++) for (let d = 0; d < 360; d += 2) prints.push(print(at(y, 0, 1 + d, 10)));
     const lib = new FakeLibrary(prints);
@@ -1183,7 +1183,7 @@ describe("the library is asked only bounded questions", () => {
       expect(r.first).toBeLessThanOrEqual(150);
       expect(r.range.to).toBeGreaterThan(r.range.from);
     }
-    expect(lib.maxInFlight).toBeLessThanOrEqual(4);
+    expect(lib.maxInFlight).toBeLessThanOrEqual(2);
     expect(lib.maxInFlight).toBeGreaterThan(1);
   });
 });

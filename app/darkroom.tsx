@@ -28,6 +28,7 @@ import { Develop } from "@/components/darkroom/Develop";
 import { haptics } from "@/components/darkroom/haptics";
 import { LookContext, motion, type Look } from "@/components/darkroom/look";
 import { Plate } from "@/components/darkroom/Plate";
+import { wantsProof } from "@/components/darkroom/plateImage";
 import { PrintPage } from "@/components/darkroom/PrintPage";
 import { rooms, useScheme } from "@/components/darkroom/room";
 import { RunningHead } from "@/components/darkroom/RunningHead";
@@ -425,7 +426,7 @@ export default function Darkroom() {
         fontScale={fontScale}
         pixelRatio={pixelRatio}
         current={isCurrent}
-        proof={chapter != null && (index === chapter.index || index === chapter.index + 1)}
+        proof={chapter != null && wantsProof(index, chapter.index)}
         images={focused || isCurrent}
         dissolve={!darkroom.hasLoaded(print.id)}
         revision={state.revision}

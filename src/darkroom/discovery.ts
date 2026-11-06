@@ -82,55 +82,103 @@ export { ON_THIS_DAY_MINIMUM, REDISCOVERY_AGE_DAYS, ROLL_LENGTH } from "./eligib
  *                 each holds, each the best of its own slice of time.
  *
  * Every question passes through one gate per library, so however many
- * chapters are asking at once, no more than four are outstanding.
+ * chapters are asking at once, no more than two are outstanding, and the
+ * prints the member is about to see are asked for ahead of whatever the
+ * room is reading for itself in the background.
  */
 
 // ---------------------------------------------------------------------------
 // The library, asked politely
 // ---------------------------------------------------------------------------
 
-const gates = new WeakMap<LibrarySource, LibrarySource>();
+/** The two lines at the gate: the member's, and the room's own reading in the background. */
+type Lane = "front" | "back";
+
+interface Gate {
+  front: LibrarySource;
+  back: LibrarySource;
+}
+
+/** One gate per library, found from the library itself or from either of its lanes. */
+const gates = new WeakMap<LibrarySource, Gate>();
 
 /**
  * The library with no more than `MAX_IN_FLIGHT` questions outstanding at
- * once, shared by everything that asks it. Photos answers each fetch on
- * its own queue; asking it forty things at the same moment only makes the
- * first answer later. A slot that comes free goes straight to the next in
- * line, so a newcomer can never slip in ahead and make it five.
+ * once, shared by everything that asks it, in two lines.
+ *
+ * On the phone every question goes to expo-media-library, whose answers
+ * are worked out one at a time on the one queue all of Expo's native
+ * modules share. Two outstanding keep that queue busy while the last
+ * answer is read here; more would not make one answer sooner, only make
+ * every other module's call wait behind them. Asking it forty things at
+ * the same moment only makes the first answer later.
+ *
+ * The front line is the member's: the prints a chapter is dealing, and
+ * whatever a chapter being opened waits on. The back line is what the
+ * room reads for itself once the first print is up (the year index, the
+ * whole of On this day, the open year's months) and what it counts again
+ * when the library changes. A slot that comes free goes to the front line
+ * first, so a roll's next three prints never wait behind a hundred
+ * questions the member did not ask; then to the back line, in order. A
+ * newcomer can never slip in ahead of a waiting question and make it
+ * three.
  */
 export function gated(source: LibrarySource): LibrarySource {
+  return gateOf(source).front;
+}
+
+/**
+ * The same gate as `gated`, in the back line: for reading the room does
+ * of its own accord. A discovery function handed this asks everything it
+ * asks in the back line too.
+ */
+export function inBackground(source: LibrarySource): LibrarySource {
+  return gateOf(source).back;
+}
+
+function gateOf(source: LibrarySource): Gate {
   const known = gates.get(source);
   if (known) return known;
   let active = 0;
-  const waiting: (() => void)[] = [];
-  const take = (): Promise<void> => {
-    if (active < MAX_IN_FLIGHT) {
+  const waiting: Record<Lane, (() => void)[]> = { front: [], back: [] };
+  const take = (lane: Lane): Promise<void> => {
+    if (active < MAX_IN_FLIGHT && waiting.front.length === 0 && waiting.back.length === 0) {
       active += 1;
       return Promise.resolve();
     }
-    return new Promise((resolve) => waiting.push(resolve));
+    return new Promise((resolve) => waiting[lane].push(resolve));
   };
   const give = () => {
-    const next = waiting.shift();
+    const next = waiting.front.shift() ?? waiting.back.shift();
     if (next) next();
     else active -= 1;
   };
-  const ask = async <T>(question: () => Promise<T>): Promise<T> => {
-    await take();
-    try {
-      return await question();
-    } finally {
-      give();
-    }
+  const lane = (which: Lane): LibrarySource => {
+    const ask = async <T>(question: () => Promise<T>): Promise<T> => {
+      await take(which);
+      try {
+        return await question();
+      } finally {
+        give();
+      }
+    };
+    return {
+      count: (range, subtype) => ask(() => source.count(range, subtype)),
+      page: (request) => ask(() => source.page(request)),
+      oldest: () => ask(() => source.oldest()),
+    };
   };
-  const gate: LibrarySource = {
-    count: (range, subtype) => ask(() => source.count(range, subtype)),
-    page: (request) => ask(() => source.page(request)),
-    oldest: () => ask(() => source.oldest()),
-  };
+  const gate: Gate = { front: lane("front"), back: lane("back") };
   gates.set(source, gate);
-  gates.set(gate, gate);
+  gates.set(gate.front, gate);
+  gates.set(gate.back, gate);
   return gate;
+}
+
+/** The line a reader asks in: the back line when it was handed one, otherwise the front line of the library's gate. */
+function laneOf(source: LibrarySource): LibrarySource {
+  const known = gates.get(source);
+  return known && known.back === source ? known.back : gated(source);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +285,7 @@ export interface YearCount {
  * it again: that question sorts every photograph the library holds.
  */
 export async function yearIndex(source: LibrarySource, now = Date.now(), oldest?: number | null): Promise<YearCount[]> {
-  const lib = gated(source);
+  const lib = laneOf(source);
   const span = yearSpan(oldest !== undefined ? oldest : await lib.oldest(), now);
   if (!span) return [];
   const list = await inFilledDecades(lib, years(span.first, span.last));
@@ -247,7 +295,7 @@ export async function yearIndex(source: LibrarySource, now = Date.now(), oldest?
 
 /** One year's months, January first, each with its count; asked only for the year open. */
 export async function monthIndex(source: LibrarySource, year: number): Promise<number[]> {
-  const lib = gated(source);
+  const lib = laneOf(source);
   return Promise.all(Array.from({ length: 12 }, (_, m) => photographs(lib, monthRange(year, m))));
 }
 
@@ -415,7 +463,7 @@ export async function onThisDay(
   opts: { now?: number; years?: readonly number[] | null; maxReach?: DayReach; oldest?: number | null } = {},
 ): Promise<DayResult> {
   const now = opts.now ?? Date.now();
-  const lib = gated(source);
+  const lib = laneOf(source);
   const today = new Date(now);
   const list =
     opts.years != null
@@ -599,7 +647,7 @@ export class Surprise {
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(source: LibrarySource, opts: SurpriseOptions) {
-    this.lib = gated(source);
+    this.lib = laneOf(source);
     this.now = opts.now ?? Date.now();
     this.ceiling = this.now - REDISCOVERY_AGE_DAYS * DAY_MS;
     this.seenWithin = opts.seenWithin;
@@ -1067,7 +1115,7 @@ export class YearEdit {
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(source: LibrarySource, year: number, opts: YearEditOptions) {
-    this.lib = gated(source);
+    this.lib = laneOf(source);
     this.year = year;
     this.now = opts.now ?? Date.now();
     this.shifted = Boolean(opts.shifted);
