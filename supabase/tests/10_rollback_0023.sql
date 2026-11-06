@@ -21,6 +21,13 @@ select schemaname, indexname, indexdef from pg_indexes where schemaname in ('pub
 
 \ir 0023_rollback.sql
 
+-- Policies a later migration added (0028 on) are not 0023's to take back:
+-- its rollback leaves them as they are, and they are left out here.
+create temp table added_later as
+select a.schemaname, a.tablename, a.policyname from after_first a
+where not exists (select 1 from before_0023.policies b
+                   where b.schemaname = a.schemaname and b.tablename = a.tablename and b.policyname = a.policyname);
+
 insert into tests.results (name, expected, actual) values
   ('after the rollback, every policy is as 0001-0022 left it', '0',
    (select count(*)::text from (
@@ -29,11 +36,18 @@ insert into tests.results (name, expected, actual) values
        select schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check from pg_policies
         where schemaname in ('public', 'storage'))
       union all
-      (select schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check from pg_policies
+      (select schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check from pg_policies p
         where schemaname in ('public', 'storage')
+          and not exists (select 1 from added_later l
+                           where l.schemaname = p.schemaname and l.tablename = p.tablename and l.policyname = p.policyname)
        except
        select schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check from before_0023.policies)
     ) d)),
+  ('and the policies added after 0023 are still there, untouched', '0',
+   (select count(*)::text from (
+      select a.* from after_first a join added_later l using (schemaname, tablename, policyname)
+      except
+      select schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check from pg_policies) d)),
   ('and every index from before 0023 is there, unchanged', '0',
    (select count(*)::text from (
       select schemaname, indexname, indexdef from before_0023.indexes

@@ -237,8 +237,8 @@ try {
     "10_rollback_0023.sql",
     "11_block_privacy.sql",
     "12_feed_page.sql",
-    // Not a migration: a proposal waiting on the owner, tried and rolled back.
-    "13_proposed_0028.sql",
+    "13_photograph_rows_0028.sql",
+    "14_moderation_0029_0033.sql",
   ]) {
     if (res.status !== 0 || process.exitCode === 1) break;
     if (!existsSync(join(here, file))) continue;
@@ -258,7 +258,7 @@ try {
     }
   }
 
-  // The read-only script the owner runs on production after 0023-0027: it
+  // The read-only script the owner runs on production after 0023-0034: it
   // must run clean here, without a single error (the SQL editor shows only
   // the last statement's result, or only the error), and its one table,
   // the last statement's, must say ok on every row.
@@ -269,7 +269,7 @@ try {
     const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
     const failing = rows.filter((l) => !l.endsWith("|t"));
     const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l));
-    if (r.status !== 0 || rows.length !== 23 || failing.length > 0 || errors.length > 0) {
+    if (r.status !== 0 || rows.length !== 33 || failing.length > 0 || errors.length > 0) {
       console.log("FAILED");
       process.stdout.write(r.stdout ?? "");
       process.stderr.write(r.stderr ?? "");
@@ -303,6 +303,19 @@ try {
       } else {
         const note = (seeded.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
         if (note) console.log(note.replace(/^NOTICE:\s*/, "✓ "));
+        // 0034 over the seed as production has it: the house thumbnails.
+        process.stdout.write("· supabase/tests/15_seed_thumbnails_0034.sql … ");
+        const thumbs = psql(["-U", "vintage_owner", "-f", join(here, "15_seed_thumbnails_0034.sql")], { allowFail: true });
+        if (thumbs.status !== 0) {
+          console.log("FAILED");
+          process.stdout.write(thumbs.stdout ?? "");
+          process.stderr.write(thumbs.stderr ?? "");
+          process.exitCode = 1;
+        } else {
+          console.log("ok");
+          const passed = (thumbs.stderr ?? "").split("\n").find((l) => l.includes("checks passed"));
+          if (passed) console.log(passed.replace(/^NOTICE:\s*/, "✓ "));
+        }
       }
     }
   }

@@ -1,10 +1,11 @@
 // VINTAGE · push
 //
-// One function, three doors:
+// One function, four doors:
 //   { kind: "activity", id }  a new Activity row — like, comment, follow,
 //                             follow request, tag, message, admin note
 //   { kind: "post", id }      a new photograph — tell the people who follow
 //                             its author
+//   { kind: "report", id }    a report filed — tell the admins (0032)
 //   { kind: "memories" }      once a day: one of a member's own photographs
 //                             from this day in another year
 //
@@ -12,7 +13,7 @@
 // platform's JWT check admits it. Everything it sends is checked against
 // the recipient's preferences and stamped once: `activity.pushed_at`,
 // `posts.notified_at`, and a per-day guard for memories. Calling it again
-// with the same id sends nothing. Nothing here reads a phone's photo
+// with the same id sends nothing (a report: `reports.pushed_at`). Nothing here reads a phone's photo
 // library; a memory is a post, by its capture date.
 //
 // Copy is kept quiet on purpose: a name and what happened, no exclamation
@@ -71,7 +72,7 @@ const TICKETS_PER_WRITE = 500;
 /** How long one database request may take before it is given up on. */
 const DB_TIMEOUT_MS = 10_000;
 
-type Kind = "activity" | "post" | "memories";
+type Kind = "activity" | "post" | "report" | "memories";
 
 interface Prefs {
   likes: boolean;
@@ -117,6 +118,8 @@ Deno.serve(async (req) => {
         return json(await handleActivity(String(payload.id ?? "")));
       case "post":
         return json(await handlePost(String(payload.id ?? "")));
+      case "report":
+        return json(await handleReport(String(payload.id ?? "")));
       case "memories":
         return json(await handleMemories());
       default:
@@ -174,7 +177,7 @@ async function nameOf(userId: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// the three doors
+// the doors
 // ---------------------------------------------------------------------------
 
 async function handleActivity(id: string): Promise<unknown> {
@@ -341,6 +344,47 @@ async function handlePost(id: string): Promise<unknown> {
   }
   if (total.followers === 0) return { sent: 0, reason: "no followers" };
   return { sent: total.sent, failed: total.failed };
+}
+
+/**
+ * A report has been filed: the admins are told, so the 24 hours the Terms
+ * promise start with someone knowing. Claimed once, as an Activity row is
+ * (reports.pushed_at, 0032), and only while the report is open. The
+ * notice says nothing of what was reported or by whom: a lock screen is
+ * not the place for it, and the Reports screen is where the work is. Every
+ * approved admin's devices are told, whatever their other preferences
+ * (there is no setting for this; it is the job). An admin with no device
+ * registered is not reached here.
+ */
+async function handleReport(id: string): Promise<unknown> {
+  if (!id) return { sent: 0, reason: "no id" };
+  const { data: claimed } = await admin
+    .from("reports")
+    .update({ pushed_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("pushed_at", null)
+    .eq("status", "open")
+    .select("id")
+    .maybeSingle();
+  if (!claimed) return { sent: 0, reason: "already sent or unknown" };
+
+  const { data: admins } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("role", "admin")
+    .eq("status", "approved")
+    .limit(ROWS_PER_READ);
+  const ids = (admins ?? []).map((a) => a.id as string);
+  if (ids.length === 0) return { sent: 0, reason: "no admins" };
+
+  const tokens = await tokensFor(ids);
+  const messages: Message[] = [];
+  for (const uid of ids) {
+    for (const to of tokens.get(uid) ?? []) {
+      messages.push({ to, body: "A report is waiting.", data: { kind: "report", route: "/admin/reports" }, sound: "default" });
+    }
+  }
+  return send(messages);
 }
 
 /**

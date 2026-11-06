@@ -259,7 +259,8 @@ export type ActivityRow = {
 
 export type ReportRow = {
   id: string;
-  reporter_id: string;
+  /** Null once the member who filed it has deleted their account (0031): the report stays. */
+  reporter_id: string | null;
   target_type: ReportTargetType;
   post_id: string | null;
   comment_id: string | null;

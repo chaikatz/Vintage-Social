@@ -413,12 +413,19 @@ insert into tests.results (name, expected, actual) values
                         where p.schemaname = b.schemaname and p.tablename = b.tablename
                           and p.policyname = b.policyname and p.permissive = b.permissive
                           and p.cmd = b.cmd and p.roles = b.roles))),
+  -- Bar those later migrations made, each named here (0028 on; a test in
+  -- tests/policies-read-once.test.ts keeps this list and them the same).
   ('and no policy was added', '0',
    (select count(*)::text from pg_policies p
      where p.schemaname in ('public', 'storage')
        and not exists (select 1 from before_0023.policies b
                         where b.schemaname = p.schemaname and b.tablename = p.tablename
-                          and b.policyname = p.policyname))),
+                          and b.policyname = p.policyname)
+       and (p.tablename, p.policyname) not in (values
+         ('comments', 'comments: only with their photograph'),
+         ('likes', 'likes: only with their photograph'),
+         ('post_tags', 'post_tags: only with their photograph'),
+         ('posts', 'posts: not what I reported')))),
   ('every index that was there before 0023 is there, unchanged', '0',
    (select count(*)::text from before_0023.indexes b
      where not exists (select 1 from pg_indexes i
@@ -454,11 +461,15 @@ insert into tests.results (name, expected, actual) values
   -- /rest/v1/rpc/<name>. A SECURITY DEFINER function there that a member
   -- may call answers past row-level security: my_blockers() in public
   -- would hand a member the ids of everyone who blocked them.
+  -- (A trigger function a later migration adds, which nobody may call,
+  -- is not published: on_report_push, 0032.)
   ('0023 puts no SECURITY DEFINER function in public, where the API publishes it', '<none>',
    coalesce((select string_agg(p.oid::regprocedure::text, ', ' order by 1)
              from pg_proc p join pg_namespace n on n.oid = p.pronamespace
              where n.nspname = 'public' and p.prosecdef
-               and p.oid::regprocedure::text not in (select signature from before_0023.functions)), '<none>')),
+               and p.oid::regprocedure::text not in (select signature from before_0023.functions)
+               and (has_function_privilege('authenticated', p.oid, 'execute')
+                    or has_function_privilege('anon', p.oid, 'execute'))), '<none>')),
   ('its three helpers live in private, run as their owner, members only', '3',
    (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'private' and p.prosecdef
@@ -472,13 +483,20 @@ insert into tests.results (name, expected, actual) values
              where n.nspname = 'private'), false)::text);
 
 -- Put back the policies 0023 replaced, as they were, and any function a
--- later migration has changed since; then ask everything again.
+-- later migration has changed since; then ask everything again. A policy
+-- a later migration added (0028 on) is not one 0023 replaced: it stays,
+-- in both runs alike.
 do $restore$
 declare
   p record;
   f record;
 begin
-  for p in select * from pg_policies where schemaname in ('public', 'storage') loop
+  for p in
+    select c.* from pg_policies c
+    where c.schemaname in ('public', 'storage')
+      and exists (select 1 from before_0023.policies b
+                   where b.schemaname = c.schemaname and b.tablename = c.tablename and b.policyname = c.policyname)
+  loop
     execute format('drop policy %I on %I.%I', p.policyname, p.schemaname, p.tablename);
   end loop;
   for p in select * from before_0023.policies loop

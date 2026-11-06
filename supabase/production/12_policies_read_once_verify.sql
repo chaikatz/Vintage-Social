@@ -1,12 +1,15 @@
--- VINTAGE · production · verify 0023-0027 (policies read the caller once;
--- block checks answer only for the caller; the home feed in one piece;
--- a photograph's followers in order; Expo's receipts)
+-- VINTAGE · production · verify 0023-0034 (policies read the caller once;
+-- block checks answer only for the caller; the home feed in one piece,
+-- paged by cursor; a photograph's followers in order; Expo's receipts;
+-- comments, likes and tags only with their photograph; decisions reach
+-- the profile; a removal once; reports outlive their reporter and reach
+-- the admins; what a member reports leaves their view; the house
+-- thumbnails at a standard width)
 --
--- Run after applying, in order, supabase/migrations/
--- 0023_policies_read_once.sql, 0024_block_checks_answer_for_the_caller.sql,
--- 0025_feed_page.sql, 0026_followers_in_order.sql and
--- 0027_push_tickets.sql. Paste the whole file into the SQL editor and run
--- it once. Read-only: the block at the start only plans a query (EXPLAIN
+-- Run after applying, in number order, every file in supabase/migrations
+-- from 0023_policies_read_once.sql to
+-- 0034_seed_thumbnails_at_a_standard_width.sql. Paste the whole file into
+-- the SQL editor and run it once. Read-only: the block at the start only plans a query (EXPLAIN
 -- without ANALYZE runs nothing) as a member and keeps what it saw in a
 -- setting of this session, and the one SELECT at the end reads the
 -- catalogues and that setting. Nothing is written. The same script runs
@@ -18,8 +21,11 @@
 -- what it should be. Every `ok` must read true. If any does not, do not
 -- ship the build that relies on them; the rollbacks are
 -- supabase/tests/0023_rollback.sql and the notes at the top of 0024-0027,
--- and none changes any member's data. Run before the migrations, it runs
--- just the same and says false where they have not been applied.
+-- and none of 0023-0028 or 0030-0033 changes any member's data (0029
+-- repairs profiles left at "applied", 0034 the house photographs'
+-- thumbnails; each says how to put them back). Run before the
+-- migrations, it runs just the same and says false where they have not
+-- been applied.
 
 -- What a member's Explore is planned as, now: planned only, as the first
 -- approved member, and the role it takes is given back before it ends.
@@ -97,8 +103,9 @@ with checks as (
     and coalesce(qual, '') || ' ' || coalesce(with_check, '') ~ 'blocked_(between|by)\('
   union all
   -- 3. Every policy is still there: 70 on public, 8 on storage.objects,
-  --    as before 0023 (0023 replaces policies; it adds and removes none).
-  select 4, 'policies on public', count(*)::text, '70'
+  --    as before 0023 (0023 replaces policies; it adds and removes none),
+  --    and the four restrictive ones 0028 and 0033 add: 74.
+  select 4, 'policies on public', count(*)::text, '74'
   from pg_policies where schemaname = 'public'
   union all
   select 5, 'policies on storage.objects (VINTAGE''s own)', count(*)::text, '8'
@@ -106,7 +113,7 @@ with checks as (
   where schemaname = 'storage' and tablename = 'objects'
     and policyname ~ '^(avatars|media): '
   union all
-  select 6, 'restrictive policies (blocking)', count(*)::text, '14'
+  select 6, 'restrictive policies (blocking, 0028, 0033)', count(*)::text, '18'
   from pg_policies where schemaname = 'public' and permissive = 'RESTRICTIVE'
   union all
   -- 4. 0023's three helpers: in the schema private, which the API does not
@@ -224,6 +231,79 @@ with checks as (
   union all
   select 23, 'Explore as a member: the follows check need not read all of follows',
          coalesce(nullif(split_part(coalesce(current_setting('vintage.verify_plan', true), ''), '|', 4), ''), 'not planned'), 'yes'
+  union all
+  -- 13. 0025, as it is now: the next page after the last post held, no offset.
+  select 24, '0025: feed_page takes a cursor (time, id), and no offset version is left',
+         coalesce(string_agg(pg_get_function_identity_arguments(p.oid), ' | '), 'none'),
+         'p_limit integer, p_before_at timestamp with time zone, p_before_id uuid'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'feed_page'
+  union all
+  -- 14. 0028: comments, likes and tags only with their photograph.
+  select 25, '0028: comments, likes, tags read only with their photograph (restrictive, reader once)', count(*)::text, '3'
+  from pg_policies
+  where schemaname = 'public' and permissive = 'RESTRICTIVE' and cmd = 'SELECT'
+    and policyname in ('comments: only with their photograph', 'likes: only with their photograph',
+                       'post_tags: only with their photograph')
+    and qual ~ 'EXISTS' and qual ~ '\( SELECT auth\.uid\(\) AS uid\)'
+  union all
+  -- 15. 0029: a waitlist or a rejection is written to the profile, and no
+  --     profile is left at "applied" after its application was decided.
+  select 26, '0029: decide_application writes a waitlist or rejection to the profile', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'decide_application'
+    and p.prosrc ~ 'p_decision in \(''waitlisted'', ''rejected''\)'
+    and p.prosrc ~ 'status in \(''applied'', ''waitlisted'', ''rejected''\)'
+  union all
+  select 27, '0029: profiles at applied whose latest application was decided', count(*)::text, '0'
+  from public.profiles pr
+  join lateral (select a.status from public.applications a where a.user_id = pr.id
+                order by a.created_at desc, a.id desc limit 1) last on true
+  where pr.status = 'applied' and last.status in ('waitlisted', 'rejected')
+  union all
+  -- 16. 0030: removing what is removed already records and tells nothing.
+  select 28, '0030: admin_remove_post / admin_remove_comment stop when removed already', count(*)::text, '2'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname in ('admin_remove_post', 'admin_remove_comment')
+    and p.prosrc ~ 'removed_at is null;\s+if not found then'
+  union all
+  -- 17. 0031: a report outlives its reporter.
+  select 29, '0031: reports.reporter_id set to null when the reporter goes, and may be',
+         coalesce((select c.confdeltype::text from pg_constraint c
+                    where c.conname = 'reports_reporter_id_fkey' and c.conrelid = 'public.reports'::regclass), 'none')
+         || ',' || coalesce((select is_nullable from information_schema.columns
+                    where table_schema = 'public' and table_name = 'reports' and column_name = 'reporter_id'), 'none'),
+         'n,YES'
+  union all
+  -- 18. 0032: a report filed asks the push function to tell the admins.
+  select 30, '0032: report trigger present, its function nobody''s to call, reports.pushed_at there', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  where t.tgname = 'reports_push_trigger' and t.tgrelid = 'public.reports'::regclass and not t.tgisinternal
+    and f.proname = 'on_report_push' and f.prosecdef
+    and not has_function_privilege('authenticated', f.oid, 'execute')
+    and not has_function_privilege('anon', f.oid, 'execute')
+    and exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'reports' and column_name = 'pushed_at')
+  union all
+  -- 19. 0033: a photograph a member reports leaves their own view.
+  select 31, '0033: what a member reports leaves their view (restrictive, read once a statement)', count(*)::text, '1'
+  from pg_policies
+  where schemaname = 'public' and tablename = 'posts' and policyname = 'posts: not what I reported'
+    and permissive = 'RESTRICTIVE' and cmd = 'SELECT'
+    and qual ~ '<> ALL' and qual ~ 'reporter_id = \( SELECT auth\.uid\(\) AS uid\)'
+  union all
+  -- 20. 0034: the house photographs' thumbnails at a Wikimedia standard width.
+  select 32, '0034: house photographs whose thumbnail is still the full Wikimedia picture', count(*)::text, '0'
+  from public.posts p join public.profiles a on a.id = p.author_id
+  where a.is_house and p.thumb_path = p.media_path
+    and p.media_path ~ '^https://(thumb|upload)\.wikimedia\.org/'
+  union all
+  select 33, '0034: house thumbnails at a width Wikimedia does not serve', count(*)::text, '0'
+  from public.posts p join public.profiles a on a.id = p.author_id
+  where a.is_house and p.thumb_path ~ '^https://(thumb|upload)\.wikimedia\.org/.*/[0-9]+px-[^/]+$'
+    and substring(p.thumb_path from '/([0-9]+)px-[^/]+$')::int
+        not in (20, 40, 60, 120, 250, 330, 500, 960, 1280, 1920, 3840)
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks
