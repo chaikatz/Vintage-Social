@@ -163,6 +163,17 @@ describe("the Settings screen", () => {
     expect(fn).toMatch(/\.eq\("role", "admin"\)\s*\.neq\("id", myId\);\s*if \(error\) throw error;\s*return \(count \?\? 0\) > 0;/);
   });
 
+  it("says truthfully what a failed deletion has left", () => {
+    const del = settings.slice(settings.indexOf("setDeleting(true);"), settings.indexOf("{ text: \"Keep my account\""));
+    const check = del.slice(0, del.indexOf("await deleteMyAccount(userId);"));
+    const after = del.slice(del.indexOf("await deleteMyAccount(userId);"));
+    // A failed admin check has removed nothing, and says so.
+    expect(check).toMatch(/\} catch \(err\) \{\s*setDeleting\(false\);\s*showAlert\("Couldn’t delete the account", errorMessage\(err, "Nothing has been deleted\.[^"]*"\)\);\s*return;\s*\}/);
+    // A failure once deleteMyAccount has begun may come after the files are gone (it removes them first).
+    expect(after).toMatch(/\} catch \(err\) \{\s*setDeleting\(false\);\s*showAlert\(\s*"Couldn’t delete the account",\s*errorMessage\(\s*err,\s*"[^"]*photographs may already have been removed[^"]*",?\s*\),?\s*\);/);
+    expect(after).not.toMatch(/Your account is still here\. Try again in a moment\./);
+  });
+
   it("says where to write when the phone has no mail account", () => {
     expect(settings).toMatch(/Linking\.openURL\(supportMailto\("VINTAGE support"\) \?\? ""\)\.catch\(/);
   });

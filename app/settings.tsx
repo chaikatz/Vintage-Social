@@ -250,14 +250,29 @@ export default function Settings() {
                       );
                       return;
                     }
+                  } catch (err) {
+                    // Asked before anything is removed: nothing has changed.
+                    setDeleting(false);
+                    showAlert("Couldn’t delete the account", errorMessage(err, "Nothing has been deleted. Try again in a moment."));
+                    return;
+                  }
+                  try {
                     await deleteMyAccount(userId);
                     queryClient.clear();
                     await signOut();
                   } catch (err) {
                     setDeleting(false);
+                    // deleteMyAccount removes the files before it asks the
+                    // database to close the account, so a failure here
+                    // (no signal, a timeout) can come after the photographs
+                    // have gone. It used to say only that the account was
+                    // still here. A second try finishes the deletion.
                     showAlert(
                       "Couldn’t delete the account",
-                      errorMessage(err, "Your account is still here. Try again in a moment."),
+                      errorMessage(
+                        err,
+                        "Your account is still here, but your photographs may already have been removed. Try again to finish deleting it.",
+                      ),
                     );
                   }
                 },
