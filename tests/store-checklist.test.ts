@@ -147,6 +147,19 @@ describe("the house accounts, as Apple is told about them", () => {
     expect(src).not.toMatch(/all public domain or CC0/);
   });
 
+  it("the house seed's SQL and its README name the Unsplash Licence beside public domain and CC0", () => {
+    // The seed's own header is the one seed/build.mjs writes, so a rebuild leaves it as it is.
+    const seed = read("supabase/production/08_house_accounts.sql");
+    expect(seed).toContain("-- The photographs are public domain, CC0 or under the Unsplash Licence —");
+    expect(read("seed/build.mjs")).toContain("\n-- The photographs are public domain, CC0 or under the Unsplash Licence —\n");
+    const readme = flat(read("supabase/production/README.md"));
+    expect(readme).toContain("The photographs are public domain, CC0 or under the Unsplash Licence.");
+    expect(readme).toContain('see "What is still yours to decide" in `APP_STORE_LAUNCH.md`');
+    expect(doc()).toContain("**What is still yours to decide**");
+    // They used to say every photograph was public domain or CC0.
+    for (const text of [seed, readme]) expect(text).not.toMatch(/(?:Every photograph is|photographs are) public domain or CC0/);
+  });
+
   it("the review notes say the accounts the reviewer follows are the club's own, not people", () => {
     expect(read("supabase/migrations/0011_house_accounts.sql")).toMatch(/add column if not exists is_house/);
     const notes = flat(reviewNotes());
