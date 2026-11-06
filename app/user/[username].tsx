@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
@@ -115,7 +116,7 @@ export default function UserProfile() {
       // Your own following count lives on your profile row.
       refreshProfile().catch(() => undefined);
     },
-    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const message = async () => {
@@ -124,7 +125,7 @@ export default function UserProfile() {
       const conversationId = await openConversation(myId, profile.id);
       router.push(`/messages/${conversationId}`);
     } catch (err) {
-      showAlert("Couldn’t open the conversation", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t open the conversation", errorMessage(err, "Try again in a moment."));
     }
   };
 
@@ -146,7 +147,7 @@ export default function UserProfile() {
       else await blockMember(profile.id);
     },
     onSuccess: afterBlockChange,
-    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   if (!profile) {

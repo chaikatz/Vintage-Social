@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import Feather from "@expo/vector-icons/Feather";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
@@ -144,7 +145,7 @@ export default function Export() {
             setToken(null);
             setCopied(false);
           } catch (err) {
-            showAlert("That didn’t work", err instanceof Error ? err.message : String(err));
+            showAlert("That didn’t work", errorMessage(err, "The link is still on. Try again in a moment."));
           }
         },
       },
@@ -177,7 +178,7 @@ export default function Export() {
       }
     } catch (err) {
       setStage(null);
-      showAlert("Couldn’t export", err instanceof Error ? err.message : String(err));
+      showAlert("Couldn’t export", errorMessage(err, "Nothing was shared. Try again in a moment."));
     } finally {
       sharing.current = false;
     }

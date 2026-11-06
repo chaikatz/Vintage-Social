@@ -12,6 +12,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
@@ -73,8 +74,9 @@ export default function Invitations() {
   }, [link.data?.slug]);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["invite-link", myId] });
+  // The words our own SQL raised (a suffix taken, or reserved) are shown; never the database's own.
   const fail = (err: unknown) =>
-    showAlert("That didn't work", err instanceof Error ? err.message : String(err));
+    showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment."));
 
   const rename = useMutation({
     mutationFn: setInviteSlug,

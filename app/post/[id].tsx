@@ -20,6 +20,7 @@ import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 
 // A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
 export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
@@ -56,7 +57,7 @@ export default function PostDetail() {
       queryClient.invalidateQueries({ queryKey: ["post-tags", id] });
       queryClient.invalidateQueries({ queryKey: ["tagged-posts", userId] });
     },
-    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const postQ = useQuery({

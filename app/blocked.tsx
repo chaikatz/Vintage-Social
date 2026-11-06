@@ -2,6 +2,7 @@ import React from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
@@ -31,7 +32,7 @@ export default function Blocked() {
       queryClient.invalidateQueries({ queryKey: ["blocked", userId] });
       queryClient.invalidateQueries();
     },
-    onError: (err) => showAlert("Couldn’t unblock", err instanceof Error ? err.message : String(err)),
+    onError: (err) => showAlert("Couldn’t unblock", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   if (blocked.isError && !blocked.data) {

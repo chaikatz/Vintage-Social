@@ -13,6 +13,7 @@ import { decideFollowRequest, fetchPendingRequests } from "@/api/profiles";
 import type { ProfileRow } from "@/types/db";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 
 // A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
 export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
@@ -63,7 +64,7 @@ export default function Requests() {
     },
     onError: (err, { follower }, ctx) => {
       queryClient.setQueryData<ProfileRow[]>(key, (rows) => withRowBack(rows, follower, ctx?.order));
-      showAlert("That didn’t work", err instanceof Error ? err.message : String(err));
+      showAlert("That didn’t work", errorMessage(err, "Nothing changed. Try again in a moment."));
     },
     onSettled: (_done, _err, { follower }) => {
       setDeciding((ids) => withoutIds(ids, [follower.id]));
