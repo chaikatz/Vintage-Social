@@ -102,8 +102,12 @@ export default function AdminApplications() {
         keyExtractor={(a) => a.id}
         refreshing={apps.isRefetching}
         onRefresh={() => apps.refetch()}
+        // Not while any read is on its way: asked for during the reread
+        // that follows every decision, the next page cancelled that reread
+        // (fetchNextPage cancels by default), and what other admins did
+        // since stayed off the list until the next one.
         onEndReached={() => {
-          if (apps.hasNextPage && !apps.isFetchingNextPage && !apps.isFetchNextPageError) apps.fetchNextPage();
+          if (apps.hasNextPage && !apps.isFetching && !apps.isFetchNextPageError) apps.fetchNextPage();
         }}
         onEndReachedThreshold={1}
         ListFooterComponent={

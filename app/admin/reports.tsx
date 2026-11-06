@@ -189,8 +189,12 @@ export default function AdminReports() {
         keyExtractor={(r) => r.id}
         refreshing={reports.isRefetching}
         onRefresh={() => reports.refetch()}
+        // Not while any read is on its way: asked for during the reread
+        // that follows every decision, the next page cancelled that reread
+        // (fetchNextPage cancels by default), and what other admins did
+        // since stayed off the list until the next one.
         onEndReached={() => {
-          if (reports.hasNextPage && !reports.isFetchingNextPage && !reports.isFetchNextPageError) reports.fetchNextPage();
+          if (reports.hasNextPage && !reports.isFetching && !reports.isFetchNextPageError) reports.fetchNextPage();
         }}
         onEndReachedThreshold={1}
         ListFooterComponent={

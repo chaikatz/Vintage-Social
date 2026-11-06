@@ -95,8 +95,10 @@ describe("the applications and reports screens", () => {
           `const ${name} = useInfiniteQuery\\(\\{\\s*queryKey: \\["admin-(apps|reports)", tab\\],\\s*queryFn: \\(\\{ pageParam \\}\\) => ${fetcher}\\(tab, pageParam\\),\\s*initialPageParam: null as AdminCursor \\| null,\\s*getNextPageParam: \\(last\\) => nextAdminCursor\\(last\\),\\s*enabled: isAdmin,\\s*\\}\\);`,
         ),
       );
+      // Not while any read is on its way (TanStack's own pattern): a next page asked for during the
+      // reread after a decision cancels that reread. Nor again after it failed: the foot offers Try again.
       expect(src).toContain(
-        `onEndReached={() => {\n          if (${name}.hasNextPage && !${name}.isFetchingNextPage && !${name}.isFetchNextPageError) ${name}.fetchNextPage();\n        }}`,
+        `onEndReached={() => {\n          if (${name}.hasNextPage && !${name}.isFetching && !${name}.isFetchNextPageError) ${name}.fetchNextPage();\n        }}`,
       );
       expect(src).toContain(`${name}.isFetchNextPageError ? <LoadFailed what="the rest" onRetry={() => ${name}.fetchNextPage()} /> : null`);
       // Every edit of the cache goes through the page helpers; none treats it as one list.
