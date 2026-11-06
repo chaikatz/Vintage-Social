@@ -925,10 +925,22 @@ export function demoDecideApplication(applicationId: string, decision: Exclude<A
 }
 
 export function demoFetchReports(status: ReportStatus) {
+  const nameOf = (id: string | null) => {
+    const p = id ? state.profiles.find((x) => x.id === id) : undefined;
+    return p ? { id: p.id, username: p.username } : null;
+  };
   return state.reports
     .filter((r) => r.status === status)
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map((r) => ({ ...clone(r), reporter: authorRef(r.reporter_id) }));
+    .map((r) => {
+      const c = r.comment_id ? state.comments.find((x) => x.id === r.comment_id) : undefined;
+      return {
+        ...clone(r),
+        reporter: r.reporter_id ? authorRef(r.reporter_id) : null,
+        comment: c ? { id: c.id, body: c.body, post_id: c.post_id, removed_at: c.removed_at, author: nameOf(c.author_id) } : null,
+        member: nameOf(r.profile_id),
+      };
+    });
 }
 
 export function demoResolveReport(reportId: string, status: Exclude<ReportStatus, "open">, resolution: string): void {

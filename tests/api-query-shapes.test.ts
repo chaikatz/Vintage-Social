@@ -64,6 +64,7 @@ function matches(row: Row, column: string, filter: string): boolean {
   if (op === "lt") return String(cell) < value;
   if (op === "lte") return String(cell) <= value;
   if (op === "gt") return String(cell) > value;
+  if (op === "gte") return String(cell) >= value;
   if (op === "in") return inList(raw).includes(String(cell));
   if (op === "is") return value === "null" ? cell == null : String(cell) === value;
   throw new Error(`filter not modelled: ${column}=${filter}`);
@@ -156,6 +157,9 @@ const LINKS: Record<string, { child: string; parent: string; childColumn: string
   posts_author_id_fkey: { child: "posts", parent: "profiles", childColumn: "author_id", parentColumn: "id" },
   follows_follower_id_fkey: { child: "follows", parent: "profiles", childColumn: "follower_id", parentColumn: "id" },
   follows_followee_id_fkey: { child: "follows", parent: "profiles", childColumn: "followee_id", parentColumn: "id" },
+  reports_reporter_id_fkey: { child: "reports", parent: "profiles", childColumn: "reporter_id", parentColumn: "id" },
+  reports_profile_id_fkey: { child: "reports", parent: "profiles", childColumn: "profile_id", parentColumn: "id" },
+  reports_comment_id_fkey: { child: "reports", parent: "comments", childColumn: "comment_id", parentColumn: "id" },
 };
 
 function answer(url: URL): Row[] {
@@ -202,7 +206,15 @@ function answer(url: URL): Row[] {
           return copy;
         });
       } else {
-        out[e.key] = (h.tables[link.parent] ?? []).find((p) => p[link.parentColumn] === row[link.childColumn]) ?? null;
+        const parent = (h.tables[link.parent] ?? []).find((p) => p[link.parentColumn] === row[link.childColumn]) ?? null;
+        const copy: Row | null = parent ? { ...parent } : null;
+        // Its own to-one embeds (a reported comment's author).
+        for (const inner of copy ? embeds(e.inner) : []) {
+          const innerLink = inner.fk ? LINKS[inner.fk] : null;
+          if (!innerLink) throw new Error(`embed not modelled: ${inner.table}`);
+          copy![inner.key] = (h.tables[innerLink.parent] ?? []).find((p) => p[innerLink.parentColumn] === copy![innerLink.childColumn]) ?? null;
+        }
+        out[e.key] = copy;
       }
     }
     return out;
@@ -219,6 +231,17 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
   // The ceiling the gateway sets on a request line.
   if (url.href.length > 8192) return new Response("URI Too Long", { status: 414 });
   if (url.pathname === "/rest/v1/rpc/feed_page") return feedPage(url, JSON.parse(String(init?.body ?? "{}")));
+  // A count with no rows (select(…, { count: "exact", head: true })): the
+  // number comes back in Content-Range, and no row does.
+  if (init?.method === "HEAD") {
+    const table = url.pathname.replace("/rest/v1/", "");
+    const all = new URL(url.href);
+    all.searchParams.delete("limit");
+    const n = (h.tables[table] ?? []).filter((r) =>
+      [...all.searchParams].every(([k, v]) => k === "select" || matches(r, k, v)),
+    ).length;
+    return new Response(null, { status: 200, headers: { "Content-Range": `*/${n}` } });
+  }
   return new Response(JSON.stringify(answer(url)), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
@@ -264,6 +287,7 @@ type FeedCursor = import("@/api/posts").FeedCursor;
 const tags = await import("@/api/tags");
 const messages = await import("@/api/messages");
 const profiles = await import("@/api/profiles");
+const moderation = await import("@/api/moderation");
 const { readInChunks, chunked, IDS_PER_REQUEST } = await import("@/api/batch");
 
 const ME = "00000000-0000-4000-8000-000000000001";
@@ -852,5 +876,113 @@ describe("followers and following", () => {
     expect(list.map((p) => p.id)).toEqual(
       pending.map((f) => f.follower_id).filter((m) => h.tables.profiles.some((p) => p.id === m)),
     );
+  });
+});
+
+describe("the admin's queues", () => {
+  const ADMIN = id("a0", 0);
+  function queue(n: number) {
+    h.tables.profiles = [ADMIN, ME].map((p, i) => ({ id: p, username: i ? "me" : "admin" }));
+    const post = id("a1", 0);
+    h.tables.comments = [{ id: id("a2", 0), post_id: post, author_id: ME, body: "what was said", removed_at: null }];
+    h.tables.reports = Array.from({ length: n }, (_, i) => ({
+      id: id("a3", i),
+      reporter_id: i % 7 === 3 ? null : ADMIN,
+      target_type: i % 3 === 0 ? "comment" : i % 3 === 1 ? "profile" : "post",
+      post_id: i % 3 === 2 ? post : null,
+      comment_id: i % 3 === 0 ? id("a2", 0) : null,
+      profile_id: i % 3 === 1 ? ME : null,
+      reason: "Spam or scam",
+      status: i % 4 === 0 ? "resolved" : "open",
+      // Several filed in the same second.
+      created_at: at(Math.floor(i / 2)),
+    }));
+    h.tables.applications = Array.from({ length: n }, (_, i) => ({
+      id: id("a4", i), user_id: id("a5", i), status: i % 5 === 0 ? "approved" : "pending", created_at: at(Math.floor(i / 3)),
+    }));
+  }
+
+  async function walkReports(status: "open" | "resolved") {
+    const ids: string[] = [];
+    let after: import("@/api/moderation").AdminCursor | null = null;
+    for (let i = 0; i < 100; i++) {
+      const page = await moderation.fetchReports(status, after);
+      ids.push(...page.map((r) => r.id));
+      const next = moderation.nextAdminCursor(page);
+      if (!next) break;
+      after = next;
+    }
+    return ids;
+  }
+
+  it("open reports come fifty at a time, oldest first, every one once, past a thousand", async () => {
+    queue(1500);
+    const all = await walkReports("open");
+    const truth = h.tables.reports
+      .filter((r) => r.status === "open")
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id)))
+      .map((r) => r.id);
+    expect(all).toEqual(truth);
+    expect(all.length).toBeGreaterThan(1000);
+    const reads = h.requests.filter((r) => r.url.pathname === "/rest/v1/reports");
+    for (const r of reads) {
+      expect(r.url.searchParams.get("limit")).toBe("50");
+      expect(r.url.searchParams.get("order")).toBe("created_at.asc,id.asc");
+    }
+    expect(reads[1].url.searchParams.get("created_at")).toMatch(/^gte\./);
+    expect(reads[1].url.searchParams.get("or")).toMatch(/^\(created_at\.gt\."[^"]+",and\(created_at\.eq\."[^"]+",id\.gt\."[0-9a-f-]+"\)\)$/);
+  });
+
+  it("decided reports come newest first, so the latest is what a page shows", async () => {
+    queue(400);
+    const all = await walkReports("resolved");
+    const truth = h.tables.reports
+      .filter((r) => r.status === "resolved")
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b.id).localeCompare(String(a.id)))
+      .map((r) => r.id);
+    expect(all).toEqual(truth);
+    expect(h.requests[0].url.searchParams.get("order")).toBe("created_at.desc,id.desc");
+  });
+
+  it("a comment report brings the comment, its photograph and its author; a member report the member's name", async () => {
+    queue(12);
+    const page = await moderation.fetchReports("open");
+    expect(h.requests[0].url.searchParams.get("select")).toBe(
+      "*,reporter:profiles!reports_reporter_id_fkey(id,username)" +
+        ",comment:comments!reports_comment_id_fkey(id,body,post_id,removed_at,author:profiles!comments_author_id_fkey(id,username))" +
+        ",member:profiles!reports_profile_id_fkey(id,username)",
+    );
+    const onComment = page.find((r) => r.target_type === "comment")!;
+    expect(onComment.comment).toMatchObject({ body: "what was said", post_id: id("a1", 0), author: { username: "me" } });
+    const onMember = page.find((r) => r.target_type === "profile")!;
+    expect(onMember.member).toMatchObject({ id: ME, username: "me" });
+    // A report whose reporter has since gone (0031) still comes, with nobody named.
+    expect(page.some((r) => r.reporter === null)).toBe(true);
+  });
+
+  it("applications waiting come fifty at a time, oldest first", async () => {
+    queue(300);
+    const page = await moderation.fetchApplications("pending");
+    expect(page.length).toBe(50);
+    expect(h.requests[0].url.searchParams.get("limit")).toBe("50");
+    expect(h.requests[0].url.searchParams.get("order")).toBe("created_at.asc,id.asc");
+    const next = await moderation.fetchApplications("pending", moderation.nextAdminCursor(page)!);
+    expect(next.some((a) => page.some((b) => b.id === a.id))).toBe(false);
+    await moderation.fetchApplications("approved");
+    expect(h.requests[2].url.searchParams.get("order")).toBe("created_at.desc,id.desc");
+  });
+
+  it("the dashboard counts what waits without reading a row of it", async () => {
+    queue(1500);
+    expect(await moderation.countReports("open")).toBe(h.tables.reports.filter((r) => r.status === "open").length);
+    expect(await moderation.countApplications("pending")).toBe(h.tables.applications.filter((a) => a.status === "pending").length);
+    for (const r of h.requests) {
+      expect(r.method).toBe("HEAD");
+      expect(r.url.searchParams.get("select")).toBe("id");
+    }
+    const dashboard = readFileSync(join(__dirname, "..", "app", "admin", "index.tsx"), "utf8");
+    expect(dashboard).toMatch(/queryFn: \(\) => countApplications\("pending"\)/);
+    expect(dashboard).toMatch(/queryFn: \(\) => countReports\("open"\)/);
+    expect(dashboard).not.toMatch(/fetchApplications|fetchReports|\.length \?\? 0/);
   });
 });

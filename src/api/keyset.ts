@@ -23,24 +23,27 @@ export function quoted(value: string): string {
   return `"${value.replace(/["\\]/g, "\\$&")}"`;
 }
 
-/** The filters of the rows after `cursor`, for a query's or=(). */
-export function afterCursor(timeColumn: string, idColumn: string, cursor: Cursor): string {
+/**
+ * The filters of the rows after `cursor`, for a query's or=(): older (or
+ * as old, with a smaller id) for a list newest first; newer for one
+ * oldest first.
+ */
+export function afterCursor(timeColumn: string, idColumn: string, cursor: Cursor, ascending = false): string {
   const at = quoted(cursor.at);
-  return `${timeColumn}.lt.${at},and(${timeColumn}.eq.${at},${idColumn}.lt.${quoted(cursor.id)})`;
+  const past = ascending ? "gt" : "lt";
+  return `${timeColumn}.${past}.${at},and(${timeColumn}.eq.${at},${idColumn}.${past}.${quoted(cursor.id)})`;
 }
 
 /**
- * The rows after `cursor` on a PostgREST query: `time <= at` on its own,
- * which an index on the time can start from, and the exact condition.
- * Shaped as a generic over the two methods it calls, so it fits any
- * table's query builder.
+ * The rows after `cursor` on a PostgREST query: the time on its own
+ * (`time <= at`, or `>=` oldest first), which an index on the time can
+ * start from, and the exact condition. Shaped as a generic over the
+ * methods it calls, so it fits any table's query builder.
  */
-export function pageAfter<Q extends { lte(column: string, value: string): Q; or(filters: string): Q }>(
-  query: Q,
-  timeColumn: string,
-  idColumn: string,
-  cursor: Cursor | null | undefined,
-): Q {
+export function pageAfter<
+  Q extends { lte(column: string, value: string): Q; gte(column: string, value: string): Q; or(filters: string): Q },
+>(query: Q, timeColumn: string, idColumn: string, cursor: Cursor | null | undefined, ascending = false): Q {
   if (!cursor) return query;
-  return query.lte(timeColumn, cursor.at).or(afterCursor(timeColumn, idColumn, cursor));
+  const bounded = ascending ? query.gte(timeColumn, cursor.at) : query.lte(timeColumn, cursor.at);
+  return bounded.or(afterCursor(timeColumn, idColumn, cursor, ascending));
 }

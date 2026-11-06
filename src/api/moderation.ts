@@ -1,9 +1,11 @@
 import { supabase } from "@/lib/supabase";
 import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
+import { pageAfter, type Cursor } from "./keyset";
 import type {
   ApplicationRow,
   ApplicationStatus,
+  CommentRow,
   ModerationActionRow,
   ProfileRow,
   ReportRow,
@@ -56,17 +58,68 @@ export async function submitReport(input: ReportInput): Promise<void> {
   if (error) throw error;
 }
 
-/** Admin: applications queue. */
-export async function fetchApplications(status: ApplicationStatus): Promise<ApplicationRow[]> {
-  if (isDemoMode()) return demo.demoFetchApplications(status);
+/** How many rows of a queue an admin screen reads at a time. */
+export const ADMIN_PAGE_SIZE = 50;
 
-  const { data, error } = await supabase
-    .from("applications")
-    .select("*")
-    .eq("status", status)
-    .order("created_at", { ascending: true });
+/**
+ * Where the next page of a queue starts: the last row held (./keyset).
+ * A queue still to be worked through (applications pending or on the
+ * waitlist, open reports) reads oldest first, the order it is worked in;
+ * a record of what was decided reads newest first, so the latest is what
+ * a page shows rather than the first decisions ever made.
+ */
+export type AdminCursor = Cursor;
+
+/** The cursor after a page of a queue: its last row, or none when the page ended it. */
+export function nextAdminCursor(page: { id: string; created_at: string }[]): AdminCursor | undefined {
+  if (page.length < ADMIN_PAGE_SIZE) return undefined;
+  const last = page[page.length - 1];
+  return { at: last.created_at, id: last.id };
+}
+
+const OLDEST_FIRST: ReadonlySet<string> = new Set(["pending", "waitlisted", "open"]);
+
+/**
+ * Admin: applications, a page at a time. Every application with that
+ * status was read in one request, every column, and PostgREST stops a
+ * read at a thousand rows without saying so.
+ */
+export async function fetchApplications(
+  status: ApplicationStatus,
+  after: AdminCursor | null = null,
+): Promise<ApplicationRow[]> {
+  if (isDemoMode()) return demoPageOf(demo.demoFetchApplications(status), status, after);
+
+  const ascending = OLDEST_FIRST.has(status);
+  const query = supabase.from("applications").select("*").eq("status", status);
+  const { data, error } = await pageAfter(query, "created_at", "id", after, ascending)
+    .order("created_at", { ascending })
+    .order("id", { ascending })
+    .limit(ADMIN_PAGE_SIZE);
   if (error) throw error;
   return (data ?? []) as ApplicationRow[];
+}
+
+/** Admin: how many applications have this status, counted by the database without reading one. */
+export async function countApplications(status: ApplicationStatus): Promise<number> {
+  if (isDemoMode()) return demo.demoFetchApplications(status).length;
+  const { count, error } = await supabase
+    .from("applications")
+    .select("id", { count: "exact", head: true })
+    .eq("status", status);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** The demo's queues, in the order the database would give them, a page at a time. */
+function demoPageOf<T extends { id: string; created_at: string }>(rows: T[], status: string, after: AdminCursor | null): T[] {
+  const ascending = OLDEST_FIRST.has(status);
+  const sorted = [...rows].sort((a, b) => {
+    const c = a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
+    return ascending ? c : -c;
+  });
+  const start = after ? sorted.findIndex((r) => r.id === after.id) + 1 : 0;
+  return sorted.slice(start, start + ADMIN_PAGE_SIZE);
 }
 
 export async function decideApplication(
@@ -84,21 +137,56 @@ export async function decideApplication(
   if (error) throw error;
 }
 
+/** A reported comment as the admin sees it: what was said, where, and by whom. */
+export type ReportedComment = Pick<CommentRow, "id" | "body" | "post_id" | "removed_at"> & {
+  author: Pick<ProfileRow, "id" | "username"> | null;
+};
+
 /** Admin: reports queue. */
 export interface ReportWithRefs extends ReportRow {
   reporter: Pick<ProfileRow, "id" | "username"> | null;
+  /** For a comment report: the comment itself, so it is never removed unseen. */
+  comment?: ReportedComment | null;
+  /** For a member report: who, by name, to open their profile. */
+  member?: Pick<ProfileRow, "id" | "username"> | null;
 }
 
-export async function fetchReports(status: ReportStatus): Promise<ReportWithRefs[]> {
-  if (isDemoMode()) return demo.demoFetchReports(status);
+/**
+ * Admin: reports, a page at a time. With each, the reporter's name, and
+ * for a reported comment its words, the photograph it is on and who wrote
+ * it, and for a reported member their name: an admin used to remove a
+ * comment without seeing it, and open a member by id. A reference the
+ * admin cannot read (a comment deleted since) comes back empty.
+ */
+export async function fetchReports(status: ReportStatus, after: AdminCursor | null = null): Promise<ReportWithRefs[]> {
+  if (isDemoMode()) return demoPageOf(demo.demoFetchReports(status), status, after);
 
-  const { data, error } = await supabase
+  const ascending = OLDEST_FIRST.has(status);
+  const query = supabase
     .from("reports")
-    .select("*, reporter:profiles!reports_reporter_id_fkey(id, username)")
-    .eq("status", status)
-    .order("created_at", { ascending: true });
+    .select(
+      "*, reporter:profiles!reports_reporter_id_fkey(id, username)" +
+        ", comment:comments!reports_comment_id_fkey(id, body, post_id, removed_at, author:profiles!comments_author_id_fkey(id, username))" +
+        ", member:profiles!reports_profile_id_fkey(id, username)",
+    )
+    .eq("status", status);
+  const { data, error } = await pageAfter(query, "created_at", "id", after, ascending)
+    .order("created_at", { ascending })
+    .order("id", { ascending })
+    .limit(ADMIN_PAGE_SIZE);
   if (error) throw error;
   return (data ?? []) as unknown as ReportWithRefs[];
+}
+
+/** Admin: how many reports have this status, counted by the database without reading one. */
+export async function countReports(status: ReportStatus): Promise<number> {
+  if (isDemoMode()) return demo.demoFetchReports(status).length;
+  const { count, error } = await supabase
+    .from("reports")
+    .select("id", { count: "exact", head: true })
+    .eq("status", status);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 export async function resolveReport(
