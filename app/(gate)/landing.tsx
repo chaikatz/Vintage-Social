@@ -100,8 +100,9 @@ const styles = StyleSheet.create({
   stage: { marginHorizontal: -40, width: undefined },
 
   actions: { alignItems: "center" },
-  way: { height: 44, marginBottom: 10, paddingHorizontal: 10, alignItems: "center", justifyContent: "center" },
-  waySignIn: { height: undefined, marginTop: 12, marginBottom: 0, paddingVertical: 4 },
+  // At least 44, never fixed, so a way in grows with a larger text size rather than being cut off.
+  way: { minHeight: 44, marginBottom: 10, paddingHorizontal: 10, alignItems: "center", justifyContent: "center" },
+  waySignIn: { minHeight: 0, marginTop: 12, marginBottom: 0, paddingVertical: 4 },
   pressed: { opacity: 0.8 },
   wayLabel: {
     fontFamily: type.mono,

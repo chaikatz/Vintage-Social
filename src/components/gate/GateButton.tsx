@@ -60,6 +60,10 @@ export function GateButton({
       onPress={onPress}
       disabled={loading || disabled}
       accessibilityRole="button"
+      // Named by its title even while the spinner stands in for it, when
+      // VoiceOver used to read Sign in or Submit application as nothing.
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: loading || disabled, busy: loading }}
       accessibilityHint={accessibilityHint}
     >
       {loading ? (
@@ -77,11 +81,13 @@ export function GateButton({
 }
 
 const styles = StyleSheet.create({
-  base: { height: 44, alignItems: "center", justifyContent: "center" },
+  // At least 44, never fixed: at the larger text sizes a label takes two
+  // lines and the bar grows to hold them, where a fixed height cut them off.
+  base: { minHeight: 44, alignItems: "center", justifyContent: "center" },
   solid: { backgroundColor: GATE_BUTTON },
   card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldSoft },
   outline: { borderWidth: 1, borderColor: colors.ink },
-  quiet: { height: undefined, paddingVertical: spacing.md },
+  quiet: { minHeight: 0, paddingVertical: spacing.md },
   pressed: { opacity: 0.75 },
   loading: { opacity: 0.6 },
   label: {

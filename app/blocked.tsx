@@ -5,6 +5,7 @@ import { showAlert } from "@/utils/alert";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchBlockedProfiles, unblockMember } from "@/api/blocks";
 import { useSession } from "@/providers/SessionProvider";
@@ -29,6 +30,14 @@ export default function Blocked() {
     },
     onError: (err) => showAlert("Couldn’t unblock", err instanceof Error ? err.message : String(err)),
   });
+
+  if (blocked.isError && !blocked.data) {
+    return (
+      <Screen padded={false}>
+        <LoadFailed what="the members you blocked" onRetry={() => blocked.refetch()} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen padded={false}>
@@ -57,6 +66,7 @@ export default function Blocked() {
               onPress={() => unblock.mutate(item.id)}
               disabled={unblock.isPending}
               accessibilityRole="button"
+              accessibilityLabel={`Unblock ${item.username}`}
             >
               <Text style={styles.unblockText}>Unblock</Text>
             </Pressable>

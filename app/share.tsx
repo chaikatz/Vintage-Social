@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -9,6 +9,8 @@ import { errorMessage } from "@/utils/errorMessage";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { memberLabel } from "@/components/memberLabel";
 import { colors, radii, spacing, type } from "@/theme";
 import { fetchPost } from "@/api/posts";
 import { fetchFollowing } from "@/api/profiles";
@@ -53,11 +55,16 @@ export default function Share() {
     [post],
   );
 
+  // Checked and set in the tap itself: the bar only goes quiet once React
+  // has rendered, and a second tap in that moment sent every letter twice.
+  const sending = useRef(false);
+
   const toggle = (id: string) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const send = async () => {
-    if (!postId || selected.length === 0) return;
+    if (!postId || selected.length === 0 || sending.current) return;
+    sending.current = true;
     setBusy(true);
     try {
       // One at a time, each taken off the list as it lands, so a failure
@@ -78,6 +85,7 @@ export default function Share() {
         [why, "The members still ticked have not had it; send again to reach them."].filter(Boolean).join("\n\n"),
       );
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
@@ -128,7 +136,9 @@ export default function Share() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          peopleQ.isFetched ? (
+          peopleQ.isError ? (
+            <LoadFailed what="who you follow" onRetry={() => peopleQ.refetch()} />
+          ) : peopleQ.isFetched ? (
             <EmptyState
               title="Nobody to send to yet"
               body="Follow a few members and you can pass photographs along to them."
@@ -138,7 +148,13 @@ export default function Share() {
         renderItem={({ item }) => {
           const on = selected.includes(item.id);
           return (
-            <Pressable style={styles.row} onPress={() => toggle(item.id)}>
+            <Pressable
+              style={styles.row}
+              onPress={() => toggle(item.id)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={memberLabel(item.username, item.full_name)}
+            >
               <Avatar path={item.avatar_url} username={item.username} size={40} />
               <View style={styles.rowText}>
                 <Text style={styles.username}>{item.username}</Text>
@@ -156,6 +172,8 @@ export default function Share() {
         style={[styles.sendBar, selected.length === 0 && styles.sendBarOff]}
         disabled={selected.length === 0 || busy}
         onPress={send}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: selected.length === 0 || busy, busy }}
       >
         <Text style={styles.sendText}>
           {selected.length === 0

@@ -13,7 +13,14 @@ interface Props {
   style?: ViewStyle;
 }
 
-/** Compact, bordered, tactile — no pills, no gradients. */
+/**
+ * Compact, bordered, tactile — no pills, no gradients.
+ *
+ * Said to VoiceOver as a button by its title, dimmed when it cannot be
+ * pressed and busy while it works. Without the role it was read as plain
+ * words, and while loading, with the title gone for the spinner, as
+ * nothing at all.
+ */
 export function Button({
   title,
   onPress,
@@ -30,6 +37,9 @@ export function Button({
       onPress={onPress}
       onLongPress={onLongPress}
       disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
       style={({ pressed }) => [
         styles.base,
         small && styles.small,

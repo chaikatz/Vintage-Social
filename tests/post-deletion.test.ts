@@ -326,7 +326,9 @@ describe("the delete, as the screens do it", () => {
 describe("the other alerts that printed errors as text", () => {
   it("account deletion and sending a photograph use the same words", () => {
     const settings = source("app/settings.tsx");
-    expect(settings).toMatch(/"Couldn’t delete the account",\s*errorMessage\(err, "Your account is still here\. Try again in a moment\."\)/);
+    // Through errorMessage, in words that say what a failure has left (settings-switches has the detail).
+    expect(settings).toMatch(/"Couldn’t delete the account",\s*errorMessage\(\s*err,\s*"Your account is still here, but your photographs may already have been removed\. Try again to finish deleting it\.",?\s*\)/);
+    expect(settings).toMatch(/"Couldn’t delete the account", errorMessage\(err, "Nothing has been deleted\. Try again in a moment\."\)/);
     const share = source("app/share.tsx");
     expect(share).toMatch(/const why = errorMessage\(err, ""\)/);
     for (const file of ["app/settings.tsx", "app/share.tsx", "app/messages/[id].tsx"]) {

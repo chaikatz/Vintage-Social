@@ -7,6 +7,7 @@ import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing } from "@/theme";
 import { fetchMembers, setInviteQuota, setSuspension, warnMember } from "@/api/moderation";
 import { formatMemberNumber } from "@/utils/membership";
@@ -123,7 +124,13 @@ export default function AdminMembers() {
       <FlatList
         data={members.data ?? []}
         keyExtractor={(m) => m.id}
-        ListEmptyComponent={members.isFetched ? <EmptyState title="No members found" /> : null}
+        ListEmptyComponent={
+          members.isError ? (
+            <LoadFailed what="the members" onRetry={() => members.refetch()} />
+          ) : members.isFetched ? (
+            <EmptyState title="No members found" />
+          ) : null
+        }
         renderItem={({ item }) => (
           <UserRow
             username={item.username}

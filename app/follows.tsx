@@ -6,10 +6,13 @@ import { Screen } from "@/components/Screen";
 import { UserRow } from "@/components/UserRow";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
 import { Bone } from "@/components/Skeleton";
 import { spacing } from "@/theme";
 import { fetchFollowers, fetchFollowing, follow, unfollow } from "@/api/profiles";
 import { useSession } from "@/providers/SessionProvider";
+import { showAlert } from "@/utils/alert";
+import { errorMessage } from "@/utils/errorMessage";
 import type { FollowStatus, ProfileRow } from "@/types/db";
 
 /**
@@ -64,10 +67,22 @@ export default function Follows() {
       refreshProfile().catch(() => undefined);
       queryClient.invalidateQueries({ queryKey: ["feed"] });
     },
+    // The button goes back to what it said; the member is told why.
+    onError: (err, { next }) =>
+      showAlert(next ? "Couldn’t follow" : "Couldn’t unfollow", errorMessage(err, "Nothing changed. Try again in a moment.")),
   });
 
   const stateFor = (p: ProfileRow): FollowStatus | null =>
     p.id in decided ? decided[p.id] : followingIds.has(p.id) ? "accepted" : null;
+
+  if (list.isError && !list.data) {
+    return (
+      <Screen padded={false}>
+        <Stack.Screen options={{ title: followers ? "Followers" : "Following" }} />
+        <LoadFailed what={followers ? "the followers" : "who they follow"} onRetry={() => list.refetch()} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen padded={false}>

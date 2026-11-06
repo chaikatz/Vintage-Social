@@ -183,6 +183,17 @@ const codes = (await text()).match(/vintage:\/\/invite\/([a-z0-9-]+)|\/i\/([a-z0
 const code = codes?.[1] ?? codes?.[2] ?? "";
 check("An invitation code is shown", code.length > 0, code || "none");
 await shot("07-invitations");
+// This browser has no share sheet, as a phone may fail to open one: the
+// tap says so and points at Copy, where it used to end in silence.
+{
+  const before = dialogs.length;
+  await tap("Send invitation", 1400);
+  check(
+    "Send invitation that cannot open sharing says so",
+    dialogs.length > before && /Couldn’t open sharing/.test(dialogs.at(-1) ?? ""),
+    dialogs.length > before ? dialogs.at(-1) : "no dialog",
+  );
+}
 
 // 4. the invitation is taken up
 await back();
@@ -682,6 +693,126 @@ check("Stamp reads the capture date, not today", /6 14/.test(afterPost));
 // Taken in June, posted now: the card's last line is the posting time.
 check("A new post says it went up just now", (await byLabel("Posted just now").count()) > 0);
 await shot("18-posted");
+
+// ===========================================================================
+// PHASE C — the door signed in, Settings' switches, a reported comment
+// ===========================================================================
+
+// Signed in, an invitation link goes into the app. Left on the card, a
+// second account could be made over this one, and a join refused after
+// its account was made left the new member there for good.
+await go("/invite/someone-invitation", 3400);
+check(
+  "A signed-in member who opens an invitation link goes into the app, not onto the card",
+  new URL(page.url()).pathname === "/" &&
+    (await byText("Accept the invitation").count()) === 0 &&
+    (await seen(page.locator('[role="tab"]')).count()) > 0,
+  page.url(),
+);
+
+// The private account switch does what it says when it is flipped: it
+// used to wait for Save, and going back left the account as it was.
+const privateSwitch = () => byLabel("Private account").first();
+const openSettings = async () => {
+  await tab("profile");
+  await byLabel("Settings").first().click();
+  await wait(2200);
+};
+await openSettings();
+const wasPrivate = await privateSwitch().isChecked();
+await privateSwitch().click();
+await wait(1200);
+await back(1600);
+await openSettings();
+check("The private account switch holds once flipped, without Save", (await privateSwitch().isChecked()) === !wasPrivate);
+await privateSwitch().click();
+await wait(1200);
+await back(1600);
+await openSettings();
+check("…and flipped back, it holds back", (await privateSwitch().isChecked()) === wasPrivate);
+await back(1600);
+
+// A reported comment: held a moment, reported, and an admin can remove it
+// from the queue, where a comment's report used to offer only Dismiss.
+// It is reported twice, as two members would: one removal closes both,
+// where the second report's own Remove used to remove it again and send
+// its author another notice.
+const reportTheComment = async (first) => {
+  await tab("home");
+  await cardOf("forgives everything").getByLabel("Comments", { exact: true }).first().click();
+  await wait(2500);
+  // The comment as it is drawn on top: the feed's preview of it lies under this screen.
+  const reported = await page.evaluate(() => {
+    for (const el of document.querySelectorAll('[dir="auto"]')) {
+      if (!/The emptiness makes it\./.test(el.textContent ?? "")) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      const at = { x: r.x + 12, y: r.y + Math.min(r.height, 20) / 2 };
+      const hit = document.elementFromPoint(at.x, at.y);
+      if (hit && (hit === el || el.contains(hit))) return at;
+    }
+    return null;
+  });
+  await page.mouse.move(reported?.x ?? 0, reported?.y ?? 0);
+  await page.mouse.down();
+  await wait(900);
+  await page.mouse.up();
+  await wait(1900);
+  if (first) check("Holding another member's comment offers to report it", /Report comment/.test(dialogs.at(-1) ?? "") && /\/report/.test(page.url()), page.url());
+  await tap("Harassment or abuse", 600);
+  await tap("Send report", 2200);
+  check(first ? "The comment's report is sent, once" : "…and a second report on the same comment is sent", /An admin will take a look/.test(dialogs.at(-1) ?? ""));
+  await toTabs();
+};
+await reportTheComment(true);
+await reportTheComment(false);
+await signOutFromSettings();
+await signInAs("admin@vintage.club");
+await tab("profile");
+await byLabel("Admin").first().click();
+await wait(2300);
+await tap("Reports", 2600);
+const queueNow = await text();
+const commentReports = (t) => (t.match(/comment · reported by elena\.marchetti/g) ?? []).length;
+check(
+  "A reported comment can be removed from the reports queue",
+  commentReports(queueNow) === 2 && (await byText("Remove comment").count()) === 2,
+  `${commentReports(queueNow)} open reports on it`,
+);
+await shot("19-comment-report");
+await tap("Remove comment", 2600);
+const queueAfter = await text();
+check(
+  "Removed once, every open report on the comment leaves the queue",
+  commentReports(queueAfter) === 0 && (await byText("Remove comment").count()) === 0,
+  `${commentReports(queueAfter)} still open`,
+);
+await tap("resolved", 2200);
+const resolvedNow = await text();
+check(
+  "…and both are resolved as content removed",
+  commentReports(resolvedNow) === 2 && /Content removed/.test(resolvedNow),
+  `${commentReports(resolvedNow)} resolved`,
+);
+
+// Opened on an invitation, with nothing behind the card, its back mark
+// still leads to the door. It used to go back to nothing at all.
+{
+  const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const card = await fresh.newPage();
+  card.on("pageerror", (e) => errors.push("fresh: " + e.message));
+  await card.goto(B + "/invite/someone-invitation", { waitUntil: "networkidle" });
+  await card.waitForTimeout(2600);
+  const onCard = /By invitation/.test((await card.textContent("body")) ?? "");
+  await card.getByLabel("Back", { exact: true }).locator("visible=true").first().click();
+  await card.waitForTimeout(2400);
+  check(
+    "Opened on an invitation, the card's back mark leads to the door",
+    onCard && (await card.getByText("Apply for membership", { exact: true }).locator("visible=true").count()) > 0,
+    card.url(),
+  );
+  await fresh.close();
+}
 
 console.log("\nJS errors:", errors.length ? errors.slice(0, 10) : "none");
 const failed = results.filter((r) => !r.ok);

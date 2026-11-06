@@ -1,12 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadFailed } from "@/components/LoadFailed";
+import { undecided, withIds, withRowBack, withoutIds, withoutRow } from "@/components/decidedRows";
+import { memberLabel } from "@/components/memberLabel";
 import { colors, radii, spacing, type } from "@/theme";
 import { decideFollowRequest, fetchPendingRequests } from "@/api/profiles";
+import type { ProfileRow } from "@/types/db";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 
@@ -27,23 +31,55 @@ export default function Requests() {
     enabled: Boolean(userId),
   });
 
+  // A request leaves the list the moment it is decided, so it cannot be
+  // decided twice (Accept, then Decline before the list was read again,
+  // deleted the follow just accepted). A refusal puts that one back.
+  // While its decision is on its way it stays off the list whatever a
+  // read brings back: the read after another decision could reach the
+  // server first and bring it back with both buttons live.
+  const [deciding, setDeciding] = useState<ReadonlySet<string>>(() => new Set());
+  const key = ["follow-requests", userId];
   const decide = useMutation({
-    mutationFn: ({ followerId, accept }: { followerId: string; accept: boolean }) =>
-      decideFollowRequest(followerId, userId, accept),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["follow-requests", userId] });
+    mutationFn: ({ follower, accept }: { follower: ProfileRow; accept: boolean }) =>
+      decideFollowRequest(follower.id, userId, accept),
+    onMutate: async ({ follower }) => {
+      setDeciding((ids) => withIds(ids, [follower.id]));
+      await queryClient.cancelQueries({ queryKey: key });
+      const order = (queryClient.getQueryData<ProfileRow[]>(key) ?? []).map((r) => r.id);
+      queryClient.setQueryData<ProfileRow[]>(key, (rows) => withoutRow(rows, follower.id));
+      return { order };
+    },
+    onSuccess: async (_done, { follower }) => {
+      // Taken: a read that left before it was cannot bring it back.
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData<ProfileRow[]>(key, (rows) => withoutRow(rows, follower.id));
       queryClient.invalidateQueries({ queryKey: ["activity", userId] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
       queryClient.invalidateQueries({ queryKey: ["follows"] });
       refreshProfile().catch(() => undefined);
     },
-    onError: (err) => showAlert("That didn’t work", err instanceof Error ? err.message : String(err)),
+    onError: (err, { follower }, ctx) => {
+      queryClient.setQueryData<ProfileRow[]>(key, (rows) => withRowBack(rows, follower, ctx?.order));
+      showAlert("That didn’t work", err instanceof Error ? err.message : String(err));
+    },
+    onSettled: (_done, _err, { follower }) => {
+      setDeciding((ids) => withoutIds(ids, [follower.id]));
+      return queryClient.invalidateQueries({ queryKey: key });
+    },
   });
+
+  if (requests.isError && !requests.data) {
+    return (
+      <Screen padded={false}>
+        <LoadFailed what="your requests" onRetry={() => requests.refetch()} />
+      </Screen>
+    );
+  }
 
   return (
     <Screen padded={false}>
       <FlatList
-        data={requests.data ?? []}
+        data={undecided(requests.data, deciding)}
         keyExtractor={(p) => p.id}
         ListEmptyComponent={
           requests.isFetched ? (
@@ -58,6 +94,8 @@ export default function Requests() {
             <Pressable
               style={styles.person}
               onPress={() => router.push(`/user/${item.username}`)}
+              accessibilityRole="button"
+              accessibilityLabel={memberLabel(item.username, item.full_name)}
             >
               <Avatar path={item.avatar_url} username={item.username} size={44} />
               <View style={styles.personText}>
@@ -67,13 +105,17 @@ export default function Requests() {
             </Pressable>
             <Pressable
               style={styles.accept}
-              onPress={() => decide.mutate({ followerId: item.id, accept: true })}
+              onPress={() => decide.mutate({ follower: item, accept: true })}
+              accessibilityRole="button"
+              accessibilityLabel={`Accept ${item.username}`}
             >
               <Text style={styles.acceptText}>Accept</Text>
             </Pressable>
             <Pressable
               style={styles.decline}
-              onPress={() => decide.mutate({ followerId: item.id, accept: false })}
+              onPress={() => decide.mutate({ follower: item, accept: false })}
+              accessibilityRole="button"
+              accessibilityLabel={`Decline ${item.username}`}
             >
               <Text style={styles.declineText}>Decline</Text>
             </Pressable>

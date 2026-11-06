@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -29,17 +29,37 @@ import {
 import { pushSupported, registerForPush } from "@/utils/push";
 import { deleteMyAccount } from "@/api/account";
 import { PRIVACY_URL, SUPPORT_EMAIL, TERMS_URL, supportMailto } from "@/config/launch";
+import { createSettingWriter } from "@/components/settingWriter";
+
+/**
+ * Whether the club has an admin besides this one. The database refuses to
+ * delete the only admin's account, but only after the app has already
+ * removed every one of that member's files (deleteMyAccount removes the
+ * files first), so the only admin who tapped Delete kept the account and
+ * lost every photograph in it. Asked before anything is removed.
+ */
+async function anotherAdminExists(myId: string): Promise<boolean> {
+  if (isDemoMode()) return true;
+  const { count, error } = await supabase
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "admin")
+    .neq("id", myId);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
 
 export default function Settings() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { session, profile, refreshProfile, signOut } = useSession();
+  const { session, profile, isAdmin, refreshProfile, signOut } = useSession();
   const [deleting, setDeleting] = useState(false);
 
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [city, setCity] = useState(profile?.city ?? "");
   const [newAvatarUri, setNewAvatarUri] = useState<string | null>(null);
+  const uploadedAvatar = useRef<{ uri: string; path: string } | null>(null);
   const [isPrivate, setIsPrivate] = useState(profile?.is_private ?? false);
   const [busy, setBusy] = useState(false);
   // Light print, dark print, or the phone's choice. Takes effect at once.
@@ -51,6 +71,12 @@ export default function Settings() {
 
   // What the phone is allowed to say. Read once; each switch writes at once.
   const userId = session?.user?.id ?? "";
+  // One write at a time and the newest last (settingWriter); a refusal puts
+  // the switches back as the server has them.
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+  const refreshRef = useRef(refreshProfile);
+  refreshRef.current = refreshProfile;
   const prefsQuery = useQuery({
     queryKey: ["notification-prefs", userId],
     queryFn: () => fetchNotificationPrefs(userId),
@@ -58,17 +84,61 @@ export default function Settings() {
   });
   const [prefsEdit, setPrefsEdit] = useState<NotificationPrefs | null>(null);
   const prefs = prefsEdit ?? prefsQuery.data ?? DEFAULT_PREFS;
+  // Turning something on is also a reason to make sure the phone is registered.
+  const registerAfterSave = useRef(false);
+  const [prefsWriter] = useState(() =>
+    createSettingWriter<NotificationPrefs>({
+      write: async (next) => {
+        await updateNotificationPrefs(userIdRef.current, next);
+        queryClient.setQueryData(["notification-prefs", userIdRef.current], next);
+      },
+      onSaved: () => {
+        if (registerAfterSave.current && pushSupported()) registerForPush(userIdRef.current);
+        registerAfterSave.current = false;
+      },
+      onFailed: (err) => {
+        registerAfterSave.current = false;
+        setPrefsEdit(null);
+        showAlert("Couldn’t save", errorMessage(err, "Try again in a moment."));
+      },
+    }),
+  );
+  // Each flip writes the whole row, so nothing is written until the row
+  // has been read: switches drawn from the defaults while the read was on
+  // its way, or after it failed, wrote every other one back on, undoing
+  // what the member had turned off.
+  const prefsKnown = prefsQuery.data != null;
   const togglePref = (key: keyof NotificationPrefs) => (on: boolean) => {
+    if (!userId || !prefsKnown) return;
     const next = { ...prefs, [key]: on };
     setPrefsEdit(next);
+    if (on) registerAfterSave.current = true;
+    prefsWriter.set(next);
+  };
+
+  // A private account is private the moment the switch says so, as the
+  // notification switches below it are: it used to wait for Save, and a
+  // member who flipped it and went back was public with the switch on.
+  const savedPrivate = useRef(profile?.is_private ?? false);
+  const [privacyWriter] = useState(() =>
+    createSettingWriter<boolean>({
+      write: async (on) => {
+        await updateOwnProfile(userIdRef.current, { is_private: on });
+        savedPrivate.current = on;
+      },
+      onSaved: () => {
+        refreshRef.current().catch(() => undefined);
+      },
+      onFailed: (err) => {
+        setIsPrivate(savedPrivate.current);
+        showAlert("Couldn’t change your account", errorMessage(err, "It is as it was. Try again in a moment."));
+      },
+    }),
+  );
+  const togglePrivate = (on: boolean) => {
     if (!userId) return;
-    updateNotificationPrefs(userId, next)
-      .then(() => {
-        queryClient.setQueryData(["notification-prefs", userId], next);
-        // Turning something on is also a reason to make sure the phone is registered.
-        if (on && pushSupported()) registerForPush(userId);
-      })
-      .catch((err) => showAlert("Couldn’t save", errorMessage(err, "Try again in a moment.")));
+    setIsPrivate(on);
+    privacyWriter.set(on);
   };
 
   const requests = useQuery({
@@ -81,13 +151,19 @@ export default function Settings() {
   const currentAvatar = newAvatarUri ?? mediaUrl("avatars", profile?.avatar_url ?? null);
 
   const pickAvatar = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.9,
-    });
-    if (!result.canceled && result.assets[0]) setNewAvatarUri(result.assets[0].uri);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+      if (!result.canceled && result.assets[0]) setNewAvatarUri(result.assets[0].uri);
+    } catch {
+      // The picker can refuse outright (an iCloud original that would not
+      // come down). The tap used to end in silence.
+      showAlert("Couldn’t open that", "It couldn’t be read here. Try again in a moment, or choose another.");
+    }
   };
 
   const save = async () => {
@@ -96,28 +172,39 @@ export default function Settings() {
     setBusy(true);
     try {
       let avatarPath: string | undefined;
+      // The portrait the new one replaces, removed only once the profile
+      // names the new one.
+      let replaced: string | null = null;
       if (newAvatarUri && isDemoMode()) {
         avatarPath = newAvatarUri; // demo mode: keep the local uri, no upload
       } else if (newAvatarUri) {
-        const prepared = await prepareAvatar(newAvatarUri);
         // A new key for every portrait. The old one was overwritten in place
         // under a fixed name, and every cache between the bucket and the
         // screen — the CDN's, the image library's — went on serving the old
         // face for as long as it liked. A new address is new everywhere at
         // once; the previous file is cleared away afterwards, best-effort.
-        avatarPath = await uploadFile("avatars", `${userId}/avatar-${Date.now()}.jpg`, prepared.uri, "image/jpeg");
-        const previous = profile?.avatar_url;
-        if (previous && previous.startsWith(`${userId}/`) && previous !== avatarPath) {
-          supabase.storage.from("avatars").remove([previous]).catch(() => undefined);
+        // A Save tried again after a refused update sends the file already
+        // uploaded for this photograph, not another copy of it.
+        if (uploadedAvatar.current?.uri === newAvatarUri) {
+          avatarPath = uploadedAvatar.current.path;
+        } else {
+          const prepared = await prepareAvatar(newAvatarUri);
+          avatarPath = await uploadFile("avatars", `${userId}/avatar-${Date.now()}.jpg`, prepared.uri, "image/jpeg");
+          uploadedAvatar.current = { uri: newAvatarUri, path: avatarPath };
         }
+        const previous = profile?.avatar_url;
+        if (previous && previous.startsWith(`${userId}/`) && previous !== avatarPath) replaced = previous;
       }
       await updateOwnProfile(userId, {
         full_name: fullName.trim(),
         bio: bio.trim(),
         city: city.trim(),
-        is_private: isPrivate,
         ...(avatarPath ? { avatar_url: avatarPath } : {}),
       });
+      // Only now: the old portrait used to be removed before this update,
+      // and an update that failed (no signal, a timeout) left the profile
+      // naming a file that was gone, a broken portrait for everyone.
+      if (replaced) supabase.storage.from("avatars").remove([replaced]).catch(() => undefined);
       await refreshProfile();
       queryClient.invalidateQueries();
       router.back();
@@ -155,14 +242,37 @@ export default function Settings() {
                   if (!userId) return;
                   setDeleting(true);
                   try {
+                    if (isAdmin && !(await anotherAdminExists(userId))) {
+                      setDeleting(false);
+                      showAlert(
+                        "You are the only admin",
+                        "Make another member an admin before deleting this account, or the club has no one to let anyone in. Nothing has been deleted.",
+                      );
+                      return;
+                    }
+                  } catch (err) {
+                    // Asked before anything is removed: nothing has changed.
+                    setDeleting(false);
+                    showAlert("Couldn’t delete the account", errorMessage(err, "Nothing has been deleted. Try again in a moment."));
+                    return;
+                  }
+                  try {
                     await deleteMyAccount(userId);
                     queryClient.clear();
                     await signOut();
                   } catch (err) {
                     setDeleting(false);
+                    // deleteMyAccount removes the files before it asks the
+                    // database to close the account, so a failure here
+                    // (no signal, a timeout) can come after the photographs
+                    // have gone. It used to say only that the account was
+                    // still here. A second try finishes the deletion.
                     showAlert(
                       "Couldn’t delete the account",
-                      errorMessage(err, "Your account is still here. Try again in a moment."),
+                      errorMessage(
+                        err,
+                        "Your account is still here, but your photographs may already have been removed. Try again to finish deleting it.",
+                      ),
                     );
                   }
                 },
@@ -207,7 +317,8 @@ export default function Settings() {
         </View>
         <Switch
           value={isPrivate}
-          onValueChange={setIsPrivate}
+          onValueChange={togglePrivate}
+          accessibilityLabel="Private account"
           trackColor={{ true: colors.accent, false: colors.borderStrong }}
           thumbColor={isPrivate ? colors.paperRaised : colors.knob}
         />
@@ -232,6 +343,11 @@ export default function Settings() {
           A name and what happened, nothing more. Likes arrive at most once every half hour; a
           memory at most once a day.
         </Text>
+        {prefsQuery.isError && !prefsKnown ? (
+          <Pressable onPress={() => prefsQuery.refetch()} accessibilityRole="button" hitSlop={8}>
+            <Text style={styles.prefsFailed}>Couldn’t load these. Tap to try again.</Text>
+          </Pressable>
+        ) : null}
       </View>
       {(
         [
@@ -252,6 +368,8 @@ export default function Settings() {
           <Switch
             value={prefs[key]}
             onValueChange={togglePref(key)}
+            disabled={!prefsKnown}
+            accessibilityLabel={`${label} notifications`}
             trackColor={{ true: colors.accent, false: colors.borderStrong }}
             thumbColor={prefs[key] ? colors.paperRaised : colors.knob}
           />
@@ -328,7 +446,11 @@ export default function Settings() {
       {SUPPORT_EMAIL ? (
         <Pressable
           style={styles.linkRow}
-          onPress={() => Linking.openURL(supportMailto("VINTAGE support") ?? "")}
+          onPress={() =>
+            Linking.openURL(supportMailto("VINTAGE support") ?? "").catch(() =>
+              showAlert("Write to us", `No mail account is set up on this phone. Our address is ${SUPPORT_EMAIL}.`),
+            )
+          }
           accessibilityRole="link"
         >
           <View>
@@ -391,6 +513,7 @@ const styles = StyleSheet.create({
   linkHint: { ...type.caption, fontSize: 12, marginTop: 2 },
   deleteWrap: { marginTop: spacing.lg },
   deleteHint: { ...type.caption, fontSize: 12, textAlign: "center", marginTop: spacing.sm },
+  prefsFailed: { ...type.caption, fontSize: 12, marginTop: spacing.sm, color: colors.danger },
   prefRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.md },
   prefLabel: { fontSize: 14, color: colors.ink },
   prefHint: { ...type.caption, fontSize: 12, marginTop: 1 },

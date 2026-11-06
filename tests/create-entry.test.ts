@@ -65,7 +65,11 @@ describe("the ways in", () => {
   });
 
   it("opens each one in a single tap, with nothing to confirm on the way", () => {
-    expect(tab).not.toMatch(/showAlert|Alert\.alert|ActionSheet|Modal\b/);
+    // The one alert on the page says a way in could not be opened, after the fact; nothing asks first.
+    const open = tab.slice(tab.indexOf("const openWith"), tab.indexOf("const native"));
+    const caught = open.slice(open.indexOf("} catch {"), open.indexOf("} finally {"));
+    expect(caught).toMatch(/^\} catch \{\s*showAlert\("Couldn’t open that", "[^"]+"\);\s*$/);
+    expect(tab.replace(caught, "")).not.toMatch(/showAlert\(|Alert\.alert|ActionSheet|Modal\b/);
     // The room is one tap from the page, as the picker is: no sheet, no second page in front of it.
     expect(room).toMatch(/onPress=\{\(\) => router\.push\("\/darkroom"\)\}/);
   });
