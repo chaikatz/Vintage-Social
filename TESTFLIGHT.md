@@ -91,9 +91,13 @@ The home-screen icon will read **Vintage**.
 ## Before submitting for App Store review
 
 Everything review needs, in order, is in [`APP_STORE_LAUNCH.md`](APP_STORE_LAUNCH.md)
-(5 November 2026). The four gaps this section used to list are closed:
-account deletion (Settings → Delete account), blocking (a member's "…" →
+(5 November 2026). The four gaps this section used to list are closed for
+members: account deletion (Settings → Delete account), blocking (a member's "…" →
 Block member), the Privacy Policy (in the app and at
 https://vintagesocial.app/privacy), and the privacy label (section 3 of that
 file, the same list as the app's privacy manifest). The Face ID purpose
 string is no longer Expo's template; it says the app does not use Face ID.
+Two review blockers remain outside the members' app and are listed at the
+top of section 2 of that file: an account that is still waiting, was not
+accepted or is suspended has no way to delete itself yet, and the
+invitation screen does not yet say the Terms are agreed to.
