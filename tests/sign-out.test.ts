@@ -286,6 +286,18 @@ describe("the session provider", () => {
     expect(pending.indexOf("const [signingOut, setSigningOut]")).toBeLessThan(pending.indexOf("if (session === null) return <Redirect"));
   });
 
+  it("forgets the photographs kept from the member's threads wherever the session ends", () => {
+    // Read under the member's rights and kept a few minutes (src/api/messages.ts):
+    // the next member on the phone was shown what only the last one could see.
+    expect(provider).toMatch(/import \{ forgetSharedPosts \} from "@\/api\/messages";/);
+    const from = provider.indexOf("const signOut = useCallback(");
+    const signOut = provider.slice(from, provider.indexOf("const value = useMemo<SessionState>", from));
+    expect(signOut).toMatch(/forgetSharedPosts\(\);\s*queryClient\.clear\(\);/);
+    expect(provider).toMatch(/if \(event === "SIGNED_OUT"\) \{[^}]*queryClient\.clear\(\);[^}]*forgetSharedPosts\(\);\s*\}/);
+    // Not where the client is made: messages.ts imports that module.
+    expect(read("src/lib/supabase.ts")).not.toMatch(/@\/api\/messages/);
+  });
+
   it("the helper removes the client's own key, on the phone and on the web", () => {
     const client = read("src/lib/supabase.ts");
     expect(client).toMatch(/export async function forgetStoredSession\(\): Promise<void> \{\s*if \(isDemoMode\(\) \|\| !sessionKey\) return;/);

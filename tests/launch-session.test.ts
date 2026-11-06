@@ -292,7 +292,9 @@ describe("the session provider", () => {
   });
 
   it("lets go of what was read for the member when the session ends on another device, as at Sign out", () => {
-    expect(provider).toMatch(/if \(event === "SIGNED_OUT"\) \{\s*forgetOutbox\(\);\s*forgetMember\(\);\s*queryClient\.clear\(\);\s*\}/);
+    expect(provider).toMatch(
+      /if \(event === "SIGNED_OUT"\) \{\s*forgetOutbox\(\);\s*forgetMember\(\);\s*queryClient\.clear\(\);\s*(\/\/[^\n]*\n\s*)*forgetSharedPosts\(\);\s*\}/,
+    );
     expect(provider).toMatch(/await endSession\(\{[\s\S]*?\}\);[\s\S]*?queryClient\.clear\(\);/);
   });
 

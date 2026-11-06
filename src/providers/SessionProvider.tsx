@@ -17,6 +17,7 @@ import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
 import { forgetPushTokensEverywhere } from "@/utils/push";
+import { forgetSharedPosts } from "@/api/messages";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 import { forgetOutbox } from "@/uploads";
 import { clearRecent } from "@/utils/searchHistory";
@@ -218,6 +219,9 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
         forgetOutbox();
         forgetMember();
         queryClient.clear();
+        // And the photographs passed along in their threads, kept for a few
+        // minutes as their rights let them read them (src/api/messages.ts).
+        forgetSharedPosts();
       }
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
@@ -330,7 +334,11 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
     currentUser.current = null;
     setSession(null);
     setProfile(null);
-    // Nothing of this member stays for the next one to sign in on this phone.
+    // Nothing of this member stays for the next one to sign in on this phone:
+    // the photographs passed along in their threads (kept for a few minutes
+    // as their rights let them read them, src/api/messages.ts), what was
+    // read for them, the Darkroom.
+    forgetSharedPosts();
     queryClient.clear();
     forgetDarkroom();
     // Who they looked for in Search: also forgotten when auth says SIGNED_OUT
