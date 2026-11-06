@@ -16,7 +16,7 @@ import { isTransient, withRetry } from "@/utils/retry";
 import { isDemoMode } from "@/lib/env";
 import { demoCurrentProfile, demoSignOut, demoSubscribe } from "@/demo/store";
 import type { ProfileRow } from "@/types/db";
-import { forgetPushToken, pushAfterSignedOut } from "@/utils/push";
+import { forgetPushToken } from "@/utils/push";
 import { claimDarkroom, forgetDarkroom } from "@/darkroom/forget";
 import { forgetOutbox } from "@/uploads";
 import { clearRecent } from "@/utils/searchHistory";
@@ -194,8 +194,9 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
           if (next.user?.id === currentUser.current) void readProfileAgain.current();
         }
       }
-      // SIGNED_OUT forgets the Darkroom where the client is made
-      // (src/lib/supabase.ts), so that one said during launch is heard.
+      // SIGNED_OUT forgets the Darkroom, the recent searches and the
+      // phone's push token where the client is made (src/lib/supabase.ts),
+      // so that one said during launch is heard.
       // auth-js says it only once it has removed the session from this
       // phone: a sign-out, or a refresh token the server refused; a
       // refresh that failed for want of a network keeps the session.
@@ -211,9 +212,6 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       if (event === "SIGNED_OUT") {
         forgetOutbox();
         forgetMember();
-        // A session ended elsewhere leaves no way to remove this phone's
-        // token: the phone stops receiving instead (src/utils/push.ts).
-        void pushAfterSignedOut();
       }
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);

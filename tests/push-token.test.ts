@@ -18,14 +18,78 @@ const h = vi.hoisted(() => ({
   filed: [] as string[],
   deleted: [] as string[],
   unregistered: 0,
+  // The keychain auth keeps the session in, and what the auth server says to a refresh.
+  keychain: new Map<string, string>(),
+  refresh: "refused" as "refused" | "online",
 }));
 
-vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
+  // In the background, so the client starts no refresh timer of its own here.
+  AppState: { currentState: "background", addEventListener: () => ({ remove: () => undefined }) },
+}));
 vi.mock("expo-router", () => ({ useRouter: () => ({}) }));
-vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({}) }));
+vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({}), onlineManager: { isOnline: () => true } }));
 vi.mock("expo-device", () => ({ isDevice: true, manufacturer: "Apple", modelName: "iPhone" }));
 vi.mock("expo-constants", () => ({ default: { expoConfig: { extra: { eas: { projectId: "project" } } } } }));
-vi.mock("@/lib/env", () => ({ isDemoMode: () => false }));
+vi.mock("@/lib/env", () => ({
+  isDemoMode: () => false,
+  requireEnv: () => ({ supabaseUrl: "https://vintage.invalid", supabaseAnonKey: "anon" }),
+}));
+// The app's own client module (src/lib/supabase.ts), with the auth client
+// the app ships inside it, on a keychain and an auth server of our own.
+vi.mock("react-native-url-polyfill/auto", () => ({}));
+vi.mock("expo-secure-store", () => ({}));
+vi.mock("@/darkroom/forget", () => ({ forgetDarkroom: () => undefined }));
+vi.mock("@/utils/searchHistory", () => ({ clearRecent: () => undefined }));
+vi.mock("@supabase/supabase-js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@supabase/supabase-js")>();
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return {
+    ...real,
+    createClient: () => ({
+      auth: new real.AuthClient({
+        url: "https://vintage.invalid/auth/v1",
+        storageKey: KEYCHAIN_KEY,
+        storage: {
+          getItem: async (k: string) => h.keychain.get(k) ?? null,
+          setItem: async (k: string, v: string) => void h.keychain.set(k, v),
+          removeItem: async (k: string) => void h.keychain.delete(k),
+        },
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false,
+        fetch: async () =>
+          h.refresh === "refused"
+            ? json(400, { code: 400, error_code: "refresh_token_not_found", msg: "Invalid Refresh Token: Refresh Token Not Found" })
+            : json(200, {
+                ...expiredSession(),
+                access_token: "new",
+                refresh_token: "r2",
+                expires_at: Math.floor(Date.now() / 1000) + 3600,
+              }),
+      }),
+    }),
+  };
+});
+const KEYCHAIN_KEY = "sb-test-auth-token";
+
+/** The session on the phone after it was closed for three hours: the access token has run out, the refresh token has not. */
+function expiredSession() {
+  return {
+    access_token: "old",
+    refresh_token: "r1",
+    token_type: "bearer",
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) - 3 * 3600,
+    user: { id: "a", aud: "authenticated", role: "authenticated", app_metadata: {}, user_metadata: {}, created_at: "" },
+  };
+}
+
+async function until(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
+}
 vi.mock("expo-notifications", () => ({
   setNotificationHandler: () => undefined,
   getPermissionsAsync: async () => ({ status: h.permission }),
@@ -65,6 +129,8 @@ async function launch() {
 }
 
 beforeEach(() => {
+  h.keychain.clear();
+  h.refresh = "refused";
   h.disk.clear();
   h.permission = "granted";
   h.token = "ExponentPushToken[phone]";
@@ -150,10 +216,61 @@ describe("a session that ended elsewhere", () => {
     expect(h.unregistered).toBe(0);
   });
 
-  it("is heard by the session provider", () => {
+  it("is heard as the app opens, before the session provider is listening", async () => {
+    // An earlier launch filed this phone's token for member a.
+    const earlier = await launch();
+    await earlier.registerForPush("a");
+    expect(h.disk.size).toBe(1);
+
+    // This launch opens on a session whose refresh token the server
+    // refuses: a sign-out, or a new password, on another device.
+    h.keychain.set(KEYCHAIN_KEY, JSON.stringify(expiredSession()));
+    const quiet = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await launch();
+    const { supabase } = await import("@/lib/supabase");
+    try {
+      // The client's own listener hears it: the phone stops receiving, and
+      // nothing of the token is left.
+      await until(() => h.unregistered === 1);
+      expect(h.keychain.has(KEYCHAIN_KEY)).toBe(false);
+      expect(h.unregistered).toBe(1);
+      expect(h.disk.size).toBe(0);
+      expect(h.deleted).toEqual([]);
+
+      // A listener that subscribes after that, as the session provider does
+      // once it has drawn, is told only that nobody is signed in: a
+      // SIGNED_OUT said during launch is said once.
+      const late: string[] = [];
+      const { data } = supabase.auth.onAuthStateChange((event) => void late.push(event));
+      await until(() => late.length > 0);
+      data.subscription.unsubscribe();
+      expect(late).toEqual(["INITIAL_SESSION"]);
+    } finally {
+      quiet.mockRestore();
+      await supabase.auth.stopAutoRefresh();
+    }
+  });
+
+  it("is not a sign-out when the refresh goes through", async () => {
+    const earlier = await launch();
+    await earlier.registerForPush("a");
+    h.refresh = "online";
+    h.keychain.set(KEYCHAIN_KEY, JSON.stringify(expiredSession()));
+    await launch();
+    const { supabase } = await import("@/lib/supabase");
+    try {
+      const { data } = await supabase.auth.getSession();
+      expect(data.session?.user.id).toBe("a");
+      await new Promise((r) => setTimeout(r, 20));
+      expect(h.unregistered).toBe(0);
+      expect(h.disk.size).toBe(1);
+    } finally {
+      await supabase.auth.stopAutoRefresh();
+    }
+  });
+
+  it("sign-out removes the token while still signed in, before auth lets go", () => {
     const provider = readFileSync(path.resolve(import.meta.dirname, "..", "src/providers/SessionProvider.tsx"), "utf8");
-    expect(provider).toMatch(/if \(event === "SIGNED_OUT"\) \{\s*forgetOutbox\(\);\s*forgetMember\(\);[\s\S]*?void pushAfterSignedOut\(\);\s*\}/);
-    // Sign-out removes the token while still signed in, before auth lets go.
     expect(provider).toMatch(/await forgetPushToken\(\);[\s\S]*?const \{ error \} = await supabase\.auth\.signOut\(\);/);
   });
 });

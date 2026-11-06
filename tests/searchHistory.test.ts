@@ -102,7 +102,7 @@ describe("recent searches and the session", () => {
   it("go when auth says the session has left the phone", () => {
     const client = source("src/lib/supabase.ts");
     expect(client).toMatch(
-      /onAuthStateChange\(\(event\) => \{\s*if \(event === "SIGNED_OUT"\) forgetDarkroom\(\);\s*if \(event === "SIGNED_OUT"\) clearRecent\(\);\s*\}\);/,
+      /onAuthStateChange\(\(event\) => \{\s*if \(event === "SIGNED_OUT"\) forgetDarkroom\(\);\s*if \(event === "SIGNED_OUT"\) clearRecent\(\);[^}]*\}\);/,
     );
   });
 
