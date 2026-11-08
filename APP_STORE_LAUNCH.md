@@ -19,6 +19,24 @@ Terms are agreed to) are fixed in the sweep's second round, on branch
 Passwords, keys and the review account's password are **not** in this file
 or anywhere in the repository, and must never be.
 
+**Done on 8 November** (so skip these where the steps below ask for them):
+
+- Step 4: migrations 0023 to 0038 are applied on **production** and on
+  **staging** (run in the SQL Editor as one all-or-nothing script). On
+  production every policy, column, constraint, index, trigger and
+  function grant was compared with the tested build and matches; the
+  only function that differs is `create_invite`, whose wording predates
+  0010 and which none of these files touches. Explore's plan, follower
+  counts and the house thumbnails were checked on production. The `push`
+  function is **version 2 on production** (both files, JWT check on),
+  identical to the repository and answering; staging still runs
+  version 1.
+- Step 1: `EXPO_PUBLIC_SUPPORT_EMAIL` is `support@vintagesocial.app` on
+  expo.dev (Production), and `public/support.html` carries that address.
+  Make sure that mailbox receives mail.
+- Age: the Privacy Policy now says members must be **18 or over**
+  (dated 8 November), so choose **18+** in App Store Connect (section 4).
+
 ---
 
 ## 1. Where things stand
@@ -63,10 +81,10 @@ or anywhere in the repository, and must never be.
   migration list shows only the files that went through the CLI; files run
   in the SQL editor (0009, 0010, 0012, 0019–0022) are not listed there, and
   that is harmless.
-- **Pending your approval:** the launch sweep's backend work adds new
+- **Applied on 8 November:** the launch sweep's backend work adds new
   migrations numbered from **0023 up** (0023 to 0038) and changes the
-  `push` function. Nothing has been applied. See step 4: run every one of them,
-  in number order.
+  `push` function. Both are now on production (see "Done on 8 November"
+  at the top); step 4 is kept for a fresh project.
 - **Private accounts (read 6 November): apply 0038 before launch.** 7
   accounts are private, all of them house accounts; they have 95
   accepted follows between them, made by 79 accounts, all house
@@ -95,7 +113,7 @@ or anywhere in the repository, and must never be.
 | Address | Answer |
 | --- | --- |
 | `https://vintagesocial.app/` | 200, the landing page. `http://` redirects (308) to `https://` |
-| `/privacy`, `/terms` | 200, **but the 22 October text** ("Last updated October 22, 2026", and it still says "Darkroom"). The repository's text is dated 6 November. Fixed by redeploying the web (step 3) |
+| `/privacy`, `/terms` | 200, **but the 22 October text** ("Last updated October 22, 2026", and it still says "Darkroom"). The repository's text is dated 8 November. Fixed by redeploying the web (step 3) |
 | `/support.html` | 200, **but it is not a support page yet**: any address the web does not know is answered with the app's web shell (title "Vintage", no contact details). It becomes the support page only after step 1 (the file is committed) and step 3 (the web is redeployed). Do not enter the Support URL in App Store Connect (step 9) before then |
 | `/i/applereview` | 200, the invitation page |
 | `/.well-known/apple-app-site-association` | 404, by design: universal links are not part of 1.0 |
@@ -150,7 +168,7 @@ support address shown in Settings" points at nothing.
     now has **Delete my account** (two confirmations, as in Settings), and
     the Privacy Policy, the Terms and the support page name it, with
     writing in to the support address kept as a second way. Both
-    documents are dated **November 6, 2026**.
+    documents are dated **November 8, 2026**.
   - The Terms say the house accounts are the club's own, show
     public-domain and licensed photographs, and are not members.
 - **Support page:** `npm run build:legal` can now write
@@ -265,7 +283,7 @@ npx vercel --prod
 
 Then open, in Safari:
 
-- `https://vintagesocial.app/privacy` → "Last updated November 6, 2026",
+- `https://vintagesocial.app/privacy` → "Last updated November 8, 2026",
   it says "Memory Room", not "Darkroom", and it names "Delete my account"
   for an application that is waiting.
 - `https://vintagesocial.app/terms` → "no tolerance for objectionable
@@ -605,15 +623,10 @@ questionnaire honestly: user-generated content **Yes**; messaging and chat
 controls and age checks **No**; every content category (violence, sexual
 content, profanity, drugs, gambling, horror, medical) **None**, because
 the Terms forbid it and reports remove it. The Privacy Policy says
-members must be **17 or over** (the Terms do not mention age), and there
-is no 17+ any more.
-Recommended: where App Store Connect offers to set a higher rating than
-the one it calculated, choose **18+**, and change "17" to "18" in the
-Privacy Policy (one line in `src/legal/documents.ts`, then
-`npm run build:legal`; ask Claude), so the store and the policy say the
-same age. If you would rather keep 17, accept what Apple calculates as
-long as it is 16+ or higher. Never set it lower than Apple calculates. If
-your screen still offers 17+, choose 17+ and change nothing.
+members must be **18 or over** (since 8 November; the Terms do not
+mention age). Where App Store Connect offers to set a higher rating than
+the one it calculated, choose **18+**, so the store and the policy say the
+same age. Never set it lower than Apple calculates.
 
 **App Review notes (paste):** (the sentences about Delete my account and
 the invitation's agreement line are true of a build made from a branch
@@ -721,7 +734,7 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 1. Delete the app, install from TestFlight, open. The landing page shows
    the V and three ways in, and Privacy · Terms at the foot. No flash of
    the wrong colour, in Light and in Dark.
-2. Privacy, then Terms: both open, dated November 6, 2026, and come back.
+2. Privacy, then Terms: both open, dated November 8, 2026, and come back.
 
 **Joining**
 3. Apply for membership with a throwaway email. It lands on Application

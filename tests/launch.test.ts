@@ -7,7 +7,7 @@ describe("the documents the store asks for", () => {
     expect(legalText("terms")).toBe(TERMS_OF_USE);
     expect(LEGAL_TITLES.privacy).toBe("Privacy Policy");
     // The parts Apple reads for: photo library, deletion, blocking, reporting, age.
-    for (const phrase of ["photo", "delete your account", "block", "17"]) {
+    for (const phrase of ["photo", "delete your account", "block", "aged 18 and over"]) {
       expect(PRIVACY_POLICY.toLowerCase()).toContain(phrase);
     }
     for (const phrase of ["report", "block", "24 hours", "delete your account"]) {
