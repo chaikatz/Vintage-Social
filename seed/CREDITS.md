@@ -7,6 +7,14 @@ licences requires attribution; this list exists so the provenance of
 anything in the seeded feed can be traced back to its source, and so the
 licence of each is on record.
 
+This is what the seed gives a fresh project. Production no longer shows
+the Unsplash photographs: on 8 November 2026 it removed the 679 Unsplash
+photographs and the 112 Unsplash profile pictures with
+`supabase/production/13_remove_unsplash_house_photos.sql`, so of the rows
+below only the 229 from Wikimedia Commons are on production. A fresh
+project seeded with `08_house_accounts.sql` must run `13_remove_unsplash_house_photos.sql` after it to match
+production.
+
 | File | Licence | Author |
 | --- | --- | --- |
 | [Picsum 764 by Skyler Smith](https://unsplash.com/photos/PT1152jFqd4) | Unsplash Licence | Skyler Smith |

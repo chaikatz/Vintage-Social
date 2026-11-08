@@ -399,6 +399,16 @@ const credits = [
   "anything in the seeded feed can be traced back to its source, and so the",
   "licence of each is on record.",
   "",
+  // Production, not the seed: written as it stands, so a rebuild keeps it (tests/store-checklist.test.ts
+  // holds these counts to 13_remove_unsplash_house_photos.sql and to the table).
+  "This is what the seed gives a fresh project. Production no longer shows",
+  "the Unsplash photographs: on 8 November 2026 it removed the 679 Unsplash",
+  "photographs and the 112 Unsplash profile pictures with",
+  "`supabase/production/13_remove_unsplash_house_photos.sql`, so of the rows",
+  "below only the 229 from Wikimedia Commons are on production. A fresh",
+  "project seeded with `08_house_accounts.sql` must run `13_remove_unsplash_house_photos.sql` after it to match",
+  "production.",
+  "",
   "| File | Licence | Author |",
   "| --- | --- | --- |",
 ];
