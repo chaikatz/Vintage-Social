@@ -30,7 +30,7 @@ import {
   underPlate,
 } from "./geometry";
 import { useLook } from "./look";
-import { photographRequest, PlateStall, progressOf } from "./plateImage";
+import { closerBox, closerRequest, photographRequest, PLATE_ZOOM, PlateStall, progressOf, proofHoldMs } from "./plateImage";
 import { RoomText } from "./Type";
 import { placeholderWords, type PlateTrouble } from "./words";
 
@@ -54,7 +54,9 @@ const CLOUD_STEP_MS = 120;
  * thumbnail it keeps on the phone, so the print develops out of a soft
  * version of itself and never flashes empty. Then the full image,
  * dissolving in over 240 ms (none for a print already drawn this visit,
- * which comes from memory), after which the proof is unmounted. The
+ * which comes from memory), after which the proof is unmounted: it stays
+ * under the photograph until the dissolve is over (`proofHoldMs`), since
+ * the photograph fades in from nothing over whatever is beneath it. The
  * settled page, the one before it and the two after have a proof
  * (`wantsProof` in plateImage.ts), so a print turned back to, or brought
  * in by a quick double swipe, slides in soft rather than empty.
@@ -91,11 +93,14 @@ const CLOUD_STEP_MS = 120;
  * The plate zooms under a pinch, 1–2×, inside its own box (PhotoInspector's
  * ZoomablePhoto, with no double-tap, so a single tap has no delay), and
  * goes back to actual size when the page stops being current, and again
- * as it is taken off screen. At actual size it does not move at all under
- * a drag. A tap on its right half turns to the next print and on its left
- * half to the one before (`tapTurn`), except while it is zoomed in; the
- * room's words stay where they are throughout. Under the editor,
- * neighbours draw their well only, so one full decode is live behind it.
+ * as it is taken off screen. Zoomed in, the plate in front draws its
+ * photograph again at the zoom's own size over the first (`Closer`), so
+ * a print looked at closely is sharp, and lets it go at actual size. At
+ * actual size it does not move at all under a drag. A tap on its right
+ * half turns to the next print and on its left half to the one before
+ * (`tapTurn`), except while it is zoomed in; the room's words stay where
+ * they are throughout. Under the editor, neighbours draw their well only,
+ * so one full decode is live behind it.
  *
  * When the photograph cannot be drawn the plate says why, in the well:
  * gone from the library, waiting for the phone to be online (it tries
@@ -159,6 +164,8 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
   const ratio = ratioOf(print);
   const [measured, setMeasured] = useState<number | null>(null);
   const cloud = useCloudProgress(look.reduceMotion);
+  /** Zoomed in, past actual size: the photograph is drawn again at the zoom's size. */
+  const [closer, setCloser] = useState(false);
   const caption = measured ?? captionHeight(fontScale, long ? 2 : 1);
   const box = plateBox(ratio, width, stageHeight, caption, pixelRatio);
   const captionW = captionWidth(box.width);
@@ -181,8 +188,8 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
         ]}
         testID={current ? "darkroom-plate" : undefined}
       >
-        <Zoom box={box} current={current} onTap={props.onTap}>
-          <Photograph {...props} box={box} onCloud={cloud.step} />
+        <Zoom box={box} current={current} onTap={props.onTap} onZoomed={setCloser}>
+          <Photograph {...props} box={box} onCloud={cloud.step} closer={closer} />
         </Zoom>
         {feedCrops(ratio) ? <Blades plate={box} ratio={ratio} closed={props.bladesClosed} /> : null}
         <View
@@ -222,11 +229,14 @@ function Zoom({
   box,
   current,
   onTap,
+  onZoomed,
   children,
 }: {
   box: { width: number; height: number };
   current: boolean;
   onTap: (x: number, zoomed: boolean) => void;
+  /** Whether the print is zoomed in, each time the scroll or the pinch's end says. */
+  onZoomed: (zoomed: boolean) => void;
   children: React.ReactNode;
 }) {
   const scroll = useRef<ScrollView>(null);
@@ -237,8 +247,9 @@ function Zoom({
   useEffect(() => {
     if (current || !zoomed.current) return;
     zoomed.current = false;
+    onZoomed(false);
     actualSize(scroll.current, box);
-  }, [current, box.width, box.height]);
+  }, [current, box.width, box.height, onZoomed]);
   // And a plate taken off screen goes back too, whatever the throttled
   // scroll events last said. Fabric recycles a scroll view, and its
   // prepareForRecycle puts back the offset but not the zoomed content's
@@ -252,6 +263,7 @@ function Zoom({
   }, []);
   const readZoom = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     zoomed.current = (e.nativeEvent.zoomScale ?? 1) > ZOOMED;
+    onZoomed(zoomed.current);
   };
 
   return (
@@ -260,7 +272,7 @@ function Zoom({
       style={StyleSheet.absoluteFill}
       contentContainerStyle={{ width: box.width, height: box.height }}
       minimumZoomScale={1}
-      maximumZoomScale={2}
+      maximumZoomScale={PLATE_ZOOM}
       bouncesZoom
       // At actual size the print fills its box exactly, so a drag has
       // nothing to show; without these a vertical scroll view still
@@ -340,13 +352,22 @@ function useCloudProgress(reduceMotion: boolean) {
 
 /** The well, the proof, the photograph — or the words that say why there is none. */
 function Photograph(
-  props: PrintPageProps & { box: { width: number; height: number }; onCloud: (fraction: number | null) => void },
+  props: PrintPageProps & {
+    box: { width: number; height: number };
+    onCloud: (fraction: number | null) => void;
+    /** The plate is zoomed in. */
+    closer: boolean;
+  },
 ) {
-  const { print, box, images, proof, current, dissolve, revision, online, limited, gone, onLoad, onGone, onCloud } = props;
+  const { print, box, images, proof, current, dissolve, revision, online, limited, gone, onLoad, onGone, onCloud, closer } = props;
   const look = useLook();
   const [trouble, setTrouble] = useState<PlateTrouble | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [drawn, setDrawn] = useState(false);
+  /** The photograph has drawn and its dissolve is over: the proof under it can go. */
+  const [developed, setDeveloped] = useState(false);
+  /** Zoomed in, the photograph at the zoom's size would have come from iCloud: the plate's own is enough. */
+  const [closerRefused, setCloserRefused] = useState(false);
   const source = printSource(print.uri);
   /** What this plate has heard of its photograph, and whether its trouble came from hearing nothing (plateImage.ts). */
   const [stall] = useState(() => new PlateStall());
@@ -429,7 +450,7 @@ function Photograph(
   const proofHeight = PROOF_WIDTH / ratio;
   return (
     <View style={[styles.well, { backgroundColor: look.room.well }]}>
-      {images && source != null && proof && !drawn ? (
+      {images && source != null && proof && !developed ? (
         <View style={styles.proofSlot} pointerEvents="none">
           <View style={{ width: PROOF_WIDTH, height: proofHeight, transform: [{ scale: box.width / PROOF_WIDTH }] }}>
             <Image
@@ -459,6 +480,7 @@ function Photograph(
             setDrawn(true);
             onLoad(print.id);
           }}
+          onDeveloped={() => setDeveloped(true)}
           onError={(e: ImageErrorEventData) => {
             stall.failed();
             onCloud(null);
@@ -467,6 +489,9 @@ function Photograph(
             if (why === "missing") onGone(print.id);
           }}
         />
+      ) : null}
+      {images && source != null && current && closer && drawn && !closerRefused ? (
+        <Closer id={print.id} source={source} box={box} onRefused={() => setCloserRefused(true)} />
       ) : null}
     </View>
   );
@@ -483,6 +508,7 @@ function Full({
   dissolve,
   onProgress,
   onLoad,
+  onDeveloped,
   onError,
 }: {
   id: string;
@@ -490,10 +516,35 @@ function Full({
   dissolve: boolean;
   onProgress: (fraction: number) => void;
   onLoad: () => void;
+  /** The photograph has drawn, and its dissolve is over. */
+  onDeveloped: () => void;
   onError: (e: ImageErrorEventData) => void;
 }) {
   const look = useLook();
   const [request] = useState(() => photographRequest(dissolve, look.reduceMotion));
+  // The proof is let go only once the photograph has dissolved in over it.
+  const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (hold.current) clearTimeout(hold.current);
+      hold.current = null;
+    },
+    [],
+  );
+  const loaded = () => {
+    onLoad();
+    if (hold.current) clearTimeout(hold.current);
+    const ms = proofHoldMs(request);
+    if (ms === 0) {
+      hold.current = null;
+      onDeveloped();
+      return;
+    }
+    hold.current = setTimeout(() => {
+      hold.current = null;
+      onDeveloped();
+    }, ms);
+  };
   return (
     <Image
       source={source}
@@ -508,10 +559,57 @@ function Full({
         const fraction = progressOf(e);
         if (fraction != null) onProgress(fraction);
       }}
-      onLoad={onLoad}
+      onLoad={loaded}
       onError={onError}
       accessibilityIgnoresInvertColors
     />
+  );
+}
+
+/**
+ * The photograph again, over the plate's own, for a plate zoomed in: asked
+ * of Photos at `PLATE_ZOOM` times the plate's size and drawn at its scale,
+ * so the zoom enlarges a bitmap made for it (`closerRequest` in
+ * plateImage.ts). Mounted only while the plate in front is zoomed in, and
+ * kept by its view alone, so going back to actual size lets it go. Photos
+ * reports progress for a `ph://` address only while it brings the
+ * photograph down from iCloud: at the first word of that it is given up
+ * (unmounted, which cancels the request), and so is one that fails. The
+ * plate's own stays, as it was before the pinch.
+ */
+function Closer({
+  id,
+  source,
+  box,
+  onRefused,
+}: {
+  id: string;
+  source: ImageSource | number;
+  box: { width: number; height: number };
+  onRefused: () => void;
+}) {
+  const look = useLook();
+  const [request] = useState(() => closerRequest(look.reduceMotion));
+  const at = closerBox(box);
+  return (
+    <View
+      style={[styles.closer, { left: at.left, top: at.top, width: at.width, height: at.height, transform: [{ scale: at.scale }] }]}
+      pointerEvents="none"
+    >
+      <Image
+        source={source}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        recyclingKey={`${id}:closer`}
+        cachePolicy={request.cachePolicy}
+        priority={request.priority}
+        allowDownscaling={request.allowDownscaling}
+        transition={request.transition}
+        onProgress={onRefused}
+        onError={onRefused}
+        accessibilityIgnoresInvertColors
+      />
+    </View>
   );
 }
 
@@ -520,6 +618,7 @@ const styles = StyleSheet.create({
   hairline: { borderWidth: StyleSheet.hairlineWidth },
   well: { flex: 1, overflow: "hidden" },
   proofSlot: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  closer: { position: "absolute" },
   placeholder: { alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },
   placeholderLine: { marginTop: 6 },
   center: { textAlign: "center" },

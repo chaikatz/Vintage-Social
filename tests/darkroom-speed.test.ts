@@ -11,9 +11,13 @@ vi.mock("@/darkroom/setAside", () => ({ isSetAside: () => false, setAsidePrints:
 
 import { Drawn, RELEASE_AFTER } from "@/components/darkroom/drawn";
 import {
+  closerBox,
+  closerRequest,
   DISSOLVE,
   photographRequest,
   PLATE_PATIENCE_MS,
+  PLATE_ZOOM,
+  proofHoldMs,
   PLATE_STALL_MS,
   PlateStall,
   progressOf,
@@ -405,6 +409,92 @@ describe("a plate's photograph", () => {
     // Drawn or failed, the line is the signature line again.
     expect(photograph).toMatch(/onLoad=\{\(\) => \{\s*stall\.drew\(\);\s*onCloud\(null\);/);
     expect(photograph).toMatch(/onError=\{\(e: ImageErrorEventData\) => \{\s*stall\.failed\(\);\s*onCloud\(null\);/);
+  });
+});
+
+describe("a plate's proof, as its photograph comes in", () => {
+  const page = read("src/components/darkroom/PrintPage.tsx");
+  const full = page.slice(page.indexOf("function Full("), page.indexOf("function Closer("));
+  const photograph = page.slice(page.indexOf("function Photograph("), page.indexOf("function Full("));
+
+  it("stays under the photograph for the whole of its dissolve, and goes at once when there is none", () => {
+    // expo-image fades the photograph in from an empty view over 240 ms: the proof is what it fades in over.
+    expect(proofHoldMs(photographRequest(true, false))).toBe(DISSOLVE.duration);
+    expect(DISSOLVE.duration).toBe(240);
+    // Drawn before this visit, or under Reduce Motion: no dissolve, no wait.
+    expect(proofHoldMs(photographRequest(false, false))).toBe(0);
+    expect(proofHoldMs(photographRequest(true, true))).toBe(0);
+  });
+
+  it("is let go by the photograph's own view once that time has passed, not as it loads", () => {
+    // The proof is drawn until the photograph has developed, not merely drawn.
+    expect(photograph).toMatch(/\{images && source != null && proof && !developed \? \(/);
+    expect(photograph).not.toMatch(/proof && !drawn/);
+    expect(photograph).toMatch(/onDeveloped=\{\(\) => setDeveloped\(true\)\}/);
+    expect(photograph.match(/setDeveloped\(/g)).toHaveLength(1);
+    // The view that dissolves says when it is done, by the request it was made with, and forgets its timer as it goes.
+    expect(full).toMatch(/const ms = proofHoldMs\(request\);/);
+    expect(full).toMatch(/if \(ms === 0\) \{\s*hold\.current = null;\s*onDeveloped\(\);\s*return;\s*\}/);
+    expect(full).toMatch(/hold\.current = setTimeout\(\(\) => \{\s*hold\.current = null;\s*onDeveloped\(\);\s*\}, ms\);/);
+    expect(full).toMatch(/useEffect\(\s*\(\) => \(\) => \{\s*if \(hold\.current\) clearTimeout\(hold\.current\);/);
+    expect(full).toMatch(/onLoad=\{loaded\}/);
+    expect(full).toMatch(/const loaded = \(\) => \{\s*onLoad\(\);/);
+  });
+});
+
+describe("a plate zoomed in", () => {
+  const page = read("src/components/darkroom/PrintPage.tsx");
+  const zoom = page.slice(page.indexOf("function Zoom("), page.indexOf("function actualSize("));
+  const photograph = page.slice(page.indexOf("function Photograph("), page.indexOf("function Full("));
+  const closer = page.slice(page.indexOf("function Closer("), page.indexOf("const styles = StyleSheet.create"));
+
+  it("is drawn from a photograph made for the zoom: a pixel of it to a pixel of the screen at the most zoom", () => {
+    expect(PLATE_ZOOM).toBe(2);
+    expect(zoom).toMatch(/maximumZoomScale=\{PLATE_ZOOM\}/);
+    // A 361-point plate on a 3x phone: Photos is asked for the view's size at the screen's scale.
+    const scale = 3;
+    const box = { width: 361, height: 481 };
+    const plate = box.width * scale;
+    const at = closerBox(box);
+    // Before: the plate's own, stretched by the zoom, half the screen's pixels.
+    expect(plate / (box.width * PLATE_ZOOM)).toBe(1.5);
+    // Now: the zoom's own, one to one.
+    expect((at.width * scale) / (box.width * PLATE_ZOOM)).toBe(scale);
+    // It lies over the plate exactly, drawn at its scale about its middle.
+    expect(at.scale).toBe(1 / PLATE_ZOOM);
+    expect(at.left + at.width / 2).toBe(box.width / 2);
+    expect(at.top + at.height / 2).toBe(box.height / 2);
+    expect(at.width * at.scale).toBe(box.width);
+    expect(at.height * at.scale).toBe(box.height);
+  });
+
+  it("is kept by its view alone, never in memory after or on disk, and dissolves in unless Reduce Motion is on", () => {
+    expect(closerRequest(false)).toEqual({ cachePolicy: "none", priority: "normal", allowDownscaling: false, transition: DISSOLVE });
+    expect(closerRequest(true).transition).toBe(0);
+    for (const prop of ["cachePolicy", "priority", "allowDownscaling", "transition"]) {
+      expect(closer).toMatch(new RegExp(`${prop}=\\{request\\.${prop}\\}`));
+    }
+    expect(closer).toMatch(/const \[request\] = useState\(\(\) => closerRequest\(look\.reduceMotion\)\);/);
+    expect(closer).not.toMatch(/prefetch|memory-disk|cachePolicy="/);
+  });
+
+  it("is there only while the plate in front is zoomed in, and its own photograph has drawn", () => {
+    // The zoom says whether it is zoomed in, from the scroll, the pinch's end, and the page turned away.
+    expect(zoom).toMatch(/zoomed\.current = \(e\.nativeEvent\.zoomScale \?\? 1\) > ZOOMED;\s*onZoomed\(zoomed\.current\);/);
+    expect(zoom).toMatch(/zoomed\.current = false;\s*onZoomed\(false\);\s*actualSize\(scroll\.current, box\);/);
+    expect(page).toMatch(/const \[closer, setCloser\] = useState\(false\);/);
+    expect(page).toMatch(/<Zoom box=\{box\} current=\{current\} onTap=\{props\.onTap\} onZoomed=\{setCloser\}>/);
+    expect(page).toMatch(/<Photograph \{\.\.\.props\} box=\{box\} onCloud=\{cloud\.step\} closer=\{closer\} \/>/);
+    expect(photograph).toMatch(
+      /\{images && source != null && current && closer && drawn && !closerRefused \? \(\s*<Closer id=\{print\.id\} source=\{source\} box=\{box\} onRefused=\{\(\) => setCloserRefused\(true\)\} \/>\s*\) : null\}/,
+    );
+    expect(page.match(/<Closer\b/g)).toHaveLength(1);
+  });
+
+  it("never starts a download from iCloud: at the first word of one, or a failure, it is given up", () => {
+    // Photos reports progress for a ph:// address only while it brings the photograph down from iCloud.
+    expect(closer).toMatch(/onProgress=\{onRefused\}/);
+    expect(closer).toMatch(/onError=\{onRefused\}/);
   });
 });
 

@@ -98,6 +98,59 @@ export function photographRequest(dissolve: boolean, reduceMotion: boolean): Pho
 }
 
 /**
+ * How long the soft proof stays under a photograph that has come in: as
+ * long as its dissolve, which expo-image runs from an empty view, so the
+ * proof is what the photograph fades in over, never the bare well. At once
+ * for a photograph that does not dissolve.
+ */
+export function proofHoldMs(request: Pick<PhotographRequest, "transition">): number {
+  return request.transition === 0 ? 0 : request.transition.duration;
+}
+
+/** How far a plate zooms in under a pinch (its scroll view's `maximumZoomScale`). */
+export const PLATE_ZOOM = 2;
+
+export interface CloserRequest {
+  cachePolicy: "none";
+  priority: "normal";
+  allowDownscaling: false;
+  transition: typeof DISSOLVE | 0;
+}
+
+/**
+ * A plate zoomed in draws its photograph a second time, over the first, at
+ * the zoom's own size, so at the most zoom one pixel of it lands on one
+ * pixel of the screen; the plate's own is asked for at the plate's size,
+ * and only stretched by the zoom. It is there only while the plate in
+ * front is zoomed in, and let go as it goes back to actual size: kept by
+ * its view alone, never in the memory cache or on disk. Photos is asked
+ * for it at that size, never for the original's own; and one that Photos
+ * would have to bring down from iCloud is not waited for (`Closer`, in
+ * PrintPage.tsx), so a pinch never starts a download.
+ */
+export function closerRequest(reduceMotion: boolean): CloserRequest {
+  return {
+    cachePolicy: "none",
+    priority: "normal",
+    allowDownscaling: false,
+    transition: reduceMotion ? 0 : DISSOLVE,
+  };
+}
+
+/** Where the closer photograph lies in a plate `box`: `PLATE_ZOOM` times its size, drawn at its scale, over it exactly. */
+export function closerBox(box: { width: number; height: number }): {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  scale: number;
+} {
+  const width = box.width * PLATE_ZOOM;
+  const height = box.height * PLATE_ZOOM;
+  return { left: (box.width - width) / 2, top: (box.height - height) / 2, width, height, scale: 1 / PLATE_ZOOM };
+}
+
+/**
  * How far a download has come, 0 to 1, from expo-image's progress event;
  * null when it does not say. For a `ph://` address the phone sends only a
  * fraction (`progress`), and only while the photograph comes down from

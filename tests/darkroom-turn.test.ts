@@ -493,7 +493,7 @@ describe("the plate the tap lands on", () => {
   it("hands on where the finger lifted across the page, and whether the print is zoomed in", () => {
     expect(zoom).toMatch(/onPress=\{\(e: GestureResponderEvent\) => onTap\(e\.nativeEvent\.pageX, zoomed\.current\)\}/);
     expect(zoom).not.toMatch(/locationX/);
-    expect(page).toMatch(/<Zoom box=\{box\} current=\{current\} onTap=\{props\.onTap\}>/);
+    expect(page).toMatch(/<Zoom box=\{box\} current=\{current\} onTap=\{props\.onTap\} onZoomed=\{setCloser\}>/);
   });
 
   it("knows it is zoomed in from the scroll and from the pinch's own end", () => {
