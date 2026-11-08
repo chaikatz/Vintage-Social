@@ -21,6 +21,13 @@
 --   drop schema removed_20261108 cascade;
 -- it cannot run, and nothing can be put back.
 --
+-- Since 14_remove_empty_house_accounts.sql ran on production (also on
+-- 8 November), it cannot run on its own either: 590 of the 679 photographs
+-- belonged to the 97 accounts that file removed, so it stops at the first
+-- of them and changes nothing (tried on a local copy). Putting them back
+-- would mean putting those accounts back first, which nothing here does
+-- and nothing has tested.
+--
 -- ---------------------------------------------------------------------------
 -- VINTAGE · put back what was removed on 8 November 2026, only if ever wanted.
 -- All-or-nothing. The app's own reactions (new notices, push calls, recounting)

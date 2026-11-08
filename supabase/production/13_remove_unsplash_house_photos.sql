@@ -17,7 +17,8 @@
 --     shows all 229 house photographs that remain.
 --   Left on production: 229 house photographs, all from Wikimedia Commons
 --   (143 public domain, 70 CC0, 16 marked "no restrictions"). 97 of the
---   150 house accounts have no photographs now; they are kept.
+--   150 house accounts had no photographs left; they were kept then, and
+--   14_remove_empty_house_accounts.sql removed them the same day.
 --
 -- A copy of everything it removed is in the schema removed_20261108,
 -- which anon and authenticated cannot use. 13_restore_unsplash_house_photos.sql

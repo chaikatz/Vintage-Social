@@ -46,8 +46,18 @@ or anywhere in the repository, and must never be.
   SQL Editor). The 229 from Wikimedia Commons stay. The review account now
   also follows the 49 house accounts with photographs that it did not
   follow, so its Home shows all 229. A copy of everything removed is kept
-  in the schema `removed_20261108`; section 7 records the decision and
-  says how to put it back or drop the copy.
+  in the schema `removed_20261108`; section 7 records the decision, says
+  why it can no longer simply be put back, and how to drop the copy.
+- House accounts: the 97 house accounts left with no photographs are
+  removed from **production** too, with their 1,607 follows (8 of them
+  the review account's and 24 your own account's), 1,796 likes and 682
+  comments (all on house photographs), 4,086 activity rows, 1 moderation
+  record, and 2 conversations of yours with two of them from September,
+  whose messages were not copied
+  (`supabase/production/14_remove_empty_house_accounts.sql`, run in the
+  SQL Editor). 53 house accounts are left, each with photographs, and the
+  review account follows all 53. The copy is in `removed_20261108` too;
+  section 7 records it.
 
 ---
 
@@ -74,19 +84,20 @@ or anywhere in the repository, and must never be.
 
 ### Production (Supabase `scfwowqsqrnzpknzurmm`), read on 5 November
 
-- **Accounts (re-read 6 November).** 6 approved members who are people,
-  your own account and the review account among them. 150 **house
-  accounts**: the club's own accounts, flagged `is_house` (149 approved,
-  1 suspended). They cannot sign in and never take a membership number.
-  Since 8 November they show 229 photographs, all from Wikimedia Commons
-  and listed in `seed/CREDITS.md` (the 679 Unsplash photographs it also
-  lists were removed that day: section 7), and 97 of the 150 have no
-  photographs left. 5 more people have
+- **Accounts (re-read 6 November; the members and house accounts again
+  on 8 November).** 6 approved members who are people, your own account
+  and the review account among them. 53 **house accounts**: the club's
+  own accounts, flagged `is_house`, all approved. They cannot sign in and
+  never take a membership number. Since 8 November they show 229
+  photographs, all from Wikimedia Commons and listed in `seed/CREDITS.md`
+  (the 679 Unsplash photographs it also lists were removed that day:
+  section 7), and each of the 53 has some. The seed made 150; the 97 left
+  with no photographs were removed on 8 November (section 7). 5 more people have
   an account but are not members: 4 whose application was rejected and 1
   with no application at all (their profile still reads `applied`; the
   flows area's repair makes the waiting screen say what is true for each).
-- 469 posts (read 8 November): **229 from house accounts, 240 from
-  members**. 131 posts have a point on the map. On 5 November, before the
+- 470 posts (read 8 November): **229 from house accounts, 241 from
+  members**. 132 posts have a point on the map. On 5 November, before the
   Unsplash photographs were removed, there were 1,139 posts: 908 from
   house accounts and 231 from members.
 - Reports: 2 in all, both dismissed, **0 open**. Applications: 2 approved,
@@ -106,7 +117,10 @@ or anywhere in the repository, and must never be.
   8 November.** 7 accounts are private, all of them house accounts; they
   had 95 accepted follows between them, made by 79 accounts, all house
   accounts, and 0 follows were waiting as requests (the review account's
-  follows of 8 November came after this reading). Before 0038 the
+  follows of 8 November came after this reading). Read again on
+  8 November, after the house accounts with no photographs were removed:
+  4 accounts are private, all of them house accounts, with 18 accepted
+  follows and 0 requests waiting. Before 0038 the
   database took a follow's status from the app, so any member could make
   themselves an accepted follower of a private account and see its
   photographs, and a private member's Accept and Decline changed nothing.
@@ -118,10 +132,12 @@ or anywhere in the repository, and must never be.
   surface and are by design. **Leaked-password protection is off** (step 7).
 - The review account `appreview@vintagesocial.app`: approved, email
   confirmed, not banned, 5 invitations left, invitation link
-  `applereview`. It follows 61 accounts (read 8 November), **all of them
-  house accounts**: the 12 it was made with, and the 49 house accounts
-  with photographs that it did not follow, added on 8 November. So the
-  reviewer's Home is the 229 house photographs. The review notes
+  `applereview`. It follows 53 accounts (read 8 November), **all of them
+  house accounts**, and every house account there is: 4 of the 12 it was
+  made with (the other 8 had no photographs left, and were removed with
+  the rest on 8 November), and the 49 house accounts with photographs
+  that it did not follow, added on 8 November. So the reviewer's Home is
+  the 229 house photographs. The review notes
   (section 4) say so. Last sign-in 7 October. Its password cannot be
   checked from here (step 6).
 
@@ -335,8 +351,8 @@ notice, and how to undo it. If you approve, in the merged branch:
    turn (it is safe to run twice).
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
-   later files add, so part-way through they read false). The two `13_`
-   files there are not verify scripts: see item 6.
+   later files add, so part-way through they read false). The `13_` and
+   `14_` files there are not verify scripts: see item 6.
    Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0038 in 48 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
@@ -380,8 +396,11 @@ notice, and how to undo it. If you approve, in the merged branch:
    production, run `supabase/production/13_remove_unsplash_house_photos.sql`
    (after `10_reviewer_account.sql` too): the seed still has the 679
    Unsplash photographs that production removed on 8 November (section 7).
-   Never run `13_restore_unsplash_house_photos.sql` as a step: it only
-   undoes 13_remove.
+   Then run `supabase/production/14_remove_empty_house_accounts.sql`, which
+   removes the 97 house accounts 13_remove leaves with no photographs, as
+   production did the same day. Never run
+   `13_restore_unsplash_house_photos.sql` as a step: it only undoes
+   13_remove.
 
 Never run anything against `omvezsrkjizxdfeogccw` (staging) by mistake for
 production, or the other way round: the project name is at the top left of
@@ -848,7 +867,7 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 
 ## 7. The house accounts: what was decided on 8 November
 
-**What they are.** 150 accounts made by script
+**What they are.** 150 accounts (53 since 8 November) made by script
 (`supabase/production/08_house_accounts.sql`), under invented names,
 showing photographs taken by other photographers. Nothing in the app
 labels them, and none of them can sign in. The script gave them 908
@@ -879,21 +898,46 @@ Editor on 8 November, and read back afterwards):
 - The 112 house profile pictures that were Unsplash photographs are
   cleared. The other 38 house profile pictures stay.
 - The review account follows the 49 house accounts with photographs that
-  it did not follow before. It follows 61 accounts now, all of them house
-  accounts, and its Home shows all 229 house photographs (96 before).
+  it did not follow before. It followed 61 accounts then, all of them
+  house accounts, and its Home showed all 229 house photographs (96
+  before).
 - A copy of everything removed is in the schema `removed_20261108`, which
   the app cannot reach. `supabase/production/13_restore_unsplash_house_photos.sql`
-  puts all of it back exactly, and exists only for that. Once you are sure
-  you will not want them back, run `drop schema removed_20261108 cascade;`
-  in the SQL Editor; after that nothing can be put back.
+  puts all of it back exactly, and exists only for that; but since the
+  removal below it cannot run on its own: 590 of the 679 photographs
+  belonged to the 97 accounts removed next, so it stops at the first of
+  them and changes nothing (tried on a local copy). Once you are sure you
+  will not want them back, run `drop schema removed_20261108 cascade;` in
+  the SQL Editor; after that nothing can be put back.
 
-**Production now** (read on 8 November). 469 posts: 229 from house
-accounts and 240 from members. The 229 are public domain (143), CC0 (70)
+**And the 97 house accounts left with no photographs**, which you asked to
+have removed the same day
+(`supabase/production/14_remove_empty_house_accounts.sql`, run in the SQL
+Editor on 8 November, and read back afterwards):
+
+- The 97 accounts are removed, and with them 1,607 follows (1,575 between
+  house accounts, 8 by the review account and 24 by your own account),
+  1,796 likes and 682 comments (all by those accounts, on house
+  photographs; none on a member's), 4,086 activity rows (none addressed to
+  a member) and 1 moderation record (your suspension of the one house
+  account that was suspended).
+- 2 conversations went with them: yours with two of those accounts, from
+  4 and 6 September. Their messages were **not** copied; the copy has the
+  two conversation rows only.
+- 53 house accounts are left, all approved, each with photographs. The
+  review account follows all 53, and its Home still shows all 229.
+- A copy of the rest is in `removed_20261108` too (the tables named
+  `accounts_*`). There is no restore script for this one, and none has
+  been tested. `drop schema removed_20261108 cascade;` drops this copy
+  with the other.
+
+**Production now** (read on 8 November). 470 posts: 229 from house
+accounts and 241 from members. The 229 are public domain (143), CC0 (70)
 or marked "no restrictions" (16), all from Wikimedia Commons, and carry no
-condition like the Unsplash one. There are 1,778 follows, 2,795 likes and
-1,051 comments, all between house accounts and made by script; the 229
-photographs in the review account's Home carry all 2,795 of those
-likes and all 1,051 of those comments. Before the removal (read on 5
+condition like the Unsplash one. There are 203 follows, 999 likes and
+369 comments, all between house accounts and made by script; the 229
+photographs in the review account's Home carry all 999 of those
+likes and all 369 of those comments. Before the removal (read on 5
 and 6 November) there were 1,139 posts (908 from house accounts), 11,138 likes and 4,182 comments
 between house accounts, and the review account followed 12 house
 accounts, whose 96 photographs carried 1,183 of those likes and 450 of
@@ -910,12 +954,7 @@ say the photographs are yours.
 
 **What is still yours to decide** (a lawyer's view is worth having):
 
-- **The 97 house accounts with no photographs.** 97 of the 150 show no
-  photographs now. They are kept, and can still be found and followed. To
-  remove them, ask Claude for a reviewed SQL file to run in the SQL
-  Editor, like the others; their follows, likes and comments go with
-  them.
-- **The scripted likes and comments.** The 2,795 likes and 1,051 comments
+- **The scripted likes and comments.** The 999 likes and 369 comments
   between house accounts on the 229 photographs still exist, and the
   Terms and the review notes still disclose them. To keep the photographs
   but remove the scripted likes and comments (those made by a house

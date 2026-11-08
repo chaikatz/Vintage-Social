@@ -27,24 +27,26 @@ const sqlOnly = (sql: string) => sql.replace(/--[^\n]*/g, "");
 
 /**
  * Production on 8 November 2026, read after 13_remove_unsplash_house_photos.sql
- * ran there. Nothing in the repository can count these, so they are written
- * once here and the checklist is held to them wherever it states production;
- * where a number can be counted from the seed or from the script, the tests
- * below count it.
+ * and then 14_remove_empty_house_accounts.sql ran there. Nothing in the
+ * repository can count these, so they are written once here and the checklist
+ * is held to them wherever it states production; where a number can be
+ * counted from the seed or from the scripts, the tests below count it.
  */
 const PRODUCTION = {
-  posts: 469,
-  members: 240,
-  mapPoints: 131,
+  posts: 470,
+  members: 241,
+  mapPoints: 132,
   removedLikes: 8346,
   removedMemberLikes: 3,
   removedComments: 3131,
   removedActivity: 11478,
   keptAvatars: 38,
   reviewFollowsAdded: 49,
-  houseFollows: 1778,
-  houseLikes: 2795,
-  houseComments: 1051,
+  houseFollows: 203,
+  houseLikes: 999,
+  houseComments: 369,
+  /** What 14_remove took with the 97 accounts (read back from removed_20261108 afterwards). */
+  emptyRemoved: { follows: 1607, houseFollows: 1575, reviewFollows: 8, ownerFollows: 24, likes: 1796, comments: 682, activity: 4086 },
   before: { posts: 1139, members: 231, houseLikes: 11138, houseComments: 4182, reviewHome: 96, reviewLikes: 1183, reviewComments: 450 },
 };
 const commas = (n: number) => n.toLocaleString("en-US");
@@ -69,6 +71,19 @@ const removeCounts = () => {
   expect(before![1], "the count it checks is the count it names").toBe(before![2]);
   expect(after![1], "the count it checks is the count it names").toBe(after![2]);
   return { removed: Number(before![1]), left: Number(after![1]) };
+};
+
+/** What 14_remove_empty_house_accounts.sql itself counts: the house accounts with no photographs it must find, and the house accounts and photographs it must leave. */
+const emptyCounts = () => {
+  const sql = sqlOnly(read("supabase/production/14_remove_empty_house_accounts.sql"));
+  const remove = sql.match(/and not exists \(select 1 from public\.posts p where p\.author_id = a\.id\)\) <> (\d+) then\s+raise exception 'Expected (\d+) house accounts with no photographs\. Nothing was changed\.'/);
+  const keep = sql.match(/from public\.profiles where is_house\) <> (\d+) then\s+raise exception 'Expected (\d+) house accounts to remain\. Nothing was changed\.'/);
+  const photographs = sql.match(/where a\.is_house\) <> (\d+) then\s+raise exception 'Expected the (\d+) house photographs to remain\. Nothing was changed\.'/);
+  expect(remove, "14_remove counts the house accounts with no photographs before it changes anything").toBeTruthy();
+  expect(keep, "14_remove counts the house accounts it leaves").toBeTruthy();
+  expect(photographs, "14_remove counts the house photographs it leaves").toBeTruthy();
+  for (const m of [remove!, keep!, photographs!]) expect(m[1], "the count it checks is the count it names").toBe(m[2]);
+  return { remove: Number(remove![1]), keep: Number(keep![1]), photographs: Number(photographs![1]) };
 };
 
 describe("the database step", () => {
@@ -243,7 +258,6 @@ describe("the house accounts, as Apple is told about them", () => {
     expect(where).not.toMatch(/155 approved members/);
     const { posts, accounts } = seedHouse();
     expect(accounts.length, "the seed's house accounts").toBe(150);
-    expect(where).toContain(`${accounts.length} **house accounts**`);
     const { removed, left } = removeCounts();
     // Now: the house photographs are what 13_remove left, and the total adds up.
     const now = where.match(/([\d,]+) posts \(read 8 November\): \*\*([\d,]+) from house accounts, ([\d,]+) from members\*\*\. ([\d,]+) posts have a point on the map\./);
@@ -262,19 +276,27 @@ describe("the house accounts, as Apple is told about them", () => {
     expect(posts.filter((p) => isPicsum(p.media)).length, "the seed's Unsplash photographs are the ones 13_remove counts").toBe(removed);
     // It used to state the 5 November split as production's.
     expect(where).not.toContain("**908 from house accounts, 231 from members**");
-    // The house accounts left with nothing: the seed's, less those with a Wikimedia photograph.
+    // The house accounts production keeps: the seed's, less the ones 14_remove took (those 13_remove left with nothing).
     const withPhotographs = new Set(posts.filter((p) => !isPicsum(p.media)).map((p) => p.author)).size;
+    const { remove, keep } = emptyCounts();
+    expect([remove, keep]).toEqual([accounts.length - withPhotographs, withPhotographs]);
+    expect(where).toContain(`${keep} **house accounts**: the club's own accounts, flagged \`is_house\`, all approved.`);
     expect(where).toContain(`Since 8 November they show ${left} photographs, all from Wikimedia Commons`);
-    expect(where).toContain(`${accounts.length - withPhotographs} of the ${accounts.length} have no photographs left`);
-    // The review account: the twelve 10_reviewer_account.sql gave it, and the house accounts 13_remove added.
+    expect(where).toContain(`each of the ${keep} has some. The seed made ${accounts.length}; the ${remove} left with no photographs were removed on 8 November`);
+    // It used to give the seed's 150, and the 97 as kept with nothing.
+    expect(where).not.toMatch(/149 approved|have no photographs left/);
+    // The review account: the twelve 10_reviewer_account.sql gave it, less those 14_remove took, and the house accounts 13_remove added.
     const made = Number(read("supabase/production/10_reviewer_account.sql").match(/where is_house and status = 'approved' order by post_count desc limit (\d+) loop/)?.[1]);
     expect(made).toBe(12);
-    const follows = where.match(/It follows ([\d,]+) accounts \(read 8 November\), \*\*all of them house accounts\*\*: the (\d+) it was made with, and the (\d+) house accounts with photographs that it did not follow, added on 8 November\./);
+    const follows = where.match(
+      /It follows ([\d,]+) accounts \(read 8 November\), \*\*all of them house accounts\*\*, and every house account there is: (\d+) of the (\d+) it was made with \(the other (\d+) had no photographs left, and were removed with the rest on 8 November\), and the (\d+) house accounts with photographs that it did not follow, added on 8 November\./,
+    );
     expect(follows, "section 1 states the review account's follows as read on 8 November").toBeTruthy();
-    const [all, original, added] = follows!.slice(1).map(num);
-    expect([original, added]).toEqual([made, PRODUCTION.reviewFollowsAdded]);
-    expect(all).toBe(original + added);
-    expect(added, "it can only have been given house accounts that have photographs").toBeLessThanOrEqual(withPhotographs);
+    const [all, kept, original, gone, added] = follows!.slice(1).map(num);
+    expect([original, gone, added]).toEqual([made, PRODUCTION.emptyRemoved.reviewFollows, PRODUCTION.reviewFollowsAdded]);
+    expect(kept + gone).toBe(original);
+    expect(all).toBe(kept + added);
+    expect(all, "it follows every house account production keeps").toBe(keep);
     expect(where).toContain(`So the reviewer's Home is the ${left} house photographs.`);
     expect(where).not.toMatch(/all 12 are house accounts/);
   });
@@ -663,17 +685,14 @@ describe("the Unsplash house photographs removed on 8 November", () => {
     expect(decide).toContain("(`supabase/production/13_remove_unsplash_house_photos.sql`, run in the SQL Editor on 8 November");
     expect(decide).toContain(`The ${removed} Unsplash photographs are removed, and with them ${commas(P.removedLikes)} likes`);
     expect(decide).toContain(`The ${avatars} house profile pictures that were Unsplash photographs are cleared. The other ${P.keptAvatars} house profile pictures stay.`);
-    expect(decide).toContain(`It follows ${12 + P.reviewFollowsAdded} accounts now, all of them house accounts, and its Home shows all ${left} house photographs (${P.before.reviewHome} before).`);
+    expect(decide).toContain(`It followed ${12 + P.reviewFollowsAdded} accounts then, all of them house accounts, and its Home showed all ${left} house photographs (${P.before.reviewHome} before).`);
     expect(decide).toContain("`supabase/production/13_restore_unsplash_house_photos.sql` puts all of it back exactly");
     expect(decide).toContain("run `drop schema removed_20261108 cascade;` in the SQL Editor");
-    // What is open: the house accounts left with no photographs, counted from the seed.
-    const { posts, accounts } = seedHouse();
-    const empty = accounts.length - new Set(posts.filter((p) => !isPicsum(p.media)).map((p) => p.author)).size;
-    expect(decide).toContain(`**The ${empty} house accounts with no photographs.** ${empty} of the ${accounts.length} show no photographs now. They are kept, and can still be found and followed.`);
-    // Step 4: verify scripts numbered 12 and up, but the 13_ files are not verify scripts; a fresh project runs 13_remove, never 13_restore.
+    // Step 4: verify scripts numbered 12 and up, but the 13_ and 14_ files are not verify scripts; a fresh project runs 13_remove then 14_remove, never 13_restore.
     const step = flat(between(doc(), "### Step 4", "### Step 5"));
-    expect(step).toContain("The two `13_` files there are not verify scripts: see item 6.");
+    expect(step).toContain("The `13_` and `14_` files there are not verify scripts: see item 6.");
     expect(step).toContain("run `supabase/production/13_remove_unsplash_house_photos.sql` (after `10_reviewer_account.sql` too)");
+    expect(step).toContain("Then run `supabase/production/14_remove_empty_house_accounts.sql`, which removes the 97 house accounts 13_remove leaves with no photographs");
     expect(step).toContain("Never run `13_restore_unsplash_house_photos.sql` as a step: it only undoes 13_remove.");
   });
 
@@ -684,16 +703,97 @@ describe("the Unsplash house photographs removed on 8 November", () => {
     expect(seedReadme).toContain(
       `On 8 November 2026 production removed the ${removed} Unsplash photographs and the ${avatars} Unsplash profile pictures with \`supabase/production/13_remove_unsplash_house_photos.sql\`, leaving the ${left} photographs from Wikimedia Commons`,
     );
-    expect(seedReadme).toContain("A fresh project seeded with 08 must run `13_remove_unsplash_house_photos.sql` after it");
+    expect(seedReadme).toContain("A fresh project seeded with 08 must run `13_remove_unsplash_house_photos.sql` after it, then `14_remove_empty_house_accounts.sql`");
     const readme = flat(read("supabase/production/README.md"));
     // Its first lines say everything runs in order; the restore must be the named exception.
     expect(readme.slice(0, 600)).toContain("with one exception: `13_restore_unsplash_house_photos.sql` is not a step.");
     expect(readme).toContain(
-      `on 8 November production removed the ${removed} Unsplash photographs and the ${avatars} Unsplash profile pictures with \`13_remove_unsplash_house_photos.sql\`, leaving ${left} house photographs, all from Wikimedia Commons. A fresh project seeded with 08 must run 13_remove after it`,
+      `on 8 November production removed the ${removed} Unsplash photographs and the ${avatars} Unsplash profile pictures with \`13_remove_unsplash_house_photos.sql\`, leaving ${left} house photographs, all from Wikimedia Commons, and then the 97 house accounts left with no photographs with \`14_remove_empty_house_accounts.sql\`, leaving 53 house accounts. A fresh project seeded with 08 must run 13_remove after it, and then 14_remove`,
     );
+    expect(readme).toContain("4. Then run `supabase/production/14_remove_empty_house_accounts.sql` the same way, after 13_remove");
     expect(readme).toContain("### The Unsplash house photographs, removed on 8 November");
     expect(readme).toContain("`13_restore_unsplash_house_photos.sql` puts all of it back exactly");
     expect(readme).toContain("drop schema removed_20261108 cascade;");
     expect(readme).toContain("3. To match production, run `supabase/production/13_remove_unsplash_house_photos.sql` whole, in the SQL Editor (which runs the file as one transaction), after 08");
+  });
+});
+
+/**
+ * The 97 house accounts 13_remove left with no photographs, removed from
+ * production the same day with 14_remove_empty_house_accounts.sql. The file
+ * is the record of what was run; it has no restore, and since it ran the
+ * 13_restore script cannot run on its own, which the docs must say.
+ */
+describe("the house accounts with no photographs, removed on 8 November", () => {
+  const removePath = "supabase/production/14_remove_empty_house_accounts.sql";
+  const firstLine = "-- VINTAGE · remove the 97 house accounts left with no photographs (8 November 2026)\n";
+  const seedEmpty = () => {
+    const { posts, accounts } = seedHouse();
+    const keep = new Set(posts.filter((p) => !isPicsum(p.media)).map((p) => p.author));
+    const empty = new Set(accounts.map((a) => a.id).filter((id) => !keep.has(id)));
+    return { keep, empty, theirs: posts.filter((p) => empty.has(p.author)).length };
+  };
+
+  it("counts from the seed what it removes and leaves, checks before the delete and after it, and refuses twice", () => {
+    const { keep, empty } = seedEmpty();
+    const { remove, keep: left, photographs } = emptyCounts();
+    expect([remove, left]).toEqual([empty.size, keep.size]);
+    expect(photographs).toBe(removeCounts().left);
+    const body = sqlOnly(read(removePath));
+    const del = body.indexOf("delete from auth.users where id in (select id from removed_20261108.accounts_ids);");
+    expect(del, "it deletes the accounts it copied, by id").toBeGreaterThan(0);
+    expect(body.indexOf(`<> ${remove} then`)).toBeLessThan(del);
+    expect(body.indexOf(`<> ${left} then`)).toBeGreaterThan(del);
+    expect(body).toContain("if to_regnamespace('removed_20261108') is null then");
+    expect(body).toContain("if to_regclass('removed_20261108.accounts_ids') is not null then");
+    // Nothing in it opens the copy to the app (13_remove revoked the schema, and nothing grants it back).
+    expect(body).not.toMatch(/\bgrant\b/i);
+  });
+
+  it("its header says what went, and that the messages were not copied, which the script bears out", () => {
+    const text = read(removePath);
+    expect(text.indexOf(firstLine), "the script as run starts after its header").toBeGreaterThan(0);
+    const said = flat(text.slice(0, text.indexOf(firstLine)).replace(/^-- ?/gm, ""));
+    const E = PRODUCTION.emptyRemoved;
+    expect(said).toContain("RUN ON PRODUCTION (scfwowqsqrnzpknzurmm) ON 8 NOVEMBER 2026");
+    expect(E.houseFollows + E.reviewFollows + E.ownerFollows).toBe(E.follows);
+    expect(said).toContain(
+      `${commas(E.follows)} follows: ${commas(E.houseFollows)} between house accounts, ${E.reviewFollows} by the review account and ${E.ownerFollows} by the owner's account`,
+    );
+    expect(said).toContain(`${commas(E.likes)} likes and ${E.comments} comments`);
+    expect(said).toContain(`${commas(E.activity)} activity rows`);
+    expect(said).toContain("The messages were NOT copied: the copy has the two conversation rows only.");
+    expect(said).toContain("There is no restore script for this file, and none has been tested.");
+    const copied = [...sqlOnly(text).matchAll(/create table removed_20261108\.(\w+) as/g)].map((m) => m[1]);
+    expect(copied.sort()).toEqual([
+      "accounts_activity", "accounts_comments", "accounts_conversations", "accounts_follows", "accounts_ids",
+      "accounts_likes", "accounts_moderation", "accounts_profiles", "accounts_users",
+    ]);
+    expect(copied.some((t) => /message/.test(t)), "if messages are ever copied, the header's sentence is wrong").toBe(false);
+  });
+
+  it("the checklist and the runbooks record it, and say the Unsplash restore no longer runs on its own", () => {
+    const { empty, theirs } = seedEmpty();
+    const { removed } = removeCounts();
+    const E = PRODUCTION.emptyRemoved;
+    const done = flat(between(doc(), "**Done on 8 November**", "\n---\n"));
+    expect(done).toContain(
+      `the ${empty.size} house accounts left with no photographs are removed from **production** too, with their ${commas(E.follows)} follows (${E.reviewFollows} of them the review account's and ${E.ownerFollows} your own account's), ${commas(E.likes)} likes and ${E.comments} comments`,
+    );
+    expect(done).toContain("(`supabase/production/14_remove_empty_house_accounts.sql`, run in the SQL Editor)");
+    const decide = section7();
+    expect(decide).toContain(`**And the ${empty.size} house accounts left with no photographs**`);
+    expect(decide).toContain("Their messages were **not** copied");
+    expect(decide).not.toContain("They are kept, and can still be found and followed.");
+    // 13_restore puts back photographs whose authors 14_remove deleted, so the foreign key stops it.
+    const why = `${theirs} of the ${removed} photographs belonged to the ${empty.size} accounts`;
+    expect(decide).toContain(`${why} removed next, so it stops at the first of them and changes nothing`);
+    expect(flat(read("supabase/production/13_restore_unsplash_house_photos.sql").replace(/^-- ?/gm, ""))).toContain(
+      `${why} that file removed, so it stops at the first of them and changes nothing`,
+    );
+    const readme = flat(read("supabase/production/README.md"));
+    expect(readme).toContain(`### The ${empty.size} house accounts with no photographs, removed on 8 November`);
+    expect(readme).toContain(`${theirs} of the ${removed} photographs belonged to the accounts 14_remove removed`);
+    expect(readme).toContain("a fresh project needs 13_remove and then 14_remove after 08 to match production");
   });
 });

@@ -22,10 +22,13 @@ of them Unsplash photographs too. Production no longer has those. On
 112 Unsplash profile pictures with
 `supabase/production/13_remove_unsplash_house_photos.sql`, leaving the 229
 photographs from Wikimedia Commons (section 7 of `APP_STORE_LAUNCH.md`
-says why). The seed was not rebuilt. A fresh project seeded with 08 must
-run `13_remove_unsplash_house_photos.sql` after it (and
+says why), and then the 97 of the 150 house accounts that had no
+photographs left with `supabase/production/14_remove_empty_house_accounts.sql`,
+leaving 53. The seed was not rebuilt. A fresh project seeded with 08 must
+run `13_remove_unsplash_house_photos.sql` after it, then
+`14_remove_empty_house_accounts.sql` (and
 `0034_seed_thumbnails_at_a_standard_width.sql` again, step 4 of
-`APP_STORE_LAUNCH.md`) to match production.
+`APP_STORE_LAUNCH.md`), to match production.
 
 ## Two sources, and why
 
