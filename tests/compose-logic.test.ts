@@ -43,6 +43,11 @@ const phone = vi.hoisted(() => ({
   develops: [] as { id: string; opts: Record<string, unknown> }[],
   developAnswer: null as unknown,
   cancelled: [] as string[],
+  /** The module's progress listeners: a fraction for a request id. */
+  progress: new Set<(requestId: string, fraction: number) => void>(),
+  /** Files on the phone, and those deleted. */
+  files: new Set<string>(),
+  deleted: [] as string[],
 }));
 
 vi.mock("@/darkroom/nativeLibrary", () => ({
@@ -54,6 +59,26 @@ vi.mock("@/darkroom/nativeLibrary", () => ({
   },
   cancelDevelop: (_mod: unknown, requestId: string) => {
     phone.cancelled.push(requestId);
+  },
+  onDevelopProgress: (_mod: unknown, requestId: string, listener: (fraction: number) => void) => {
+    const heard = (id: string, fraction: number) => {
+      if (id === requestId) listener(fraction);
+    };
+    phone.progress.add(heard);
+    return () => void phone.progress.delete(heard);
+  },
+}));
+
+vi.mock("expo-file-system", () => ({
+  File: class {
+    constructor(public uri: string) {}
+    get exists() {
+      return phone.files.has(this.uri);
+    }
+    delete() {
+      phone.files.delete(this.uri);
+      phone.deleted.push(this.uri);
+    }
   },
 }));
 
@@ -112,6 +137,9 @@ beforeEach(() => {
   phone.develops.length = 0;
   phone.developAnswer = null;
   phone.cancelled.length = 0;
+  phone.progress.clear();
+  phone.files.clear();
+  phone.deleted.length = 0;
 });
 
 // ---------------------------------------------------------------------------
@@ -663,6 +691,127 @@ describe("a photograph opened from On this day or That night", () => {
       expect(params?.uri).toBe("file:///library/IMG_0042.HEIC.prepared.jpg");
     });
 
+    /** iCloud reports progress on the request in flight. */
+    const progress = (fraction: number) => {
+      const id = String(phone.develops[phone.develops.length - 1]?.opts.requestId);
+      for (const heard of [...phone.progress]) heard(id, fraction);
+    };
+
+    it("keeps waiting while iCloud's progress still comes, past a minute, and opens it", async () => {
+      vi.useFakeTimers();
+      try {
+        const { composeParamsFor, OPEN_TIMEOUT_MS } = await import("@/utils/library");
+        phone.library = {};
+        let answer: (value: unknown) => void = () => undefined;
+        phone.developAnswer = () => new Promise((resolve) => (answer = resolve));
+        let opened: unknown = "waiting";
+        void composeParamsFor(shot).then((p) => (opened = p));
+        await vi.advanceTimersByTimeAsync(0);
+        // A large photograph on a slow connection: a step every 20 seconds, for three minutes.
+        for (let t = 1; t <= 9; t++) {
+          await vi.advanceTimersByTimeAsync(20_000);
+          progress(t / 10);
+        }
+        expect(9 * 20_000).toBeGreaterThan(OPEN_TIMEOUT_MS * 2);
+        expect(opened).toBe("waiting");
+        expect(phone.cancelled).toEqual([]);
+        answer({ status: "ok", uri: "file:///caches/darkroom/SLOW.jpg", width: 2048, height: 1536 });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(opened).toMatchObject({ uri: "file:///caches/darkroom/SLOW.jpg" });
+        expect(phone.progress.size).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("gives up a minute after iCloud's progress stops, however far it had come, and never after the longest wait", async () => {
+      vi.useFakeTimers();
+      try {
+        const { composeParamsFor, OPEN_TIMEOUT_MS, OPEN_LONGEST_MS } = await import("@/utils/library");
+        phone.library = {};
+        phone.developAnswer = () => new Promise(() => undefined);
+        let stalled: unknown = "waiting";
+        void composeParamsFor(shot).then((p) => (stalled = p));
+        await vi.advanceTimersByTimeAsync(30_000);
+        progress(0.9);
+        // The same step again is no news.
+        await vi.advanceTimersByTimeAsync(30_000);
+        progress(0.9);
+        await vi.advanceTimersByTimeAsync(OPEN_TIMEOUT_MS - 30_001);
+        expect(stalled).toBe("waiting");
+        await vi.advanceTimersByTimeAsync(1);
+        expect(stalled).toBeNull();
+        expect(phone.cancelled).toHaveLength(1);
+
+        // Steady, small steps for ever: still a bound.
+        expect(OPEN_LONGEST_MS).toBe(10 * 60_000);
+        let endless: unknown = "waiting";
+        void composeParamsFor(shot).then((p) => (endless = p));
+        await vi.advanceTimersByTimeAsync(0);
+        for (let t = 1; t * 30_000 < OPEN_LONGEST_MS; t++) {
+          await vi.advanceTimersByTimeAsync(30_000);
+          progress(t / 1000);
+        }
+        expect(endless).toBe("waiting");
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(endless).toBeNull();
+        expect(phone.cancelled).toHaveLength(2);
+        expect(phone.prepareCalls).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stops at once for a screen that stopped waiting, tells Photos, reads no file, and deletes a copy that comes anyway", async () => {
+      const { composeParamsFor } = await import("@/utils/library");
+      phone.library = {};
+      let answer: (value: unknown) => void = () => undefined;
+      phone.developAnswer = () => new Promise((resolve) => (answer = resolve));
+      phone.assetInfo = { localUri: "file:///library/IMG_0042.HEIC", creationTime: 0 };
+      const stop = new AbortController();
+      const pending = composeParamsFor(shot, { signal: stop.signal });
+      await Promise.resolve();
+      stop.abort();
+      expect(await pending).toBeNull();
+      expect(phone.cancelled).toHaveLength(1);
+      expect(phone.progress.size).toBe(0);
+      expect(phone.prepareCalls).toEqual([]);
+
+      phone.files.add("file:///caches/darkroom/LATE.jpg");
+      answer({ status: "ok", uri: "file:///caches/darkroom/LATE.jpg", width: 2048, height: 1536 });
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(phone.deleted).toEqual(["file:///caches/darkroom/LATE.jpg"]);
+
+      // Stopped before it began: nothing is asked of Photos at all.
+      const before = new AbortController();
+      before.abort();
+      expect(await composeParamsFor(shot, { signal: before.signal })).toBeNull();
+      expect(phone.develops).toHaveLength(1);
+    });
+
+    it("deletes only copies it made, and a copy decoded from the file for a screen that has gone", async () => {
+      const { composeParamsFor, discardOpened } = await import("@/utils/library");
+      phone.library = null;
+      phone.assetInfo = { localUri: "file:///library/IMG_0042.HEIC", creationTime: 0 };
+      const stop = new AbortController();
+      let prepared: (value: unknown) => void = () => undefined;
+      phone.prepareAnswers.push(new Promise((resolve) => (prepared = resolve)));
+      const pending = composeParamsFor(photo, { signal: stop.signal });
+      for (let i = 0; i < 10 && phone.prepareCalls.length === 0; i++) await Promise.resolve();
+      expect(phone.prepareCalls).toHaveLength(1);
+      // Stopped while the file is being decoded: the copy it makes is not kept.
+      stop.abort();
+      phone.files.add("file:///library/IMG_0042.HEIC.prepared.jpg");
+      prepared({ uri: "file:///library/IMG_0042.HEIC.prepared.jpg", width: 2048, height: 1536 });
+      expect(await pending).toBeNull();
+      expect(phone.deleted).toEqual(["file:///library/IMG_0042.HEIC.prepared.jpg"]);
+
+      phone.files.add("file:///library/IMG_0042.HEIC");
+      discardOpened("file:///library/IMG_0042.HEIC");
+      discardOpened(null);
+      expect(phone.deleted).toEqual(["file:///library/IMG_0042.HEIC.prepared.jpg"]);
+    });
+
     it("stops asking iCloud after a minute and opens nothing, rather than waiting for ever", async () => {
       vi.useFakeTimers();
       try {
@@ -720,6 +869,28 @@ function code(file: string): string {
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
+
+describe("a screen that opens a library photograph in the editor", () => {
+  for (const file of ["app/memories.tsx", "app/library-picker.tsx"]) {
+    it(`opens it, or says it could not, only while it is still in front (${file})`, () => {
+      const src = code(file);
+      // Blurred, or gone, it stops the open, and no longer counts itself in front.
+      expect(src).toMatch(
+        /useFocusEffect\(\s*useCallback\(\(\) => \{\s*front\.current = true;\s*return \(\) => \{\s*front\.current = false;\s*openStop\.current\?\.abort\(\);\s*\};\s*\}, \[\]\),\s*\);/,
+      );
+      expect(src.match(/composeParamsFor\(/g)).toHaveLength(1);
+      expect(src).toMatch(/const stop = new AbortController\(\);\s*openStop\.current = stop;/);
+      const after = src.slice(src.indexOf("await composeParamsFor(photo, { signal: stop.signal });"));
+      expect(after.length).toBeLessThan(src.length);
+      // Asked as the photograph arrives, before either the alert or the editor.
+      const check = after.search(/if \(stop\.signal\.aborted \|\| !front\.current\) \{\s*discardOpened\(params\?\.uri\);\s*return;\s*\}/);
+      expect(check).toBeGreaterThan(-1);
+      expect(check).toBeLessThan(after.indexOf("showAlert("));
+      expect(check).toBeLessThan(after.indexOf('router.push({ pathname: "/compose", params })'));
+      expect(src.match(/router\.push\(\{ pathname: "\/compose"/g)).toHaveLength(1);
+    });
+  }
+});
 
 describe("compose", () => {
   const compose = code("app/compose.tsx");

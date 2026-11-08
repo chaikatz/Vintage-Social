@@ -1,6 +1,7 @@
 import { Linking, Platform } from "react-native";
 import * as MediaLibrary from "expo-media-library";
-import { cancelDevelop, developImage, libraryModule } from "@/darkroom/nativeLibrary";
+import { File } from "expo-file-system";
+import { cancelDevelop, developImage, libraryModule, onDevelopProgress } from "@/darkroom/nativeLibrary";
 import { prepareImage } from "@/media/nativeMedia";
 import { captureDateFromEpoch } from "./exif";
 import { sameNightWindow } from "./memories";
@@ -296,8 +297,10 @@ export function dayRows(days: readonly LibraryDay[], perRow: number): DayRow[] {
   return out;
 }
 
-/** How long a photograph may take to come down from iCloud before the picker says it could not open it. */
+/** How long a photograph coming down from iCloud may go with no word of it (no photograph, no progress) before the screen says it could not open it. */
 export const OPEN_TIMEOUT_MS = 60_000;
+/** However steadily its progress comes, a photograph is waited for no longer than this in all. */
+export const OPEN_LONGEST_MS = 10 * 60_000;
 
 let renditions = 0;
 
@@ -309,28 +312,91 @@ let renditions = 0;
  * a Live Photo's video, and never a full-size render of an edited one,
  * which is what reading the photograph's own file asked Photos for.
  *
+ * A download is watched for a stall, as DOWNLOAD AND DEVELOP's is
+ * (`src/darkroom/develop.ts`): each step of progress Photos reports starts
+ * `OPEN_TIMEOUT_MS` afresh, so a photograph still coming in on a slow
+ * connection is waited for, up to `OPEN_LONGEST_MS` in all. A screen that
+ * stops waiting (`signal`) has Photos stop at once.
+ *
  * `null` when there is no module (the browser, a dev client built before
  * it) or Photos could not make it, so the file is read instead; `"gone"`
- * when the photograph is no longer in the library, or did not come within
- * `OPEN_TIMEOUT_MS`, when there is nothing more to try.
+ * when the photograph is no longer in the library, or iCloud went quiet,
+ * when there is nothing more to try; `"stopped"` when the screen stopped
+ * waiting, and a copy that still comes is deleted.
  */
-async function rendition(photo: LibraryPhoto): Promise<{ uri: string; width: number; height: number } | "gone" | null> {
+async function rendition(
+  photo: LibraryPhoto,
+  signal?: AbortSignal,
+): Promise<{ uri: string; width: number; height: number } | "gone" | "stopped" | null> {
   const mod = libraryModule();
   if (!mod) return null;
+  if (signal?.aborted) return "stopped";
   renditions += 1;
   const requestId = `open-${Date.now().toString(36)}-${renditions}`;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const late = new Promise<"late">((resolve) => {
-    timer = setTimeout(() => resolve("late"), OPEN_TIMEOUT_MS);
+  let quiet: ReturnType<typeof setTimeout> | null = null;
+  let longest: ReturnType<typeof setTimeout> | null = null;
+  let stopListening: () => void = () => undefined;
+  let onAbort: () => void = () => undefined;
+  // Listening starts before the request does, so no early progress is missed.
+  const late = new Promise<"late" | "stopped">((resolve) => {
+    const wait = () => {
+      if (quiet) clearTimeout(quiet);
+      quiet = setTimeout(() => resolve("late"), OPEN_TIMEOUT_MS);
+    };
+    wait();
+    longest = setTimeout(() => resolve("late"), OPEN_LONGEST_MS);
+    let heard = 0;
+    stopListening = onDevelopProgress(mod, requestId, (fraction) => {
+      if (fraction <= heard) return;
+      heard = fraction;
+      wait();
+    });
+    onAbort = () => resolve("stopped");
+    signal?.addEventListener("abort", onAbort);
   });
-  const result = await Promise.race([developImage(mod, photo.id, { maxSide: PICKED_MAX_SIDE, allowNetwork: true, requestId }), late]);
-  if (timer) clearTimeout(timer);
-  if (result === "late") {
+  const work = developImage(mod, photo.id, { maxSide: PICKED_MAX_SIDE, allowNetwork: true, requestId });
+  const result = await Promise.race([work, late]);
+  if (quiet) clearTimeout(quiet);
+  if (longest) clearTimeout(longest);
+  stopListening();
+  signal?.removeEventListener("abort", onAbort);
+  if (result === "late" || result === "stopped") {
     cancelDevelop(mod, requestId);
-    return "gone";
+    // A copy Photos makes all the same is not kept.
+    work.then((made) => (made.status === "ok" ? throwAway(made.uri) : undefined)).catch(() => undefined);
+    return result === "late" ? "gone" : "stopped";
   }
-  if (result.status === "ok") return { uri: result.uri, width: result.width, height: result.height };
+  if (result.status === "ok") return { uri: keep(result.uri), width: result.width, height: result.height };
   return result.status === "missing" ? "gone" : null;
+}
+
+/** Copies made here to open a photograph, not yet thrown away. */
+const opened = new Set<string>();
+
+function keep(uri: string): string {
+  opened.add(uri);
+  return uri;
+}
+
+/**
+ * A copy made to open a photograph that the screen no longer wants (it
+ * was left while the copy was being made). Only copies made here are ever
+ * deleted; one that cannot go now is in the caches, which iOS clears.
+ */
+export function discardOpened(uri: string | null | undefined): void {
+  if (!uri || !opened.has(uri)) return;
+  throwAway(uri);
+}
+
+function throwAway(uri: string): void {
+  opened.delete(uri);
+  if (!available() || !uri.startsWith("file:")) return;
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch {
+    // Left in the caches.
+  }
 }
 
 /**
@@ -338,9 +404,14 @@ async function rendition(photo: LibraryPhoto): Promise<{ uri: string; width: num
  * it can read, its size, and when it was taken. The `ph://` URI the
  * library hands out is not a file, so a copy is made here: the Memory
  * Room's rendition where the module is there (`rendition`), otherwise the
- * photograph's own file, decoded.
+ * photograph's own file, decoded. `null` when it cannot be opened, and
+ * when `signal` stopped it: a screen the member has left opens nothing,
+ * and a copy made meanwhile is deleted.
  */
-export async function composeParamsFor(photo: LibraryPhoto): Promise<{
+export async function composeParamsFor(
+  photo: LibraryPhoto,
+  opts: { signal?: AbortSignal } = {},
+): Promise<{
   uri: string;
   mediaType: "photo";
   width: string;
@@ -348,8 +419,12 @@ export async function composeParamsFor(photo: LibraryPhoto): Promise<{
   duration: string;
   takenAt: string;
 } | null> {
-  const made = await rendition(photo).catch(() => null);
-  if (made === "gone") return null;
+  const { signal } = opts;
+  const made = await rendition(photo, signal).catch(() => null);
+  if (made === "gone" || made === "stopped" || signal?.aborted) {
+    if (made && typeof made === "object") discardOpened(made.uri);
+    return null;
+  }
   if (made) {
     return {
       uri: made.uri,
@@ -363,7 +438,7 @@ export async function composeParamsFor(photo: LibraryPhoto): Promise<{
   try {
     const info = await MediaLibrary.getAssetInfoAsync(photo.id);
     const original = info.localUri ?? info.uri;
-    if (!original) return null;
+    if (!original || signal?.aborted) return null;
     // The library hands back the original file — HEIC, on its side — which
     // the filter renderer cannot read. It is decoded straight to the
     // editor's size, upright and in sRGB, exactly as a picked photograph
@@ -374,6 +449,11 @@ export async function composeParamsFor(photo: LibraryPhoto): Promise<{
     // decode with no picture in it is no photograph to open.
     const ready = await prepareImage(original, { maxSide: PICKED_MAX_SIDE, quality: PICKED_QUALITY });
     if (!ready.uri || !(ready.width > 0) || !(ready.height > 0)) return null;
+    if (ready.uri !== original) keep(ready.uri);
+    if (signal?.aborted) {
+      discardOpened(ready.uri);
+      return null;
+    }
     return {
       uri: ready.uri,
       mediaType: "photo",

@@ -26,6 +26,7 @@ import {
   chooseMorePhotos,
   composeParamsFor,
   dayRows,
+  discardOpened,
   libraryAccess,
   openLibrarySettings,
   photoLabel,
@@ -148,19 +149,41 @@ export default function Memories() {
   };
 
   // A photograph from the library opens in the editor, as one picked
-  // from the library does. One tap, one editor.
+  // from the library does. One tap, one editor. One from iCloud can take a
+  // while: a member who leaves the page meanwhile has it stopped, and is
+  // never followed by the editor, or by an alert, wherever they went.
   const [opening, setOpening] = useState<string | null>(null);
+  const front = useRef(true);
+  const openStop = useRef<AbortController | null>(null);
+  // Blurred, or gone (a page leaving in front runs this as it goes).
+  useFocusEffect(
+    useCallback(() => {
+      front.current = true;
+      return () => {
+        front.current = false;
+        openStop.current?.abort();
+      };
+    }, []),
+  );
   const openPhoto = async (photo: LibraryPhoto) => {
     if (opening) return;
     setOpening(photo.id);
+    const stop = new AbortController();
+    openStop.current = stop;
     try {
-      const params = await composeParamsFor(photo);
+      const params = await composeParamsFor(photo, { signal: stop.signal });
+      // Asked as the photograph arrives: the page may have been left while it came.
+      if (stop.signal.aborted || !front.current) {
+        discardOpened(params?.uri);
+        return;
+      }
       if (!params) {
         showAlert("Couldn’t open that one", "It may still be in iCloud. Try again in a moment.");
         return;
       }
       router.push({ pathname: "/compose", params });
     } finally {
+      if (openStop.current === stop) openStop.current = null;
       setOpening(null);
     }
   };

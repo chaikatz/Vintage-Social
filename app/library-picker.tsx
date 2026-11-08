@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Dimensions, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
 import { Screen } from "@/components/Screen";
@@ -12,6 +13,7 @@ import { colors, spacing, type } from "@/theme";
 import { signatureDate } from "@/utils/time";
 import {
   composeParamsFor,
+  discardOpened,
   libraryGranted,
   photosFromSameNight,
   photosOnThisDay,
@@ -68,17 +70,41 @@ export default function LibraryPicker() {
     return out;
   }, [photos.data]);
 
+  // One from iCloud can take a while: a member who leaves the page
+  // meanwhile has it stopped, and is never followed by the editor, or by
+  // an alert, wherever they went.
+  const front = useRef(true);
+  const openStop = useRef<AbortController | null>(null);
+  // Blurred, or gone (a page leaving in front runs this as it goes).
+  useFocusEffect(
+    useCallback(() => {
+      front.current = true;
+      return () => {
+        front.current = false;
+        openStop.current?.abort();
+      };
+    }, []),
+  );
+
   const choose = async (photo: LibraryPhoto) => {
     if (opening) return; // one tap, one darkroom
     setOpening(photo.id);
+    const stop = new AbortController();
+    openStop.current = stop;
     try {
-      const params = await composeParamsFor(photo);
+      const params = await composeParamsFor(photo, { signal: stop.signal });
+      // Asked as the photograph arrives: the page may have been left while it came.
+      if (stop.signal.aborted || !front.current) {
+        discardOpened(params?.uri);
+        return;
+      }
       if (!params) {
         showAlert("Couldn’t open that one", "It may still be in iCloud. Try again in a moment.");
         return;
       }
       router.push({ pathname: "/compose", params });
     } finally {
+      if (openStop.current === stop) openStop.current = null;
       setOpening(null);
     }
   };
