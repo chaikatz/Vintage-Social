@@ -429,6 +429,17 @@ describe("the draft handed to the outbox", () => {
     expect(draft.tagIds).toEqual(["user-3", "user-2"]);
   });
 
+  it("holds a place's name to what the post can keep before anything goes up", () => {
+    const long = "The Grand Old Harbour Hotel by the Water, with Its Gardens, Terrace Bar and Long Pier";
+    const draft = buildPostDraft(
+      choices({ place: { kind: "place", fields: { location: long, place_id: "apple:1", lat: 55.97, lng: -3.17 } } }),
+      DEVELOPED,
+    );
+    expect(Array.from(draft.location ?? "")).toHaveLength(80);
+    expect(long.startsWith(draft.location!)).toBe(true);
+    expect(draft.placeId).toBe("apple:1");
+  });
+
   it("stores words alone with no point on the map", () => {
     const draft = buildPostDraft(choices({ place: { kind: "text", text: "  Leith  " } }), DEVELOPED);
     expect([draft.location, draft.lat, draft.lng, draft.placeId]).toEqual(["Leith", null, null, null]);

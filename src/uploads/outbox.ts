@@ -16,6 +16,7 @@ import { markDeveloped } from "@/darkroom/posted";
 import { rememberPlace } from "@/utils/reverseGeocode";
 import { showAlert } from "@/utils/alert";
 import { ownedPath } from "@/utils/storagePath";
+import { clampLocation } from "@/utils/validation";
 import { abortError, backoffDelay, isAbortError, isTransient, withTimeout } from "@/utils/retry";
 import { perfLog, perfStart, shortId } from "@/utils/perf";
 import { NotSignedInError, UploadRestart, freshAccessToken, isExpiredAuth, isSessionUnavailable } from "./storageUpload";
@@ -881,7 +882,9 @@ function newPostFor(job: OutboxJob): NewPost {
     show_date_stamp: d.showDateStamp,
     caption: d.caption.trim(),
     taken_at: d.takenAt,
-    location: d.location?.trim() || null,
+    // Held to what the database takes here too: a post kept on the phone
+    // from before, whose long place name was refused, posts on Retry.
+    location: clampLocation(d.location),
     lat: d.lat,
     lng: d.lng,
     place_id: d.placeId,

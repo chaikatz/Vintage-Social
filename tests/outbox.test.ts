@@ -874,6 +874,52 @@ describe("failures and retries", () => {
   });
 });
 
+describe("a place named at greater length than a post keeps", () => {
+  // An Apple Maps name over 80 characters, with a character outside the
+  // basic plane that UTF-16 counts twice and Postgres once.
+  const LONG = "The Grand Old Harbour Hotel 🌊 by the Water, with Its Gardens, Terrace Bar and Long Pier";
+  const KEPT = Array.from(LONG).slice(0, 80).join("").trimEnd();
+  /** The database's own check (posts_location_check, 0005): char_length(location) <= 80. */
+  const checked = async (row: unknown) => {
+    const location = (row as { location: string | null }).location;
+    return location != null && Array.from(location).length > 80
+      ? { error: { code: "23514", message: 'new row for relation "posts" violates check constraint "posts_location_check"' } }
+      : { error: null };
+  };
+
+  it("is held to what the database takes at the insert, so the post goes up", async () => {
+    expect(Array.from(LONG).length).toBeGreaterThan(80);
+    h.state.insertBehavior = checked;
+    const draft = photoDraft({ location: LONG });
+    await enqueuePost(draft);
+    await idle();
+    expect(h.inserts).toHaveLength(1);
+    expect(h.inserts[0].location).toBe(KEPT);
+    expect(Array.from(KEPT)).toHaveLength(80);
+    expect(getPendingPosts()).toHaveLength(0);
+    expect(readJob(draft.id)).toMatchObject({ step: "done", failed: null });
+  });
+
+  it("a post an older build left refused for it goes up on Retry", async () => {
+    // As an older build sent it: the name whole, and refused, after the whole upload.
+    h.state.insertBehavior = async () => ({
+      error: { code: "23514", message: 'new row for relation "posts" violates check constraint "posts_location_check"' },
+    });
+    const draft = photoDraft({ location: LONG });
+    await enqueuePost(draft);
+    await idle();
+    expect(getPendingPosts()[0]).toMatchObject({ state: "failed", error: "The post wasn’t saved." });
+    expect(readJob(draft.id)?.draft.location).toBe(LONG);
+
+    h.state.insertBehavior = checked;
+    retryPost(draft.id);
+    await idle();
+    expect(h.inserts.at(-1)?.location).toBe(KEPT);
+    expect(getPendingPosts()).toHaveLength(0);
+    expect(readJob(draft.id)).toMatchObject({ step: "done", failed: null });
+  });
+});
+
 describe("surviving the app", () => {
   it("resumes from job.json after a relaunch without uploading again", async () => {
     // The app is closed while the insert is out.

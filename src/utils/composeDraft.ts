@@ -1,5 +1,5 @@
 import { isNoFilter } from "@/filters/presets";
-import { MAX_VIDEO_SECONDS } from "@/utils/validation";
+import { MAX_VIDEO_SECONDS, clampLocation } from "@/utils/validation";
 import type { PostDraft } from "@/uploads";
 import type { ProfileRow } from "@/types/db";
 
@@ -235,13 +235,14 @@ export function authorFrom(
 export function placeOf(place: PlaceInput): Pick<PostDraft, "location" | "lat" | "lng" | "placeId"> {
   if (place?.kind === "place") {
     return {
-      location: place.fields.location?.trim() || null,
+      // As the post can keep it, before anything goes up (clampLocation).
+      location: clampLocation(place.fields.location),
       lat: place.fields.lat,
       lng: place.fields.lng,
       placeId: place.fields.place_id,
     };
   }
-  if (place?.kind === "text") return { location: place.text.trim() || null, lat: null, lng: null, placeId: null };
+  if (place?.kind === "text") return { location: clampLocation(place.text), lat: null, lng: null, placeId: null };
   return { location: null, lat: null, lng: null, placeId: null };
 }
 

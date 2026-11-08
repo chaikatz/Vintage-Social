@@ -1,6 +1,7 @@
 import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query";
 import type { PostRow, PostWithAuthor } from "@/types/db";
 import type { PostDraft, PreparedMedia } from "./types";
+import { clampLocation } from "@/utils/validation";
 
 /**
  * The server has the post: put it in the feed and the profile at once.
@@ -41,7 +42,7 @@ export function confirmedRow({ draft, prepared, mediaUri, thumbUri, createdAt }:
     caption: draft.caption.trim(),
     taken_at: draft.takenAt,
     // As it was inserted, so the refetched row changes nothing on screen.
-    location: draft.location?.trim() || null,
+    location: clampLocation(draft.location),
     lat: draft.lat,
     lng: draft.lng,
     place_id: draft.placeId,
