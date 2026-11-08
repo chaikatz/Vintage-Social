@@ -100,6 +100,14 @@ export default function Pending() {
     if (approved) enterApp();
   }, [approved]);
 
+  // Read once more as the screen opens: a member just let in can be sent
+  // here by a read that left before their invitation was taken up, and
+  // would otherwise wait for the half-minute check below.
+  React.useEffect(() => {
+    refreshProfile().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, as it opens
+  }, []);
+
   // The screen also checks by itself: each time the app comes back to the
   // front, and every half minute while it is open. An applicant who is let
   // in while looking at this walks in without touching anything.

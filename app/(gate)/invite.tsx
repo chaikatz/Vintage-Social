@@ -138,7 +138,9 @@ export default function Invite() {
         desiredUsername: username,
         code: slugFromInput(code),
       });
-      await refreshProfile();
+      // Read after the invitation was taken up. The read made as the new
+      // member was signed in can have left before it, and says "applied".
+      await refreshProfile({ fresh: true });
       await goIn();
     } catch (err) {
       // joinWithInvite's own sentence ("… Your account has been created;

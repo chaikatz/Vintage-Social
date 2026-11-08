@@ -56,7 +56,8 @@ describe("the screens use them", () => {
 
   it("the invitation card goes in through the door's hook, and only through it", () => {
     expect(invite).toMatch(/const goIn = useDoorClosesBehind\(busy\);/);
-    expect(invite).toMatch(/await refreshProfile\(\);\s*await goIn\(\);/);
+    // Read fresh, after the invitation was taken up (tests/invite-join-profile.test.ts).
+    expect(invite).toMatch(/await refreshProfile\(\{ fresh: true \}\);\s*await goIn\(\);/);
     expect(invite).not.toMatch(/enterApp/);
   });
 
