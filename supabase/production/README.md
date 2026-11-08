@@ -1,7 +1,11 @@
 # VINTAGE production backend
 
 The runbook for the live Supabase project. Everything here is written to be
-run once, in order, against an empty project.
+run once, in order, against an empty project, with one exception:
+`13_restore_unsplash_house_photos.sql` is not a step. It only undoes
+`13_remove_unsplash_house_photos.sql` (see "The Unsplash house photographs,
+removed on 8 November" below), and running it in order would put back what
+13_remove took away.
 
 Nothing in this directory contains a credential, and nothing in this
 directory should ever be edited to contain one.
@@ -261,6 +265,13 @@ appeal is the work in it. VINTAGE ships with a body of photography of its
 own: ~150 accounts with ~900 photographs between them, following each
 other, liking and occasionally commenting.
 
+That is what the seed (`08_house_accounts.sql`) gives a fresh project. It
+is not what production has now: on 8 November production removed the 679
+Unsplash photographs and the 112 Unsplash profile pictures with
+`13_remove_unsplash_house_photos.sql`, leaving 229 house photographs, all
+from Wikimedia Commons. A fresh project seeded with 08 must run 13_remove
+after it (see below) to match production.
+
 **They are not people, and the schema says so.** Every one carries
 `is_house = true`, and none of them can sign in — the auth rows are created
 with no password and no identity, so there is nothing to authenticate
@@ -281,12 +292,14 @@ not move.
 Picsum, and 229 from Wikimedia Commons, where it keeps only licences
 carrying no attribution condition and no share-alike obligation — the
 latter matters because VINTAGE applies a filter to what it shows, which
-makes every frame a derivative work. Whether the Unsplash Licence fits a
-feed like this one is still yours to decide: see "What is still yours to
-decide" in `APP_STORE_LAUNCH.md`. `seed/CREDITS.md` lists every source file
-and counts each licence, so provenance is traceable. Photographs are referenced by their original url
-rather than copied into your storage, so this costs you no storage and no
-egress.
+makes every frame a derivative work. On production the 679 Unsplash ones
+were removed on 8 November, because of what the Unsplash Licence says
+about compiling its photographs into a similar or competing service:
+section 7 of `APP_STORE_LAUNCH.md` records the decision, and "What is
+still yours to decide" there lists what is still open. `seed/CREDITS.md` lists every
+source file and counts each licence, so provenance is traceable.
+Photographs are referenced by their original url rather than copied into
+your storage, so this costs you no storage and no egress.
 
 ### Applying
 
@@ -295,6 +308,11 @@ egress.
    0011 has not been applied, runs in one transaction, and prints a summary
    row at the end. Check `should_be_zero` is `0` and `member_no_seq` is
    still `1`.
+3. To match production, run `supabase/production/13_remove_unsplash_house_photos.sql`
+   after 08 (and after `10_reviewer_account.sql`, so the review account is
+   there to follow the house accounts that keep photographs). Run
+   `0034_seed_thumbnails_at_a_standard_width.sql` again after 08 as well
+   (step 4 of `APP_STORE_LAUNCH.md`, item 6).
 
 ### Regenerating or removing
 
@@ -312,6 +330,43 @@ delete from auth.users where id in (select id from public.profiles where is_hous
 
 Real members are untouched by that — it is scoped to the flag — and the
 membership sequence is unaffected either way, because it was never used.
+If the schema `removed_20261108` is still there (below), drop it as well:
+once the house accounts are gone, what it holds can no longer be put back.
+
+### The Unsplash house photographs, removed on 8 November
+
+Two files, kept as the record of what was done on production:
+
+- `13_remove_unsplash_house_photos.sql` was run on production on
+  8 November 2026. It removed the 679 house photographs whose address is
+  `https://picsum.photos/...` (Unsplash photographs, through Lorem Picsum),
+  and with them 8,346 likes (3 of them by members), 3,131 comments (none
+  by members) and 11,478 activity rows; cleared the 112 house profile
+  pictures that were picsum addresses (the other 38 stay); and had the
+  review account follow the 49 house accounts that still have photographs
+  and that it did not already follow (61 follows now, all house accounts).
+  Production now has 229 house photographs, all from Wikimedia Commons
+  (143 public domain, 70 CC0, 16 marked "no restrictions"); 97 of the 150
+  house accounts have none, and are kept. The script counts before it
+  changes anything (exactly 679 to remove, exactly 229 left) and changes
+  nothing if either count is wrong.
+- `13_restore_unsplash_house_photos.sql` puts all of it back exactly, from
+  the schema `removed_20261108`, where the remove script copied everything
+  it removed (anon and authenticated cannot use that schema). It exists
+  only to undo the removal and has never been run on production. Do not
+  run it as a step.
+
+Once you are sure you will not want the Unsplash photographs back, drop
+the copy in the SQL Editor; after that nothing can be put back:
+
+```sql
+drop schema removed_20261108 cascade;
+```
+
+The seed (`08_house_accounts.sql`, `seed/build.mjs`, `seed/CREDITS.md`) has
+not been rebuilt and still gives a fresh project all 908 photographs, so a
+fresh project needs 13_remove after 08 to match production (step 3 under
+"Applying").
 
 ### Worth deciding before you invite people
 

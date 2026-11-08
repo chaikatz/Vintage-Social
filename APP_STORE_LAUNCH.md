@@ -7,7 +7,9 @@ the 7 October release-candidate report that used to be in this file, and
 Everything under "Where things stand" was read from the repository, from
 production (read-only) and from the public web on 5 November, and
 corrected on 6 November after an independent review (the house accounts,
-the Privacy Policy's deletion sentences, the migration list). Nothing here
+the Privacy Policy's deletion sentences, the migration list). The posts,
+the house photographs and the review account's follows were read again on
+8 November, after the Unsplash photographs were removed. Nothing here
 was run on an iPhone or a simulator: none can run where this was prepared.
 What only you can do is in section 2, in the order to do it. The two
 review blockers found on 5 November (an account that is not a member's
@@ -36,6 +38,16 @@ or anywhere in the repository, and must never be.
   Make sure that mailbox receives mail.
 - Age: the Privacy Policy now says members must be **18 or over**
   (dated 8 November), so choose **18+** in App Store Connect (section 4).
+- House photographs: on **production** the 679 Unsplash photographs are
+  removed, with their 8,346 likes (3 of them by members), 3,131 comments
+  (none by members) and 11,478 activity rows, and the 112 house profile
+  pictures that were Unsplash photographs are cleared
+  (`supabase/production/13_remove_unsplash_house_photos.sql`, run in the
+  SQL Editor). The 229 from Wikimedia Commons stay. The review account now
+  also follows the 49 house accounts with photographs that it did not
+  follow, so its Home shows all 229. A copy of everything removed is kept
+  in the schema `removed_20261108`; section 7 records the decision and
+  says how to put it back or drop the copy.
 
 ---
 
@@ -65,13 +77,18 @@ or anywhere in the repository, and must never be.
 - **Accounts (re-read 6 November).** 6 approved members who are people,
   your own account and the review account among them. 150 **house
   accounts**: the club's own accounts, flagged `is_house` (149 approved,
-  1 suspended). They cannot sign in, never take a membership number, and
-  show the 908 photographs listed in `seed/CREDITS.md`. 5 more people have
+  1 suspended). They cannot sign in and never take a membership number.
+  Since 8 November they show 229 photographs, all from Wikimedia Commons
+  and listed in `seed/CREDITS.md` (the 679 Unsplash photographs it also
+  lists were removed that day: section 7), and 97 of the 150 have no
+  photographs left. 5 more people have
   an account but are not members: 4 whose application was rejected and 1
   with no application at all (their profile still reads `applied`; the
   flows area's repair makes the waiting screen say what is true for each).
-- 1,139 posts: **908 from house accounts, 231 from members**. 127 posts
-  have a point on the map.
+- 469 posts (read 8 November): **229 from house accounts, 240 from
+  members**. 131 posts have a point on the map. On 5 November, before the
+  Unsplash photographs were removed, there were 1,139 posts: 908 from
+  house accounts and 231 from members.
 - Reports: 2 in all, both dismissed, **0 open**. Applications: 2 approved,
   4 rejected, 0 waiting. Blocks: 0.
 - Migrations: everything up to and including **0022** is on production.
@@ -85,27 +102,27 @@ or anywhere in the repository, and must never be.
   migrations numbered from **0023 up** (0023 to 0038) and changes the
   `push` function. Both are now on production (see "Done on 8 November"
   at the top); step 4 is kept for a fresh project.
-- **Private accounts (read 6 November): apply 0038 before launch.** 7
-  accounts are private, all of them house accounts; they have 95
-  accepted follows between them, made by 79 accounts, all house
-  accounts, and 0 follows are waiting as requests. Until
-  0038 is applied, the database takes a follow's status from the app, so
-  any member could make themselves an accepted follower of a private
-  account and see its photographs, and a private member's Accept and
-  Decline change nothing. 0038 fixes both for every build, the one in
-  TestFlight included. It needs nothing 0023–0037 make, so if you want
-  the hole closed before you have read the others, apply 0038 by itself
-  first (step 4, item 3); running it again in its turn later does no
-  harm.
-- Edge function `push`: active (version 1). Daily job `vintage-memories`
+- **Private accounts (read 6 November); 0038 is applied since
+  8 November.** 7 accounts are private, all of them house accounts; they
+  had 95 accepted follows between them, made by 79 accounts, all house
+  accounts, and 0 follows were waiting as requests (the review account's
+  follows of 8 November came after this reading). Before 0038 the
+  database took a follow's status from the app, so any member could make
+  themselves an accepted follower of a private account and see its
+  photographs, and a private member's Accept and Decline changed nothing.
+  0038 fixes both for every build, the one in TestFlight included.
+- Edge function `push`: active, **version 2** since 8 November (version 1
+  when read on 5 November). Daily job `vintage-memories`
   at 15:00 UTC: active. Live push tokens: 5.
 - Security advisor: the `SECURITY DEFINER` warnings are the app's RPC
   surface and are by design. **Leaked-password protection is off** (step 7).
 - The review account `appreview@vintagesocial.app`: approved, email
   confirmed, not banned, 5 invitations left, invitation link
-  `applereview`. It follows 12 accounts, and **all 12 are house
-  accounts**, so the reviewer's Home is house photographs. The review
-  notes (section 4) say so. Last sign-in 7 October. Its password cannot be
+  `applereview`. It follows 61 accounts (read 8 November), **all of them
+  house accounts**: the 12 it was made with, and the 49 house accounts
+  with photographs that it did not follow, added on 8 November. So the
+  reviewer's Home is the 229 house photographs. The review notes
+  (section 4) say so. Last sign-in 7 October. Its password cannot be
   checked from here (step 6).
 
 ### The web (vintagesocial.app), read on 5 November
@@ -318,7 +335,8 @@ notice, and how to undo it. If you approve, in the merged branch:
    turn (it is safe to run twice).
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
-   later files add, so part-way through they read false).
+   later files add, so part-way through they read false). The two `13_`
+   files there are not verify scripts: see item 6.
    Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0038 in 48 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
@@ -358,7 +376,12 @@ notice, and how to undo it. If you approve, in the merged branch:
 6. On a project whose house accounts are seeded after the migrations (a
    fresh project; production's are already there), run
    `0034_seed_thumbnails_at_a_standard_width.sql` again after
-   `supabase/production/08_house_accounts.sql`.
+   `supabase/production/08_house_accounts.sql`. Then, to match
+   production, run `supabase/production/13_remove_unsplash_house_photos.sql`
+   (after `10_reviewer_account.sql` too): the seed still has the 679
+   Unsplash photographs that production removed on 8 November (section 7).
+   Never run `13_restore_unsplash_house_photos.sql` as a step: it only
+   undoes 13_remove.
 
 Never run anything against `omvezsrkjizxdfeogccw` (staging) by mistake for
 production, or the other way round: the project name is at the top left of
@@ -444,12 +467,14 @@ Open appstoreconnect.apple.com → **Apps** → **Vintage Social**.
    - Category: Primary **Photo & Video**, Secondary **Social Networking**.
    - Content Rights: **Yes, it contains third-party content**: members'
      photographs, and the house accounts' photographs, which are **not
-     yours**. They are other photographers' work: of the 908, 679 are
-     under the Unsplash Licence, 143 public domain, 70 CC0 and 16 marked
-     "no restrictions" (`seed/CREDITS.md` lists every one, and its header
-     gives the same counts). Members grant what the app
-     needs in the Terms. Answer "Yes, I have the necessary rights" only
-     after you have decided the house-accounts question in section 7.
+     yours**. They are other photographers' work: the 229 on production
+     since 8 November are all from Wikimedia Commons, 143 public domain,
+     70 CC0 and 16 marked "no restrictions" (`seed/CREDITS.md` lists every
+     one; its table also lists the 679 Unsplash photographs the seed has,
+     which production no longer shows: section 7). Members grant what the
+     app needs in the Terms. This answer waited on the house-accounts
+     question in section 7, decided on 8 November; with only these 229
+     left, answer "Yes, I have the necessary rights".
    - **Age Rating** → Edit → answer as in section 4.
 2. **App Privacy** (left column):
    - Privacy Policy URL: `https://vintagesocial.app/privacy`
@@ -641,8 +666,9 @@ to check)
 > Once in: Home shows photographs from the accounts this account follows,
 > newest first. The accounts the review account follows are the club's own
 > house accounts: they are not people, they cannot sign in, and they show
-> public-domain and licensed photographs so that a new member's Home is
-> not empty. They also follow, like and comment on one another's
+> photographs from Wikimedia Commons that are public domain, CC0 or marked
+> "no restrictions", so that a new member's Home is not empty. They also
+> follow, like and comment on one another's
 > photographs: those likes and comments (for example "Where is this?"
 > under a photograph in Home) were made by script when the accounts were
 > made, not written by people. The Terms of Use say so. Search finds members. The Post tab has two ways in:
@@ -818,63 +844,89 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 
 ---
 
-## 7. Decide before you submit: the house accounts
+## 7. The house accounts: what was decided on 8 November
 
 **What they are.** 150 accounts made by script
 (`supabase/production/08_house_accounts.sql`), under invented names,
-showing 908 photographs taken by other photographers. They are most of
-what a new member sees: 908 of the 1,139 posts, and all 12 accounts the
-review account follows. Nothing in the app labels them. The same script
-also made them follow, like and comment on one another's photographs
-(read on production on 6 November): 1,778 follows, 11,138 likes and
-4,182 comments, all between house accounts, the comments from a fixed
-list ("Where is this?", "My favourite of yours."). On the 96 photographs
-in the review account's Home there are 1,183 of those likes and 450 of
+showing photographs taken by other photographers. Nothing in the app
+labels them, and none of them can sign in. The script gave them 908
+photographs: 679 Unsplash photographs (fetched through Lorem Picsum) and
+229 from Wikimedia Commons. It also made them follow, like and comment on
+one another's photographs, the comments from a fixed list ("Where is
+this?", "My favourite of yours.").
+
+**What was decided.** Of the three ways forward this section set out
+(keep them as they were; keep only the 229 public-domain, CC0 and "no
+restrictions" photographs and remove the 679 Unsplash ones; remove the
+house accounts altogether), you took the second, on 8 November. The
+reason was the Unsplash Licence: it lets anyone use the photographs free,
+commercially and without credit, but it also says it does not include the
+right to compile photos from Unsplash to replicate a similar or competing
+service, and a photo club whose Home was mostly Unsplash photographs,
+posted by invented accounts, was close to what that sentence describes.
+(That summary of the licence was from knowledge, not from reading the
+page.)
+
+**What was done on production**
+(`supabase/production/13_remove_unsplash_house_photos.sql`, run in the SQL
+Editor on 8 November, and read back afterwards):
+
+- The 679 Unsplash photographs are removed, and with them 8,346 likes
+  (3 of them by members), 3,131 comments (none by members) and 11,478
+  activity rows.
+- The 112 house profile pictures that were Unsplash photographs are
+  cleared. The other 38 house profile pictures stay.
+- The review account follows the 49 house accounts with photographs that
+  it did not follow before. It follows 61 accounts now, all of them house
+  accounts, and its Home shows all 229 house photographs (96 before).
+- A copy of everything removed is in the schema `removed_20261108`, which
+  the app cannot reach. `supabase/production/13_restore_unsplash_house_photos.sql`
+  puts all of it back exactly, and exists only for that. Once you are sure
+  you will not want them back, run `drop schema removed_20261108 cascade;`
+  in the SQL Editor; after that nothing can be put back.
+
+**Production now** (read on 8 November). 469 posts: 229 from house
+accounts and 240 from members. The 229 are public domain (143), CC0 (70)
+or marked "no restrictions" (16), all from Wikimedia Commons, and carry no
+condition like the Unsplash one. There are 1,778 follows, 2,795 likes and
+1,051 comments, all between house accounts and made by script; the 229
+photographs in the review account's Home carry all 2,795 of those
+likes and all 1,051 of those comments. Before the removal there were
+1,139 posts (908 from house accounts), 11,138 likes and 4,182 comments
+between house accounts, and the review account followed 12 house
+accounts, whose 96 photographs carried 1,183 of those likes and 450 of
 those comments.
 
-**What this pass did.** The Terms now say plainly that some accounts are
-the club's own house accounts, show public-domain and licensed
-photographs, follow, like and comment on one another's photographs by
-script, and are not members. The review notes say the same. The
-Content Rights answer (step 9) no longer says the photographs are yours.
-Nothing was deleted: whether the house accounts and their likes and
-comments stay is yours to decide, below.
+**What the Terms and the review notes say.** The Terms say plainly that
+some accounts are the club's own house accounts, show public-domain and
+licensed photographs, follow, like and comment on one another's
+photographs by script, and are not members. The review notes say the
+same, and name the photographs more closely: from Wikimedia Commons, and
+public domain, CC0 or marked "no restrictions". Both are true of
+production after the removal. The Content Rights answer (step 9) does not
+say the photographs are yours.
 
 **What is still yours to decide** (a lawyer's view is worth having):
 
-- 679 of the 908 are Unsplash photographs (fetched through Lorem Picsum).
-  The Unsplash Licence lets anyone use them free, commercially and without
-  credit, but it also says it does not include the right to compile photos
-  from Unsplash to replicate a similar or competing service. A photo
-  club whose Home is mostly Unsplash photographs, posted by invented
-  accounts, is close to what that sentence describes. Read the current
-  licence at unsplash.com/license before you answer Content Rights.
-  (This summary of the licence is from knowledge, not from reading the
-  page today.)
-- The other 229 are public domain (143), CC0 (70) or marked "no
-  restrictions" (16), which carry no such condition.
-
-Three ways forward, and the Content Rights answer follows the one you
-choose:
-
-1. **Keep them as they are.** The disclosure in the Terms and the review
-   notes stays, likes and comments included.
-2. **Keep only the 229** public-domain, CC0 and "no restrictions"
-   photographs and remove the 679 Unsplash ones. Nothing has been written
-   for this; ask Claude for a reviewed SQL file to run in the SQL Editor,
-   like the others.
-3. **Remove the house accounts altogether**: the one-line rollback is in
-   `supabase/production/README.md` under "House accounts". First have the
-   review account follow two or three real members, or its Home is empty,
-   and take the house-accounts sentences out of the review notes and the
-   Terms (ask Claude; the Terms change is one paragraph in
-   `src/legal/documents.ts`, then `npm run build:legal`).
-
-Under 2 and 3 the likes and comments on the photographs removed go with
-them. To keep the photographs but remove the scripted likes and comments
-(those made by a house account on another house account's photograph),
-ask Claude for a reviewed SQL file; the like and comment counts recount
-themselves.
+- **The 97 house accounts with no photographs.** 97 of the 150 show no
+  photographs now. They are kept, and can still be found and followed. To
+  remove them, ask Claude for a reviewed SQL file to run in the SQL
+  Editor, like the others; their follows, likes and comments go with
+  them.
+- **The scripted likes and comments.** The 2,795 likes and 1,051 comments
+  between house accounts on the 229 photographs still exist, and the
+  Terms and the review notes still disclose them. To keep the photographs
+  but remove the scripted likes and comments (those made by a house
+  account on another house account's photograph), ask Claude for a
+  reviewed SQL file; the like and comment counts recount themselves.
+- **Removing the house accounts altogether** is still possible: the
+  one-line rollback is in `supabase/production/README.md` under "House
+  accounts". First have the review account follow two or three real
+  members, or its Home is empty, and take the house-accounts sentences
+  out of the review notes and the Terms (ask Claude; the Terms change is
+  one paragraph in `src/legal/documents.ts`, then `npm run build:legal`).
+  Drop `removed_20261108` as well: once the house accounts are gone, what
+  it holds cannot be put back.
 
 ---
 
