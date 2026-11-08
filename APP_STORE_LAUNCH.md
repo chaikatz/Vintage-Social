@@ -353,7 +353,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false). The `13_` and
    `14_` files there are not verify scripts: see item 6.
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0038 in 48 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0040 in 55 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -375,6 +375,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0036 | A phone's push token belongs to whoever signed in on it last | 37 |
    | 0037 | Unread messages counted in the database | 38–39 |
    | 0038 | Follows that respect private accounts: a follow of a private account is always a request, the account accepts or declines it, an answered request leaves Activity, an account made public lets its requests in, and only the two members see a request | 40–48 |
+   | 0040 | A block holds for comments and likes and their notices, and files a report so the admins are told; a new message reaches the other member's phone; the avatars bucket takes JPEG and PNG pictures up to 2 MB; the database's calls to the `push` function carry its secret (needs item 5) | 49–55 |
 
 5. Redeploy the `push` function, which changed in the sweep. It is now
    **two files**, `index.ts` and `logic.ts` (`index.ts` imports
@@ -389,6 +390,24 @@ notice, and how to undo it. If you approve, in the merged branch:
    `push` must show **version 2 or higher, with both files**.
    0032 (reports reach the admins) needs this redeploy to send anything:
    until then the deployed function answers its calls with "Unknown kind".
+   **From 0040, the function answers only the database** (version 3): a
+   call without the push hook's secret is refused, so the anon key in the
+   app no longer lets anyone set off On this day early or announce a
+   photograph again. Do these in this order, after 0040 is applied, or
+   every notice stops until they are done:
+   1. On your Mac: `openssl rand -hex 32` and copy the output (the
+      secret; it goes in exactly two places, never in the repository).
+   2. `npx supabase secrets set PUSH_HOOK_SECRET=<the secret> --project-ref scfwowqsqrnzpknzurmm`
+      (or Supabase → **Edge Functions** → **Secrets** → add
+      `PUSH_HOOK_SECRET`).
+   3. SQL Editor: `update public.app_settings set value = value || jsonb_build_object('secret', '<the secret>') where key = 'push_hook';`
+      From then on the database sends it with every call; the function
+      still live ignores it.
+   4. Deploy the function as above (it shows version 3). Then comment
+      on one of your photographs from a second account: the notice must
+      arrive. (Deployed before step 2 or step 3, it refuses every call
+      until both are done; without step 2 its logs say
+      "PUSH_HOOK_SECRET is not set".)
 6. On a project whose house accounts are seeded after the migrations (a
    fresh project; production's are already there), run
    `0034_seed_thumbnails_at_a_standard_width.sql` again after

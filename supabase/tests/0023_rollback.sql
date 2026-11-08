@@ -23,7 +23,10 @@
 -- functions in the schema private, so with 0038 applied the schema
 -- stays, holding only those; 0038's policies, grants and triggers are not
 -- 0023's, and are left as they are (0038's own way back is
--- 0038_rollback.sql).
+-- 0038_rollback.sql). 0040 puts two functions there too (the block check
+-- its comment and like policies ask, and the message notice); they, those
+-- policies and that trigger stay, as 0038's do (0040's way back is in its
+-- header).
 
 begin;
 
