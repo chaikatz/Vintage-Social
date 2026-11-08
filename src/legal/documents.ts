@@ -18,7 +18,7 @@ export const LEGAL_TITLES: Record<LegalDoc, string> = {
   terms: "Terms of Use",
 };
 
-export const LEGAL_UPDATED = "November 6, 2026";
+export const LEGAL_UPDATED = "November 8, 2026";
 
 export const PRIVACY_POLICY = `VINTAGE is a small, invitation-only club for photographs. This policy says what we collect, why, and what you can do about it.
 
@@ -62,7 +62,7 @@ If your application is still waiting or was not accepted, or your membership is 
 
 ## Children
 
-VINTAGE is for people aged 17 and over. We do not knowingly accept members under 17.
+VINTAGE is for people aged 18 and over. We do not knowingly accept members under 18.
 
 ## Changes and contact
 
