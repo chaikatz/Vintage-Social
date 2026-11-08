@@ -245,6 +245,14 @@ describe("the screens ask for it", () => {
     );
   });
 
+  it("the waiting room reads the profile fresh once an invitation is taken up there, then goes in", () => {
+    // Not joined to the read it made as it opened, which may have left
+    // before the invitation was taken up and would send the member back.
+    expect(code("app/(gate)/pending.tsx")).toMatch(
+      /const takeUp = async \(slug: string\) => \{[\s\S]*?await redeemInviteLink\(slug\);[\s\S]*?await refreshProfile\(\{ fresh: true \}\);\s*await enterApp\(\);/,
+    );
+  });
+
   it("the waiting room reads the profile once as it opens, above its redirect", () => {
     const pending = code("app/(gate)/pending.tsx");
     expect(pending).toMatch(/React\.useEffect\(\(\) => \{\s*refreshProfile\(\)\.catch\(\(\) => undefined\);\s*\}, \[\]\);/);

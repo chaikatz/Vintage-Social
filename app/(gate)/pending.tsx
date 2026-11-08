@@ -120,7 +120,9 @@ export default function Pending() {
         showAlert("Not this one", problem);
         return;
       }
-      await refreshProfile();
+      // Read after the invitation was taken up: the read this screen made
+      // as it opened can still be on its way, and says "applied".
+      await refreshProfile({ fresh: true });
       await enterApp();
     } catch (err) {
       showAlert("Couldn’t join", errorMessage(err, "Your invitation wasn’t taken up. Check your connection and try again."));
