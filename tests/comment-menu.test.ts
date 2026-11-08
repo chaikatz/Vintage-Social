@@ -78,6 +78,14 @@ describe("the menu a comment has", () => {
     expect(removed).toHaveBeenCalledTimes(1);
   });
 
+  it("records where an admin removed it from: under a photograph, not the Comments screen", async () => {
+    const removed = vi.fn();
+    showCommentMenu(theirs, { userId: "me", isAdmin: true }, removed, "Removed from under a photograph");
+    await press("Remove comment (admin)");
+    expect(h.removed).toEqual([{ id: "c1", note: "Removed from under a photograph" }]);
+    expect(removed).toHaveBeenCalledTimes(1);
+  });
+
   it("says so in its own words when the removal is refused, and changes nothing on screen", async () => {
     h.fails = true;
     const removed = vi.fn();
@@ -132,6 +140,7 @@ describe("where a comment is shown, a press and hold opens it", () => {
     const file = "src/components/feed/EditorialPostCard.tsx";
     if (!existsSync(path.resolve(import.meta.dirname, "..", file))) return;
     const card = code(file);
+    expect(previews(card).length).toBeGreaterThan(0);
     for (const preview of previews(card)) {
       expect(preview).toMatch(/onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}/);
     }
@@ -143,5 +152,7 @@ describe("where a comment is shown, a press and hold opens it", () => {
     expect(actions).toMatch(/void rereadCommentPreviewsOf\(queryClient, postId\);/);
     expect(actions).toMatch(/comment_count: Math\.max\(0, p\.comment_count - 1\),/);
     expect(actions).toMatch(/onOpenComments,\s*onCommentLongPress,/);
+    // An admin's removal from under a photograph is logged as that, not as the Comments screen's.
+    expect(actions).toMatch(/refetchType: "none" \}\);\s*\}, "Removed from under a photograph"\),\s*\[userId, isAdmin, queryClient\],/);
   });
 });

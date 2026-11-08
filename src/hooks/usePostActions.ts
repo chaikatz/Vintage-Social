@@ -100,7 +100,7 @@ export function usePostActions(userId: string, postIds: string[]) {
           comment_count: Math.max(0, p.comment_count - 1),
         }));
         void queryClient.invalidateQueries({ queryKey: ["feed"], refetchType: "none" });
-      }),
+      }, "Removed from under a photograph"),
     [userId, isAdmin, queryClient],
   );
 

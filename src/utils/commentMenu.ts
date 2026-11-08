@@ -16,11 +16,16 @@ import type { CommentRow } from "@/types/db";
  * tap, and `removed` then puts the screens right. Anyone else's is
  * reported: nothing is removed automatically, an admin reviews every
  * report by hand.
+ *
+ * `note` is what an admin's removal records in the moderation log: where
+ * it was removed from. The Comments screen's by default; under a
+ * photograph, the post actions say so.
  */
 export function showCommentMenu(
   comment: Pick<CommentRow, "id" | "author_id">,
   viewer: { userId: string; isAdmin: boolean },
   removed: () => void,
+  note = "Removed from the comments view",
 ): void {
   const own = comment.author_id === viewer.userId;
   if (own || viewer.isAdmin) {
@@ -31,7 +36,7 @@ export function showCommentMenu(
         onPress: async () => {
           try {
             if (own) await deleteOwnComment(comment.id);
-            else await removeComment(comment.id, "Removed from the comments view");
+            else await removeComment(comment.id, note);
           } catch (err) {
             showAlert("Couldn’t remove the comment", errorMessage(err, "It’s still there. Try again in a moment."));
             return;
