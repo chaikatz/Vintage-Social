@@ -738,7 +738,8 @@ to check)
 > member's profile and lets you report or block them. A member's profile
 > "…" menu also has Block member;
 > blocking hides each member's content from the other in both directions,
-> and Settings → Blocked members lists and unblocks. Reports go to a human
+> and Settings → Blocked members lists and unblocks. A block also tells
+> the admins: it files a report about the blocked member in their queue. Reports go to a human
 > queue and are acted on within 24 hours; admins remove content, warn and
 > suspend. Support: Profile → Settings → Support, and
 > https://vintagesocial.app/support.html.

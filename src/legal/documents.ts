@@ -46,7 +46,7 @@ We do not sell your information. We do not show advertising. We do not use your 
 
 ## Who can see what
 
-VINTAGE is members-only. Your profile and photographs are visible to approved members. A private account is visible only to the members you have accepted. Messages are visible to the two people in the conversation. Admins can see content in order to review reports and keep the club safe.
+VINTAGE is members-only. Your profile and photographs are visible to approved members. A private account is visible only to the members you have accepted. Messages are visible to the two people in the conversation. Admins can see content in order to review reports and keep the club safe. When you block a member, the admins are told which member you blocked, as a report about them.
 
 A link you make with Share outside VINTAGE shows that one photograph or film, with its place, its date and your username, to anyone who has the link, even if your account is private. It works until you turn the link off or delete the photograph.
 
