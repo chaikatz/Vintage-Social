@@ -7,7 +7,7 @@ import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { registerPushToken, unregisterAllPushTokens, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
-import { tapFollower, tokenFiler } from "./pushRoute";
+import { openNoticeRoute, tapFollower, tokenFiler } from "./pushRoute";
 import { onReturnFromBackground } from "./appReturn";
 import { noteToken, pushSupported, stopReceiving, takeToken, tokenRemoved } from "./pushKept";
 
@@ -172,8 +172,18 @@ export function useNotificationTaps(): void {
     // Each tap followed once, and waited for if the navigator is not up
     // yet (pushRoute.ts). Kept for the life of the app, not of this
     // effect, so a tap already followed is never followed again.
+    // A tab is gone back to, never pushed over the screen open (pushRoute.ts).
     const go = (follow ??= tapFollower({
-      navigate: (route) => router.push(route as never),
+      navigate: (route) =>
+        openNoticeRoute(
+          {
+            canDismiss: () => router.canDismiss(),
+            dismissTo: (to) => router.dismissTo(to as never),
+            navigate: (to) => router.navigate(to as never),
+            push: (to) => router.push(to as never),
+          },
+          route,
+        ),
       clear: () => Notifications.clearLastNotificationResponse(),
     }));
 

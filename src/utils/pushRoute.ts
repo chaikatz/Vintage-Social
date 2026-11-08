@@ -38,6 +38,37 @@ function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/** A route to one of the tabs, which are never pushed (see openNoticeRoute). */
+export function isTabRoute(route: string): boolean {
+  return route === "/(tabs)" || route.startsWith("/(tabs)/");
+}
+
+/** What opening a notice's route needs of the router (expo-router's own, in push.ts). */
+export interface NoticeRouter {
+  /** Whether a screen is open over the tabs (anything on the stack above them). */
+  canDismiss(): boolean;
+  dismissTo(route: string): void;
+  navigate(route: string): void;
+  push(route: string): void;
+}
+
+/**
+ * Opening the route a tapped notice points to.
+ *
+ * A tab ("/(tabs)/activity": a tag, a note about an invitation) is never
+ * pushed. Pushed while a screen was open over the tabs (a photograph, a
+ * thread, Invitations), it put a second set of tabs over the first: a new
+ * Home with its reads and its badge, and no back mark or swipe back to the
+ * screen underneath. With a screen open, the stack goes back to the tabs
+ * already there, on the tab named; with none, the tab simply changes.
+ * Anything else is a screen of its own, pushed over whatever is open.
+ */
+export function openNoticeRoute(router: NoticeRouter, route: string): void {
+  if (!isTabRoute(route)) router.push(route);
+  else if (router.canDismiss()) router.dismissTo(route);
+  else router.navigate(route);
+}
+
 /** The part of a notice response a tap is followed by. */
 export interface TappedNotice {
   actionIdentifier?: string;

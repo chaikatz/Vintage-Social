@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/supabase", () => ({ supabase: {} }));
 vi.mock("@/lib/env", () => ({ isDemoMode: () => true }));
 
-const { routeForNotification, tapFollower, tokenFiler } = await import("@/utils/pushRoute");
+const { isTabRoute, openNoticeRoute, routeForNotification, tapFollower, tokenFiler } = await import("@/utils/pushRoute");
 const { parsePrefs, DEFAULT_PREFS } = await import("@/api/notifications");
 
 describe("where a tapped notice lands", () => {
@@ -117,6 +117,92 @@ describe("a tapped notice, followed", () => {
     expect(src).toMatch(/clear: \(\) => Notifications\.clearLastNotificationResponse\(\)/);
     expect(src).toMatch(/addNotificationResponseReceivedListener\(go\)/);
     expect(src).not.toMatch(/router\.push\(route as never\);\s*\};/);
+    // Each tap opened as its route asks: a tab gone back to, never pushed.
+    expect(src).toMatch(/navigate: \(route\) =>\s*openNoticeRoute\(\s*\{\s*canDismiss: \(\) => router\.canDismiss\(\),\s*dismissTo: \(to\) => router\.dismissTo\(to as never\),\s*navigate: \(to\) => router\.navigate\(to as never\),\s*push: \(to\) => router\.push\(to as never\),\s*\},\s*route,\s*\),/);
+  });
+});
+
+describe("a tapped notice that points to a tab", () => {
+  /** expo-router as the tap finds it: a screen open over the tabs, or none. */
+  function routerWith(screenOpen: boolean) {
+    const calls: string[] = [];
+    return {
+      calls,
+      router: {
+        canDismiss: () => screenOpen,
+        dismissTo: (route: string) => void calls.push(`dismissTo ${route}`),
+        navigate: (route: string) => void calls.push(`navigate ${route}`),
+        push: (route: string) => void calls.push(`push ${route}`),
+      },
+    };
+  }
+
+  it("is never pushed over the screen open: the tabs already there are gone back to, on that tab", () => {
+    // A tag, or "Someone joined VINTAGE on your invitation.", while a
+    // photograph, a thread or Invitations is open.
+    const { router, calls } = routerWith(true);
+    openNoticeRoute(router, "/(tabs)/activity");
+    expect(calls).toEqual(["dismissTo /(tabs)/activity"]);
+  });
+
+  it("with nothing open over the tabs, only changes tab", () => {
+    const { router, calls } = routerWith(false);
+    openNoticeRoute(router, "/(tabs)/activity");
+    expect(calls).toEqual(["navigate /(tabs)/activity"]);
+  });
+
+  it("every route a notice can name that is a tab, whatever is open", () => {
+    const routes = [
+      routeForNotification({ kind: "tag", postId: "p1", route: "/(tabs)/activity" }),
+      routeForNotification({ kind: "moderation", route: "/(tabs)/activity" }),
+      routeForNotification({ kind: "comment" }),
+      routeForNotification({ kind: "moderation" }),
+      "/(tabs)",
+    ];
+    for (const route of routes) {
+      expect(isTabRoute(route!)).toBe(true);
+      for (const open of [true, false]) {
+        const { router, calls } = routerWith(open);
+        openNoticeRoute(router, route!);
+        expect(calls.some((c) => c.startsWith("push "))).toBe(false);
+      }
+    }
+  });
+
+  it("a screen of its own is pushed over whatever is open, as before", () => {
+    for (const route of ["/post/p1", "/user/ansel", "/requests", "/messages", "/memories", "/tabsish"]) {
+      expect(isTabRoute(route)).toBe(false);
+      const { router, calls } = routerWith(true);
+      openNoticeRoute(router, route);
+      expect(calls).toEqual([`push ${route}`]);
+    }
+  });
+
+  it("going back to the tabs leaves one set of them, on the tab named; a push would have made a second", async () => {
+    // The root stack as React Navigation keeps it, with Invitations open
+    // over the tabs, and the two actions expo-router makes of the tap.
+    const { StackRouter } = await import("@react-navigation/routers");
+    const stack = StackRouter({});
+    const routeNames = ["index", "(tabs)", "post/[id]", "invites"];
+    const state = {
+      stale: false as const,
+      type: "stack" as const,
+      key: "root",
+      index: 1,
+      routeNames,
+      preloadedRoutes: [],
+      routes: [
+        { key: "(tabs)-1", name: "(tabs)" },
+        { key: "invites-1", name: "invites" },
+      ],
+    };
+    const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
+    const payload = { name: "(tabs)", params: { screen: "activity", params: {} } };
+    const back = stack.getStateForAction(state, { type: "POP_TO", payload }, options);
+    expect(back?.routes.map((r) => r.key)).toEqual(["(tabs)-1"]);
+    expect(back?.routes[0].params).toEqual({ screen: "activity", params: {} });
+    const pushed = stack.getStateForAction(state, { type: "PUSH", payload }, options);
+    expect(pushed?.routes.filter((r) => r.name === "(tabs)")).toHaveLength(2);
   });
 });
 
