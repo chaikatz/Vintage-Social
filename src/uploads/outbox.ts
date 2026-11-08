@@ -1168,9 +1168,10 @@ export function notePostsInFeed(ids: readonly string[]): void {
  * land ("It may have been saved") would otherwise keep its card and its
  * Retry, and a Retry would insert the post again under the same id, which
  * nothing collides with any more. One still at work is stopped where it
- * is; its files on the phone go, and storage is left as it is for every
- * deleted post. The feed is told as well, so a confirmed row waiting to be
- * put back after a read lands is not.
+ * is; its files on the phone go. Its files in storage are not this
+ * outbox's to remove: the deletion removes them (removeDeletedPostFiles,
+ * src/api/posts.ts). The feed is told as well, so a confirmed row waiting
+ * to be put back after a read lands is not.
  */
 export function notePostDeleted(id: string): void {
   markPostDeleted(id);
