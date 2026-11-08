@@ -325,8 +325,10 @@ vi.mock("@/lib/queryClient", async () => {
 });
 
 vi.mock("@/api/tags", () => ({
-  tagMembers: vi.fn(async () => {
+  // Resolves with the members the database refused: none.
+  tagMembers: vi.fn(async (): Promise<string[]> => {
     h.calls.push("tags");
+    return [];
   }),
 }));
 vi.mock("@/darkroom/posted", () => ({ markDeveloped: vi.fn() }));
@@ -1120,6 +1122,11 @@ describe("the pieces", () => {
     };
     expect(parseJob(good)).toMatchObject({ step: "upload", uploaded: { media: true, thumb: false }, failed: null });
     expect(parseJob({ ...good, step: "teleport" })).toBeNull();
+    // The tagged members' names, each a string, or none (a job from an older build has none).
+    expect(parseJob(good)?.draft.tagNames).toEqual({});
+    const named = { ...good, draft: { ...good.draft, tagNames: { u2: "ansel", u3: 7, "": "x" } } };
+    expect(parseJob(named)?.draft.tagNames).toEqual({ u2: "ansel" });
+    expect(parseJob({ ...good, draft: { ...good.draft, tagNames: ["ansel"] } })?.draft.tagNames).toEqual({});
   });
 
   it("prepends once, whatever is already in the caches", () => {
@@ -1205,7 +1212,35 @@ describe("the pieces", () => {
     await enqueuePost(draft);
     await idle();
     expect(showAlert).toHaveBeenCalledWith("Posted, but the tags didn’t take", expect.stringContaining("is up"));
+    // A post's tags cannot be changed once it is up: nothing says they can.
+    expect(JSON.stringify(vi.mocked(showAlert).mock.calls)).not.toMatch(/again later/);
     expect(readJob(draft.id)?.step).toBe("done");
+  });
+
+  it("names the members the database would not let be tagged, and keeps the rest", async () => {
+    // tomas was suspended, or blocked the author, after the post was composed.
+    vi.mocked(tagMembers).mockResolvedValueOnce(["u3"]);
+    const draft = photoDraft({ tagIds: ["u2", "u3"], tagNames: { u2: "ansel", u3: "tomas" } });
+    await enqueuePost(draft);
+    await idle();
+    expect(tagMembers).toHaveBeenCalledTimes(1);
+    expect(tagMembers).toHaveBeenCalledWith(draft.id, "u1", ["u2", "u3"]);
+    expect(showAlert).toHaveBeenCalledTimes(1);
+    expect(showAlert).toHaveBeenCalledWith(
+      "Posted, but not every tag took",
+      "The photograph is up with your other tags. tomas couldn’t be tagged.",
+    );
+    expect(readJob(draft.id)?.step).toBe("done");
+    // The names went to disk with the job, for a launch that finishes it.
+    expect(readJob(draft.id)?.draft.tagNames).toEqual({ u2: "ansel", u3: "tomas" });
+  });
+
+  it("says nothing when every tag went on", async () => {
+    const draft = photoDraft({ tagIds: ["u2"], tagNames: { u2: "ansel" } });
+    await enqueuePost(draft);
+    await idle();
+    expect(tagMembers).toHaveBeenCalledTimes(1);
+    expect(showAlert).not.toHaveBeenCalled();
   });
 });
 

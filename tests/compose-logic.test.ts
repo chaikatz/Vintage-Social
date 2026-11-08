@@ -342,6 +342,7 @@ function choices(over: Partial<ComposeChoices> = {}): ComposeChoices {
     takenAt: "2026-06-14T18:22:00.000Z",
     place: { kind: "place", fields: { location: "The Shore", place_id: "apple:123", lat: 55.976, lng: -3.17 } },
     tagIds: ["user-2", "user-3"],
+    tagNames: { "user-2": "ansel", "user-3": "tomas" },
     assetId: "ASSET-1",
     author: AUTHOR,
     ...over,
@@ -376,6 +377,7 @@ const DRAFT_KEYS: (keyof PostDraft)[] = [
   "lng",
   "placeId",
   "tagIds",
+  "tagNames",
   "assetId",
   "author",
 ];
@@ -402,6 +404,7 @@ describe("the draft handed to the outbox", () => {
       lng: -3.17,
       placeId: "apple:123",
       tagIds: ["user-2", "user-3"],
+      tagNames: { "user-2": "ansel", "user-3": "tomas" },
       assetId: "ASSET-1",
       author: AUTHOR,
     });
@@ -422,6 +425,14 @@ describe("the draft handed to the outbox", () => {
     author.username = "someone-else";
     expect(draft.tagIds).toEqual(["user-2"]);
     expect(draft.author.username).toBe("june");
+  });
+
+  it("keeps the names of those tagged, theirs only, as a copy", () => {
+    const tagNames: Record<string, string> = { "user-2": "ansel", "user-9": "not-tagged" };
+    const draft = buildPostDraft(choices({ tagIds: ["user-2", "user-3"], tagNames }), DEVELOPED);
+    tagNames["user-2"] = "someone-else";
+    expect(draft.tagNames).toEqual({ "user-2": "ansel" });
+    expect(buildPostDraft(choices({ tagNames: undefined }), DEVELOPED).tagNames).toEqual({});
   });
 
   it("tags each member once, in the order chosen", () => {

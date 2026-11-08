@@ -23,7 +23,7 @@ import { NotSignedInError, UploadRestart, freshAccessToken, isExpiredAuth, isSes
 import * as disk from "./jobFiles";
 import { setPendingPosts } from "./store";
 import { confirmedRow, markPostDeleted, placeConfirmedPost } from "./feedCache";
-import { failureWords, type FailureReason } from "./words";
+import { failureWords, tagFailureWords, type FailureReason } from "./words";
 import { thumbLongSide } from "./thumbSize";
 import type { JobStep, OutboxJob, PendingPost, PendingState, PostDraft } from "./types";
 
@@ -1025,13 +1025,19 @@ function warmImageCache(live: Live): void {
 /**
  * The tags ride behind the post, because each one notifies the member
  * tagged. A duplicate means an earlier attempt landed. Their failure is
- * worth a word but never the photograph, which is already up.
+ * worth a word but never the photograph, which is already up. A member
+ * the database will not let be tagged leaves the others on the post, and
+ * is named (tagFailureWords).
  */
 async function sendTags(live: Live, signal: AbortSignal): Promise<void> {
   const d = live.job.draft;
   for (let attempt = 1; ; attempt++) {
     try {
-      await withTimeout(TAG_TIMEOUT_MS, () => tagMembers(d.id, d.userId, d.tagIds), { signal, what: "Tagging" });
+      const refused = await withTimeout(TAG_TIMEOUT_MS, () => tagMembers(d.id, d.userId, d.tagIds), { signal, what: "Tagging" });
+      if (refused.length > 0) {
+        const words = tagFailureWords(d, refused);
+        showAlert(words.title, words.body);
+      }
       return;
     } catch (err) {
       if (signal.aborted || live.gone) throw abortError();
@@ -1045,10 +1051,8 @@ async function sendTags(live: Live, signal: AbortSignal): Promise<void> {
           continue;
         }
       }
-      showAlert(
-        "Posted, but the tags didn’t take",
-        `${d.kind === "video" ? "The clip" : "The photograph"} is up. You can try tagging again later.`,
-      );
+      const words = tagFailureWords(d, null);
+      showAlert(words.title, words.body);
       return;
     }
   }

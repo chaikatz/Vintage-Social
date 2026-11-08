@@ -206,6 +206,8 @@ export interface ComposeChoices {
   takenAt: string | null | undefined;
   place: PlaceInput;
   tagIds: readonly string[];
+  /** Their usernames by id, as chosen. */
+  tagNames?: Readonly<Record<string, string>>;
   /** The Darkroom's library identifier, when the photograph came from there. */
   assetId: string | null | undefined;
   author: DraftAuthor;
@@ -246,6 +248,19 @@ export function placeOf(place: PlaceInput): Pick<PostDraft, "location" | "lat" |
   return { location: null, lat: null, lng: null, placeId: null };
 }
 
+/** The usernames of the members tagged, by id: theirs only, and a copy. */
+function tagNamesFor(
+  tagIds: readonly string[],
+  names: Readonly<Record<string, string>> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const id of tagIds) {
+    const name = names?.[id];
+    if (name) out[id] = name;
+  }
+  return out;
+}
+
 /** The outbox's draft, from the frozen choices and what developing made of the picture. */
 export function buildPostDraft(choices: ComposeChoices, developed: Developed): PostDraft {
   const isVideo = choices.kind === "video";
@@ -266,6 +281,7 @@ export function buildPostDraft(choices: ComposeChoices, developed: Developed): P
     ...placeOf(choices.place),
     // A member tagged twice is one tag; the order chosen is kept.
     tagIds: [...new Set(choices.tagIds)],
+    tagNames: tagNamesFor(choices.tagIds, choices.tagNames),
     assetId: choices.assetId || null,
     author: { ...choices.author },
   };

@@ -16,18 +16,49 @@ import { readInChunks } from "./batch";
 
 const TAG_WITH_MEMBER = "*, member:profiles!post_tags_user_id_fkey(id, username, full_name, avatar_url)";
 
-/** Name the members in a freshly published post. Skips nobody silently: an error is an error. */
-export async function tagMembers(postId: string, taggedBy: string, userIds: string[]): Promise<void> {
+/**
+ * A row the database refused for what it says, which another try would
+ * not change: a policy (the member no longer approved, or a block between
+ * the two), a member since gone, a check.
+ */
+function refusedRow(error: { code?: string }): boolean {
+  return error.code === "42501" || error.code === "23503" || error.code === "23514";
+}
+
+/**
+ * Name the members in a freshly published post. Resolves with the members
+ * the database would not let be tagged (none, nearly always); the rest are
+ * on the post. Any other error is thrown: an error is an error.
+ *
+ * All of them go in one request. One statement is all or nothing, though,
+ * so a single member refused (suspended, or blocking the author, since the
+ * post was composed), or one already in from an earlier try, kept every
+ * other tag off as well. Then each goes again on its own, and only the
+ * refused are left off.
+ */
+export async function tagMembers(postId: string, taggedBy: string, userIds: string[]): Promise<string[]> {
   const ids = [...new Set(userIds)].filter((id) => id && id !== taggedBy);
-  if (ids.length === 0) return;
+  if (ids.length === 0) return [];
   if (isDemoMode()) {
     demo.demoTagMembers(postId, taggedBy, ids);
-    return;
+    return [];
   }
-  const { error } = await supabase
-    .from("post_tags")
-    .insert(ids.map((user_id) => ({ post_id: postId, user_id, tagged_by: taggedBy })));
-  if (error) throw error;
+  const row = (user_id: string) => ({ post_id: postId, user_id, tagged_by: taggedBy });
+  const { error } = await supabase.from("post_tags").insert(ids.map(row));
+  if (!error) return [];
+  const already = error.code === "23505";
+  if (!already && !refusedRow(error)) throw error;
+  // One member alone: that answer was theirs.
+  if (ids.length === 1) return already ? [] : ids;
+  const refused = await Promise.all(
+    ids.map(async (id) => {
+      const { error: one } = await supabase.from("post_tags").insert(row(id));
+      if (!one || one.code === "23505") return null;
+      if (refusedRow(one)) return id;
+      throw one;
+    }),
+  );
+  return refused.filter((id): id is string => id !== null);
 }
 
 /** Everyone tagged in a post that the viewer is allowed to know about. */
