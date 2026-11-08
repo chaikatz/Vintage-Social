@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigationContainerRef, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { registerPushToken, unregisterAllPushTokens, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
-import { openNoticeRoute, tapFollower, tokenFiler } from "./pushRoute";
+import { openNoticeRoute, tapFollower, tokenFiler, type NavState } from "./pushRoute";
 import { onReturnFromBackground } from "./appReturn";
 import { noteToken, pushSupported, stopReceiving, takeToken, tokenRemoved } from "./pushKept";
 
@@ -165,6 +165,8 @@ let follow: ReturnType<typeof tapFollower> | null = null;
  */
 export function useNotificationTaps(): void {
   const router = useRouter();
+  // The container's own ref, for what is in front when a tap is followed.
+  const navigation = useNavigationContainerRef();
   const queryClient = useQueryClient();
   useEffect(() => {
     if (Platform.OS === "web" || isDemoMode()) return;
@@ -177,7 +179,7 @@ export function useNotificationTaps(): void {
       navigate: (route) =>
         openNoticeRoute(
           {
-            canDismiss: () => router.canDismiss(),
+            rootState: () => (navigation.isReady() ? (navigation.getRootState() as NavState) : null),
             dismissTo: (to) => router.dismissTo(to as never),
             navigate: (to) => router.navigate(to as never),
             push: (to) => router.push(to as never),
@@ -204,5 +206,5 @@ export function useNotificationTaps(): void {
       tapped.remove();
       arrived.remove();
     };
-  }, [router, queryClient]);
+  }, [router, navigation, queryClient]);
 }

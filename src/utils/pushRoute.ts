@@ -43,10 +43,35 @@ export function isTabRoute(route: string): boolean {
   return route === "/(tabs)" || route.startsWith("/(tabs)/");
 }
 
+/** A navigator's state, as much of it as openNoticeRoute reads. */
+export interface NavState {
+  index?: number;
+  routes: readonly { name: string; state?: NavState }[];
+}
+
+/** The route in front of a navigator: the one at its index, or the last of a stack not yet indexed. */
+function frontRoute(state: NavState | null | undefined): NavState["routes"][number] | undefined {
+  if (!state || state.routes.length === 0) return undefined;
+  return state.routes[state.index ?? state.routes.length - 1];
+}
+
+/**
+ * Whether a screen is in front of the tabs: the route in front on the
+ * app's root stack is anything but "(tabs)" (a photograph, a thread,
+ * Invitations, the opening splash). Read from the navigation container's
+ * root state, where expo-router keeps the app's stack inside a slot of
+ * its own, "__root". Not known yet (the navigator not up): no.
+ */
+export function screenOverTabs(root: NavState | null | undefined): boolean {
+  let front = frontRoute(root);
+  if (front?.name === "__root") front = frontRoute(front.state);
+  return front != null && front.name !== "(tabs)";
+}
+
 /** What opening a notice's route needs of the router (expo-router's own, in push.ts). */
 export interface NoticeRouter {
-  /** Whether a screen is open over the tabs (anything on the stack above them). */
-  canDismiss(): boolean;
+  /** The navigation container's root state as it is now; null before the navigator is up. */
+  rootState(): NavState | null | undefined;
   dismissTo(route: string): void;
   navigate(route: string): void;
   push(route: string): void;
@@ -59,13 +84,21 @@ export interface NoticeRouter {
  * pushed. Pushed while a screen was open over the tabs (a photograph, a
  * thread, Invitations), it put a second set of tabs over the first: a new
  * Home with its reads and its badge, and no back mark or swipe back to the
- * screen underneath. With a screen open, the stack goes back to the tabs
- * already there, on the tab named; with none, the tab simply changes.
+ * screen underneath. With a screen in front, the stack goes back to the
+ * tabs already there, on the tab named (or, with no tabs under it yet,
+ * puts them in its place); with the tabs in front, the tab simply changes.
  * Anything else is a screen of its own, pushed over whatever is open.
+ *
+ * Which of the two is decided by the route in front, not by the router's
+ * canDismiss(): that is true whenever any stack holds more than one
+ * screen, the tabs in front or not. A tab notice followed while the app
+ * was still on its opening splash leaves the splash under the tabs, and
+ * from then on a tab notice tapped on the tabs went to dismissTo, which
+ * the tab navigator does not handle: nothing opened.
  */
 export function openNoticeRoute(router: NoticeRouter, route: string): void {
   if (!isTabRoute(route)) router.push(route);
-  else if (router.canDismiss()) router.dismissTo(route);
+  else if (screenOverTabs(router.rootState())) router.dismissTo(route);
   else router.navigate(route);
 }
 

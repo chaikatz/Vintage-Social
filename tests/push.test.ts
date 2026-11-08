@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/supabase", () => ({ supabase: {} }));
 vi.mock("@/lib/env", () => ({ isDemoMode: () => true }));
 
-const { isTabRoute, openNoticeRoute, routeForNotification, tapFollower, tokenFiler } = await import("@/utils/pushRoute");
+const { isTabRoute, openNoticeRoute, routeForNotification, screenOverTabs, tapFollower, tokenFiler } = await import(
+  "@/utils/pushRoute"
+);
 const { parsePrefs, DEFAULT_PREFS } = await import("@/api/notifications");
 
 describe("where a tapped notice lands", () => {
@@ -117,19 +119,31 @@ describe("a tapped notice, followed", () => {
     expect(src).toMatch(/clear: \(\) => Notifications\.clearLastNotificationResponse\(\)/);
     expect(src).toMatch(/addNotificationResponseReceivedListener\(go\)/);
     expect(src).not.toMatch(/router\.push\(route as never\);\s*\};/);
-    // Each tap opened as its route asks: a tab gone back to, never pushed.
-    expect(src).toMatch(/navigate: \(route\) =>\s*openNoticeRoute\(\s*\{\s*canDismiss: \(\) => router\.canDismiss\(\),\s*dismissTo: \(to\) => router\.dismissTo\(to as never\),\s*navigate: \(to\) => router\.navigate\(to as never\),\s*push: \(to\) => router\.push\(to as never\),\s*\},\s*route,\s*\),/);
+    // Each tap opened as its route asks: a tab gone back to, never pushed,
+    // decided by the route in front (the container's root state), never canDismiss().
+    expect(src).toMatch(/const navigation = useNavigationContainerRef\(\);/);
+    expect(src).not.toMatch(/canDismiss/);
+    expect(src).toMatch(/navigate: \(route\) =>\s*openNoticeRoute\(\s*\{\s*rootState: \(\) => \(navigation\.isReady\(\) \? \(navigation\.getRootState\(\) as NavState\) : null\),\s*dismissTo: \(to\) => router\.dismissTo\(to as never\),\s*navigate: \(to\) => router\.navigate\(to as never\),\s*push: \(to\) => router\.push\(to as never\),\s*\},\s*route,\s*\),/);
   });
 });
 
 describe("a tapped notice that points to a tab", () => {
-  /** expo-router as the tap finds it: a screen open over the tabs, or none. */
-  function routerWith(screenOpen: boolean) {
+  /**
+   * The navigation container's root state as expo-router keeps it: its own
+   * "__root" slot, holding the app's stack (app/_layout.tsx) with these
+   * screens, the last in front unless `front` says otherwise.
+   */
+  function container(stack: string[], front = stack.length - 1) {
+    return { index: 0, routes: [{ name: "__root", state: { index: front, routes: stack.map((name) => ({ name })) } }] };
+  }
+
+  /** expo-router as the tap finds it: the root state it would read, and what was asked of it. */
+  function routerWith(root: ReturnType<typeof container> | null) {
     const calls: string[] = [];
     return {
       calls,
       router: {
-        canDismiss: () => screenOpen,
+        rootState: () => root,
         dismissTo: (route: string) => void calls.push(`dismissTo ${route}`),
         navigate: (route: string) => void calls.push(`navigate ${route}`),
         push: (route: string) => void calls.push(`push ${route}`),
@@ -137,18 +151,47 @@ describe("a tapped notice that points to a tab", () => {
     };
   }
 
+  // Every root stack a tap can find, and what opening a tab there asks for.
+  const stacks: [string, ReturnType<typeof container> | null, "dismissTo" | "navigate"][] = [
+    ["a screen open over the tabs", container(["(tabs)", "invites"]), "dismissTo"],
+    ["the tabs alone", container(["(tabs)"]), "navigate"],
+    ["the opening splash left under the tabs, the tabs in front", container(["index", "(tabs)"]), "navigate"],
+    ["a screen over the tabs over the splash", container(["index", "(tabs)", "post/[id]"]), "dismissTo"],
+    ["the opening splash alone", container(["index"]), "dismissTo"],
+    ["no navigator up yet", null, "navigate"],
+  ];
+
   it("is never pushed over the screen open: the tabs already there are gone back to, on that tab", () => {
     // A tag, or "Someone joined VINTAGE on your invitation.", while a
     // photograph, a thread or Invitations is open.
-    const { router, calls } = routerWith(true);
+    const { router, calls } = routerWith(container(["(tabs)", "invites"]));
     openNoticeRoute(router, "/(tabs)/activity");
     expect(calls).toEqual(["dismissTo /(tabs)/activity"]);
   });
 
-  it("with nothing open over the tabs, only changes tab", () => {
-    const { router, calls } = routerWith(false);
+  it("with the tabs in front, only changes tab", () => {
+    const { router, calls } = routerWith(container(["(tabs)"]));
     openNoticeRoute(router, "/(tabs)/activity");
     expect(calls).toEqual(["navigate /(tabs)/activity"]);
+  });
+
+  it("with the tabs in front over the splash, still only changes tab: a screen under the tabs is not one over them", () => {
+    // A tab notice followed from cold, while the app was still on its
+    // splash, leaves the splash under the tabs. canDismiss() is true there,
+    // and the dismissTo it chose did nothing on the tabs.
+    const { router, calls } = routerWith(container(["index", "(tabs)"]));
+    openNoticeRoute(router, "/(tabs)/activity");
+    expect(calls).toEqual(["navigate /(tabs)/activity"]);
+    expect(screenOverTabs(container(["index", "(tabs)"]))).toBe(false);
+    expect(screenOverTabs(container(["index", "(tabs)"], 0))).toBe(true);
+  });
+
+  it("decides from the route in front, for every stack a tap can find", () => {
+    for (const [, root, expected] of stacks) {
+      const { router, calls } = routerWith(root);
+      openNoticeRoute(router, "/(tabs)/activity");
+      expect(calls).toEqual([`${expected} /(tabs)/activity`]);
+    }
   });
 
   it("every route a notice can name that is a tab, whatever is open", () => {
@@ -161,8 +204,8 @@ describe("a tapped notice that points to a tab", () => {
     ];
     for (const route of routes) {
       expect(isTabRoute(route!)).toBe(true);
-      for (const open of [true, false]) {
-        const { router, calls } = routerWith(open);
+      for (const [, root] of stacks) {
+        const { router, calls } = routerWith(root);
         openNoticeRoute(router, route!);
         expect(calls.some((c) => c.startsWith("push "))).toBe(false);
       }
@@ -172,9 +215,11 @@ describe("a tapped notice that points to a tab", () => {
   it("a screen of its own is pushed over whatever is open, as before", () => {
     for (const route of ["/post/p1", "/user/ansel", "/requests", "/messages", "/memories", "/tabsish"]) {
       expect(isTabRoute(route)).toBe(false);
-      const { router, calls } = routerWith(true);
-      openNoticeRoute(router, route);
-      expect(calls).toEqual([`push ${route}`]);
+      for (const [, root] of stacks) {
+        const { router, calls } = routerWith(root);
+        openNoticeRoute(router, route);
+        expect(calls).toEqual([`push ${route}`]);
+      }
     }
   });
 
@@ -204,7 +249,145 @@ describe("a tapped notice that points to a tab", () => {
     const pushed = stack.getStateForAction(state, { type: "PUSH", payload }, options);
     expect(pushed?.routes.filter((r) => r.name === "(tabs)")).toHaveLength(2);
   });
+
+  it("lands on Activity from every stack a tap can find, replayed through expo-router's own actions and React Navigation's routers", async () => {
+    const { StackRouter, TabRouter } = await import("@react-navigation/routers");
+    const getNavigateAction = await expoRouterNavigateAction();
+
+    type Nav = {
+      key: string;
+      type: "stack" | "tab";
+      index: number;
+      routeNames: string[];
+      routes: { key: string; name: string; params?: { screen?: string }; state?: Nav }[];
+      [extra: string]: unknown;
+    };
+    const tabNames = ["index", "search", "create", "activity", "profile"];
+    const tabs = (): Nav => ({
+      stale: false,
+      key: "tabs-nav",
+      type: "tab",
+      index: 0,
+      routeNames: tabNames,
+      history: [{ type: "route", key: "index-1" }],
+      preloadedRouteKeys: [],
+      routes: tabNames.map((name) => ({ key: `${name}-1`, name })),
+    });
+    /** The container's root state: expo-router's "__root" slot holding the app's stack. */
+    const rootWith = (stack: string[]): Nav => ({
+      stale: false,
+      key: "slot-nav",
+      type: "stack",
+      index: 0,
+      routeNames: ["__root"],
+      preloadedRoutes: [],
+      routes: [
+        {
+          key: "__root-1",
+          name: "__root",
+          state: {
+            stale: false,
+            key: "root-stack",
+            type: "stack",
+            index: stack.length - 1,
+            routeNames: ["index", "(tabs)", "post/[id]", "invites"],
+            preloadedRoutes: [],
+            routes: stack.map((name) => ({ key: `${name}-1`, name, ...(name === "(tabs)" ? { state: tabs() } : {}) })),
+          },
+        },
+      ],
+    });
+    // What expo-router's linking makes of "/(tabs)/activity".
+    const activity = { routes: [{ name: "__root", state: { routes: [{ name: "(tabs)", state: { routes: [{ name: "activity" }] } }] } }] };
+
+    /**
+     * Dispatching as React Navigation does: the navigator the action names,
+     * down the routes in front, handles it; one that refuses an action
+     * aimed at it does not pass it on (useOnAction), and nothing happens.
+     */
+    const dispatch = (nav: Nav, action: { target: string }): Nav | null => {
+      if (nav.key === action.target) {
+        const router = nav.type === "tab" ? TabRouter({}) : StackRouter({});
+        const options = { routeNames: nav.routeNames, routeParamList: {}, routeGetIdList: {} };
+        return router.getStateForAction(nav as never, action as never, options) as Nav | null;
+      }
+      const child = nav.routes[nav.index].state;
+      const next = child ? dispatch(child, action) : null;
+      return next && { ...nav, routes: nav.routes.map((r, i) => (i === nav.index ? { ...r, state: next } : r)) };
+    };
+
+    const follow = (stack: string[], decide: "openNoticeRoute" | "canDismiss") => {
+      let root: Nav | null = rootWith(stack);
+      const act = (type: string) => () => {
+        root = dispatch(root!, getNavigateAction(activity, root, type));
+      };
+      const router = {
+        rootState: () => root,
+        dismissTo: act("POP_TO"),
+        navigate: act("NAVIGATE"),
+        push: act("PUSH"),
+      };
+      if (decide === "openNoticeRoute") openNoticeRoute(router, "/(tabs)/activity");
+      // The choice before: canDismiss() (expo-router's), true whenever a stack holds two screens.
+      else if (stack.length > 1) router.dismissTo();
+      else router.navigate();
+      if (!root) return null;
+      const app = (root as Nav).routes[0].state!;
+      const front = app.routes[app.index];
+      const shown = front.params?.screen ?? (front.state ? front.state.routes[front.state.index].name : undefined);
+      return { stack: app.routes.map((r) => r.name), front: front.name, shown };
+    };
+
+    // A screen open over the tabs: back to the one set of tabs, on Activity.
+    expect(follow(["(tabs)", "invites"], "openNoticeRoute")).toEqual({ stack: ["(tabs)"], front: "(tabs)", shown: "activity" });
+    // The tabs alone: the tab changes.
+    expect(follow(["(tabs)"], "openNoticeRoute")).toEqual({ stack: ["(tabs)"], front: "(tabs)", shown: "activity" });
+    // The splash under the tabs, the tabs in front: the tab changes.
+    expect(follow(["index", "(tabs)"], "openNoticeRoute")).toEqual({ stack: ["index", "(tabs)"], front: "(tabs)", shown: "activity" });
+    // ...where canDismiss's choice, a POP_TO the tab navigator does not handle, did nothing.
+    expect(follow(["index", "(tabs)"], "canDismiss")).toBeNull();
+    // A screen over the tabs over the splash: back to the tabs, on Activity.
+    expect(follow(["index", "(tabs)", "post/[id]"], "openNoticeRoute")).toEqual({
+      stack: ["index", "(tabs)"],
+      front: "(tabs)",
+      shown: "activity",
+    });
+    // The splash alone (a tap followed from cold): the tabs take its place, on Activity.
+    expect(follow(["index"], "openNoticeRoute")).toEqual({ stack: ["(tabs)"], front: "(tabs)", shown: "activity" });
+  });
 });
+
+/**
+ * expo-router's own getNavigateAction (build/global-state/routing.js), the
+ * action router.navigate, dismissTo and push dispatch. It is not exported,
+ * and its module reaches for React Native and the router's store, which
+ * only the calls it is not used for need; those are stubbed.
+ */
+async function expoRouterNavigateAction(): Promise<
+  (actionState: unknown, navigationState: unknown, type: string) => { type: string; target: string; payload: unknown }
+> {
+  const { readFileSync } = await import("node:fs");
+  const { createRequire } = await import("node:module");
+  const vm = await import("node:vm");
+  const file = createRequire(import.meta.url).resolve("expo-router/build/global-state/routing.js");
+  const near = createRequire(file);
+  const stubbed = [
+    "expo/dom",
+    "expo-linking",
+    "react-native",
+    "./router-store",
+    "../domComponents/emitDomEvent",
+    "../getRoutesRedirects",
+    "../link/href",
+    "../utils/url",
+  ];
+  const load = (name: string) => (stubbed.includes(name) ? {} : near(name));
+  const source = `${readFileSync(file, "utf8")}\nexports.getNavigateAction = getNavigateAction;`;
+  const module = { exports: {} as Record<string, unknown> };
+  vm.runInThisContext(`(function (exports, require, module) {${source}\n})`, { filename: file })(module.exports, load, module);
+  expect(typeof module.exports.getNavigateAction).toBe("function");
+  return module.exports.getNavigateAction as never;
+}
 
 describe("the phone's push token, filed under the member", () => {
   /** A registration the test answers by hand: each call waits for `answer`. */
