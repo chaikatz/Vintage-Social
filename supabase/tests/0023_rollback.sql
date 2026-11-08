@@ -24,6 +24,11 @@
 -- stays, holding only those; 0038's policies, grants and triggers are not
 -- 0023's, and are left as they are (0038's own way back is
 -- 0038_rollback.sql).
+--
+-- 0039 (members write only what the app writes) adds five restrictive
+-- policies of its own, narrows grants and replaces three invitation
+-- functions; none of that is 0023's, and it is left as it is (0039's own
+-- way back is 0039_rollback.sql).
 
 begin;
 

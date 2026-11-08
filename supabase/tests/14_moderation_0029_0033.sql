@@ -208,15 +208,27 @@ begin
 end
 $fn$;
 
--- e13 reports e11's photograph, and e12 a member.
+-- e13 reports e11's photograph, and e12 a member. As the app files a
+-- report: no id (0039 lets a member file only the columns the app sends),
+-- so the ids the rest of this file names are given after, as the owner,
+-- to the reports and to what the push function was asked about them.
 insert into m_did values ('e13 reports a photograph', tests.m_as('e0000000-0000-4000-8000-000000000013',
-  'insert into public.reports (id, reporter_id, target_type, post_id, reason) values
-     (''e4000000-0000-4000-8000-000000000001'', ''e0000000-0000-4000-8000-000000000013'', ''post'',
+  'insert into public.reports (reporter_id, target_type, post_id, reason) values
+     (''e0000000-0000-4000-8000-000000000013'', ''post'',
       ''e2000000-0000-4000-8000-000000000003'', ''Spam or scam'')'));
 insert into m_did values ('e12 reports a member', tests.m_as('e0000000-0000-4000-8000-000000000012',
-  'insert into public.reports (id, reporter_id, target_type, profile_id, reason) values
-     (''e4000000-0000-4000-8000-000000000002'', ''e0000000-0000-4000-8000-000000000012'', ''profile'',
+  'insert into public.reports (reporter_id, target_type, profile_id, reason) values
+     (''e0000000-0000-4000-8000-000000000012'', ''profile'',
       ''e0000000-0000-4000-8000-000000000011'', ''Harassment or abuse'')'));
+create temp table m_report_ids as
+select r.id as old_id, v.new_id
+from public.reports r
+join (values
+  ('e0000000-0000-4000-8000-000000000013'::uuid, 'e4000000-0000-4000-8000-000000000001'::uuid),
+  ('e0000000-0000-4000-8000-000000000012'::uuid, 'e4000000-0000-4000-8000-000000000002'::uuid)
+) v(reporter, new_id) on r.reporter_id = v.reporter;
+update m_pushes p set id = k.new_id from m_report_ids k where p.kind = 'report' and p.id = k.old_id;
+update public.reports r set id = k.new_id from m_report_ids k where r.id = k.old_id;
 insert into tests.results (name, expected, actual) values
   ('0032: a member files a report as before', 'OK,OK',
    (select answer from m_did where step = 'e13 reports a photograph') || ',' ||
