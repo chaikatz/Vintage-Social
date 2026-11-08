@@ -416,19 +416,16 @@ export default function Memories() {
                 <Text style={styles.eraCount}>{era.posts.length}</Text>
               </View>
               <View style={styles.eraGrid}>
-                {era.posts.slice(0, 6).map((p) => {
-                  const url = mediaUrl("thumbnails", p.thumb_path) ?? mediaUrl("media", p.media_path);
-                  return (
-                    <Pressable
-                      key={p.id}
-                      onPress={() =>
-                        router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken" } })
-                      }
-                    >
-                      {url ? <Image source={url} style={styles.eraCell} contentFit="cover" cachePolicy="memory-disk" /> : null}
-                    </Pressable>
-                  );
-                })}
+                {era.posts.slice(0, 6).map((p) => (
+                  <Pressable
+                    key={p.id}
+                    onPress={() =>
+                      router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken" } })
+                    }
+                  >
+                    <EraCell post={p} />
+                  </Pressable>
+                ))}
               </View>
             </View>
           ))}
@@ -503,6 +500,22 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
       <View style={styles.sectionRule} />
     </View>
   );
+}
+
+/** One of an era's squares; one that fails to load is asked for again rather than left empty (src/media/imageRetry.ts). */
+function EraCell({ post }: { post: PostRow }) {
+  const url = mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path);
+  const retry = useImageRetry(url);
+  return url ? (
+    <Image
+      source={url}
+      style={styles.eraCell}
+      contentFit="cover"
+      cachePolicy="memory-disk"
+      key={retry.attempt}
+      onError={retry.onError}
+    />
+  ) : null;
 }
 
 const ERA_CELL = (Dimensions.get("window").width - spacing.lg * 2 - 2 * 2) / 3;

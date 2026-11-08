@@ -342,4 +342,35 @@ describe("the pictures that try again", () => {
     // The hook runs on every draw of a bubble, before anything it draws.
     expect(thread.indexOf("useImageRetry(thumb)")).toBeLessThan(thread.indexOf("return (\n    <View style={[styles.bubbleRow"));
   });
+
+  it("and a Timeline frame, the Photo Inspector's photograph and On this day's era squares", () => {
+    // A frame: the hook asked on every row, before a year or a gap returns, for the picture the frame draws.
+    const timeline = code("src/components/Timeline.tsx");
+    const row = timeline.slice(timeline.indexOf("const Row = React.memo(function Row("), timeline.indexOf("const styles = StyleSheet.create"));
+    expect(row).toMatch(/const retry = useImageRetry\(row\.kind === "post" \? frameUrl\(row\.post\) : null\);/);
+    expect(row.indexOf("useImageRetry(")).toBeGreaterThan(0);
+    expect(row.indexOf("useImageRetry(")).toBeLessThan(row.indexOf('if (row.kind === "year")'));
+    expect(row).toMatch(/const url = frameUrl\(post\);/);
+    expect(row).toMatch(/cachePolicy="memory-disk"\s*recyclingKey=\{post\.id\}\s*key=\{retry\.attempt\}\s*onError=\{retry\.onError\}/);
+    expect(timeline.match(/<Image\b/g)).toHaveLength(1);
+    // The same picture as before: a film's poster, or the small copy, else the photograph.
+    expect(timeline).toMatch(
+      /function frameUrl\(post: PostRow\): string \| number \| null \{\s*return post\.media_type === "video"\s*\? mediaUrl\("thumbnails", post\.thumb_path\)\s*: mediaUrl\("thumbnails", post\.thumb_path\) \?\? mediaUrl\("media", post\.media_path\);\s*\}/,
+    );
+
+    // The inspector's photograph, its small copy standing in meanwhile.
+    const inspector = code("src/components/PhotoInspector.tsx");
+    const zoomable = inspector.slice(inspector.indexOf("function ZoomablePhoto("), inspector.indexOf("function Film("));
+    expect(zoomable).toMatch(/const retry = useImageRetry\(url\);/);
+    expect(zoomable).toMatch(/placeholder=\{placeholder\}/);
+    expect(zoomable).toMatch(/cachePolicy="memory-disk"\s*key=\{retry\.attempt\}\s*onError=\{retry\.onError\}/);
+
+    // An era's squares, each a cell of its own so the hook has a place to run.
+    const memories = code("app/memories.tsx");
+    expect(memories).toMatch(/<EraCell post=\{p\} \/>/);
+    const cell = memories.slice(memories.indexOf("function EraCell("), memories.indexOf("const ERA_CELL ="));
+    expect(cell).toMatch(/const url = mediaUrl\("thumbnails", post\.thumb_path\) \?\? mediaUrl\("media", post\.media_path\);\s*const retry = useImageRetry\(url\);/);
+    expect(cell).toMatch(/style=\{styles\.eraCell\}\s*contentFit="cover"\s*cachePolicy="memory-disk"\s*key=\{retry\.attempt\}\s*onError=\{retry\.onError\}/);
+    expect(memories).not.toMatch(/<Image source=\{url\} style=\{styles\.eraCell\}/);
+  });
 });

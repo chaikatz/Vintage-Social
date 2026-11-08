@@ -27,6 +27,7 @@ import { aspectRatio } from "./PostMedia";
 import { holdTabSwipe, shouldHoldTabSwipe } from "@/utils/tabSwipe";
 import { useIsFocused } from "@react-navigation/native";
 import { PhotoInspector } from "./PhotoInspector";
+import { useImageRetry } from "@/media/imageRetry";
 import { TIMELINE_FIRST_WINDOW, rowTops, timelineWindow, type RowWindow } from "@/media/cardWindow";
 import type { PostRow } from "@/types/db";
 
@@ -409,6 +410,13 @@ export function Timeline({ posts, onOpenPost, header, empty, onRefresh, refreshi
   );
 }
 
+/** A frame's picture: a film's poster, or the photograph's small copy (the photograph itself when there is none). */
+function frameUrl(post: PostRow): string | number | null {
+  return post.media_type === "video"
+    ? mediaUrl("thumbnails", post.thumb_path)
+    : mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path);
+}
+
 /**
  * One row of the line. Drawn again only when what it is given changes, so
  * a row coming within reach draws its picture without the others being
@@ -434,6 +442,9 @@ const Row = React.memo(function Row({
   onInspect: (post: PostRow) => void;
 }) {
   const lastTap = useRef(0);
+  // A frame that fails to load is asked for again rather than left empty
+  // (src/media/imageRetry.ts); asked here, before a year or a gap returns, as a hook must be.
+  const retry = useImageRetry(row.kind === "post" ? frameUrl(row.post) : null);
   const onLayout = (e: LayoutChangeEvent) => onTop(index, row.key, e.nativeEvent.layout.y);
   if (row.kind === "year") {
     return (
@@ -454,9 +465,7 @@ const Row = React.memo(function Row({
 
   const { post, side } = row;
   const isVideo = post.media_type === "video";
-  const url = isVideo
-    ? mediaUrl("thumbnails", post.thumb_path)
-    : mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path);
+  const url = frameUrl(post);
   const live = needsDisplayFilter(post) ? cssFilterFor(getFilter(post.filter_id)).filter : null;
   const ratio = aspectRatio(post.width, post.height);
   const frameHeight = Math.round(frame / ratio);
@@ -492,6 +501,8 @@ const Row = React.memo(function Row({
           transition={80}
           cachePolicy="memory-disk"
           recyclingKey={post.id}
+          key={retry.attempt}
+          onError={retry.onError}
         />
       ) : null}
       {isVideo ? (
