@@ -349,11 +349,15 @@ notice, and how to undo it. If you approve, in the merged branch:
    straight after 0022 and then 0023–0037, and every check passes). Then
    the rest from 0023 up in number order as above, 0038 again in its
    turn (it is safe to run twice).
+   On production, which has had 0023–0038 since 8 November, the new
+   files start at `0039_writes_only_what_the_app_writes.sql`: run it and
+   every later file, in number order. 0039 changes no member's data; its
+   way back is `supabase/tests/0039_rollback.sql`.
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false). The `13_` and
    `14_` files there are not verify scripts: see item 6.
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0038 in 48 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0039 in 60 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -375,6 +379,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0036 | A phone's push token belongs to whoever signed in on it last | 37 |
    | 0037 | Unread messages counted in the database | 38–39 |
    | 0038 | Follows that respect private accounts: a follow of a private account is always a request, the account accepts or declines it, an answered request leaves Activity, an account made public lets its requests in, and only the two members see a request | 40–48 |
+   | 0039 | Members write only what the app writes: each table's columns as the app sends them and no others (an author can no longer undo an admin's removal, or date, count or repoint a photograph; nobody rewrites their counts or name in the club, moves a conversation or a tag, or dates what they file), a photograph's files and every portrait from the member's own folder, never a URL or another member's file, nothing for signed-out visitors, and the old invitation functions refuse a suspended account and count links and codes as one allowance | 49–60 |
 
 5. Redeploy the `push` function, which changed in the sweep. It is now
    **two files**, `index.ts` and `logic.ts` (`index.ts` imports
