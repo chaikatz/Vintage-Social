@@ -108,7 +108,7 @@ export default function Home() {
     () => idsAround(postIds, Math.max(0, seenIndex), { keepFirst: HOME_FIRST_DRAW }),
     [postIds, seenIndex],
   );
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor, rereadActions } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onCommentLongPress, onOpenLikes, commentsFor, rereadActions } =
     usePostActions(userId, actionIds);
 
   // A refresh starts the feed again from its newest page: one request,
@@ -230,6 +230,7 @@ export default function Home() {
         onShare={onShare}
         onOpenLikes={onOpenLikes}
         comments={commentsOrNone(commentsFor(item))}
+        onCommentLongPress={onCommentLongPress}
         onMore={more}
         active={focused && item.id === visibleId}
         // The photographs on the first screen are fetched ahead of the
@@ -237,7 +238,7 @@ export default function Home() {
         priority={index < FIRST_SCREEN ? "high" : "normal"}
       />
     ),
-    [counted, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, more, openProfile, visibleId, focused],
+    [counted, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onCommentLongPress, more, openProfile, visibleId, focused],
   );
 
   // Only one clip plays at a time. A pending one may when it is the

@@ -283,7 +283,7 @@ export default function Gallery() {
     () => idsAround(postIds, videoFocus({ ready, startIndex, seenIndex: seenIndex < 0 ? null : seenIndex })),
     [postIds, ready, startIndex, seenIndex],
   );
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onCommentLongPress, onOpenLikes, commentsFor } =
     usePostActions(userId, actionIds);
   // The same objects for a card while nothing about it has changed, so the
   // list drawing again draws again only the cards that did change (see
@@ -385,6 +385,7 @@ export default function Gallery() {
               onShare={onShare}
               onOpenLikes={onOpenLikes}
               comments={commentsOrNone(commentsFor(item))}
+              onCommentLongPress={onCommentLongPress}
               onMore={more}
               active={ready && focused && item.id === visibleId}
               warm={isWarm(index, warm)}

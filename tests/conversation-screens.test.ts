@@ -91,7 +91,11 @@ describe("a comment posted or removed", () => {
 
   it("says what went wrong in our words, never as an object printed", () => {
     expect(comments).not.toMatch(/err instanceof Error \? err\.message : String\(err\)/);
-    expect(comments.match(/errorMessage\(err, /g)).toHaveLength(2);
+    expect(comments.match(/errorMessage\(err, /g)).toHaveLength(1);
+    // Removing one goes through the menu every comment has (src/utils/commentMenu.ts).
+    const menu = read("src/utils/commentMenu.ts");
+    expect(menu).not.toMatch(/err instanceof Error \? err\.message : String\(err\)/);
+    expect(menu.match(/errorMessage\(err, /g)).toHaveLength(1);
   });
 });
 

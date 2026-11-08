@@ -67,9 +67,11 @@ describe("the support page", () => {
     expect(read("app/settings.tsx")).toContain("Delete account");
     expect(read("app/settings.tsx")).toContain(">Support<");
     expect(read("app/user/[username].tsx")).toContain('"Block member"');
-    // A comment is reported from the menu a long press on it opens.
+    // A comment is reported from the menu a long press on it opens, wherever
+    // it is shown (tests/comment-menu.test.ts has the previews under a photograph).
     expect(read("app/comments.tsx")).toMatch(/<Pressable[^>]*\bonLongPress=\{/);
-    expect(read("app/comments.tsx")).toContain('"Report comment"');
+    expect(read("app/comments.tsx")).toMatch(/showCommentMenu\(comment, \{ userId, isAdmin \}, /);
+    expect(read("src/utils/commentMenu.ts")).toContain('"Report comment"');
   });
 
   it("when committed, is the current rendering of its own address", () => {
