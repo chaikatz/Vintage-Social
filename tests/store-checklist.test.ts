@@ -186,7 +186,7 @@ describe("the house accounts, as Apple is told about them", () => {
     expect(header).toContain(
       `on 8 November 2026 it removed the ${removed} Unsplash photographs and the ${avatars} Unsplash profile pictures with \`supabase/production/13_remove_unsplash_house_photos.sql\`, so of the rows below only the ${left} from Wikimedia Commons are on production`,
     );
-    expect(header).toContain("A fresh project seeded with `08_house_accounts.sql` must run 13 after it to match production.");
+    expect(header).toContain("A fresh project seeded with `08_house_accounts.sql` must run `13_remove_unsplash_house_photos.sql` after it to match production.");
     expect(flat(between(doc(), "- Content Rights:", "- **Age Rating**"))).not.toMatch(/header wrongly says/);
   });
 
@@ -525,7 +525,7 @@ describe("the house accounts' likes and comments", () => {
     );
     // The numbers of 6 November only as what came before the removal; it used to give them as production's, and say nothing was deleted.
     expect(decide).toContain(
-      `Before the removal there were ${commas(before.posts)} posts (${commas(seedHouse().posts.length)} from house accounts), ${commas(before.houseLikes)} likes and ${commas(before.houseComments)} comments between house accounts, and the review account followed 12 house accounts, whose ${before.reviewHome} photographs carried ${commas(before.reviewLikes)} of those likes and ${before.reviewComments} of those comments.`,
+      `Before the removal (read on 5 and 6 November) there were ${commas(before.posts)} posts (${commas(seedHouse().posts.length)} from house accounts), ${commas(before.houseLikes)} likes and ${commas(before.houseComments)} comments between house accounts, and the review account followed 12 house accounts, whose ${before.reviewHome} photographs carried ${commas(before.reviewLikes)} of those likes and ${before.reviewComments} of those comments.`,
     );
     expect(decide).not.toContain(`${commas(houseFollows)} follows, ${commas(before.houseLikes)} likes`);
     expect(decide).not.toMatch(/Nothing was deleted/);
@@ -694,6 +694,6 @@ describe("the Unsplash house photographs removed on 8 November", () => {
     expect(readme).toContain("### The Unsplash house photographs, removed on 8 November");
     expect(readme).toContain("`13_restore_unsplash_house_photos.sql` puts all of it back exactly");
     expect(readme).toContain("drop schema removed_20261108 cascade;");
-    expect(readme).toContain("3. To match production, run `supabase/production/13_remove_unsplash_house_photos.sql` after 08");
+    expect(readme).toContain("3. To match production, run `supabase/production/13_remove_unsplash_house_photos.sql` whole, in the SQL Editor (which runs the file as one transaction), after 08");
   });
 });

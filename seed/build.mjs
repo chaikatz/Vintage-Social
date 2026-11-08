@@ -406,7 +406,7 @@ const credits = [
   "photographs and the 112 Unsplash profile pictures with",
   "`supabase/production/13_remove_unsplash_house_photos.sql`, so of the rows",
   "below only the 229 from Wikimedia Commons are on production. A fresh",
-  "project seeded with `08_house_accounts.sql` must run 13 after it to match",
+  "project seeded with `08_house_accounts.sql` must run `13_remove_unsplash_house_photos.sql` after it to match",
   "production.",
   "",
   "| File | Licence | Author |",

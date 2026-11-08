@@ -25,7 +25,8 @@
 -- are sure you will not want it back, run in the SQL Editor:
 --   drop schema removed_20261108 cascade;
 --
--- On a fresh project seeded with 08_house_accounts.sql, run this after 08
+-- On a fresh project seeded with 08_house_accounts.sql, run this after 08,
+-- whole, in the SQL Editor (which runs the file as one transaction)
 -- (and after 10_reviewer_account.sql, so the review account is there to
 -- follow) to match production. It counts before it changes anything: it
 -- refuses unless there are exactly 679 Unsplash house photographs, and

@@ -309,7 +309,7 @@ your storage, so this costs you no storage and no egress.
    row at the end. Check `should_be_zero` is `0` and `member_no_seq` is
    still `1`.
 3. To match production, run `supabase/production/13_remove_unsplash_house_photos.sql`
-   after 08 (and after `10_reviewer_account.sql`, so the review account is
+   whole, in the SQL Editor (which runs the file as one transaction), after 08 (and after `10_reviewer_account.sql`, so the review account is
    there to follow the house accounts that keep photographs). Run
    `0034_seed_thumbnails_at_a_standard_width.sql` again after 08 as well
    (step 4 of `APP_STORE_LAUNCH.md`, item 6).

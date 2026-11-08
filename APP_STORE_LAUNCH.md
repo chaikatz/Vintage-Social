@@ -474,7 +474,9 @@ Open appstoreconnect.apple.com → **Apps** → **Vintage Social**.
      which production no longer shows: section 7). Members grant what the
      app needs in the Terms. This answer waited on the house-accounts
      question in section 7, decided on 8 November; with only these 229
-     left, answer "Yes, I have the necessary rights".
+     left, answer "Yes, I have the necessary rights" (a lawyer's view is
+     still worth having on the 16 marked "no restrictions", which carry an
+     institution's statement rather than a licence).
    - **Age Rating** → Edit → answer as in section 4.
 2. **App Privacy** (left column):
    - Privacy Policy URL: `https://vintagesocial.app/privacy`
@@ -891,8 +893,8 @@ or marked "no restrictions" (16), all from Wikimedia Commons, and carry no
 condition like the Unsplash one. There are 1,778 follows, 2,795 likes and
 1,051 comments, all between house accounts and made by script; the 229
 photographs in the review account's Home carry all 2,795 of those
-likes and all 1,051 of those comments. Before the removal there were
-1,139 posts (908 from house accounts), 11,138 likes and 4,182 comments
+likes and all 1,051 of those comments. Before the removal (read on 5
+and 6 November) there were 1,139 posts (908 from house accounts), 11,138 likes and 4,182 comments
 between house accounts, and the review account followed 12 house
 accounts, whose 96 photographs carried 1,183 of those likes and 450 of
 those comments.
