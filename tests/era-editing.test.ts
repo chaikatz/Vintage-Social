@@ -145,7 +145,9 @@ describe("the Eras view outside arranging", () => {
     expect(list).toMatch(/const hint = arranging \? "Moves it to another era\." : undefined;/);
     // Every print, the lead and the strip alike, is one Print, the lead alone given `full`.
     expect(list).toMatch(/<Print post=\{lead\} size=\{leadSize\.width\} height=\{leadSize\.height\} full=\{near\} dim=\{lifted === lead\.id\} \{\.\.\.print\} \/>/);
-    expect(list).toMatch(/<Print key=\{post\.id\} post=\{post\} size=\{cell\} dim=\{lifted === post\.id\} \{\.\.\.print\} \/>/);
+    expect(list).toMatch(
+      /<Print key=\{post\.id\} post=\{post\} size=\{cell\} dim=\{lifted === post\.id\} \{\.\.\.print\} bare=\{i \* ERA_STRIP \+ j >= drawnStrip\} \/>/,
+    );
   });
 
   it("draws nothing afresh on EDIT or DONE: the same view holds each print, and the page's children keep their places", () => {

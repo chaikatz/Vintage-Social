@@ -25,8 +25,8 @@ interface Props {
 }
 
 export const GRID_GAP = 2;
-/** Screens of squares the grid draws: three either side of the one in view. */
-const GRID_SCREENS = 7;
+/** Screens of squares the grid draws: three either side of the one in view. Places draws as many. */
+export const GRID_SCREENS = 7;
 
 /** The classic three-column square grid. */
 export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
@@ -59,12 +59,16 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
  * photograph drawn from itself, over that copy until it is in. A label
  * makes it an image button VoiceOver can name. Held (`onLongPress`), it
  * is a print lifted to be dragged, as an era being arranged lifts one.
+ * `bare`, it is the square's paper alone, as it stands while its picture
+ * loads: a print laid out where the reader is not, asked for once they
+ * come near.
  */
 export function PhotoTile({
   post,
   size,
   height,
   full,
+  bare,
   onPress,
   onLongPress,
   delayLongPress,
@@ -77,6 +81,8 @@ export function PhotoTile({
   height?: number;
   /** Drawn too large for the small copy to stay sharp. A film keeps its poster all the same. */
   full?: boolean;
+  /** Not drawn yet: the square's paper, at its size, and no picture asked for. */
+  bare?: boolean;
   onPress: () => void;
   /** Held for `delayLongPress`, the print lifts instead of opening; let go sooner, it is a tap as ever. */
   onLongPress?: (e: GestureResponderEvent) => void;
@@ -118,7 +124,9 @@ export function PhotoTile({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
     >
-      {url ? (
+      {bare ? (
+        <View style={styles.cell} />
+      ) : url ? (
         <Image
           source={url}
           placeholder={large ? small : undefined}

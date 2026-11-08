@@ -1,14 +1,26 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, RefreshControl, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { colors, spacing, type } from "@/theme";
 import { hasPlace } from "@/utils/geo";
 import { geocodeMissing, knownPoints, type Point } from "@/utils/geocode";
 import { knownLabels, reverseGeocodeCells } from "@/utils/reverseGeocode";
-import { cellKey, groupByPlace, type PlaceGroup, type PlaceLabel } from "@/utils/placeGroups";
-import { GRID_GAP, PhotoTile, type GridPost } from "./PhotoGrid";
+import {
+  AnswerBatch,
+  cellKey,
+  groupByPlace,
+  placeLines,
+  withAnswers,
+  type PlaceLabel,
+  type PlaceLine,
+} from "@/utils/placeGroups";
+import { GRID_GAP, GRID_SCREENS, PhotoTile, type GridPost } from "./PhotoGrid";
 
 /** How long the photographs wait for their towns' names before showing anyway. */
 const SETTLE_AFTER_MS = 4000;
+/** The map's answers reach the page together, at most this often. */
+const ANSWERS_EVERY_MS = 1000;
+/** Squares to a row, as on the grid. */
+const ACROSS = 3;
 
 interface Props {
   posts: GridPost[];
@@ -29,6 +41,13 @@ interface Props {
  * The most photographed place leads. The town is asked of the map from
  * each photograph's point; until it answers, the photographs wait under
  * a short note rather than shuffling as the names arrive.
+ *
+ * Drawn as the grid is: a list of headings and rows of squares that draws
+ * the screens about the reader and lets the rest go (`placeLines`), each
+ * heading and row drawn again only when what it shows changes. The map's
+ * answers reach the page together, at most once a second
+ * (`AnswerBatch`), rather than regrouping every photograph as each one
+ * comes.
  */
 export function PlaceGroups({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
   const { width } = useWindowDimensions();
@@ -43,13 +62,25 @@ export function PlaceGroups({ posts, onOpenPost, header, empty, onRefresh, refre
   const [labels, setLabels] = useState<Record<string, PlaceLabel | null>>(known.labels);
   const [settled, setSettled] = useState(known.complete);
 
+  const [pointBatch] = useState(() => new AnswerBatch<Point>((more) => setFound((f) => withAnswers(f, more)), ANSWERS_EVERY_MS));
+  const [labelBatch] = useState(
+    () => new AnswerBatch<PlaceLabel | null>((named) => setLabels((l) => withAnswers(l, named)), ANSWERS_EVERY_MS),
+  );
+  useEffect(
+    () => () => {
+      pointBatch.stop();
+      labelBatch.stop();
+    },
+    [pointBatch, labelBatch],
+  );
+
   useEffect(() => {
     let alive = true;
-    geocodeMissing(posts, (id, point) => setFound((f) => ({ ...f, [id]: point })), () => alive);
+    geocodeMissing(posts, (id, point) => pointBatch.add(id, point), () => alive);
     return () => {
       alive = false;
     };
-  }, [posts]);
+  }, [posts, pointBatch]);
 
   const points = useMemo(
     () =>
@@ -74,14 +105,18 @@ export function PlaceGroups({ posts, onOpenPost, header, empty, onRefresh, refre
     }
     reverseGeocodeCells(
       points,
-      (cell, label) => setLabels((l) => (cell in l && l[cell] === label ? l : { ...l, [cell]: label })),
+      (cell, label) => labelBatch.add(cell, label),
       () => alive,
-      () => setSettled(true),
+      () => {
+        // The pass is over: what it found is shown with the page, not a second later.
+        labelBatch.flush();
+        setSettled(true);
+      },
     );
     return () => {
       alive = false;
     };
-  }, [points]);
+  }, [points, labelBatch]);
 
   const groups = useMemo(
     () =>
@@ -91,60 +126,112 @@ export function PlaceGroups({ posts, onOpenPost, header, empty, onRefresh, refre
       }),
     [posts, found, labels],
   );
+  const lines = useMemo(() => placeLines(groups, ACROSS), [groups]);
+
+  // The same press for every square, whatever the profile hands down.
+  const latestOpen = useRef(onOpenPost);
+  latestOpen.current = onOpenPost;
+  const openPost = useCallback((post: GridPost) => latestOpen.current(post), []);
+
+  const renderLine = useCallback(
+    ({ item }: { item: PlaceLine<GridPost> }) =>
+      item.kind === "head" ? (
+        <PlaceHead title={item.title} placed={item.placed} count={item.count} meta={item.meta} spots={item.spots} />
+      ) : (
+        <PlaceRow posts={item.posts} first={item.first} size={size} onOpenPost={openPost} />
+      ),
+    [size, openPost],
+  );
 
   return (
-    <ScrollView
+    <FlatList
       style={styles.root}
       contentContainerStyle={styles.content}
+      data={posts.length === 0 || !settled ? NO_LINES : lines}
+      keyExtractor={lineKey}
+      renderItem={renderLine}
+      ListHeaderComponent={header}
+      ListEmptyComponent={posts.length === 0 ? empty : !settled ? <Text style={styles.note}>Placing your photographs…</Text> : null}
+      // Three screens of squares either side of the reader, as the grid draws.
+      windowSize={GRID_SCREENS}
       refreshControl={onRefresh ? <RefreshControl refreshing={refreshing ?? false} onRefresh={onRefresh} tintColor={colors.inkFaint} /> : undefined}
-    >
-      {header}
-      {posts.length === 0 ? (
-        empty
-      ) : !settled ? (
-        <Text style={styles.note}>Placing your photographs…</Text>
-      ) : (
-        groups.map((g) => <Section key={g.key} group={g} size={size} onOpenPost={onOpenPost} />)
-      )}
-    </ScrollView>
+    />
   );
 }
 
-function Section({ group, size, onOpenPost }: { group: PlaceGroup<GridPost>; size: number; onOpenPost: (post: GridPost) => void }) {
-  const meta = [group.subtitle?.toUpperCase(), group.years].filter(Boolean).join("  ·  ");
-  const spots = group.spots.map((s) => s.toUpperCase()).join("  ·  ") + (group.more > 0 ? `  ·  +${group.more}` : "");
-  const rows: GridPost[][] = [];
-  for (let i = 0; i < group.posts.length; i += 3) rows.push(group.posts.slice(i, i + 3));
+const NO_LINES: PlaceLine<GridPost>[] = [];
 
+function lineKey(line: PlaceLine<GridPost>): string {
+  return line.key;
+}
+
+/** A place's heading. Drawn again only when what it says changes. */
+const PlaceHead = memo(function PlaceHead({
+  title,
+  placed,
+  count,
+  meta,
+  spots,
+}: {
+  title: string;
+  placed: boolean;
+  count: number;
+  meta: string;
+  spots: string;
+}) {
   return (
     <View style={styles.section}>
       <View style={styles.heading}>
         <View style={styles.rule} />
         <View style={styles.titleRow}>
-          <Text style={[styles.title, !group.placed && styles.titleQuiet]} numberOfLines={2}>
-            {group.title}
+          <Text style={[styles.title, !placed && styles.titleQuiet]} numberOfLines={2}>
+            {title}
           </Text>
-          <Text style={styles.count}>{group.posts.length}</Text>
+          <Text style={styles.count}>{count}</Text>
         </View>
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
-        {group.spots.length > 0 ? (
+        {spots ? (
           <Text style={styles.spots} numberOfLines={2}>
             {spots}
           </Text>
         ) : null}
       </View>
-      <View style={styles.grid}>
-        {rows.map((row, i) => (
-          <View key={i} style={styles.gridRow}>
-            {row.map((post) => (
-              <PhotoTile key={post.id} post={post} size={size} onPress={() => onOpenPost(post)} />
-            ))}
-          </View>
-        ))}
-      </View>
     </View>
   );
-}
+});
+
+/**
+ * A row of a place's squares. Drawn again only when its photographs, its
+ * size or its place in the place change: a town named elsewhere on the
+ * page leaves it as it is.
+ */
+const PlaceRow = memo(
+  function PlaceRow({
+    posts,
+    first,
+    size,
+    onOpenPost,
+  }: {
+    posts: GridPost[];
+    first: boolean;
+    size: number;
+    onOpenPost: (post: GridPost) => void;
+  }) {
+    return (
+      <View style={[styles.gridRow, !first && styles.rowGap]}>
+        {posts.map((post) => (
+          <PhotoTile key={post.id} post={post} size={size} onPress={() => onOpenPost(post)} />
+        ))}
+      </View>
+    );
+  },
+  (a, b) =>
+    a.first === b.first &&
+    a.size === b.size &&
+    a.onOpenPost === b.onOpenPost &&
+    a.posts.length === b.posts.length &&
+    a.posts.every((post, i) => post === b.posts[i]),
+);
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
@@ -191,6 +278,7 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     color: colors.inkFaint,
   },
-  grid: { gap: GRID_GAP },
   gridRow: { flexDirection: "row", gap: GRID_GAP },
+  // Between a place's rows, as the gap of the grid they were drawn in once.
+  rowGap: { marginTop: GRID_GAP },
 });
