@@ -27,7 +27,7 @@ import { checkUsernameAvailable, fetchInviteOwner, joinWithInvite } from "@/api/
 import { errorMessage } from "@/utils/errorMessage";
 import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
 import { useSession } from "@/providers/SessionProvider";
-import { backFromDoor } from "@/components/gate/door";
+import { backFromDoor, invitationCarried } from "@/components/gate/door";
 import { useDoorClosesBehind } from "@/components/gate/useDoor";
 
 // A page at the door that breaks breaks only itself, not the whole app.
@@ -68,10 +68,13 @@ export default function Invite() {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [busy, setBusy] = useState(false);
+  // Whether Accept has been pressed here (see invitationCarried).
+  const [tried, setTried] = useState(false);
   // Signed in, the card goes in: after a join whose account was made but
   // whose invitation was refused, to the waiting room that takes the code;
-  // for a member who opened a link, to the app (see door.ts).
-  const goIn = useDoorClosesBehind(busy);
+  // for a member who opened a link, to the app; for someone waiting who
+  // opened one, to the waiting room with the invitation (see door.ts).
+  const goIn = useDoorClosesBehind(busy, invitationCarried(arrivedWith, tried));
 
   // Ask who is behind the link as soon as there is one worth asking about.
   // This is the whole emotional payload of an invitation, and it should not
@@ -121,6 +124,7 @@ export default function Invite() {
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
 
+    setTried(true);
     setBusy(true);
     try {
       // With the email and password typed beside it: a try whose account

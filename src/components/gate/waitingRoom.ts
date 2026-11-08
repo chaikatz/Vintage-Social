@@ -1,4 +1,5 @@
 import type { ApplicationStatus, MembershipStatus } from "@/types/db";
+import { describeSlugProblem, slugFromInput } from "@/utils/inviteLink";
 
 /**
  * What the waiting room says, from the member's profile and their own
@@ -34,6 +35,20 @@ export function waitingRoomState(
  */
 export function takesInvitation(state: WaitingRoomState): boolean {
   return state === "applied" || state === "waitlisted" || state === "rejected" || state === "none";
+}
+
+/**
+ * The invitation brought here through the door (door.ts, a link tapped by
+ * someone waiting), to offer as the room opens: a code the database could
+ * take, to an account that takes one. Null when there is none to offer.
+ */
+export function invitationToOffer(
+  brought: string | null | undefined,
+  profileStatus: MembershipStatus | null | undefined,
+): string | null {
+  const slug = slugFromInput(brought ?? "");
+  if (!slug || describeSlugProblem(slug)) return null;
+  return takesInvitation(waitingRoomState(profileStatus, undefined)) ? slug : null;
 }
 
 /** Whether there is anything to look for with Check status: a decision still to come. */

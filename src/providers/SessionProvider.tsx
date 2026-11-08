@@ -73,14 +73,18 @@ async function leaveToLanding(): Promise<void> {
  * sign-in screen with the member still signed in. Unwind the door first,
  * then replace what is left with the root, which sends an approved member
  * to the tabs with nothing underneath.
+ *
+ * An invitation brought to the door by someone already signed in (a link
+ * tapped in the waiting room) goes with them: the root hands it on to the
+ * waiting room, which offers it.
  */
-export async function enterApp(): Promise<void> {
+export async function enterApp(invitation?: string): Promise<void> {
   try {
     router.dismissAll();
   } catch {
     // Nothing pushed — already at the root of the stack.
   }
-  router.replace("/");
+  router.replace(invitation ? { pathname: "/", params: { invitation } } : "/");
 }
 
 /**
