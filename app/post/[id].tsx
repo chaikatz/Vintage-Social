@@ -73,7 +73,7 @@ export default function PostDetail() {
   });
 
   const postIds = useMemo(() => (id ? [id] : []), [id]);
-  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onOpenLikes, commentsFor } =
+  const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onCommentLongPress, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
 
   const post = postQ.data;
@@ -219,7 +219,8 @@ export default function PostDetail() {
         </Pressable>
       ) : null}
       {preview.map((c) => (
-        <Pressable key={c.id} onPress={() => onOpenComments(post)}>
+        // Held, the comment's own menu, as on the Comments screen and in the feed.
+        <Pressable key={c.id} onPress={() => onOpenComments(post)} onLongPress={() => onCommentLongPress(c)}>
           <Text style={styles.comment} numberOfLines={2}>
             <Text style={[styles.captionAuthor, face]}>{c.author.username}</Text> {c.body}
           </Text>

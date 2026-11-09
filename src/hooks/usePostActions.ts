@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { useQueries, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { removePostEverywhere, rereadPostActions, rewritePostEverywhere } from "@/utils/postCache";
+import { removePostEverywhere, rereadCommentPreviewsOf, rereadPostActions, rewritePostEverywhere } from "@/utils/postCache";
+import { showCommentMenu } from "@/utils/commentMenu";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { perfLog, shortId } from "@/utils/perf";
 import { stableChunks, type ChunkBook } from "@/utils/stableChunks";
-import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
+import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, removeDeletedPostFiles, unlikePost } from "@/api/posts";
 import { blockMember } from "@/api/blocks";
 import { holdPost, notePostDeleted } from "@/uploads";
 import { INLINE_COMMENTS } from "@/components/PostCard";
@@ -25,7 +26,7 @@ import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 export function usePostActions(userId: string, postIds: string[]) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { refreshProfile } = useSession();
+  const { refreshProfile, isAdmin } = useSession();
   // Your own eras can be arranged from any of your photographs once your
   // arrangement has been read and there is somewhere to keep a change.
   const erasReady = useEraEdits(userId).data?.ready === true;
@@ -81,6 +82,26 @@ export function usePostActions(userId: string, postIds: string[]) {
       router.push({ pathname: "/comments", params: { postId: post.id } });
     },
     [router, seed],
+  );
+
+  // Press and hold on a comment under the photograph: the menu it has on
+  // the Comments screen (src/utils/commentMenu.ts), Report for anyone
+  // else's. It opened Comments on release. Removed, the comment leaves
+  // what this screen and Comments show of it, and the count drops by one.
+  const onCommentLongPress = useCallback(
+    (comment: CommentWithAuthor) =>
+      showCommentMenu(comment, { userId, isAdmin }, () => {
+        const postId = comment.post_id;
+        queryClient.invalidateQueries({ queryKey: ["comments", postId] });
+        void rereadCommentPreviewsOf(queryClient, postId);
+        queryClient.invalidateQueries({ queryKey: ["post", postId] });
+        rewritePostEverywhere<PostWithAuthor>(queryClient, postId, (p) => ({
+          ...p,
+          comment_count: Math.max(0, p.comment_count - 1),
+        }));
+        void queryClient.invalidateQueries({ queryKey: ["feed"], refetchType: "none" });
+      }, "Removed from under a photograph"),
+    [userId, isAdmin, queryClient],
   );
 
   const onShare = useCallback(
@@ -160,7 +181,8 @@ export function usePostActions(userId: string, postIds: string[]) {
   /**
    * Your own post deleted, for good, once the server says so. The outbox
    * lets go of anything it still holds for it, then the post leaves every
-   * screen at once and the screen it was deleted from closes.
+   * screen at once and the screen it was deleted from closes, and its
+   * files leave storage behind it, without anything waiting on them.
    *
    * While the server is asked, the outbox sends no insert for the post: a
    * retry sent meanwhile could land after the delete and put it back.
@@ -184,6 +206,8 @@ export function usePostActions(userId: string, postIds: string[]) {
       notePostDeleted(post.id);
       afterDelete?.();
       void removePostEverywhere(queryClient, post.id);
+      // Only now that the row is gone: "removed for good" is the file too.
+      void removeDeletedPostFiles(post);
       refreshProfile().catch(() => undefined);
     },
     [queryClient, refreshProfile],
@@ -200,13 +224,19 @@ export function usePostActions(userId: string, postIds: string[]) {
       if (post.author_id === userId) {
         const what = post.media_type === "video" ? "clip" : "photograph";
         showAlert("Your post", undefined, [
-          {
-            text: "Edit caption",
-            onPress: () => {
-              seed(post);
-              router.push({ pathname: "/edit-caption", params: { postId: post.id } });
-            },
-          },
+          // A photograph the admins removed keeps the caption it was removed
+          // with: the database takes no change to it (0039).
+          ...(post.removed_at
+            ? []
+            : [
+                {
+                  text: "Edit caption",
+                  onPress: () => {
+                    seed(post);
+                    router.push({ pathname: "/edit-caption", params: { postId: post.id } });
+                  },
+                },
+              ]),
           ...(erasReady
             ? [{ text: "Add to an era…", onPress: () => router.push({ pathname: "/era-move", params: { postId: post.id } }) }]
             : []),
@@ -274,6 +304,7 @@ export function usePostActions(userId: string, postIds: string[]) {
     onMore,
     onShare,
     onOpenComments,
+    onCommentLongPress,
     onOpenPost,
     onOpenLikes,
     commentsFor,

@@ -1,15 +1,16 @@
 import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigationContainerRef, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { registerPushToken, unregisterAllPushTokens, unregisterPushToken } from "@/api/notifications";
 import { isDemoMode } from "@/lib/env";
-import { tapFollower, tokenFiler } from "./pushRoute";
+import { openNoticeRoute, tapFollower, tokenFiler, type NavState } from "./pushRoute";
 import { onReturnFromBackground } from "./appReturn";
 import { noteToken, pushSupported, stopReceiving, takeToken, tokenRemoved } from "./pushKept";
+import { fromThreadOnScreen } from "./threadOnScreen";
 
 /**
  * The phone's side of notifications.
@@ -29,14 +30,19 @@ import { noteToken, pushSupported, stopReceiving, takeToken, tokenRemoved } from
 // with it, live in pushKept.ts, which the auth client's own listener uses.
 export { parseKeptToken, pushAfterSignedOut, pushSupported } from "./pushKept";
 
-// A notice arriving while the app is open: show it, softly.
+// A notice arriving while the app is open: show it, softly. A message
+// from the member whose thread is in front is not shown at all: the
+// thread brings it (threadOnScreen.ts).
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    const show = !fromThreadOnScreen(notification.request.content.data);
+    return {
+      shouldShowBanner: show,
+      shouldShowList: show,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 function projectId(): string | undefined {
@@ -165,6 +171,8 @@ let follow: ReturnType<typeof tapFollower> | null = null;
  */
 export function useNotificationTaps(): void {
   const router = useRouter();
+  // The container's own ref, for what is in front when a tap is followed.
+  const navigation = useNavigationContainerRef();
   const queryClient = useQueryClient();
   useEffect(() => {
     if (Platform.OS === "web" || isDemoMode()) return;
@@ -172,8 +180,18 @@ export function useNotificationTaps(): void {
     // Each tap followed once, and waited for if the navigator is not up
     // yet (pushRoute.ts). Kept for the life of the app, not of this
     // effect, so a tap already followed is never followed again.
+    // A tab is gone back to, never pushed over the screen open (pushRoute.ts).
     const go = (follow ??= tapFollower({
-      navigate: (route) => router.push(route as never),
+      navigate: (route) =>
+        openNoticeRoute(
+          {
+            rootState: () => (navigation.isReady() ? (navigation.getRootState() as NavState) : null),
+            dismissTo: (to) => router.dismissTo(to as never),
+            navigate: (to) => router.navigate(to as never),
+            push: (to) => router.push(to as never),
+          },
+          route,
+        ),
       clear: () => Notifications.clearLastNotificationResponse(),
     }));
 
@@ -194,5 +212,5 @@ export function useNotificationTaps(): void {
       tapped.remove();
       arrived.remove();
     };
-  }, [router, queryClient]);
+  }, [router, navigation, queryClient]);
 }

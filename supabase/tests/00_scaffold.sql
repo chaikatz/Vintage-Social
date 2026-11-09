@@ -57,10 +57,14 @@ $$;
 -- storage
 -- ---------------------------------------------------------------------------
 create table storage.buckets (
-  id         text primary key,
-  name       text not null,
-  public     boolean not null default false,
-  created_at timestamptz not null default now()
+  id                 text primary key,
+  name               text not null,
+  public             boolean not null default false,
+  -- What the Storage API checks an upload against (null: no limit), as
+  -- Supabase's own table has them; 0040 sets them on avatars.
+  file_size_limit    bigint,
+  allowed_mime_types text[],
+  created_at         timestamptz not null default now()
 );
 
 -- The unique (bucket_id, name) is what makes `upsert` an

@@ -4,6 +4,7 @@ import * as demo from "@/demo/store";
 import type { CommentWithAuthor, PostRow, PostWithAuthor, ProfileRow } from "@/types/db";
 import { ROWS_PER_READ } from "@/utils/eraEdits";
 import { withTimeout } from "@/utils/retry";
+import { pathOwner } from "@/utils/storagePath";
 import { readInChunks } from "./batch";
 import { pageAfter, type Cursor } from "./keyset";
 import { functionMissing } from "./rpcMissing";
@@ -367,7 +368,8 @@ export async function updateCaption(postId: string, caption: string): Promise<vo
  * lost, and that is what was asked for; if it is still there it was not
  * deleted, and the caller is told.
  *
- * Its files stay in storage, as they always have.
+ * Its files are not touched here: once this has said the row is gone,
+ * the caller removes them (removeDeletedPostFiles), best effort.
  */
 export async function deleteOwnPost(postId: string): Promise<void> {
   if (isDemoMode()) {
@@ -380,6 +382,40 @@ export async function deleteOwnPost(postId: string): Promise<void> {
   const { data: still, error: lookError } = await supabase.from("posts").select("id").eq("id", postId).maybeSingle();
   if (lookError) throw lookError;
   if (still) throw new Error("Only the author can delete a post.");
+}
+
+/** How long removing a deleted post's files may take before it is let go. */
+const FILE_REMOVE_TIMEOUT_MS = 15_000;
+
+/**
+ * The files of a post its author has just deleted: its photograph or film
+ * and its thumbnail, from the media and thumbnails buckets. Both buckets
+ * are public by address, and "It's removed for good" has to be true of the
+ * file too, not only of the row: whoever held its address could still
+ * fetch it.
+ *
+ * Called only after deleteOwnPost has said the row is gone, never before
+ * (a file removed under a live post would leave it without its picture).
+ * Best effort and never in the way: nothing waits on it, and a removal
+ * that fails is let go (the files are no longer named by any post). Only
+ * the author's own files, in their own folder, as the storage policies
+ * allow ("media: delete own folder"); a house photograph's address on
+ * another site is not a file here.
+ */
+export async function removeDeletedPostFiles(
+  post: Pick<PostRow, "author_id" | "media_path" | "thumb_path">,
+): Promise<void> {
+  if (isDemoMode()) return;
+  const own = (path: string | null): path is string =>
+    Boolean(path) && pathOwner(path!) === post.author_id && !/^[a-z]+:/i.test(path!);
+  const remove = (bucket: "media" | "thumbnails", path: string) =>
+    withTimeout(FILE_REMOVE_TIMEOUT_MS, () => supabase.storage.from(bucket).remove([path]))
+      .then(() => undefined)
+      .catch(() => undefined);
+  await Promise.all([
+    own(post.media_path) ? remove("media", post.media_path) : undefined,
+    own(post.thumb_path) ? remove("thumbnails", post.thumb_path) : undefined,
+  ]);
 }
 
 /** Who liked a post, newest first. Shown only for your own posts (app/likes.tsx). */

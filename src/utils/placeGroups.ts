@@ -185,3 +185,105 @@ function subtitleFor(title: string, labels: readonly PlaceLabel[]): string | nul
   };
   return pick((l) => l.country) ?? pick((l) => l.region);
 }
+
+/** A line of the places list: a place's heading, or a row of its photographs. */
+export type PlaceLine<T> =
+  | {
+      kind: "head";
+      key: string;
+      title: string;
+      placed: boolean;
+      count: number;
+      /** "UNITED STATES  ·  2019–2024", or "" when there is neither. */
+      meta: string;
+      /** "BAR PITTI  ·  THE MET  ·  +2", or "" when no spot is named. */
+      spots: string;
+    }
+  | {
+      kind: "row";
+      key: string;
+      posts: T[];
+      /** The place's first row, with no gap above it. */
+      first: boolean;
+    };
+
+/**
+ * The places as the lines of a list that draws only what is near the
+ * screen, as the grid does: each place's heading, then its photographs
+ * `across` to a row. Keyed by what they show, not by where they fall: a
+ * heading by its place, a row by its place and its first photograph, so a
+ * row the town names leave as it was keeps its key, and its squares, as
+ * the names arrive.
+ */
+export function placeLines<T extends { id: string }>(groups: readonly PlaceGroup<T>[], across: number): PlaceLine<T>[] {
+  const width = Math.max(1, Math.floor(across));
+  const lines: PlaceLine<T>[] = [];
+  for (const group of groups) {
+    lines.push({
+      kind: "head",
+      key: `h|${group.key}`,
+      title: group.title,
+      placed: group.placed,
+      count: group.posts.length,
+      meta: [group.subtitle?.toUpperCase(), group.years].filter(Boolean).join("  ·  "),
+      spots: group.spots.length > 0 ? group.spots.map((s) => s.toUpperCase()).join("  ·  ") + (group.more > 0 ? `  ·  +${group.more}` : "") : "",
+    });
+    for (let i = 0; i < group.posts.length; i += width) {
+      const posts = group.posts.slice(i, i + width);
+      lines.push({ kind: "row", key: `r|${group.key}|${posts[0].id}`, posts, first: i === 0 });
+    }
+  }
+  return lines;
+}
+
+/**
+ * `record` with `answers` in it: the same record when it already holds
+ * every one of them, so a batch that says nothing new redraws nothing.
+ */
+export function withAnswers<V>(record: Readonly<Record<string, V>>, answers: ReadonlyMap<string, V>): Record<string, V> {
+  let next: Record<string, V> | null = null;
+  for (const [key, value] of answers) {
+    if (key in record && record[key] === value) continue;
+    next ??= { ...record };
+    next[key] = value;
+  }
+  return next ?? (record as Record<string, V>);
+}
+
+/**
+ * The map's answers, gathered as they come and handed on together, at
+ * most once each `everyMs`, and at once when asked (`flush`, as a pass of
+ * lookups ends). A town's name used to regroup and redraw every
+ * photograph on the page as it arrived, and a large profile's places are
+ * named one at a time over a minute or two. `stop` drops what has not
+ * been handed on, as the page goes.
+ */
+export class AnswerBatch<V> {
+  private pending = new Map<string, V>();
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    private readonly apply: (answers: ReadonlyMap<string, V>) => void,
+    private readonly everyMs: number,
+  ) {}
+
+  add(key: string, value: V): void {
+    this.pending.set(key, value);
+    if (this.timer == null) this.timer = setTimeout(() => this.flush(), this.everyMs);
+  }
+
+  flush(): void {
+    if (this.timer != null) clearTimeout(this.timer);
+    this.timer = null;
+    if (this.pending.size === 0) return;
+    const answers = this.pending;
+    this.pending = new Map();
+    this.apply(answers);
+  }
+
+  stop(): void {
+    if (this.timer != null) clearTimeout(this.timer);
+    this.timer = null;
+    this.pending.clear();
+  }
+}

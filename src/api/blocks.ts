@@ -10,7 +10,11 @@ import { readInChunks } from "./batch";
  * the rest: neither member sees the other's photographs, comments, likes,
  * follows, tags, messages or activity, and the blocked member cannot see
  * the blocker's profile. The blocker still sees the profile they blocked,
- * so it can be found again to unblock.
+ * so it can be found again to unblock. Neither may like or comment on the
+ * other's photographs, and no notice passes between them (0040). The
+ * admins are told: block_member files a report about the member blocked,
+ * "Blocked by a member", which reaches the Reports queue and the admins'
+ * phones like any other (0040, 0032).
  */
 
 /** Ids of everyone this member has blocked. */

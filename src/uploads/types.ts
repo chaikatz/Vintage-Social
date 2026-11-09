@@ -29,6 +29,8 @@ export interface PostDraft {
   lng: number | null;
   placeId: string | null;
   tagIds: string[];
+  /** The tagged members' usernames by id, to name any the database refuses (outbox sendTags). Absent in a job from an older build. */
+  tagNames?: Record<string, string>;
   assetId: string | null; // Darkroom: markDeveloped(assetId) once the server confirms
   author: { id: string; username: string; full_name: string | null; avatar_url: string | null }; // for the pending card
 }

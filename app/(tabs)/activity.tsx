@@ -85,7 +85,10 @@ export default function Activity() {
   });
 
   const open = (item: ActivityWithRefs) => {
-    if (item.post) router.push(`/post/${item.post.id}`);
+    // A request is answered on Requests, where its push opens too: the
+    // asker's profile has no Accept or Decline.
+    if (item.type === "follow_request") router.push("/requests");
+    else if (item.post) router.push(`/post/${item.post.id}`);
     else if (item.actor) router.push(`/user/${item.actor.username}`);
   };
 

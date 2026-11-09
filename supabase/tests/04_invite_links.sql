@@ -135,6 +135,8 @@ declare
   v_ok     boolean;
   v_no     integer;
   v_by     uuid;
+  v_err    text;
+  v_status text;
 begin
   select slug into v_slug from public.invite_links
    where owner_id = '11111111-1111-1111-1111-111111111111';
@@ -156,6 +158,24 @@ begin
     ('the joiner is given a membership number', 'yes',
      case when v_no is not null then 'yes' else 'no' end);
 
+  -- A suspended member, with room still left on the link: refused, as
+  -- redeem_invite_link refuses them (0039), and still suspended. Until
+  -- 0039 this made them a member again.
+  begin
+    set local role authenticated;
+    perform set_config('request.jwt.claims',
+      '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated"}', true);
+    perform public.join_with_invite(v_slug);
+    v_err := 'joined';
+  exception when others then
+    v_err := sqlerrm;
+  end;
+  reset role;
+  select status into v_status from public.profiles where id = '55555555-5555-5555-5555-555555555555';
+  insert into tests.results (name, expected, actual) values
+    ('a suspended member cannot join on a link with room left', 'This account is suspended', v_err),
+    ('and stays suspended', 'suspended', v_status);
+
   -- Second one: quota 2, so this fills it.
   set local role authenticated;
   perform set_config('request.jwt.claims',
@@ -165,14 +185,22 @@ begin
   insert into tests.results (name, expected, actual) values
     ('the second joiner fills the allowance', 'true', v_ok::text);
 
-  -- Third: the allowance is spent. This is the check that matters.
+  -- Third: the allowance is spent. This is the check that matters. Asked
+  -- by an applicant made for it, and gone again after (the suspended
+  -- fixture, who asked it before 0039, is now refused for being
+  -- suspended, whatever the allowance).
+  insert into auth.users (id, email, raw_user_meta_data) values
+    ('0a040000-0000-4000-8000-000000000003', 'third@links.test', '{"username":"links.third"}');
   set local role authenticated;
   perform set_config('request.jwt.claims',
-    '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated"}', true);
+    '{"sub":"0a040000-0000-4000-8000-000000000003","role":"authenticated"}', true);
   select public.join_with_invite(v_slug) into v_ok;
   reset role;
+  select status into v_status from public.profiles where id = '0a040000-0000-4000-8000-000000000003';
+  delete from auth.users where id = '0a040000-0000-4000-8000-000000000003';
   insert into tests.results (name, expected, actual) values
-    ('a spent allowance admits nobody else', 'false', v_ok::text);
+    ('a spent allowance admits nobody else', 'false', v_ok::text),
+    ('and the one turned away is still an applicant', 'applied', v_status);
 
   -- And the page now says so, without saying why.
   set local role anon;
@@ -196,7 +224,7 @@ $joining$;
 \pset border 2
 select seq, name, expected, actual,
        case when expected = actual then 'pass' else 'FAIL' end as status
-from tests.results where seq > (select coalesce(max(seq), 0) - 27 from tests.results)
+from tests.results where seq > (select coalesce(max(seq), 0) - 31 from tests.results)
 order by seq;
 
 do $verdict$

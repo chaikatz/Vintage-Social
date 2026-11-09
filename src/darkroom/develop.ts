@@ -37,8 +37,16 @@ import type { Print } from "./types";
  * `cancelled` there and then, whatever the library is still doing; Photos
  * is told to stop when the module is present, and a copy that arrives
  * after the member stopped waiting is deleted rather than kept. A develop
- * that runs out of time (15 seconds on the phone, 60 from iCloud) is
- * stopped the same way. So a room that is leaving can abort and forget.
+ * that runs out of time (15 seconds on the phone; from iCloud, a minute
+ * with no word of it) is stopped the same way. So a room that is leaving
+ * can abort and forget.
+ *
+ * A download from iCloud is watched for a stall, not timed, as a plate's
+ * is (`PlateStall`): each step of progress Photos reports starts the
+ * minute afresh, so a large photograph on a slow connection that is still
+ * coming in is waited for, and TRY AGAIN is not handed the same cut-off
+ * every time. However steadily it comes, it is waited for no longer than
+ * `CLOUD_LONGEST_MS` in all.
  *
  * What the editor is handed is `ComposeParams`, the only way in to it from
  * here: the prepared JPEG, its upright size, and the date the shutter
@@ -76,8 +84,10 @@ export type DevelopResult =
 
 /** A photograph on the phone renders well inside this. */
 export const LOCAL_TIMEOUT_MS = 15_000;
-/** How long an original may take to come down before the member is told iCloud didn't send it. */
+/** How long a download from iCloud may go with no word of it (no photograph, no progress) before the member is told iCloud didn't send it. */
 export const CLOUD_TIMEOUT_MS = 60_000;
+/** However steadily its progress comes, a download from iCloud is waited for no longer than this in all. */
+export const CLOUD_LONGEST_MS = 10 * 60_000;
 /** NetInfo answers from the phone at once; past this the connection is taken as there. */
 const CONNECTION_WAIT_MS = 3_000;
 
@@ -193,18 +203,19 @@ async function cloudThroughModule(
 ): Promise<DevelopResult> {
   const requestId = nextRequestId();
   // Listening starts before the request does, so no early progress is missed.
-  // The rule only ever grows.
+  // The rule only ever grows, and each step it grows is word that the
+  // photograph is still coming: the stall watch waits on.
   let shown = 0;
-  const stopListening = onProgress
-    ? onDevelopProgress(mod, requestId, (fraction) => {
-        if (stop.aborted || fraction <= shown) return;
-        shown = fraction;
-        onProgress(fraction);
-      })
-    : () => undefined;
+  const news = new News();
+  const stopListening = onDevelopProgress(mod, requestId, (fraction) => {
+    if (stop.aborted || fraction <= shown) return;
+    shown = fraction;
+    news.heard();
+    onProgress?.(fraction);
+  });
   try {
     const work = developImage(mod, print.id, { maxSide: DARKROOM_MAX, allowNetwork: true, requestId });
-    const outcome = await waitFor(work, CLOUD_TIMEOUT_MS, stop);
+    const outcome = await waitFor(work, CLOUD_TIMEOUT_MS, stop, { news, longestMs: CLOUD_LONGEST_MS });
     if (outcome.kind === "value") return fromLibrary(print, outcome.value, "cloudFailed");
     cancelDevelop(mod, requestId);
     throwAwayLate(work);
@@ -315,19 +326,55 @@ type Outcome<T> =
   | { kind: "timeout" }
   | { kind: "stopped" };
 
-/** Waits for `work`, but no longer than `ms`, and not a moment past `stop`. */
-function waitFor<T>(work: Promise<T>, ms: number, stop: AbortSignal): Promise<Outcome<T>> {
+/**
+ * Word that a piece of work is still coming (iCloud's progress), passed to
+ * whoever is waiting on it. Said before anyone listens, it is simply not
+ * heard: the wait counts its quiet from when it began.
+ */
+class News {
+  private listener: (() => void) | null = null;
+
+  heard(): void {
+    this.listener?.();
+  }
+
+  listen(listener: (() => void) | null): void {
+    this.listener = listener;
+  }
+}
+
+/**
+ * Waits for `work`, but no longer than `ms`, and not a moment past `stop`.
+ * Given `watch`, it is a stall watch, as a plate's is: `ms` is the quiet
+ * it bears, counted afresh each time there is news of the work, and
+ * `longestMs` the whole wait, however steadily the news comes.
+ */
+function waitFor<T>(
+  work: Promise<T>,
+  ms: number,
+  stop: AbortSignal,
+  watch?: { news: News; longestMs: number },
+): Promise<Outcome<T>> {
   return new Promise<Outcome<T>>((resolve) => {
     let done = false;
     const finish = (outcome: Outcome<T>) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
+      if (longest) clearTimeout(longest);
+      watch?.news.listen(null);
       stop.removeEventListener("abort", onStop);
       resolve(outcome);
     };
     const onStop = () => finish({ kind: "stopped" });
-    const timer = setTimeout(() => finish({ kind: "timeout" }), ms);
+    const timeout = () => finish({ kind: "timeout" });
+    let timer = setTimeout(timeout, ms);
+    const longest = watch ? setTimeout(timeout, watch.longestMs) : null;
+    watch?.news.listen(() => {
+      if (done) return;
+      clearTimeout(timer);
+      timer = setTimeout(timeout, ms);
+    });
     stop.addEventListener("abort", onStop);
     if (stop.aborted) onStop();
     work.then(

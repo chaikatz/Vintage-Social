@@ -302,6 +302,8 @@ describe("the session provider", () => {
     expect(provider).toMatch(/if \(event === "SIGNED_OUT"\) \{\s*forgetOutbox\(\);\s*forgetMember\(\);/);
     expect(provider).toMatch(/forgetOutbox\(\);\s*forgetMember\(\);\s*await leaveToLanding\(\);/);
     // A read for a member who has since left is neither shown nor kept.
-    expect(provider).toMatch(/if \(currentUser\.current !== userId\) return false;\s*setProfile\(data\);/);
+    expect(provider).toMatch(/if \(currentUser\.current !== who\) return false;\s*setProfile\(data\);/);
+    // And read for whoever is signed in as it is asked for, not as the function was made.
+    expect(provider).toMatch(/const who = currentUser\.current;\s*if \(!who\) \{/);
   });
 });

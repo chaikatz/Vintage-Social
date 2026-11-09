@@ -21,8 +21,8 @@ import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { colors, spacing, type } from "@/theme";
-import { addComment, deleteOwnComment, fetchComments, fetchPost } from "@/api/posts";
-import { removeComment } from "@/api/moderation";
+import { addComment, fetchComments, fetchPost } from "@/api/posts";
+import { showCommentMenu } from "@/utils/commentMenu";
 import { useSession } from "@/providers/SessionProvider";
 import { postAge } from "@/utils/time";
 import { useNameFace } from "@/utils/nameFace";
@@ -108,45 +108,18 @@ export default function Comments() {
   // One function each for every row, so typing in the field below, which
   // draws this screen again on each letter, leaves the comments as they are.
   const openAuthor = useCallback((username: string) => router.push(`/user/${username}`), [router]);
-  const onCommentLongPress = useCallback((comment: CommentWithAuthor) => {
-    const own = comment.author_id === userId;
-    if (own || isAdmin) {
-      showAlert("Comment", undefined, [
-        {
-          text: own ? "Delete comment" : "Remove comment (admin)",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              if (own) await deleteOwnComment(comment.id);
-              else await removeComment(comment.id, "Removed from the comments view");
-            } catch (err) {
-              showAlert("Couldn’t remove the comment", errorMessage(err, "It’s still there. Try again in a moment."));
-              return;
-            }
-            queryClient.invalidateQueries({ queryKey: ["comments", postId] });
-            void rereadCommentPreviewsOf(queryClient, postId ?? "");
-            // The count under the photograph lives on the post row.
-            queryClient.invalidateQueries({ queryKey: ["post", postId] });
-            countComment(-1);
-          },
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    } else {
-      showAlert("Comment", undefined, [
-        {
-          text: "Report comment",
-          style: "destructive",
-          onPress: () =>
-            router.push({
-              pathname: "/report",
-              params: { targetType: "comment", commentId: comment.id },
-            }),
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    }
-  }, [userId, isAdmin, postId, queryClient, router, countComment]);
+  // The menu every comment has, wherever it is shown (src/utils/commentMenu.ts).
+  const onCommentLongPress = useCallback(
+    (comment: CommentWithAuthor) =>
+      showCommentMenu(comment, { userId, isAdmin }, () => {
+        queryClient.invalidateQueries({ queryKey: ["comments", postId] });
+        void rereadCommentPreviewsOf(queryClient, postId ?? "");
+        // The count under the photograph lives on the post row.
+        queryClient.invalidateQueries({ queryKey: ["post", postId] });
+        countComment(-1);
+      }),
+    [userId, isAdmin, postId, queryClient, countComment],
+  );
   const renderComment = useCallback(
     ({ item }: { item: CommentWithAuthor }) => (
       <CommentRow comment={item} face={face} onLongPress={onCommentLongPress} onOpenAuthor={openAuthor} />

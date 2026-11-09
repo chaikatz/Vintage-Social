@@ -46,6 +46,7 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
   likedByMe,
   onToggleLike,
   onOpenComments,
+  onCommentLongPress,
   onOpenProfile,
   onMore,
   onShare,
@@ -177,7 +178,12 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
       ) : null}
 
       {preview.map((c) => (
-        <Pressable key={c.id} onPress={() => onOpenComments(post)}>
+        <Pressable
+          key={c.id}
+          onPress={() => onOpenComments(post)}
+          // Held, the comment's own menu, and Comments is not opened on release.
+          onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+        >
           <Text style={styles.comment} numberOfLines={2}>
             <Text style={styles.author}>{c.author.username}</Text> {c.body}
           </Text>

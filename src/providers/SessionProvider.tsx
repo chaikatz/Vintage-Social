@@ -35,8 +35,11 @@ interface SessionState {
   isApprovedMember: boolean;
   /** True when running against the in-memory demo backend (browser review). */
   isDemo: boolean;
-  /** Re-read the signed-in member's profile. Resolves true when the read landed, false when it could not. */
-  refreshProfile: () => Promise<boolean>;
+  /**
+   * Re-read the signed-in member's profile. Resolves true when the read landed, false when it could not.
+   * `fresh`: a read that starts after any already on its way, rather than joining it (see below).
+   */
+  refreshProfile: (options?: { fresh?: boolean }) => Promise<boolean>;
   signOut: () => Promise<void>;
 }
 
@@ -70,14 +73,18 @@ async function leaveToLanding(): Promise<void> {
  * sign-in screen with the member still signed in. Unwind the door first,
  * then replace what is left with the root, which sends an approved member
  * to the tabs with nothing underneath.
+ *
+ * An invitation brought to the door by someone already signed in (a link
+ * tapped in the waiting room) goes with them: the root hands it on to the
+ * waiting room, which offers it.
  */
-export async function enterApp(): Promise<void> {
+export async function enterApp(invitation?: string): Promise<void> {
   try {
     router.dismissAll();
   } catch {
     // Nothing pushed — already at the root of the stack.
   }
-  router.replace("/");
+  router.replace(invitation ? { pathname: "/", params: { invitation } } : "/");
 }
 
 /**
@@ -223,6 +230,10 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
         // minutes as their rights let them read them (src/api/messages.ts).
         forgetSharedPosts();
       }
+      // Who is here from this moment, before the render that says so: a
+      // profile read asked for straight after (a join, which signs the
+      // new member in) reads for them, not for nobody.
+      currentUser.current = next?.user?.id ?? null;
       if (event !== "SIGNED_OUT" && next?.user?.id) claimDarkroom(next.user.id);
       setSession(next);
     });
@@ -247,20 +258,35 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
 
   // One read at a time: a second call while the first is still retrying
   // joins it instead of stacking another behind it.
-  const inFlight = useRef<Promise<boolean> | null>(null);
+  const inFlight = useRef<{ who: string; run: Promise<boolean> } | null>(null);
   currentUser.current = userId;
-  const refreshProfile = useCallback(async (): Promise<boolean> => {
-    if (!userId) {
+  // Made again for each member (its dependencies), so the effects below
+  // read again when one arrives.
+  const refreshProfile = useCallback(async (options?: { fresh?: boolean }): Promise<boolean> => {
+    // Whoever is signed in as it is called, not as this function was made.
+    // A screen can hold one made before its member signed in: the
+    // invitation card's join signs the new member in and then asks for
+    // their profile with the function it had while they were signed out,
+    // which took them for nobody, set no profile and called that loaded,
+    // and the root sent the new member to "NO APPLICATION YET".
+    const who = currentUser.current;
+    if (!who) {
       setProfile(null);
       setProfileLoaded(!restoring);
       return true;
     }
-    if (inFlight.current) return inFlight.current;
+    const prior = inFlight.current;
+    if (prior && prior.who === who && !options?.fresh) return prior.run;
     const run = (async () => {
+    // Asked for fresh: after the read already on its way, which may have
+    // left before what has just changed (an invitation taken up) and would
+    // bring back the answer from before it. That one lands first, this one
+    // last, so this one's answer is the one that stays.
+    if (prior && options?.fresh) await prior.run;
     try {
       const data = await withRetry(
         async () => {
-          const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+          const { data, error } = await supabase.from("profiles").select("*").eq("id", who).maybeSingle();
           if (error) throw error;
           if (!data && !(await supabase.auth.getSession()).data.session) throw new NotSignedInYet();
           return data as ProfileRow | null;
@@ -268,7 +294,7 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
         { retryOn: (err) => err instanceof NotSignedInYet || isTransient(err) },
       );
       // Read for a member who has since signed out: neither shown nor kept.
-      if (currentUser.current !== userId) return false;
+      if (currentUser.current !== who) return false;
       setProfile(data);
       setProfileLoaded(true);
       // Kept for the next launch to open on (rememberedMember.ts).
@@ -285,11 +311,13 @@ function SupabaseSessionProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
     })();
-    inFlight.current = run;
+    const mine = { who, run };
+    inFlight.current = mine;
     try {
       return await run;
     } finally {
-      inFlight.current = null;
+      // Not one asked for since, which is still on its way.
+      if (inFlight.current === mine) inFlight.current = null;
     }
   }, [userId, restoring]);
   readProfileAgain.current = refreshProfile;

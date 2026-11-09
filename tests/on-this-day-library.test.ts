@@ -134,7 +134,9 @@ vi.mock("@/darkroom/nativeLibrary", () => ({
   libraryModule: () => null,
   developImage: async () => ({ status: "failed" }),
   cancelDevelop: () => undefined,
+  onDevelopProgress: () => () => undefined,
 }));
+vi.mock("expo-file-system", () => ({ File: class {} }));
 vi.mock("@/utils/captureDate", () => ({ captureDateForAsset: async () => null }));
 vi.mock("@/utils/alert", () => ({ showAlert: () => undefined }));
 

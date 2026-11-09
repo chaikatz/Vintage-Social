@@ -92,10 +92,11 @@ insert into tests.results (name, expected, actual) values
    (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname in ('public', 'private') and p.proname in ('my_block_partners', 'my_blockers', 'own_profile_unchanged'))),
   -- The schema stays only while a later migration's function is in it
-  -- (0038's three trigger functions, which the rollback is not about),
-  -- and then holds those and nothing of 0023's.
+  -- (0038's three trigger functions, 0040's block check and message
+  -- notice, which the rollback is not about), and then holds those and
+  -- nothing of 0023's.
   ('and the private schema holds nothing of 0023''s: only what a later migration put there',
-   'accept_requests_when_public,follow_status_from_followee,forget_follow_request',
+   'accept_requests_when_public,follow_status_from_followee,forget_follow_request,notify_message,post_across_a_block,push_hook_keeps_a_secret',
    coalesce((select string_agg(p.proname, ',' order by p.proname) from pg_proc p
               join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'private'), 'no schema')),
   ('and 0038''s triggers still run them', '3',

@@ -66,7 +66,7 @@ describe("0028-0034, each", () => {
     expect(runner).toMatch(/"13_photograph_rows_0028\.sql"/);
     expect(runner).toMatch(/"14_moderation_0029_0033\.sql"/);
     expect(runner).toMatch(/15_seed_thumbnails_0034\.sql/);
-    expect(runner).toMatch(/rows\.length !== 48/);
+    expect(runner).toMatch(/rows\.length !== 68/);
   });
 });
 

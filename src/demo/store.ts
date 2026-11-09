@@ -636,8 +636,9 @@ export function demoUnfollow(followerId: string, followeeId: string): void {
 // activity
 // ---------------------------------------------------------------------------
 export function demoFetchActivity(userId: string): ActivityWithRefs[] {
+  // A message's notice is for the phone, not the tab (src/api/activity.ts).
   return state.activity
-    .filter((a) => a.recipient_id === userId)
+    .filter((a) => a.recipient_id === userId && a.type !== "message")
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 60)
     .map((a) => {

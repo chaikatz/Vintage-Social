@@ -346,3 +346,88 @@ export function pickMemories(rows: MemoryPost[], today: Date): Map<string, Memor
   }
   return byMember;
 }
+
+// ---------------------------------------------------------------------------
+// who may call the function
+// ---------------------------------------------------------------------------
+
+/**
+ * The header only the database's push_event sends (0040), holding the push
+ * hook's secret (app_settings.push_hook.secret), which the database makes
+ * and keeps, and the function reads there (`HookSecret`).
+ */
+export const PUSH_SECRET_HEADER = "x-push-secret";
+
+/**
+ * Whether a call is the database's own: its x-push-secret header is the
+ * secret the function holds. The platform's JWT check admits anyone with
+ * the anon key, which every copy of the app carries, so it says nothing
+ * about who is calling. With no secret held, nothing is admitted: a
+ * function that cannot tell its caller sends nothing rather than anything
+ * to anyone. Compared in constant time.
+ */
+export function isDatabaseCaller(given: string | null | undefined, held: string | null | undefined): boolean {
+  if (!held || !given) return false;
+  if (given.length !== held.length) return false;
+  let diff = 0;
+  for (let i = 0; i < held.length; i++) diff |= given.charCodeAt(i) ^ held.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * The push hook's secret, as the function holds it (0040). The database
+ * makes it and keeps it in app_settings.push_hook; the function reads it
+ * there with its service key (`read`), keeps it a while, and reads it
+ * again when it is old, or, no more than once in a while, when a call's
+ * does not match (the hook rewritten since). A call with no secret at all
+ * reads nothing. Calls that arrive together share one read. A secret
+ * given to the function itself (PUSH_HOOK_SECRET, `fixed`) is used
+ * instead, and nothing is read.
+ */
+export class HookSecret {
+  private held = "";
+  private readAt = Number.NEGATIVE_INFINITY;
+  private reading: Promise<void> | null = null;
+
+  constructor(
+    private readonly read: () => Promise<unknown>,
+    private readonly fixed = "",
+    private readonly now: () => number = Date.now,
+    private readonly keptMs = 10 * 60_000,
+    private readonly againMs = 15_000,
+  ) {}
+
+  private refresh(): Promise<void> {
+    if (!this.reading) {
+      this.reading = (async () => {
+        let secret: unknown = "";
+        try {
+          secret = await this.read();
+        } catch {
+          // Nothing read is no secret: every call is refused until a read finds it.
+        }
+        this.held = typeof secret === "string" ? secret : "";
+        this.readAt = this.now();
+      })().finally(() => {
+        this.reading = null;
+      });
+    }
+    return this.reading;
+  }
+
+  /** Whether a call carrying `given` in its x-push-secret header is the database's. */
+  async admits(given: string | null | undefined): Promise<boolean> {
+    if (this.fixed) return isDatabaseCaller(given, this.fixed);
+    if (!given) return false;
+    if (this.now() - this.readAt >= this.keptMs) await this.refresh();
+    if (isDatabaseCaller(given, this.held)) return true;
+    if (this.now() - this.readAt < this.againMs) return false;
+    await this.refresh();
+    return isDatabaseCaller(given, this.held);
+  }
+
+  /** The hook was read and had no secret: every call is being refused. */
+  get missing(): boolean {
+    return !this.fixed && this.readAt > Number.NEGATIVE_INFINITY && !this.held;
+  }
+}

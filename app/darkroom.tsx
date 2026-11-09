@@ -439,6 +439,7 @@ export default function Darkroom() {
         current={isCurrent}
         proof={chapter != null && wantsProof(index, chapter.index)}
         images={focused || isCurrent}
+        inFront={focused}
         dissolve={!darkroom.hasLoaded(print.id)}
         revision={state.revision}
         online={online}

@@ -18,6 +18,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
 import { mediaUrl, mediaUrlString } from "@/api/media";
 import { toggleVideoMuted, useVideoMuted } from "@/utils/videoSound";
+import { useImageRetry } from "@/media/imageRetry";
 import { Byline } from "./PostCard";
 import type { PostRow } from "@/types/db";
 
@@ -187,6 +188,9 @@ function ZoomablePhoto({
   const scroll = useRef<ScrollView>(null);
   const zoomed = useRef(false);
   const lastTap = useRef(0);
+  // A photograph that fails to load is asked for again, its small copy
+  // standing in meanwhile, rather than left soft (src/media/imageRetry.ts).
+  const retry = useImageRetry(url);
 
   // A page you have swiped away from, or are closing, goes back to actual
   // size while it is still on screen — see the note on `close` above.
@@ -248,6 +252,8 @@ function ZoomablePhoto({
             transition={120}
             priority="high"
             cachePolicy="memory-disk"
+            key={retry.attempt}
+            onError={retry.onError}
           />
         ) : null}
       </Pressable>

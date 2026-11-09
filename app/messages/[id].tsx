@@ -29,6 +29,7 @@ import {
 } from "@/api/messages";
 import { blockMember } from "@/api/blocks";
 import { markedRead, readThread, unreadIds } from "@/utils/threadPoll";
+import { threadOffScreen, threadOnScreen } from "@/utils/threadOnScreen";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -39,6 +40,8 @@ import { useMinute } from "@/utils/useMinute";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost, ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { useImageRetry } from "@/media/imageRetry";
 
 // A row that breaks this screen breaks only this screen, with the way back on its
@@ -71,6 +74,14 @@ export default function Thread() {
     queryFn: () => fetchConversationPeer(id ?? "", userId),
     enabled: Boolean(id && userId),
   });
+  // While this thread is in front, a message notice from its member is
+  // not shown over it (src/utils/threadOnScreen.ts).
+  const peerId = peerQ.data?.id ?? null;
+  useEffect(() => {
+    if (!focused || !peerId) return;
+    threadOnScreen(peerId);
+    return () => threadOffScreen(peerId);
+  }, [focused, peerId]);
   // When this screen last read the whole thread: it reads it whole as it
   // opens, and then only what is new (src/utils/threadPoll.ts).
   const lastWholeAt = useRef(0);
@@ -259,14 +270,22 @@ export default function Thread() {
           headerTitleStyle: titleStyle,
         }}
       />
-      <FlatList
-        data={newestFirst}
-        inverted
-        keyExtractor={(m) => m.id}
-        contentContainerStyle={styles.listContent}
-        keyboardShouldPersistTaps="handled"
-        renderItem={renderBubble}
-      />
+      {readState(messagesQ) === "failed" ? (
+        // A read that failed is no answer: an empty conversation would not
+        // be true. The header's menu and the field below stay as they are.
+        <View style={styles.failed}>
+          <LoadFailed what="this conversation" onRetry={() => messagesQ.refetch()} />
+        </View>
+      ) : (
+        <FlatList
+          data={newestFirst}
+          inverted
+          keyExtractor={(m) => m.id}
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+          renderItem={renderBubble}
+        />
+      )}
       <View
         style={[
           styles.composer,
@@ -378,6 +397,7 @@ const styles = StyleSheet.create({
   // The stack's title style (app/_layout.tsx), over the same bold the stack lays under it.
   title: { fontFamily: type.serif, fontSize: 17 },
   listContent: { paddingVertical: spacing.md },
+  failed: { flex: 1 },
   bubbleRow: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   rowMine: { alignItems: "flex-end" },
   rowTheirs: { alignItems: "flex-start" },

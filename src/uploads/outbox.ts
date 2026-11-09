@@ -16,13 +16,14 @@ import { markDeveloped } from "@/darkroom/posted";
 import { rememberPlace } from "@/utils/reverseGeocode";
 import { showAlert } from "@/utils/alert";
 import { ownedPath } from "@/utils/storagePath";
+import { clampLocation } from "@/utils/validation";
 import { abortError, backoffDelay, isAbortError, isTransient, withTimeout } from "@/utils/retry";
 import { perfLog, perfStart, shortId } from "@/utils/perf";
 import { NotSignedInError, UploadRestart, freshAccessToken, isExpiredAuth, isSessionUnavailable } from "./storageUpload";
 import * as disk from "./jobFiles";
 import { setPendingPosts } from "./store";
 import { confirmedRow, markPostDeleted, placeConfirmedPost } from "./feedCache";
-import { failureWords, type FailureReason } from "./words";
+import { failureWords, tagFailureWords, type FailureReason } from "./words";
 import { thumbLongSide } from "./thumbSize";
 import type { JobStep, OutboxJob, PendingPost, PendingState, PostDraft } from "./types";
 
@@ -881,7 +882,9 @@ function newPostFor(job: OutboxJob): NewPost {
     show_date_stamp: d.showDateStamp,
     caption: d.caption.trim(),
     taken_at: d.takenAt,
-    location: d.location?.trim() || null,
+    // Held to what the database takes here too: a post kept on the phone
+    // from before, whose long place name was refused, posts on Retry.
+    location: clampLocation(d.location),
     lat: d.lat,
     lng: d.lng,
     place_id: d.placeId,
@@ -1022,13 +1025,19 @@ function warmImageCache(live: Live): void {
 /**
  * The tags ride behind the post, because each one notifies the member
  * tagged. A duplicate means an earlier attempt landed. Their failure is
- * worth a word but never the photograph, which is already up.
+ * worth a word but never the photograph, which is already up. A member
+ * the database will not let be tagged leaves the others on the post, and
+ * is named (tagFailureWords).
  */
 async function sendTags(live: Live, signal: AbortSignal): Promise<void> {
   const d = live.job.draft;
   for (let attempt = 1; ; attempt++) {
     try {
-      await withTimeout(TAG_TIMEOUT_MS, () => tagMembers(d.id, d.userId, d.tagIds), { signal, what: "Tagging" });
+      const refused = await withTimeout(TAG_TIMEOUT_MS, () => tagMembers(d.id, d.userId, d.tagIds), { signal, what: "Tagging" });
+      if (refused.length > 0) {
+        const words = tagFailureWords(d, refused);
+        showAlert(words.title, words.body);
+      }
       return;
     } catch (err) {
       if (signal.aborted || live.gone) throw abortError();
@@ -1042,10 +1051,8 @@ async function sendTags(live: Live, signal: AbortSignal): Promise<void> {
           continue;
         }
       }
-      showAlert(
-        "Posted, but the tags didn’t take",
-        `${d.kind === "video" ? "The clip" : "The photograph"} is up. You can try tagging again later.`,
-      );
+      const words = tagFailureWords(d, null);
+      showAlert(words.title, words.body);
       return;
     }
   }
@@ -1168,9 +1175,10 @@ export function notePostsInFeed(ids: readonly string[]): void {
  * land ("It may have been saved") would otherwise keep its card and its
  * Retry, and a Retry would insert the post again under the same id, which
  * nothing collides with any more. One still at work is stopped where it
- * is; its files on the phone go, and storage is left as it is for every
- * deleted post. The feed is told as well, so a confirmed row waiting to be
- * put back after a read lands is not.
+ * is; its files on the phone go. Its files in storage are not this
+ * outbox's to remove: the deletion removes them (removeDeletedPostFiles,
+ * src/api/posts.ts). The feed is told as well, so a confirmed row waiting
+ * to be put back after a read lands is not.
  */
 export function notePostDeleted(id: string): void {
   markPostDeleted(id);

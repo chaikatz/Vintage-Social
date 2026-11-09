@@ -266,6 +266,18 @@ describe("0038", () => {
     expect(read("supabase/functions/push/index.ts")).toMatch(/case "follow_request":[\s\S]{0,120}data\.route = "\/requests";/);
   });
 
+  it("opens a request's row in Activity on Requests, where it is answered, as its push does", async () => {
+    // The asker's profile has no Accept or Decline; the row used to open it.
+    const activity = read("app/(tabs)/activity.tsx")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    expect(activity).toMatch(
+      /const open = \(item: ActivityWithRefs\) => \{\s*if \(item\.type === "follow_request"\) router\.push\("\/requests"\);\s*else if \(item\.post\) router\.push\(`\/post\/\$\{item\.post\.id\}`\);\s*else if \(item\.actor\) router\.push\(`\/user\/\$\{item\.actor\.username\}`\);\s*\};/,
+    );
+    const { routeForNotification } = await import("@/utils/pushRoute");
+    expect(routeForNotification({ kind: "follow_request" })).toBe("/requests");
+  });
+
   it("says how to roll it back, opens no transaction, grants nothing to visitors, and the owner's check has its rows", () => {
     const text = read("supabase/migrations/0038_follows_respect_private_accounts.sql");
     expect(text).toMatch(/^-- Rollback/m);
@@ -310,7 +322,8 @@ describe("0038", () => {
       /create policy "follows: a request seen by its two members" on public\.follows\s+as restrictive for select using \(\s+status = 'accepted'\s+or follower_id = \(select auth\.uid\(\)\)\s+or followee_id = \(select auth\.uid\(\)\)\s+\);/,
     );
     // 0023's rewrite test knows it as a policy a later migration added.
-    expect(read("supabase/tests/08_policy_rewrite.sql")).toMatch(/\('follows', 'follows: a request seen by its two members'\)\)\)\),/);
+    // (0040's two follow it in that list.)
+    expect(read("supabase/tests/08_policy_rewrite.sql")).toMatch(/\('follows', 'follows: a request seen by its two members'\)(\)\)\)|),/);
     // Nothing in the app asks for another member's request: every read of follows names the member
     // asking on one side, or asks for accepted follows only.
     for (const file of ["src/api/profiles.ts", "src/api/posts.ts"]) {
