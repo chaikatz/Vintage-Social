@@ -114,9 +114,10 @@ with checks as (
   --    as before 0023 (0023 replaces policies; it adds and removes none),
   --    the four restrictive ones 0028 and 0033 add, the three 0038 adds
   --    (the followee's two, and a request seen by its two members), and
-  --    the five restrictive ones 0039 adds, and the two restrictive ones
-  --    0040 adds (no comment or like across a block): 84.
-  select 4, 'policies on public', count(*)::text, '84'
+  --    the five restrictive ones 0039 adds, and the three restrictive
+  --    ones 0040 adds (no comment or like across a block, and the push
+  --    hook kept from the API): 85.
+  select 4, 'policies on public', count(*)::text, '85'
   from pg_policies where schemaname = 'public'
   union all
   select 5, 'policies on storage.objects (VINTAGE''s own)', count(*)::text, '8'
@@ -124,7 +125,7 @@ with checks as (
   where schemaname = 'storage' and tablename = 'objects'
     and policyname ~ '^(avatars|media): '
   union all
-  select 6, 'restrictive policies (blocking, 0028, 0033, 0038, 0039, 0040)', count(*)::text, '26'
+  select 6, 'restrictive policies (blocking, 0028, 0033, 0038, 0039, 0040)', count(*)::text, '27'
   from pg_policies where schemaname = 'public' and permissive = 'RESTRICTIVE'
   union all
   -- 4. 0023's three helpers: in the schema private, which the API does not
@@ -788,14 +789,20 @@ with checks as (
     and not has_function_privilege('anon', p.oid, 'execute')
   union all
   -- (In tgtype, 1 a row, 2 before, 4 an insert and 16 an update: 23.)
-  select 68, '0040: the push hook keeps a secret the database made, and has one (a trigger; its function in private, nobody''s to call)', count(*)::text, '1'
+  select 68, '0040: the push hook keeps a secret the database made, has one, and is kept from the API (a trigger; its function in private, nobody''s to call; a restrictive read policy)', count(*)::text, '1'
   from pg_trigger t
   join pg_proc f on f.oid = t.tgfoid
   join pg_namespace n on n.oid = f.pronamespace
   where t.tgrelid = 'public.app_settings'::regclass and t.tgname = 'app_settings_push_hook_secret' and not t.tgisinternal
-    and t.tgtype = 23
+    and t.tgtype = 23 and t.tgenabled = 'O'
     and n.nspname = 'private' and f.proname = 'push_hook_keeps_a_secret'
     and f.proconfig @> array['search_path=""'] and f.prosrc ~ 'gen_random_uuid'
+    and f.prosrc ~ 'from public\.app_settings s'
+    and exists (select 1 from pg_policies pp
+                 where pp.schemaname = 'public' and pp.tablename = 'app_settings'
+                   and pp.policyname = 'app_settings: the push hook is the database''s'
+                   and pp.permissive = 'RESTRICTIVE' and pp.cmd = 'SELECT'
+                   and pp.qual ~ 'key <> ''push_hook''')
     and not has_function_privilege('authenticated', f.oid, 'execute')
     and not has_function_privilege('anon', f.oid, 'execute')
     and not exists (select 1 from public.app_settings s

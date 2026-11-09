@@ -72,8 +72,10 @@
 --      secret is made here, in the database, and kept there: a trigger
 --      gives the hook one whenever it is written without one (keeping the
 --      one it had, if it had one), and this file writes the hook as it is,
---      so it gets one now. Nobody types it, copies it or sees it, and it
---      is never in the repository. The push function, from its version 3,
+--      so it gets one now. Nobody types it or copies it, and it is never
+--      in the repository; a restrictive read policy keeps the hook from
+--      the API altogether, admins included (only the project's owner sees
+--      it, in the dashboard). The push function, from its version 3,
 --      reads it with its service key and refuses any call without it, so
 --      the public anon key no longer lets anyone set off the day's On This
 --      Day early or announce a photograph again. Version 2 ignores the
@@ -82,8 +84,9 @@
 --      (APP_STORE_LAUNCH.md, step 4, item 5). Version 3 before this file
 --      refuses every call until it runs.
 --
--- To undo: drop the policies "comments: none across a block" and "likes:
--- none across a block", the triggers messages_notify_trigger (on
+-- To undo: drop the policies "comments: none across a block", "likes:
+-- none across a block" and "app_settings: the push hook is the
+-- database's", the triggers messages_notify_trigger (on
 -- messages) and app_settings_push_hook_secret (on app_settings), and the
 -- functions private.post_across_a_block, private.notify_message and
 -- private.push_hook_keeps_a_secret; run again the earlier definitions of
@@ -120,6 +123,7 @@
 --   drop trigger if exists messages_notify_trigger on public.messages;
 --   drop function if exists private.notify_message();
 --   update storage.buckets set file_size_limit = null, allowed_mime_types = null where id = 'avatars';
+--   drop policy if exists "app_settings: the push hook is the database's" on public.app_settings;
 --   drop trigger if exists app_settings_push_hook_secret on public.app_settings;
 --   drop function if exists private.push_hook_keeps_a_secret();
 --   (the hook keeps its secret; version 2 of the push function ignores it)
@@ -426,3 +430,13 @@ create trigger app_settings_push_hook_secret
 
 -- The hook as it is now gets its secret (and, run again, keeps it).
 update public.app_settings set value = value where key = 'push_hook';
+
+-- The hook, and its secret with it, is the database's own: the API gives
+-- it to nobody, admins included ("app_settings: admins read" still lets
+-- admins read every other setting). It is read only past row-level
+-- security: by push_hook() (run as its owner), by the push function's
+-- service key, and by the project's owner in the dashboard.
+drop policy if exists "app_settings: the push hook is the database's" on public.app_settings;
+create policy "app_settings: the push hook is the database's" on public.app_settings
+  as restrictive for select
+  using (key <> 'push_hook');

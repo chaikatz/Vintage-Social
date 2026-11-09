@@ -370,6 +370,17 @@ insert into tests.results (name, expected, actual) values
   ('a hook made afresh gets a new secret of its own', 'true|false',
    (select ((value->>'secret') ~ '^[0-9a-f]{64}$')::text || '|' || ((value->>'secret') = (select s from g_secret))::text
       from public.app_settings where key = 'push_hook'));
+-- Kept from the API: an admin reads the other settings, but not the hook.
+insert into tests.results (name, expected, actual) values
+  ('an admin reads the other settings, but not the push hook', 'default_invite_quota|0',
+   tests.g_read('11111111-1111-1111-1111-111111111111', 'select key from public.app_settings where key = ''default_invite_quota''') || '|' ||
+   tests.g_read('11111111-1111-1111-1111-111111111111', 'select count(*) from public.app_settings where key = ''push_hook''')),
+  ('nor does a member', '0',
+   tests.g_read(:'ben', 'select count(*) from public.app_settings where key = ''push_hook''')),
+  ('nor a visitor', 'OK:0',
+   tests.g_as(null, 'select 1 from public.app_settings where key = ''push_hook''')),
+  ('push_hook() still reads it, as the database''s', 'true',
+   ((public.push_hook()->>'secret') = (select value->>'secret' from public.app_settings where key = 'push_hook'))::text);
 -- Nothing else in app_settings is touched.
 insert into tests.results (name, expected, actual) values
   ('nothing else in app_settings is given a secret', '0',

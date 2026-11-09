@@ -380,36 +380,50 @@ export function isDatabaseCaller(given: string | null | undefined, held: string 
  * there with its service key (`read`), keeps it a while, and reads it
  * again when it is old, or, no more than once in a while, when a call's
  * does not match (the hook rewritten since). A call with no secret at all
- * reads nothing. Calls that arrive together share one read. A read that
- * fails (a timeout, the API busy) keeps what was held: a blip must not
- * turn the database's own calls away, and none of them is ever sent
- * again. There is one place the secret lives, the database; nothing set
- * on the function stands in for it.
+ * reads nothing. Calls that arrive together share one read, and a read is
+ * given up on after `readMs` however it hangs (a body that stalls after
+ * its headers, the client's own retries). A read that fails keeps what
+ * was held: a blip must not turn the database's own calls away, and none
+ * of them is ever sent again. There is one place the secret lives, the
+ * database; nothing set on the function stands in for it. Time is the
+ * monotonic clock, so a wall clock set back cannot stop the re-reads.
  */
 export class HookSecret {
   private held = "";
   private readAt = Number.NEGATIVE_INFINITY;
-  private lastReadFailed = false;
+  private lastError: string | null = null;
+  private loggedAt = Number.NEGATIVE_INFINITY;
   private reading: Promise<void> | null = null;
 
   constructor(
     /** The hook's secret as stored; throws when it could not be read. */
     private readonly read: () => Promise<unknown>,
-    private readonly now: () => number = Date.now,
+    private readonly now: () => number = () => performance.now(),
     private readonly keptMs = 10 * 60_000,
     private readonly againMs = 15_000,
+    private readonly readMs = 10_000,
+    private readonly logEveryMs = 60_000,
   ) {}
 
   private refresh(): Promise<void> {
     if (!this.reading) {
       this.reading = (async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          const secret = await this.read();
+          const secret = await Promise.race([
+            Promise.resolve().then(() => this.read()),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error(`no answer in ${this.readMs} ms`)), this.readMs);
+            }),
+          ]);
           this.held = typeof secret === "string" ? secret : "";
-          this.lastReadFailed = false;
-        } catch {
-          // Not read: what was held stays.
-          this.lastReadFailed = true;
+          this.lastError = null;
+        } catch (err) {
+          // Not read: what was held stays. Said once a read, which is at most every againMs.
+          this.lastError = err instanceof Error ? err.message : String(err);
+          console.error(`The push hook could not be read: ${this.lastError}`);
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
         }
         this.readAt = this.now();
       })().finally(() => {
@@ -433,6 +447,26 @@ export class HookSecret {
   get trouble(): "no secret" | "unreadable" | null {
     if (this.held) return null;
     if (this.readAt === Number.NEGATIVE_INFINITY) return null;
-    return this.lastReadFailed ? "unreadable" : "no secret";
+    return this.lastError !== null ? "unreadable" : "no secret";
+  }
+
+  /**
+   * What to log for a refused call, at most once every `logEveryMs`, or
+   * null: the hook without a secret, a hook that could not be read, or a
+   * call that came with no secret at all (the database's own calls do
+   * from 0040, so the likeliest cause is 0040 missing). A call with a
+   * wrong secret is someone else's, and is not worth a line each.
+   */
+  refusalNote(given: string | null | undefined): string | null {
+    const trouble = this.trouble;
+    let note: string | null = null;
+    if (trouble === "no secret") note = "The push hook has no secret (0040 makes one): every call is refused";
+    else if (trouble === "unreadable") note = `The push hook could not be read (${this.lastError}): calls are refused until it can be`;
+    else if (!given) note = "A call without the push hook's secret was refused (the database's push_event sends it from 0040)";
+    if (note === null) return null;
+    const at = this.now();
+    if (at - this.loggedAt < this.logEveryMs) return null;
+    this.loggedAt = at;
+    return note;
   }
 }
