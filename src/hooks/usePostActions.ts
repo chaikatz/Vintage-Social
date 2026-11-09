@@ -224,13 +224,19 @@ export function usePostActions(userId: string, postIds: string[]) {
       if (post.author_id === userId) {
         const what = post.media_type === "video" ? "clip" : "photograph";
         showAlert("Your post", undefined, [
-          {
-            text: "Edit caption",
-            onPress: () => {
-              seed(post);
-              router.push({ pathname: "/edit-caption", params: { postId: post.id } });
-            },
-          },
+          // A photograph the admins removed keeps the caption it was removed
+          // with: the database takes no change to it (0039).
+          ...(post.removed_at
+            ? []
+            : [
+                {
+                  text: "Edit caption",
+                  onPress: () => {
+                    seed(post);
+                    router.push({ pathname: "/edit-caption", params: { postId: post.id } });
+                  },
+                },
+              ]),
           ...(erasReady
             ? [{ text: "Add to an era…", onPress: () => router.push({ pathname: "/era-move", params: { postId: post.id } }) }]
             : []),

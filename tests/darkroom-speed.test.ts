@@ -478,7 +478,7 @@ describe("a plate zoomed in", () => {
     expect(closer).not.toMatch(/prefetch|memory-disk|cachePolicy="/);
   });
 
-  it("is there only while the plate in front is zoomed in, and its own photograph has drawn", () => {
+  it("is there only while the plate in front is zoomed in, its own photograph has drawn, and the room is in front", () => {
     // The zoom says whether it is zoomed in, from the scroll, the pinch's end, and the page turned away.
     expect(zoom).toMatch(/zoomed\.current = \(e\.nativeEvent\.zoomScale \?\? 1\) > ZOOMED;\s*onZoomed\(zoomed\.current\);/);
     expect(zoom).toMatch(/zoomed\.current = false;\s*onZoomed\(false\);\s*actualSize\(scroll\.current, box\);/);
@@ -486,9 +486,12 @@ describe("a plate zoomed in", () => {
     expect(page).toMatch(/<Zoom box=\{box\} current=\{current\} onTap=\{props\.onTap\} onZoomed=\{setCloser\}>/);
     expect(page).toMatch(/<Photograph \{\.\.\.props\} box=\{box\} onCloud=\{cloud\.step\} closer=\{closer\} \/>/);
     expect(photograph).toMatch(
-      /\{images && source != null && current && closer && drawn && !closerRefused \? \(\s*<Closer id=\{print\.id\} source=\{source\} box=\{box\} onRefused=\{\(\) => setCloserRefused\(true\)\} \/>\s*\) : null\}/,
+      /\{images && inFront && source != null && current && closer && drawn && !closerRefused \? \(\s*<Closer id=\{print\.id\} source=\{source\} box=\{box\} onRefused=\{\(\) => setCloserRefused\(true\)\} \/>\s*\) : null\}/,
     );
     expect(page.match(/<Closer\b/g)).toHaveLength(1);
+    // Under the editor the room is not in front: the closer goes, so one full decode is live behind it.
+    expect(photograph).toMatch(/const inFront = props\.inFront \?\? true;/);
+    expect(read("app/darkroom.tsx")).toMatch(/images=\{focused \|\| isCurrent\}\s+inFront=\{focused\}/);
   });
 
   it("never starts a download from iCloud: at the first word of one, or a failure, it is given up", () => {

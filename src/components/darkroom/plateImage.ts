@@ -126,7 +126,9 @@ export interface CloserRequest {
  * its view alone, never in the memory cache or on disk. Photos is asked
  * for it at that size, never for the original's own; and one that Photos
  * would have to bring down from iCloud is not waited for (`Closer`, in
- * PrintPage.tsx), so a pinch never starts a download.
+ * PrintPage.tsx): expo-image lets Photos use the network, so a download
+ * can begin, but the closer is let go, and its request cancelled, at the
+ * first word of progress Photos gives.
  */
 export function closerRequest(reduceMotion: boolean): CloserRequest {
   return {

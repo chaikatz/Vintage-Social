@@ -10,6 +10,7 @@ import { isDemoMode } from "@/lib/env";
 import { openNoticeRoute, tapFollower, tokenFiler, type NavState } from "./pushRoute";
 import { onReturnFromBackground } from "./appReturn";
 import { noteToken, pushSupported, stopReceiving, takeToken, tokenRemoved } from "./pushKept";
+import { fromThreadOnScreen } from "./threadOnScreen";
 
 /**
  * The phone's side of notifications.
@@ -29,14 +30,19 @@ import { noteToken, pushSupported, stopReceiving, takeToken, tokenRemoved } from
 // with it, live in pushKept.ts, which the auth client's own listener uses.
 export { parseKeptToken, pushAfterSignedOut, pushSupported } from "./pushKept";
 
-// A notice arriving while the app is open: show it, softly.
+// A notice arriving while the app is open: show it, softly. A message
+// from the member whose thread is in front is not shown at all: the
+// thread brings it (threadOnScreen.ts).
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    const show = !fromThreadOnScreen(notification.request.content.data);
+    return {
+      shouldShowBanner: show,
+      shouldShowList: show,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 function projectId(): string | undefined {

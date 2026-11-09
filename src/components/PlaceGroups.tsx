@@ -91,11 +91,16 @@ export function PlaceGroups({ posts, onOpenPost, header, empty, onRefresh, refre
   );
 
   // However slow the geocoder, the page shows what it knows after a moment
-  // and refines as the rest of the names arrive.
+  // and refines as the rest of the names arrive. What is already waiting in
+  // the batches goes with it, so nothing moves a second after it appears.
   useEffect(() => {
-    const t = setTimeout(() => setSettled(true), SETTLE_AFTER_MS);
+    const t = setTimeout(() => {
+      pointBatch.flush();
+      labelBatch.flush();
+      setSettled(true);
+    }, SETTLE_AFTER_MS);
     return () => clearTimeout(t);
-  }, []);
+  }, [pointBatch, labelBatch]);
 
   useEffect(() => {
     let alive = true;

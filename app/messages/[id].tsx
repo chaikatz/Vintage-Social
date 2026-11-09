@@ -29,6 +29,7 @@ import {
 } from "@/api/messages";
 import { blockMember } from "@/api/blocks";
 import { markedRead, readThread, unreadIds } from "@/utils/threadPoll";
+import { threadOffScreen, threadOnScreen } from "@/utils/threadOnScreen";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -70,6 +71,14 @@ export default function Thread() {
     queryFn: () => fetchConversationPeer(id ?? "", userId),
     enabled: Boolean(id && userId),
   });
+  // While this thread is in front, a message notice from its member is
+  // not shown over it (src/utils/threadOnScreen.ts).
+  const peerId = peerQ.data?.id ?? null;
+  useEffect(() => {
+    if (!focused || !peerId) return;
+    threadOnScreen(peerId);
+    return () => threadOffScreen(peerId);
+  }, [focused, peerId]);
   // When this screen last read the whole thread: it reads it whole as it
   // opens, and then only what is new (src/utils/threadPoll.ts).
   const lastWholeAt = useRef(0);

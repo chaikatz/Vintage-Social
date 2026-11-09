@@ -100,7 +100,8 @@ const CLOUD_STEP_MS = 120;
  * half turns to the next print and on its left half to the one before
  * (`tapTurn`), except while it is zoomed in; the room's words stay where
  * they are throughout. Under the editor, neighbours draw their well only,
- * so one full decode is live behind it.
+ * and a zoomed plate lets its closer go, so one full decode is live
+ * behind it.
  *
  * When the photograph cannot be drawn the plate says why, in the well:
  * gone from the library, waiting for the phone to be online (it tries
@@ -121,6 +122,12 @@ export interface PrintPageProps {
   proof: boolean;
   /** Draw the photograph at all (neighbours under the editor do not). */
   images: boolean;
+  /**
+   * The room is the screen in front. Under the editor it is not, and a
+   * zoomed plate lets its sharper second picture go (`Closer`), so one
+   * full decode is live behind the editor, not two. Left out, it is.
+   */
+  inFront?: boolean;
   /** Dissolve the full image in. */
   dissolve: boolean;
   /** The library changed: a print that failed to draw tries again. */
@@ -360,6 +367,7 @@ function Photograph(
   },
 ) {
   const { print, box, images, proof, current, dissolve, revision, online, limited, gone, onLoad, onGone, onCloud, closer } = props;
+  const inFront = props.inFront ?? true;
   const look = useLook();
   const [trouble, setTrouble] = useState<PlateTrouble | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -490,7 +498,7 @@ function Photograph(
           }}
         />
       ) : null}
-      {images && source != null && current && closer && drawn && !closerRefused ? (
+      {images && inFront && source != null && current && closer && drawn && !closerRefused ? (
         <Closer id={print.id} source={source} box={box} onRefused={() => setCloserRefused(true)} />
       ) : null}
     </View>
