@@ -887,6 +887,10 @@ const Chapter = memo(function Chapter({
   const leadSize = leadPrint(aspectRatio(lead.width, lead.height), cell);
   // Arranging, every photograph is out on the page, so any can be moved.
   const strip = eraStrip(era, expanded || arranging);
+  // But an era away from the screen asks for no more pictures than it shows
+  // outside arranging: the rest stand as paper of their size, and are drawn
+  // as it comes near, as its lead is drawn full only then.
+  const drawnStrip = arranging && !near ? eraStrip(era, expanded).length : strip.length;
   const rows: PostRow[][] = [];
   for (let i = 0; i < strip.length; i += ERA_STRIP) rows.push(strip.slice(i, i + ERA_STRIP));
   const more = arranging ? null : eraMore(era, expanded);
@@ -958,8 +962,8 @@ const Chapter = memo(function Chapter({
         <Print post={lead} size={leadSize.width} height={leadSize.height} full={near} dim={lifted === lead.id} {...print} />
         {rows.map((row, i) => (
           <View key={i} style={styles.strip}>
-            {row.map((post) => (
-              <Print key={post.id} post={post} size={cell} dim={lifted === post.id} {...print} />
+            {row.map((post, j) => (
+              <Print key={post.id} post={post} size={cell} dim={lifted === post.id} {...print} bare={i * ERA_STRIP + j >= drawnStrip} />
             ))}
           </View>
         ))}
@@ -993,6 +997,7 @@ const Print = memo(function Print({
   size,
   height,
   full,
+  bare,
   dim,
   arranging,
   onOpen,
@@ -1003,6 +1008,8 @@ const Print = memo(function Print({
   size: number;
   height?: number;
   full?: boolean;
+  /** Laid out away from the screen while arranging: its paper only, until the era comes near. */
+  bare?: boolean;
   /** Lifted, and being dragged. */
   dim: boolean;
   arranging: boolean;
@@ -1019,6 +1026,7 @@ const Print = memo(function Print({
         size={size}
         height={height}
         full={full}
+        bare={bare}
         onPress={() => onOpen(post)}
         onLongPress={arranging ? (e) => onLift({ post, view: self.current, width: size, height: height ?? size, full: full === true }, e) : undefined}
         delayLongPress={LIFT_MS}

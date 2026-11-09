@@ -300,7 +300,7 @@ describe("developing with the library module", () => {
     expect(lib.listening).toBe(0);
   });
 
-  it("reports a download that takes longer than a minute as iCloud not sending it", async () => {
+  it("reports a download with no word of it for a minute as iCloud not sending it", async () => {
     vi.useFakeTimers();
     const lib = new FakeLibrary();
     const { developFromCloud, CLOUD_TIMEOUT_MS } = await load(lib);
@@ -319,6 +319,76 @@ describe("developing with the library module", () => {
     lib.answer(ok(LATE), requestId);
     await flush();
     expect(world.deleted).toEqual([LATE]);
+  });
+
+  it("waits on a download still coming in, past a minute, as long as its progress comes", async () => {
+    vi.useFakeTimers();
+    const lib = new FakeLibrary();
+    const { developFromCloud, CLOUD_TIMEOUT_MS } = await load(lib);
+    const seen: number[] = [];
+    const result = watch(developFromCloud(print(), { onProgress: (f) => seen.push(f) }));
+    await flush();
+    const { requestId } = lib.last.options;
+    // A large photograph on a slow connection: a step every 20 seconds, for three minutes.
+    for (let t = 1; t <= 9; t++) {
+      await vi.advanceTimersByTimeAsync(20_000);
+      lib.progress(t / 10, requestId);
+    }
+    expect(9 * 20_000).toBeGreaterThan(CLOUD_TIMEOUT_MS * 2);
+    expect(result.value).toBeUndefined();
+    expect(lib.cancelDevelop).not.toHaveBeenCalled();
+    lib.answer(ok(), requestId);
+    await flush();
+    expect(result.value).toMatchObject({ status: "ok", params: { uri: COPY } });
+    expect(seen).toHaveLength(9);
+    expect(lib.listening).toBe(0);
+  });
+
+  it("gives up a minute after the progress stops, however far it had come, with the same words", async () => {
+    vi.useFakeTimers();
+    const lib = new FakeLibrary();
+    const { developFromCloud, CLOUD_TIMEOUT_MS } = await load(lib);
+    const result = watch(developFromCloud(print(), { onProgress: () => undefined }));
+    await flush();
+    const { requestId } = lib.last.options;
+    await vi.advanceTimersByTimeAsync(45_000);
+    lib.progress(0.9, requestId);
+    // The same step again, or one back, is no news.
+    await vi.advanceTimersByTimeAsync(30_000);
+    lib.progress(0.9, requestId);
+    lib.progress(0.4, requestId);
+    await vi.advanceTimersByTimeAsync(CLOUD_TIMEOUT_MS - 30_001);
+    expect(result.value).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result.value).toEqual({ status: "cloudFailed" });
+    expect(lib.cancelDevelop).toHaveBeenCalledWith(requestId);
+    expect(lib.listening).toBe(0);
+
+    world.files.add(LATE);
+    lib.answer(ok(LATE), requestId);
+    await flush();
+    expect(world.deleted).toEqual([LATE]);
+  });
+
+  it("hears the progress even when nothing draws it, and never waits past the longest wait", async () => {
+    vi.useFakeTimers();
+    const lib = new FakeLibrary();
+    const { developFromCloud, CLOUD_LONGEST_MS } = await load(lib);
+    expect(CLOUD_LONGEST_MS).toBe(10 * 60_000);
+    const result = watch(developFromCloud(print()));
+    await flush();
+    const { requestId } = lib.last.options;
+    expect(lib.listening).toBe(1);
+    // Small steps for ever.
+    for (let t = 1; t * 30_000 < CLOUD_LONGEST_MS; t++) {
+      await vi.advanceTimersByTimeAsync(30_000);
+      lib.progress(t / 1000, requestId);
+    }
+    expect(result.value).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(result.value).toEqual({ status: "cloudFailed" });
+    expect(lib.cancelDevelop).toHaveBeenCalledWith(requestId);
+    expect(lib.listening).toBe(0);
   });
 
   it("reports iCloud refusing as cloudFailed, and a print gone meanwhile as missing", async () => {

@@ -26,6 +26,7 @@ import {
   chooseMorePhotos,
   composeParamsFor,
   dayRows,
+  discardOpened,
   libraryAccess,
   openLibrarySettings,
   photoLabel,
@@ -148,19 +149,41 @@ export default function Memories() {
   };
 
   // A photograph from the library opens in the editor, as one picked
-  // from the library does. One tap, one editor.
+  // from the library does. One tap, one editor. One from iCloud can take a
+  // while: a member who leaves the page meanwhile has it stopped, and is
+  // never followed by the editor, or by an alert, wherever they went.
   const [opening, setOpening] = useState<string | null>(null);
+  const front = useRef(true);
+  const openStop = useRef<AbortController | null>(null);
+  // Blurred, or gone (a page leaving in front runs this as it goes).
+  useFocusEffect(
+    useCallback(() => {
+      front.current = true;
+      return () => {
+        front.current = false;
+        openStop.current?.abort();
+      };
+    }, []),
+  );
   const openPhoto = async (photo: LibraryPhoto) => {
     if (opening) return;
     setOpening(photo.id);
+    const stop = new AbortController();
+    openStop.current = stop;
     try {
-      const params = await composeParamsFor(photo);
+      const params = await composeParamsFor(photo, { signal: stop.signal });
+      // Asked as the photograph arrives: the page may have been left while it came.
+      if (stop.signal.aborted || !front.current) {
+        discardOpened(params?.uri);
+        return;
+      }
       if (!params) {
         showAlert("Couldn’t open that one", "It may still be in iCloud. Try again in a moment.");
         return;
       }
       router.push({ pathname: "/compose", params });
     } finally {
+      if (openStop.current === stop) openStop.current = null;
       setOpening(null);
     }
   };
@@ -393,19 +416,16 @@ export default function Memories() {
                 <Text style={styles.eraCount}>{era.posts.length}</Text>
               </View>
               <View style={styles.eraGrid}>
-                {era.posts.slice(0, 6).map((p) => {
-                  const url = mediaUrl("thumbnails", p.thumb_path) ?? mediaUrl("media", p.media_path);
-                  return (
-                    <Pressable
-                      key={p.id}
-                      onPress={() =>
-                        router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken" } })
-                      }
-                    >
-                      {url ? <Image source={url} style={styles.eraCell} contentFit="cover" cachePolicy="memory-disk" /> : null}
-                    </Pressable>
-                  );
-                })}
+                {era.posts.slice(0, 6).map((p) => (
+                  <Pressable
+                    key={p.id}
+                    onPress={() =>
+                      router.push({ pathname: "/gallery", params: { authorId: p.author_id, postId: p.id, sort: "taken" } })
+                    }
+                  >
+                    <EraCell post={p} />
+                  </Pressable>
+                ))}
               </View>
             </View>
           ))}
@@ -480,6 +500,22 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
       <View style={styles.sectionRule} />
     </View>
   );
+}
+
+/** One of an era's squares; one that fails to load is asked for again rather than left empty (src/media/imageRetry.ts). */
+function EraCell({ post }: { post: PostRow }) {
+  const url = mediaUrl("thumbnails", post.thumb_path) ?? mediaUrl("media", post.media_path);
+  const retry = useImageRetry(url);
+  return url ? (
+    <Image
+      source={url}
+      style={styles.eraCell}
+      contentFit="cover"
+      cachePolicy="memory-disk"
+      key={retry.attempt}
+      onError={retry.onError}
+    />
+  ) : null;
 }
 
 const ERA_CELL = (Dimensions.get("window").width - spacing.lg * 2 - 2 * 2) / 3;
