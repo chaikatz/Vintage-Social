@@ -121,14 +121,14 @@ describe("0040: no comment or like across a block", () => {
     expect(sql).toMatch(/revoke execute on function public\.notify_like\(\), public\.notify_comment\(\), public\.notify_tag\(\)\s+from public, anon, authenticated;/);
   });
 
-  it("is proven by the policy harness, and 0023's rewrite test knows the two policies as later ones", () => {
+  it("is proven by the policy harness, and 0023's rewrite test knows its three policies as later ones", () => {
     const runner = read("supabase/tests/run.mjs");
     expect(runner).toMatch(/"17_follows_0038\.sql",\s+"18_writes_0039\.sql",\s+"19_blocks_messages_files_0040\.sql",/);
     const test = read("supabase/tests/19_blocks_messages_files_0040.sql");
     expect(test).toMatch(/\\ir \.\.\/migrations\/0040_blocks_messages_and_files\.sql/);
     expect(test.trim().endsWith("rollback;")).toBe(true);
     expect(read("supabase/tests/08_policy_rewrite.sql")).toMatch(
-      /\('comments', 'comments: none across a block'\),\s+\('likes', 'likes: none across a block'\)\)\)\),/,
+      /\('comments', 'comments: none across a block'\),\s+\('likes', 'likes: none across a block'\),\s+\('app_settings', 'app_settings: the push hook is the database''s'\)\)\)\),/,
     );
   });
 });
@@ -275,7 +275,8 @@ describe("0040: the push function's caller", () => {
     );
     expect(fn.indexOf("const admin = createClient(")).toBeLessThan(fn.indexOf("const hookSecret = new HookSecret("));
     const serve = fn.slice(fn.indexOf("Deno.serve("));
-    const check = serve.indexOf("if (!(await hookSecret.admits(req.headers.get(PUSH_SECRET_HEADER))))");
+    expect(serve).toMatch(/const given = req\.headers\.get\(PUSH_SECRET_HEADER\);\s*if \(!\(await hookSecret\.admits\(given\)\)\) \{/);
+    const check = serve.indexOf("if (!(await hookSecret.admits(given)))");
     expect(check).toBeGreaterThan(0);
     expect(check).toBeLessThan(serve.indexOf("await req.json()"));
     expect(check).toBeLessThan(serve.indexOf("switch (payload.kind)"));
@@ -398,6 +399,45 @@ describe("0040: the push function's caller", () => {
     expect(none.trouble).toBe("no secret");
   });
 
+  it("gives up on a read that hangs, keeping what it held, and says why it refuses at most once a minute", async () => {
+    let clock = 0;
+    let hang = false;
+    const secret = new HookSecret(
+      () => (hang ? new Promise(() => undefined) : Promise.resolve(SECRET)),
+      () => clock,
+      600_000,
+      15_000,
+      20,
+      60_000,
+    );
+    expect(await secret.admits(SECRET)).toBe(true);
+    // Old, and the read never answers (a body that stalls): given up on after readMs, the held secret still admits.
+    hang = true;
+    clock = 600_000;
+    expect(await secret.admits(SECRET)).toBe(true);
+    expect(secret.trouble).toBe(null);
+    // A call with no secret at all: said once, then not again within the minute.
+    expect(secret.refusalNote(null)).toMatch(/without the push hook's secret/);
+    expect(secret.refusalNote(null)).toBe(null);
+    clock += 60_000;
+    expect(secret.refusalNote(undefined)).toMatch(/without the push hook's secret/);
+    // A wrong secret is someone else's: nothing to say.
+    clock += 60_000;
+    expect(secret.refusalNote("wrong")).toBe(null);
+    // A fresh function whose read hangs: refused, and "could not be read", with the cause.
+    const fresh = new HookSecret(() => new Promise(() => undefined), () => clock, 600_000, 15_000, 20, 60_000);
+    expect(await fresh.admits(SECRET)).toBe(false);
+    expect(fresh.trouble).toBe("unreadable");
+    expect(fresh.refusalNote(SECRET)).toMatch(/could not be read \(no answer in 20 ms\)/);
+  });
+
+  it("keeps time by the monotonic clock", () => {
+    const logic = read("supabase/functions/push/logic.ts");
+    expect(logic).toMatch(/private readonly now: \(\) => number = \(\) => performance\.now\(\),/);
+    const fn = read("supabase/functions/push/index.ts").replace(/\/\/.*$/gm, "");
+    expect(fn).toMatch(/const note = hookSecret\.refusalNote\(given\);\s*if \(note\) console\.error\(note\);/);
+  });
+
   it("is made in the database and kept there: a trigger gives the hook one, keeping the one it had", () => {
     const sql = migration();
     const fn = sql.slice(sql.indexOf("create or replace function private.push_hook_keeps_a_secret()"));
@@ -411,6 +451,8 @@ describe("0040: the push function's caller", () => {
     // The hook as it is gets one now; run again, it keeps it.
     expect(sql).toMatch(/update public\.app_settings set value = value where key = 'push_hook';/);
     expect(sql.indexOf("update public.app_settings set value = value where key = 'push_hook';")).toBeGreaterThan(sql.indexOf("create trigger app_settings_push_hook_secret"));
+    // And kept from the API, admins included.
+    expect(sql).toMatch(/create policy "app_settings: the push hook is the database's" on public\.app_settings\s+as restrictive for select\s+using \(key <> 'push_hook'\);/);
   });
 
   it("needs no secret from the owner: step 4 says 0040, then version 3, and nothing to copy", () => {

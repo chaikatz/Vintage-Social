@@ -424,7 +424,8 @@ notice, and how to undo it. If you approve, in the merged branch:
    photograph again. 0040 makes the secret in the database and keeps it
    there (in `app_settings.push_hook`, given to the hook whenever it is
    written without one); version 3 reads it there with its service key.
-   Nobody makes, copies or sees it, and nothing is set on the function.
+   Nobody makes or copies it, the app's API gives it to nobody (admins
+   included), and nothing is set on the function.
    Deploy version 3 only after 0040 is applied: before it, the hook has no
    secret and every call is refused until 0040 runs. Version 2 ignores the
    secret, so nothing stops between the two. Then comment on one of your

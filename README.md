@@ -661,7 +661,8 @@ these need accounts or values that are intentionally not in this repo:
   automatically. The hook it is called through is the `push_hook` row in `app_settings`
   (`{"url": ".../functions/v1/push", "key": "<anon key>", "secret": "<push secret>"}`), set per
   project and never committed. The secret is made by the database (0040: a trigger gives the hook
-  one whenever it is written without one, keeping the one it had) and never leaves it. The
+  one whenever it is written without one, keeping the one it had), and a restrictive read policy
+  keeps the hook from the API, admins included. The
   database sends it in an `x-push-secret` header, and the function (version 3) reads it from
   `app_settings` with its service key and refuses any call without it (APP_STORE_LAUNCH.md,
   step 4, item 5).

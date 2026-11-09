@@ -21,6 +21,7 @@ directory should ever be edited to contain one.
 | `service_role` key | Supabase dashboard only | **No. Never.** It bypasses RLS entirely |
 | `SHARE_MEDIA_KEY` | Vercel env (server-only) + its SHA-256 in `app_settings` | **No.** It lets the share-page server learn file paths for live share links, and nothing else. Set with `11_share_media_key.sql` |
 | Database password | Supabase dashboard only | **No. Never.** |
+| The push hook's secret | `app_settings.push_hook`, made there by migration 0040 | **No.** It is how the `push` function (version 3) knows a call is the database's. Nobody makes or copies it; the API gives it to nobody, admins included; only the project's owner sees it, in the dashboard |
 
 The anon key being in the bundle is not a leak: every policy in `0003_rls.sql`
 and `0006_messages_and_privacy.sql` assumes an untrusted client holding it.

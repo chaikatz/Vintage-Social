@@ -117,7 +117,7 @@ const admin = createClient(
 /**
  * The push hook's secret (0040): only the database's push_event sends it.
  * Read where the database keeps it. A read that fails throws, so the
- * secret already held is kept (HookSecret).
+ * secret already held is kept; one that hangs is given up on (HookSecret).
  */
 const hookSecret = new HookSecret(async () => {
   const { data, error } = await admin.from("app_settings").select("value").eq("key", "push_hook").maybeSingle();
@@ -129,10 +129,10 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("POST only", { status: 405 });
   // The database's calls only: the anon key alone could set off the day's
   // memories early, or announce a photograph again.
-  if (!(await hookSecret.admits(req.headers.get(PUSH_SECRET_HEADER)))) {
-    const trouble = hookSecret.trouble;
-    if (trouble === "no secret") console.error("The push hook has no secret (0040 makes one): every call is refused");
-    if (trouble === "unreadable") console.error("The push hook could not be read: calls are refused until it can be");
+  const given = req.headers.get(PUSH_SECRET_HEADER);
+  if (!(await hookSecret.admits(given))) {
+    const note = hookSecret.refusalNote(given);
+    if (note) console.error(note);
     return new Response("Not allowed", { status: 401 });
   }
   let payload: { kind?: Kind; id?: string | null };
