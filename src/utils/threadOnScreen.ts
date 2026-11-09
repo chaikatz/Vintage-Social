@@ -8,21 +8,24 @@
  * front is therefore not shown; the thread's own poll brings the message.
  * One from anyone else still is.
  */
-let peerOnScreen: string | null = null;
+let onScreen: { peer: string } | null = null;
 
-/** The thread with `peerId` is in front. */
-export function threadOnScreen(peerId: string): void {
-  peerOnScreen = peerId;
-}
-
-/** The thread with `peerId` has left the front (another may have come). */
-export function threadOffScreen(peerId: string): void {
-  if (peerOnScreen === peerId) peerOnScreen = null;
+/**
+ * The thread with `peerId` is in front. Returns what to call as it leaves
+ * the front: that clears it only if no thread came in front since, the
+ * same member's included (a thread opened over another of theirs).
+ */
+export function threadOnScreen(peerId: string): () => void {
+  const mine = { peer: peerId };
+  onScreen = mine;
+  return () => {
+    if (onScreen === mine) onScreen = null;
+  };
 }
 
 /** Whether a notice's data is a message from the member whose thread is in front. */
 export function fromThreadOnScreen(data: unknown): boolean {
-  if (!peerOnScreen || !data || typeof data !== "object") return false;
+  if (!onScreen || !data || typeof data !== "object") return false;
   const d = data as Record<string, unknown>;
-  return d.kind === "message" && d.actorId === peerOnScreen;
+  return d.kind === "message" && d.actorId === onScreen.peer;
 }

@@ -428,9 +428,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    Deploy version 3 only after 0040 is applied: before it, the hook has no
    secret and every call is refused until 0040 runs. Version 2 ignores the
    secret, so nothing stops between the two. Then comment on one of your
-   photographs from a second account: the notice must arrive. (Version 3
-   also takes a `PUSH_HOOK_SECRET` set on the function instead, if one is
-   ever wanted; it must then match the hook's.)
+   photographs from a second account: the notice must arrive.
 6. On a project whose house accounts are seeded after the migrations (a
    fresh project; production's are already there), run
    `0034_seed_thumbnails_at_a_standard_width.sql` again after

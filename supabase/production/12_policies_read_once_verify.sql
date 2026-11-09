@@ -799,7 +799,9 @@ with checks as (
     and not has_function_privilege('authenticated', f.oid, 'execute')
     and not has_function_privilege('anon', f.oid, 'execute')
     and not exists (select 1 from public.app_settings s
-                     where s.key = 'push_hook' and length(coalesce(s.value->>'secret', '')) < 32)
+                     where s.key = 'push_hook'
+                       and (coalesce(jsonb_typeof(s.value->'secret'), '') <> 'string'
+                            or length(s.value->>'secret') < 32))
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks
