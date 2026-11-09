@@ -433,7 +433,9 @@ insert into tests.results (name, expected, actual) values
          ('messages', 'messages: read marks by the member they were sent to'),
          ('follows', 'follows: followee accepts'),
          ('follows', 'follows: followee removes'),
-         ('follows', 'follows: a request seen by its two members')))),
+         ('follows', 'follows: a request seen by its two members'),
+         ('comments', 'comments: none across a block'),
+         ('likes', 'likes: none across a block')))),
   ('every index that was there before 0023 is there, unchanged', '0',
    (select count(*)::text from before_0023.indexes b
      where not exists (select 1 from pg_indexes i

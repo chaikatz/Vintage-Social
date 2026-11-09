@@ -110,9 +110,13 @@ describe("0039: the columns members may write are the columns the app sends", ()
     expect(granted("conversations", "update")).toEqual([]);
     expect(granted("messages", "insert")).toEqual(sent("src/api/messages.ts", '.from("messages").insert('));
     expect(sent("src/api/messages.ts", '.from("messages")\n    .update(')).toEqual(["read_at"]);
-    // tagMembers maps each member to { post_id, user_id, tagged_by }.
+    // tagMembers maps each member to { post_id, user_id, tagged_by }, all
+    // together and, if one is refused, each on its own.
     const tags = read("src/api/tags.ts");
-    expect(tags).toMatch(/\.insert\(ids\.map\(\(user_id\) => \(\{ post_id: postId, user_id, tagged_by: taggedBy \}\)\)\)/);
+    expect(tags).toMatch(/const row = \(user_id: string\) => \(\{ post_id: postId, user_id, tagged_by: taggedBy \}\);/);
+    expect(tags).toMatch(/\.from\("post_tags"\)\.insert\(ids\.map\(row\)\)/);
+    expect(tags).toMatch(/\.from\("post_tags"\)\.insert\(row\(id\)\)/);
+    expect((tags.match(/\.from\("post_tags"\)\.insert\(/g) ?? []).length).toBe(2);
     expect(granted("post_tags", "insert")).toEqual(["post_id", "tagged_by", "user_id"]);
     expect(granted("post_tags", "update")).toEqual(sent("src/api/tags.ts", '.from("post_tags")\n    .update('));
     expect(granted("comments", "insert")).toEqual(sent("src/api/posts.ts", '.from("comments")\n    .insert('));
@@ -266,7 +270,7 @@ describe("0039, as a file", () => {
   it("is checked by the owner's verify script, rows 49 to 60", () => {
     const verify = code(read("supabase/production/12_policies_read_once_verify.sql"));
     for (let n = 49; n <= 60; n++) expect(verify).toMatch(new RegExp(`select ${n}, '0039:`));
-    expect(verify).toMatch(/select 4, 'policies on public', count\(\*\)::text, '82'/);
-    expect(verify).toMatch(/select 6, 'restrictive policies \(blocking, 0028, 0033, 0038, 0039\)', count\(\*\)::text, '24'/);
+    expect(verify).toMatch(/select 4, 'policies on public', count\(\*\)::text, '84'/);
+    expect(verify).toMatch(/select 6, 'restrictive policies \(blocking, 0028, 0033, 0038, 0039, 0040\)', count\(\*\)::text, '26'/);
   });
 });

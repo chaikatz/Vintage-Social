@@ -7,7 +7,7 @@ import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { perfLog, shortId } from "@/utils/perf";
 import { stableChunks, type ChunkBook } from "@/utils/stableChunks";
-import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, unlikePost } from "@/api/posts";
+import { deleteOwnPost, fetchCommentPreviews, fetchMyLikes, likePost, removeDeletedPostFiles, unlikePost } from "@/api/posts";
 import { blockMember } from "@/api/blocks";
 import { holdPost, notePostDeleted } from "@/uploads";
 import { INLINE_COMMENTS } from "@/components/PostCard";
@@ -181,7 +181,8 @@ export function usePostActions(userId: string, postIds: string[]) {
   /**
    * Your own post deleted, for good, once the server says so. The outbox
    * lets go of anything it still holds for it, then the post leaves every
-   * screen at once and the screen it was deleted from closes.
+   * screen at once and the screen it was deleted from closes, and its
+   * files leave storage behind it, without anything waiting on them.
    *
    * While the server is asked, the outbox sends no insert for the post: a
    * retry sent meanwhile could land after the delete and put it back.
@@ -205,6 +206,8 @@ export function usePostActions(userId: string, postIds: string[]) {
       notePostDeleted(post.id);
       afterDelete?.();
       void removePostEverywhere(queryClient, post.id);
+      // Only now that the row is gone: "removed for good" is the file too.
+      void removeDeletedPostFiles(post);
       refreshProfile().catch(() => undefined);
     },
     [queryClient, refreshProfile],

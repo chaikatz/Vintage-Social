@@ -44,7 +44,7 @@ describe("0035-0037, each", () => {
   it("the harness runs their tests, the plan, and the owner's check with their rows", () => {
     const runner = read("supabase/tests/run.mjs");
     expect(runner).toMatch(/"14_moderation_0029_0033\.sql",\s*"16_launch_data_0035_0037\.sql",/);
-    expect(runner).toMatch(/rows\.length !== 60/);
+    expect(runner).toMatch(/rows\.length !== 67/);
     const plans = read("supabase/tests/09_scale_plans.sql");
     expect(plans).toMatch(/\('unread messages', tests\.plan_as\(:'me',\s*\(select p\.prosrc from pg_proc p/);
     expect(plans).toMatch(/\('unread messages', 'messages_unread_idx'\),/);

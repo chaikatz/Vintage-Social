@@ -322,7 +322,8 @@ describe("0038", () => {
       /create policy "follows: a request seen by its two members" on public\.follows\s+as restrictive for select using \(\s+status = 'accepted'\s+or follower_id = \(select auth\.uid\(\)\)\s+or followee_id = \(select auth\.uid\(\)\)\s+\);/,
     );
     // 0023's rewrite test knows it as a policy a later migration added.
-    expect(read("supabase/tests/08_policy_rewrite.sql")).toMatch(/\('follows', 'follows: a request seen by its two members'\)\)\)\),/);
+    // (0040's two follow it in that list.)
+    expect(read("supabase/tests/08_policy_rewrite.sql")).toMatch(/\('follows', 'follows: a request seen by its two members'\)(\)\)\)|),/);
     // Nothing in the app asks for another member's request: every read of follows names the member
     // asking on one side, or asks for accepted follows only.
     for (const file of ["src/api/profiles.ts", "src/api/posts.ts"]) {

@@ -346,3 +346,30 @@ export function pickMemories(rows: MemoryPost[], today: Date): Map<string, Memor
   }
   return byMember;
 }
+
+// ---------------------------------------------------------------------------
+// who may call the function
+// ---------------------------------------------------------------------------
+
+/**
+ * The header only the database's push_event sends (0040), holding the push
+ * hook's secret (app_settings.push_hook.secret). The function holds the
+ * same value as PUSH_HOOK_SECRET.
+ */
+export const PUSH_SECRET_HEADER = "x-push-secret";
+
+/**
+ * Whether a call is the database's own: its x-push-secret header is the
+ * secret the function holds. The platform's JWT check admits anyone with
+ * the anon key, which every copy of the app carries, so it says nothing
+ * about who is calling. With no secret held (PUSH_HOOK_SECRET not set),
+ * nothing is admitted: a function that cannot tell its caller sends
+ * nothing rather than anything to anyone. Compared in constant time.
+ */
+export function isDatabaseCaller(given: string | null | undefined, held: string | null | undefined): boolean {
+  if (!held || !given) return false;
+  if (given.length !== held.length) return false;
+  let diff = 0;
+  for (let i = 0; i < held.length; i++) diff |= given.charCodeAt(i) ^ held.charCodeAt(i);
+  return diff === 0;
+}

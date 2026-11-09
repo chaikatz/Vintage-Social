@@ -3,6 +3,14 @@ import { isDemoMode } from "@/lib/env";
 import * as demo from "@/demo/store";
 import type { ActivityWithRefs } from "@/types/db";
 
+/**
+ * The kind of notice that is filed in Activity only to reach the member's
+ * phone (0040): a new message. It is read in the inbox, which counts what
+ * is unread from the messages themselves (0037), so the Activity tab leaves
+ * it out rather than show each message twice.
+ */
+export const PUSH_ONLY_ACTIVITY = "message";
+
 export async function fetchActivity(userId: string): Promise<ActivityWithRefs[]> {
   if (isDemoMode()) return demo.demoFetchActivity(userId);
 
@@ -13,6 +21,7 @@ export async function fetchActivity(userId: string): Promise<ActivityWithRefs[]>
         "post:posts!activity_post_id_fkey(id, media_path, thumb_path, media_type)",
     )
     .eq("recipient_id", userId)
+    .neq("type", PUSH_ONLY_ACTIVITY)
     .order("created_at", { ascending: false })
     .limit(60);
   if (error) throw error;

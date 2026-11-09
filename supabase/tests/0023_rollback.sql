@@ -28,7 +28,10 @@
 -- 0039 (members write only what the app writes) adds five restrictive
 -- policies of its own, narrows grants and replaces three invitation
 -- functions; none of that is 0023's, and it is left as it is (0039's own
--- way back is 0039_rollback.sql).
+-- way back is 0039_rollback.sql). 0040 puts two functions in private too
+-- (the block check its comment and like policies ask, and the message
+-- notice); they, those policies and that trigger stay, as 0038's do
+-- (0040's way back is in its header).
 
 begin;
 

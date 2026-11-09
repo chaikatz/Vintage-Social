@@ -1,4 +1,4 @@
--- VINTAGE · production · verify 0023-0039 (policies read the caller once;
+-- VINTAGE · production · verify 0023-0040 (policies read the caller once;
 -- block checks answer only for the caller; the home feed in one piece,
 -- paged by cursor; a photograph's followers in order; Expo's receipts;
 -- comments, likes and tags only with their photograph; decisions reach
@@ -7,11 +7,13 @@
 -- thumbnails at a standard size; a member's own files whatever their
 -- membership; a phone's push token under whoever signed in on it last;
 -- unread messages counted in the database; follows that respect private
--- accounts; members write only what the app writes)
+-- accounts; members write only what the app writes; a block that holds
+-- for comments and likes and reaches the admins, messages notified,
+-- portraits only in avatars, and the push function's own header)
 --
 -- Run after applying, in number order, every file in supabase/migrations
 -- from 0023_policies_read_once.sql to
--- 0039_writes_only_what_the_app_writes.sql. Paste the whole file into
+-- 0040_blocks_messages_and_files.sql. Paste the whole file into
 -- the SQL editor and run it once. Read-only: the block at the start only plans a query (EXPLAIN
 -- without ANALYZE runs nothing) as a member and keeps what it saw in a
 -- setting of this session, and the one SELECT at the end reads the
@@ -24,8 +26,9 @@
 -- what it should be. Every `ok` must read true. If any does not, do not
 -- ship the build that relies on them; the rollbacks are
 -- supabase/tests/0023_rollback.sql, supabase/tests/0038_rollback.sql,
--- supabase/tests/0039_rollback.sql and the notes at the top of 0024-0037,
--- and none of 0023-0028, 0030-0037 or 0039 changes any member's data (0029
+-- supabase/tests/0039_rollback.sql and the notes at the top of 0024-0037
+-- and 0040, and none of 0023-0028, 0030-0037, 0039 or 0040 changes any
+-- member's data (0029
 -- repairs profiles left at "applied", 0034 the house photographs'
 -- thumbnails, 0038 recounts follower and following counts that are off,
 -- none on production on 6 November; each says how to put them back). Run before the
@@ -111,8 +114,9 @@ with checks as (
   --    as before 0023 (0023 replaces policies; it adds and removes none),
   --    the four restrictive ones 0028 and 0033 add, the three 0038 adds
   --    (the followee's two, and a request seen by its two members), and
-  --    the five restrictive ones 0039 adds: 82.
-  select 4, 'policies on public', count(*)::text, '82'
+  --    the five restrictive ones 0039 adds, and the two restrictive ones
+  --    0040 adds (no comment or like across a block): 84.
+  select 4, 'policies on public', count(*)::text, '84'
   from pg_policies where schemaname = 'public'
   union all
   select 5, 'policies on storage.objects (VINTAGE''s own)', count(*)::text, '8'
@@ -120,7 +124,7 @@ with checks as (
   where schemaname = 'storage' and tablename = 'objects'
     and policyname ~ '^(avatars|media): '
   union all
-  select 6, 'restrictive policies (blocking, 0028, 0033, 0038, 0039)', count(*)::text, '24'
+  select 6, 'restrictive policies (blocking, 0028, 0033, 0038, 0039, 0040)', count(*)::text, '26'
   from pg_policies where schemaname = 'public' and permissive = 'RESTRICTIVE'
   union all
   -- 4. 0023's three helpers: in the schema private, which the API does not
@@ -724,6 +728,64 @@ with checks as (
           and p.prosrc ~ 'from public\.profiles where id = v_user for [a-z]{6};'
           and p.prosrc ~ 'c\.invited_by = v_user'
           and p.prosrc ~ 'i\.used_by is null and i\.used_at is null'))
+  union all
+  -- 26. 0040: a block holds for comments and likes, and reaches the admins;
+  --     a message is notified; portraits only in avatars; the push
+  --     function's own header. (In tgtype, 1 a row and 4 a new row, with
+  --     no 2: after the row is written.)
+  select 61, '0040: a comment or like across a block is refused (restrictive, on a new row, for members, by a check in private)', count(*)::text, '2'
+  from pg_policies pp
+  join pg_policy pol on pol.polname = pp.policyname
+   and pol.polrelid = ('public.' || pp.tablename)::regclass
+  where pp.schemaname = 'public'
+    and (pp.tablename, pp.policyname) in (('comments', 'comments: none across a block'), ('likes', 'likes: none across a block'))
+    and not pol.polpermissive and pol.polcmd = 'a' and pp.roles = '{authenticated}'
+    and pp.with_check ~ 'NOT private\.post_across_a_block\(post_id\)'
+  union all
+  select 62, '0040: the block check in private, run as its owner with an empty search path, members only', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'private' and p.proname = 'post_across_a_block'
+    and p.prosecdef and p.proconfig @> array['search_path=""']
+    and p.prosrc ~ 'public\.blocks' and p.prosrc ~ 'auth\.uid\(\)'
+    and has_function_privilege('authenticated', p.oid, 'execute')
+    and not has_function_privilege('anon', p.oid, 'execute')
+  union all
+  select 63, '0040: no like, comment or tag notice between two members on either side of a block', count(*)::text, '3'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname in ('notify_like', 'notify_comment', 'notify_tag')
+    and p.prosrc ~ 'public\.blocks'
+    and not has_function_privilege('authenticated', p.oid, 'execute')
+    and not has_function_privilege('anon', p.oid, 'execute')
+  union all
+  select 64, '0040: a block files a report about the member blocked, so the admins are told', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'block_member'
+    and p.prosrc ~ 'public\.reports' and p.prosrc ~ 'Blocked by a member'
+    and p.prosrc ~ 'is_active_member\(v_me\)'
+  union all
+  select 65, '0040: a new message files a message notice for the other member (a trigger; its function in private, run as its owner, nobody''s to call)', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  join pg_namespace n on n.oid = f.pronamespace
+  where t.tgrelid = 'public.messages'::regclass and t.tgname = 'messages_notify_trigger' and not t.tgisinternal
+    and t.tgtype = 5
+    and n.nspname = 'private' and f.proname = 'notify_message'
+    and f.prosecdef and f.proconfig @> array['search_path=""']
+    and f.prosrc ~ 'public\.activity' and f.prosrc ~ '''message''' and f.prosrc ~ 'public\.blocks'
+    and not has_function_privilege('authenticated', f.oid, 'execute')
+    and not has_function_privilege('anon', f.oid, 'execute')
+  union all
+  select 66, '0040: the avatars bucket takes JPEG and PNG pictures up to 2 MB',
+         coalesce((select file_size_limit::text || '|' || allowed_mime_types::text
+                     from storage.buckets where id = 'avatars'), 'no bucket'),
+         '2097152|{image/jpeg,image/png}'
+  union all
+  select 67, '0040: push_event sends the hook''s secret in x-push-secret, when it has one (the push function from version 3 asks for it)', count(*)::text, '1'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'push_event'
+    and p.prosrc ~ '''x-push-secret''' and p.prosrc ~ 'v_hook->>''secret'''
+    and not has_function_privilege('authenticated', p.oid, 'execute')
+    and not has_function_privilege('anon', p.oid, 'execute')
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks
