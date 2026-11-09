@@ -26,7 +26,7 @@ export type FeedLayout = "original" | "editorial";
 /** The choices, in the order Settings offers them. The first is the default. */
 export const FEED_LAYOUTS: readonly { value: FeedLayout; label: string }[] = [
   { value: "original", label: "Original" },
-  { value: "editorial", label: "Editorial (Preview)" },
+  { value: "editorial", label: "Editorial" },
 ];
 
 const FILE = "feed-layout.json";

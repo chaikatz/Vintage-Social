@@ -368,9 +368,9 @@ const OFF_WHITE = "rgb(250, 246, 239)";
 const WHITE = "rgb(255, 255, 255)";
 const wordmark = () => byText("VINTAGE");
 
-check("The paper is offered once Editorial is chosen", (await choose("Editorial (Preview)")) > 0);
+check("The paper is offered once Editorial is chosen", (await choose("Editorial")) > 0);
 const editorial = seen(page.locator('[data-testid="editorial-post-card"]'));
-check("Editorial (Preview) sets Home out with the editorial card", (await editorial.count()) > 0);
+check("Editorial sets Home out with the editorial card", (await editorial.count()) > 0);
 // Each post a print: the place and the date in full on its label, and no @name, number or count.
 const prints = await editorial.evaluateAll((els) => els.map((el) => el.textContent ?? ""));
 const print = prints[0] ?? "";

@@ -3,7 +3,9 @@
 A second way to set out a feed's posts, for trying on a phone before
 deciding whether to keep it. It is off by default: Settings › Appearance ›
 Feed layout offers **Original** (the feed as it has always been, and the
-default) and **Editorial (Preview)**. While Editorial is chosen, a second
+default) and **Editorial** (called "Editorial (Preview)" until 9 November;
+the word was taken off what members and App Review see, since Apple turns
+away apps that look like a trial). While Editorial is chosen, a second
 row under it offers the **Paper**: **Off-white** (the app's own paper, and
 the default) or **White**. Each choice is kept on this phone only, in
 `Documents/feed-layout.json` and `Documents/feed-paper.json`

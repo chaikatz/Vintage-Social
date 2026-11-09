@@ -95,7 +95,7 @@ or anywhere in the repository, and must never be.
 
 | | |
 | --- | --- |
-| What you test on TestFlight | branch `claude/editorial-feed-preview`: `claude/product-polish` plus the removable "Editorial (Preview)" feed |
+| What you test on TestFlight | branch `claude/editorial-feed-preview`: `claude/product-polish` plus the removable "Editorial" feed (offered in Settings as "Editorial"; "(Preview)" was taken off on 9 November) |
 | `claude/product-polish` | `ae28ca6`: classic dark mode (a black page, white type), the Memory Room printed on the app's own page with the signature line under each photograph and CONTENTS as a tab, the invitation card's shadow |
 | Launch sweep | branches `r12-room`, `r12-stability`, `r12-media`, `r12-flows`, `r12-backend`, `r12-store` merge into `claude/product-polish`, then into the preview branch. A second round fixes what the first handed on; its door part (the two review blockers, the admin pages, unknown addresses) is branch `r13-door` |
 | App version | `1.0.0` (`app.json`) |
@@ -504,7 +504,9 @@ review blocker. If the switch is greyed out, it needs the Pro plan.
 Decide which branch you are launching:
 
 - `claude/editorial-feed-preview` is what you have been testing, with the
-  Editorial (Preview) feed in it;
+  Editorial feed in it. Settings calls it "Editorial", not "Editorial
+  (Preview)", since 9 November: Apple turns away apps that look like a
+  trial (Guideline 2.2), so nothing a reviewer sees says "preview";
 - `claude/product-polish` is the same app without that experiment.
 
 Then, on your Mac:

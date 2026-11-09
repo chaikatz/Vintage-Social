@@ -159,9 +159,9 @@ describe("the feed layout preference", () => {
     expect(phone.files.has(FILE)).toBe(false);
   });
 
-  it("offers Original first, then Editorial (Preview)", () => {
+  it("offers Original first, then Editorial (no \"Preview\" in what members and App Review see)", () => {
     expect(FEED_LAYOUTS.map((l) => l.value)).toEqual(["original", "editorial"]);
-    expect(FEED_LAYOUTS.map((l) => l.label)).toEqual(["Original", "Editorial (Preview)"]);
+    expect(FEED_LAYOUTS.map((l) => l.label)).toEqual(["Original", "Editorial"]);
   });
 
   it("is kept on the phone, and read back at the next launch", () => {
