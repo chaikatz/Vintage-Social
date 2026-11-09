@@ -30,9 +30,9 @@ or anywhere in the repository, and must never be.
   only function that differs is `create_invite`, whose wording predates
   0010 and which none of these files touches. Explore's plan, follower
   counts and the house thumbnails were checked on production. The `push`
-  function is **version 2 on production** (both files, JWT check on) and
-  answering; staging still runs version 1. The repository now holds
-  version 3, which goes with 0040 (below).
+  function was **version 2 on production** (both files, JWT check on) and
+  answering; staging still runs version 1. Version 3, which goes with
+  0040, replaced it on 9 November (below).
 - Step 1: `EXPO_PUBLIC_SUPPORT_EMAIL` is `support@vintagesocial.app` on
   expo.dev (Production), and `public/support.html` carries that address.
   Make sure that mailbox receives mail.
@@ -59,28 +59,33 @@ or anywhere in the repository, and must never be.
   review account follows all 53. The copy is in `removed_20261108` too;
   section 7 records it.
 
-**Still to do after the final review of 8 November** (its fixes are in
-the branch; nothing below has been run on production yet):
+**Done on 9 November** (the final review's database fixes):
 
-- Step 4: on **production**, `0039_writes_only_what_the_app_writes.sql`
-  and then `0040_blocks_messages_and_files.sql`, each pasted whole into
-  the SQL Editor and run once (each is safe to run twice), then verify
-  script 12: all 68 rows must read ok. 0039 lets members write only the
-  columns the app writes; 0040 makes a block hold for comments and likes
-  and tell the admins, sends a notice for each new message, lets the
-  avatars bucket take only JPEG and PNG pictures up to 2 MB, and gives the
-  push hook its secret. Neither changes any member's data. Ways back:
-  `supabase/tests/0039_rollback.sql`, and the note at the top of 0040.
-- Step 4, item 5: after 0040, the `push` function's **version 3** (it
-  refuses any call that is not the database's). There is no secret to
-  make or copy: 0040 makes it in the database.
-- Then a new build. The app's fixes from the final review (joining by
+- Step 4: `0039_writes_only_what_the_app_writes.sql` and
+  `0040_blocks_messages_and_files.sql` are applied on **production**, run
+  in the SQL Editor as one all-or-nothing script. Afterwards every policy
+  (93), column and table grant, trigger, bucket and all 67 of the app's
+  functions (their code, and who may call them) were compared with the
+  tested build: identical. The push hook has its secret (made by the
+  database; the API gives it to nobody).
+- Step 4, item 5: the `push` function is **version 3 on production**
+  (both files, JWT check on), byte for byte the repository's. A call
+  from outside with the anon key, with or without a made-up secret, is
+  answered 401 "Not allowed".
+
+**Still to do:**
+
+- A notice end to end: comment on one of your photographs from a second
+  account; it must arrive (the database's calls carry the secret
+  version 3 asks for).
+- A new build. The app's fixes from the final review (joining by
   invitation, notice taps, Places, the Memory Room's zoom and iCloud
   waits, failed pictures tried again, and the rest) reach phones only
   with it. Until a phone has it, the build already installed lists each
   message notice in Activity as "sent you a message." (the new build
   leaves them out; they are for the lock screen).
-- Staging, if you want it to match: the same two files, and version 3.
+- Staging, if you want it to match: the same two files, and version 3
+  (staging still runs version 1).
 
 ---
 
