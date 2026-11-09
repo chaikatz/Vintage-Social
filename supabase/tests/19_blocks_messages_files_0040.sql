@@ -341,6 +341,22 @@ update public.app_settings set value = value || '{"secret": ""}' where key = 'pu
 insert into tests.results (name, expected, actual) values
   ('given an empty secret, the hook keeps the one it had', 'true',
    (select ((value->>'secret') = (select s from g_secret))::text from public.app_settings where key = 'push_hook'));
+-- Replaced by an insert that meets the row (insert ... on conflict do
+-- update, as supabase/production/11_share_media_key.sql writes its row),
+-- it is the same.
+insert into public.app_settings (key, value) values
+  ('push_hook', '{"url": "https://example.test/functions/v1/push", "key": "anon-key-3"}')
+on conflict (key) do update set value = excluded.value;
+insert into tests.results (name, expected, actual) values
+  ('replaced by an upsert without a secret, the hook keeps the one it had, and takes the new key', 'true|anon-key-3',
+   (select ((value->>'secret') = (select s from g_secret))::text || '|' || (value->>'key')
+      from public.app_settings where key = 'push_hook'));
+-- A secret that is not text counts as none.
+update public.app_settings set value = value || '{"secret": 12345}' where key = 'push_hook';
+insert into tests.results (name, expected, actual) values
+  ('given a secret that is not text, the hook keeps the one it had', 'true|string',
+   (select ((value->>'secret') = (select s from g_secret))::text || '|' || jsonb_typeof(value->'secret')
+      from public.app_settings where key = 'push_hook'));
 -- One written on purpose is kept as it is.
 update public.app_settings set value = value || '{"secret": "s3cret-for-the-test"}' where key = 'push_hook';
 insert into tests.results (name, expected, actual) values

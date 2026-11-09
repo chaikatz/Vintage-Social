@@ -269,9 +269,9 @@ describe("0040: the push function's caller", () => {
 
   it("asks before it reads the body or does anything, and says no with 401", () => {
     const fn = read("supabase/functions/push/index.ts").replace(/\/\/.*$/gm, "");
-    // The secret is read where the database keeps it, with the service key; PUSH_HOOK_SECRET, if set, instead.
+    // The secret is read where the database keeps it, with the service key; a failed read throws.
     expect(fn).toMatch(
-      /const hookSecret = new HookSecret\(async \(\) => \{\s*const \{ data \} = await admin\.from\("app_settings"\)\.select\("value"\)\.eq\("key", "push_hook"\)\.maybeSingle\(\);\s*return \(data\?\.value as \{ secret\?: unknown \} \| null \| undefined\)\?\.secret;\s*\}, Deno\.env\.get\("PUSH_HOOK_SECRET"\) \?\? ""\);/,
+      /const hookSecret = new HookSecret\(async \(\) => \{\s*const \{ data, error \} = await admin\.from\("app_settings"\)\.select\("value"\)\.eq\("key", "push_hook"\)\.maybeSingle\(\);\s*if \(error\) throw error;\s*return \(data\?\.value as \{ secret\?: unknown \} \| null \| undefined\)\?\.secret;\s*\}\);/,
     );
     expect(fn.indexOf("const admin = createClient(")).toBeLessThan(fn.indexOf("const hookSecret = new HookSecret("));
     const serve = fn.slice(fn.indexOf("Deno.serve("));
@@ -280,9 +280,10 @@ describe("0040: the push function's caller", () => {
     expect(check).toBeLessThan(serve.indexOf("await req.json()"));
     expect(check).toBeLessThan(serve.indexOf("switch (payload.kind)"));
     expect(serve.slice(check, serve.indexOf("let payload"))).toMatch(/return new Response\("Not allowed", \{ status: 401 \}\);/);
-    // No secret in the repository.
-    expect(fn).not.toMatch(/new HookSecret\([^)]*"[0-9a-f]{16,}"/);
-    expect(read("supabase/functions/push/logic.ts")).not.toMatch(/fixed = "[^"]/);
+    // One place the secret lives: nothing set on the function stands in for it, and none is in the repository.
+    expect(fn).not.toMatch(/PUSH_HOOK_SECRET/);
+    expect(read("supabase/functions/push/logic.ts")).not.toMatch(/Deno\.env|PUSH_HOOK_SECRET/);
+    expect(fn).not.toMatch(/"[0-9a-f]{32,}"/);
   });
 
   it("is sent by push_event under the same header, from the hook, only when the hook has one", () => {
@@ -306,7 +307,7 @@ describe("0040: the push function's caller", () => {
     const secret = new HookSecret(async () => {
       reads++;
       return stored;
-    }, "", () => clock, 600_000, 15_000);
+    }, () => clock, 600_000, 15_000);
     // A call with no secret reads nothing.
     expect(await secret.admits(null)).toBe(false);
     expect(await secret.admits("")).toBe(false);
@@ -330,7 +331,7 @@ describe("0040: the push function's caller", () => {
     clock = 20_000 + 600_000;
     expect(await secret.admits("a-new-secret-the-database-made")).toBe(true);
     expect(reads).toBe(3);
-    expect(secret.missing).toBe(false);
+    expect(secret.trouble).toBe(null);
   });
 
   it("refuses everything while the hook has no secret, or cannot be read, and shares one read among calls that come together", async () => {
@@ -340,15 +341,15 @@ describe("0040: the push function's caller", () => {
     const secret = new HookSecret(() => {
       reads++;
       return answer();
-    }, "", () => clock, 600_000, 15_000);
+    }, () => clock, 600_000, 15_000);
     expect(await secret.admits(SECRET)).toBe(false);
-    expect(secret.missing).toBe(true);
+    expect(secret.trouble).toBe("no secret");
     answer = async () => {
       throw new Error("timed out");
     };
     clock = 20_000;
     expect(await secret.admits(SECRET)).toBe(false);
-    expect(secret.missing).toBe(true);
+    expect(secret.trouble).toBe("unreadable");
     answer = async () => 42;
     clock = 40_000;
     expect(await secret.admits(SECRET)).toBe(false);
@@ -364,24 +365,46 @@ describe("0040: the push function's caller", () => {
     expect(reads).toBe(1);
   });
 
-  it("uses a secret given to the function itself instead, and reads nothing", async () => {
+  it("keeps the secret it holds when a read fails, and says why it refuses when it holds none", async () => {
+    let clock = 0;
     let reads = 0;
-    const secret = new HookSecret(async () => {
+    let answer: () => Promise<unknown> = async () => SECRET;
+    const secret = new HookSecret(() => {
       reads++;
-      return "from-the-database";
-    }, SECRET);
+      return answer();
+    }, () => clock, 600_000, 15_000);
+    expect(secret.trouble).toBe(null);
     expect(await secret.admits(SECRET)).toBe(true);
-    expect(await secret.admits("from-the-database")).toBe(false);
-    expect(reads).toBe(0);
-    expect(secret.missing).toBe(false);
+    // Old, and the read fails (a timeout, the API busy): what was held stays, and the database's calls still go through.
+    answer = async () => {
+      throw new Error("timed out");
+    };
+    clock = 600_000;
+    expect(await secret.admits(SECRET)).toBe(true);
+    expect(reads).toBe(2);
+    clock = 605_000;
+    expect(await secret.admits(SECRET)).toBe(true);
+    expect(secret.trouble).toBe(null);
+    // A fresh function whose first read fails holds nothing: it refuses, and says the hook could not be read.
+    clock = 0;
+    const fresh = new HookSecret(async () => {
+      throw new Error("timed out");
+    }, () => clock, 600_000, 15_000);
+    expect(await fresh.admits(SECRET)).toBe(false);
+    expect(fresh.trouble).toBe("unreadable");
+    // A hook with no secret, read fine: "no secret".
+    const none = new HookSecret(async () => undefined, () => clock, 600_000, 15_000);
+    expect(await none.admits(SECRET)).toBe(false);
+    expect(none.trouble).toBe("no secret");
   });
 
   it("is made in the database and kept there: a trigger gives the hook one, keeping the one it had", () => {
     const sql = migration();
     const fn = sql.slice(sql.indexOf("create or replace function private.push_hook_keeps_a_secret()"));
     expect(fn).toMatch(/^create or replace function private\.push_hook_keeps_a_secret\(\)\s+returns trigger\s+language plpgsql\s+set search_path = ''/);
-    expect(fn).toMatch(/if new\.key = 'push_hook'\s+and jsonb_typeof\(new\.value\) = 'object'\s+and coalesce\(new\.value->>'secret', ''\) = '' then/);
-    expect(fn).toMatch(/case when tg_op = 'UPDATE' and jsonb_typeof\(old\.value\) = 'object'\s+then nullif\(old\.value->>'secret', ''\) end,/);
+    expect(fn).toMatch(/if new\.key = 'push_hook'\s+and jsonb_typeof\(new\.value\) = 'object'\s+and \(coalesce\(jsonb_typeof\(new\.value->'secret'\), ''\) <> 'string'\s+or new\.value->>'secret' = ''\) then/);
+    // The one it had is the row there, so an update and an insert that replaces the row both keep it.
+    expect(fn).toMatch(/\(select nullif\(s\.value->>'secret', ''\)\s+from public\.app_settings s\s+where s\.key = 'push_hook'\s+and jsonb_typeof\(s\.value\) = 'object'\s+and jsonb_typeof\(s\.value->'secret'\) = 'string'\),/);
     expect(fn).toMatch(/replace\(pg_catalog\.gen_random_uuid\(\)::text \|\| pg_catalog\.gen_random_uuid\(\)::text, '-', ''\)/);
     expect(sql).toContain("revoke execute on function private.push_hook_keeps_a_secret() from public, anon, authenticated;");
     expect(sql).toMatch(/drop trigger if exists app_settings_push_hook_secret on public\.app_settings;\s+create trigger app_settings_push_hook_secret\s+before insert or update on public\.app_settings\s+for each row execute function private\.push_hook_keeps_a_secret\(\);/);

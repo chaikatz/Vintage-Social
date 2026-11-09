@@ -380,18 +380,21 @@ export function isDatabaseCaller(given: string | null | undefined, held: string 
  * there with its service key (`read`), keeps it a while, and reads it
  * again when it is old, or, no more than once in a while, when a call's
  * does not match (the hook rewritten since). A call with no secret at all
- * reads nothing. Calls that arrive together share one read. A secret
- * given to the function itself (PUSH_HOOK_SECRET, `fixed`) is used
- * instead, and nothing is read.
+ * reads nothing. Calls that arrive together share one read. A read that
+ * fails (a timeout, the API busy) keeps what was held: a blip must not
+ * turn the database's own calls away, and none of them is ever sent
+ * again. There is one place the secret lives, the database; nothing set
+ * on the function stands in for it.
  */
 export class HookSecret {
   private held = "";
   private readAt = Number.NEGATIVE_INFINITY;
+  private lastReadFailed = false;
   private reading: Promise<void> | null = null;
 
   constructor(
+    /** The hook's secret as stored; throws when it could not be read. */
     private readonly read: () => Promise<unknown>,
-    private readonly fixed = "",
     private readonly now: () => number = Date.now,
     private readonly keptMs = 10 * 60_000,
     private readonly againMs = 15_000,
@@ -400,13 +403,14 @@ export class HookSecret {
   private refresh(): Promise<void> {
     if (!this.reading) {
       this.reading = (async () => {
-        let secret: unknown = "";
         try {
-          secret = await this.read();
+          const secret = await this.read();
+          this.held = typeof secret === "string" ? secret : "";
+          this.lastReadFailed = false;
         } catch {
-          // Nothing read is no secret: every call is refused until a read finds it.
+          // Not read: what was held stays.
+          this.lastReadFailed = true;
         }
-        this.held = typeof secret === "string" ? secret : "";
         this.readAt = this.now();
       })().finally(() => {
         this.reading = null;
@@ -417,7 +421,6 @@ export class HookSecret {
 
   /** Whether a call carrying `given` in its x-push-secret header is the database's. */
   async admits(given: string | null | undefined): Promise<boolean> {
-    if (this.fixed) return isDatabaseCaller(given, this.fixed);
     if (!given) return false;
     if (this.now() - this.readAt >= this.keptMs) await this.refresh();
     if (isDatabaseCaller(given, this.held)) return true;
@@ -426,8 +429,10 @@ export class HookSecret {
     return isDatabaseCaller(given, this.held);
   }
 
-  /** The hook was read and had no secret: every call is being refused. */
-  get missing(): boolean {
-    return !this.fixed && this.readAt > Number.NEGATIVE_INFINITY && !this.held;
+  /** Why every call is being refused, if one is: the hook has no secret, or it could not be read. */
+  get trouble(): "no secret" | "unreadable" | null {
+    if (this.held) return null;
+    if (this.readAt === Number.NEGATIVE_INFINITY) return null;
+    return this.lastReadFailed ? "unreadable" : "no secret";
   }
 }

@@ -120,6 +120,9 @@
 --   drop trigger if exists messages_notify_trigger on public.messages;
 --   drop function if exists private.notify_message();
 --   update storage.buckets set file_size_limit = null, allowed_mime_types = null where id = 'avatars';
+--   drop trigger if exists app_settings_push_hook_secret on public.app_settings;
+--   drop function if exists private.push_hook_keeps_a_secret();
+--   (the hook keeps its secret; version 2 of the push function ignores it)
 --   then notify_like, notify_comment (0001), notify_tag (0015), block_member
 --   (0018) and push_event (0017) as those files wrote them, each run again
 --   from its file's own text.
@@ -383,11 +386,13 @@ revoke execute on function public.push_event(text, uuid) from public, anon, auth
 
 -- The hook's secret is made in the database and kept there. Whenever the
 -- hook is written without one (as 0017's instructions write it, on a new
--- project, or rewritten for a new key), it keeps the secret it had, or,
--- with none, gets a new one: 64 hexadecimal characters from two random
--- UUIDs, which PostgreSQL draws from the server's strong random source.
--- One written in the hook on purpose is kept as it is. Only the owner
--- writes app_settings (0039 left members and visitors no write there).
+-- project, or rewritten for a new key, by an update or by an insert that
+-- replaces the row), it keeps the secret it had, or, with none, gets a new
+-- one: 64 hexadecimal characters from two random UUIDs, which PostgreSQL
+-- draws from the server's strong random source. One written in the hook
+-- on purpose, as text, is kept as it is; anything else there (a number, an
+-- empty text) counts as none. Only the owner writes app_settings (0039
+-- left members and visitors no write there).
 create or replace function private.push_hook_keeps_a_secret()
 returns trigger
 language plpgsql
@@ -396,10 +401,16 @@ as $$
 begin
   if new.key = 'push_hook'
      and jsonb_typeof(new.value) = 'object'
-     and coalesce(new.value->>'secret', '') = '' then
+     and (coalesce(jsonb_typeof(new.value->'secret'), '') <> 'string'
+          or new.value->>'secret' = '') then
     new.value := new.value || jsonb_build_object('secret', coalesce(
-      case when tg_op = 'UPDATE' and jsonb_typeof(old.value) = 'object'
-           then nullif(old.value->>'secret', '') end,
+      -- The one it had: the row being changed, or, for an insert that
+      -- will replace it (insert ... on conflict do update), the row there.
+      (select nullif(s.value->>'secret', '')
+         from public.app_settings s
+        where s.key = 'push_hook'
+          and jsonb_typeof(s.value) = 'object'
+          and jsonb_typeof(s.value->'secret') = 'string'),
       replace(pg_catalog.gen_random_uuid()::text || pg_catalog.gen_random_uuid()::text, '-', '')));
   end if;
   return new;
