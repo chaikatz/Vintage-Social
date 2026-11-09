@@ -1,4 +1,4 @@
--- VINTAGE · production · verify 0023-0038 (policies read the caller once;
+-- VINTAGE · production · verify 0023-0039 (policies read the caller once;
 -- block checks answer only for the caller; the home feed in one piece,
 -- paged by cursor; a photograph's followers in order; Expo's receipts;
 -- comments, likes and tags only with their photograph; decisions reach
@@ -7,11 +7,11 @@
 -- thumbnails at a standard size; a member's own files whatever their
 -- membership; a phone's push token under whoever signed in on it last;
 -- unread messages counted in the database; follows that respect private
--- accounts)
+-- accounts; members write only what the app writes)
 --
 -- Run after applying, in number order, every file in supabase/migrations
 -- from 0023_policies_read_once.sql to
--- 0038_follows_respect_private_accounts.sql. Paste the whole file into
+-- 0039_writes_only_what_the_app_writes.sql. Paste the whole file into
 -- the SQL editor and run it once. Read-only: the block at the start only plans a query (EXPLAIN
 -- without ANALYZE runs nothing) as a member and keeps what it saw in a
 -- setting of this session, and the one SELECT at the end reads the
@@ -23,9 +23,9 @@
 -- SQL editor shows: each row says what it checked, what it found and
 -- what it should be. Every `ok` must read true. If any does not, do not
 -- ship the build that relies on them; the rollbacks are
--- supabase/tests/0023_rollback.sql, supabase/tests/0038_rollback.sql
--- and the notes at the top of 0024-0037,
--- and none of 0023-0028 or 0030-0037 changes any member's data (0029
+-- supabase/tests/0023_rollback.sql, supabase/tests/0038_rollback.sql,
+-- supabase/tests/0039_rollback.sql and the notes at the top of 0024-0037,
+-- and none of 0023-0028, 0030-0037 or 0039 changes any member's data (0029
 -- repairs profiles left at "applied", 0034 the house photographs'
 -- thumbnails, 0038 recounts follower and following counts that are off,
 -- none on production on 6 November; each says how to put them back). Run before the
@@ -109,9 +109,10 @@ with checks as (
   union all
   -- 3. Every policy is still there: 70 on public, 8 on storage.objects,
   --    as before 0023 (0023 replaces policies; it adds and removes none),
-  --    the four restrictive ones 0028 and 0033 add, and the three 0038
-  --    adds (the followee's two, and a request seen by its two members): 77.
-  select 4, 'policies on public', count(*)::text, '77'
+  --    the four restrictive ones 0028 and 0033 add, the three 0038 adds
+  --    (the followee's two, and a request seen by its two members), and
+  --    the five restrictive ones 0039 adds: 82.
+  select 4, 'policies on public', count(*)::text, '82'
   from pg_policies where schemaname = 'public'
   union all
   select 5, 'policies on storage.objects (VINTAGE''s own)', count(*)::text, '8'
@@ -119,7 +120,7 @@ with checks as (
   where schemaname = 'storage' and tablename = 'objects'
     and policyname ~ '^(avatars|media): '
   union all
-  select 6, 'restrictive policies (blocking, 0028, 0033, 0038)', count(*)::text, '19'
+  select 6, 'restrictive policies (blocking, 0028, 0033, 0038, 0039)', count(*)::text, '24'
   from pg_policies where schemaname = 'public' and permissive = 'RESTRICTIVE'
   union all
   -- 4. 0023's three helpers: in the schema private, which the API does not
@@ -481,6 +482,248 @@ with checks as (
     and pp.qual ~ 'status = ''accepted'''
     and pp.qual ~ 'follower_id = \( SELECT auth\.uid\(\) AS uid\)'
     and pp.qual ~ 'followee_id = \( SELECT auth\.uid\(\) AS uid\)'
+  union all
+  -- 25. 0039: members write only what the app writes. Who may file (a)
+  --     and change (w) which columns, read from the catalogue's letters:
+  --     the whole table, then each column, for members (authenticated)
+  --     and signed-out visitors (anon).
+  select 49, '0039: a photograph: members file the 17 columns the outbox sends and change its caption, nothing else; visitors nothing',
+         'posts: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.posts'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.posts'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.posts'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.posts'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none'),
+         'posts: whole table false, file author_id caption duration_seconds filter_baked filter_id height id lat lng location media_path media_type place_id show_date_stamp taken_at thumb_path width, change caption, visitors none'
+  union all
+  select 50, '0039: a profile: members change their name, bio, city, portrait and privacy, nothing else (not counts, name in the club, dates or standing); visitors nothing',
+         'profiles: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.profiles'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.profiles'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.profiles'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.profiles'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none'),
+         'profiles: whole table false, file none, change avatar_url bio city full_name is_private, visitors none'
+  union all
+  select 51, '0039: an application: filed with the 8 columns the Apply form sends, never decided by its applicant',
+         'applications: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.applications'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.applications'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.applications'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.applications'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none'),
+         'applications: whole table false, file avatar_url city desired_username full_name inviter reason social_handle user_id, change none, visitors none'
+  union all
+  select 52, '0039: a conversation: opened with its two members, never moved or touched by a member',
+         'conversations: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.conversations'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.conversations'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.conversations'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.conversations'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none'),
+         'conversations: whole table false, file user_a user_b, change none, visitors none'
+  union all
+  select 53, '0039: a tag: filed by the photograph''s author, its status and decision changed by the member tagged, never moved',
+         'post_tags: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.post_tags'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.post_tags'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.post_tags'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.post_tags'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none'),
+         'post_tags: whole table false, file post_id tagged_by user_id, change decided_at status, visitors none'
+  union all
+  select 54, '0039: comments, likes, follows and messages: the columns the app sends, never their dates (follows'' status 0038''s, read marks 0021''s)',
+         'comments: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.comments'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.comments'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.comments'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.comments'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none')
+         || ' / ' || 'likes: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.likes'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.likes'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.likes'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.likes'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none')
+         || ' / ' || 'follows: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.follows'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.follows'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.follows'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.follows'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none')
+         || ' / ' || 'messages: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.messages'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.messages'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.messages'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.messages'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none'),
+         'comments: whole table false, file author_id body post_id, change none, visitors none / likes: whole table false, file post_id user_id, change none, visitors none / follows: whole table false, file followee_id follower_id status, change status, visitors none / messages: whole table false, file body conversation_id post_id sender_id, change read_at, visitors none'
+  union all
+  select 55, '0039: reports, share records and notices: the columns the app sends, never a report''s standing or a notice''s words',
+         'reports: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.reports'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.reports'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.reports'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.reports'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none')
+         || ' / ' || 'share_events: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.share_events'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.share_events'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.share_events'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.share_events'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none')
+         || ' / ' || 'activity: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
+              from pg_class c, unnest(c.relacl) x
+             where c.oid = 'public.activity'::regclass and split_part(x::text, '=', 1) in ('anon', 'authenticated'))::text
+           || ', file ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.activity'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
+           || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.activity'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
+           || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
+              where a.attrelid = 'public.activity'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
+                and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none'),
+         'reports: whole table false, file comment_id details post_id profile_id reason reporter_id target_type, change none, visitors none / share_events: whole table false, file actor_id format kind post_id theme token, change none, visitors none / activity: whole table false, file none, change read_at, visitors none'
+  union all
+  -- Written only through functions, as their owner; and signed-out
+  -- visitors may file or change nothing in any table, wholly or a column.
+  select 56, '0039: settings, blocks, invitation links, codes, the admins'' record and share links are written only through functions; signed-out visitors write no table at all',
+         ((select count(*) from pg_class c, unnest(c.relacl) x
+            where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
+              and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'
+              and (split_part(x::text, '=', 1) = 'anon'
+                   or (split_part(x::text, '=', 1) = 'authenticated'
+                       and c.relname in ('app_settings', 'blocks', 'invite_links', 'invites', 'moderation_actions', 'post_shares'))))
+          + (select count(*) from pg_class c join pg_attribute a on a.attrelid = c.oid, unnest(a.attacl) x
+            where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
+              and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'
+              and (split_part(x::text, '=', 1) = 'anon'
+                   or (split_part(x::text, '=', 1) = 'authenticated'
+                       and c.relname in ('app_settings', 'blocks', 'invite_links', 'invites', 'moderation_actions', 'post_shares')))))::text,
+         '0'
+  union all
+  select 57, '0039: a new photograph''s files are in its author''s own folder, and a caption changes only while the photograph is up and its author a member (two restrictive policies, the caller read once)', count(*)::text, '2'
+  from pg_policies pp
+  join pg_policy pol on pol.polrelid = 'public.posts'::regclass and pol.polname = pp.policyname
+  where pp.schemaname = 'public' and pp.tablename = 'posts' and not pol.polpermissive
+    and ((pp.policyname = 'posts: files from the author''s own folder' and pol.polcmd = 'a'
+          and pp.with_check ~ 'media_path ~' and pp.with_check ~ 'thumb_path IS NULL\) OR \(thumb_path ~'
+          and pp.with_check ~ '\( SELECT auth\.uid\(\) AS uid\)'
+          and position('/[A-Za-z0-9_-][A-Za-z0-9._-]*$' in pp.with_check) > 0)
+      or (pp.policyname = 'posts: a caption while live, by a member' and pol.polcmd = 'w'
+          and pp.qual ~ 'removed_at IS NULL' and pp.qual ~ 'SELECT is_active_member\(\( SELECT auth\.uid\(\) AS uid\)\)'
+          and pp.with_check ~ 'removed_at IS NULL' and pp.with_check ~ 'SELECT is_active_member\('))
+  union all
+  select 58, '0039: a portrait, on a profile or an application, is the member''s own file; a suspended member changes nothing of their profile (restrictive)', count(*)::text, '2'
+  from pg_policies pp
+  join pg_policy pol on pol.polname = pp.policyname
+   and pol.polrelid = ('public.' || pp.tablename)::regclass
+  where pp.schemaname = 'public' and not pol.polpermissive
+    and pp.with_check ~ 'avatar_url IS NULL\) OR \(avatar_url ~'
+    and pp.with_check ~ '\( SELECT auth\.uid\(\) AS uid\)'
+    and position('/[A-Za-z0-9_-][A-Za-z0-9._-]*$' in pp.with_check) > 0
+    and ((pp.tablename = 'profiles' and pp.policyname = 'profiles: own-folder portrait, nothing while suspended' and pol.polcmd = 'w'
+          and pp.qual ~ 'status <> ''suspended''' and pp.with_check ~ 'status <> ''suspended''')
+      or (pp.tablename = 'applications' and pp.policyname = 'applications: a portrait from the applicant''s own folder' and pol.polcmd = 'a'))
+  union all
+  select 59, '0039: a message is marked read by the member it was sent to, never by its sender (restrictive)', count(*)::text, '1'
+  from pg_policies pp
+  join pg_policy pol on pol.polrelid = 'public.messages'::regclass and pol.polname = pp.policyname
+  where pp.schemaname = 'public' and pp.tablename = 'messages' and not pol.polpermissive and pol.polcmd = 'w'
+    and pp.policyname = 'messages: read marks by the member they were sent to'
+    and pp.qual ~ 'sender_id <> \( SELECT auth\.uid\(\) AS uid\)'
+    and pp.with_check ~ 'sender_id <> \( SELECT auth\.uid\(\) AS uid\)'
+  union all
+  -- The two old invitation functions refuse a suspended account and leave
+  -- a member as they are; create_invite holds the member's row and counts
+  -- one allowance; redeem_invite admits only while its maker has room,
+  -- their row held, and never with a code used before. ([a-z]{6}: the
+  -- row lock's word, which this script does not write.)
+  select 60, '0039: join_with_invite and redeem_invite refuse a suspended account and take up nothing for a member; one allowance for links and codes, counted with the inviter''s row held', count(*)::text, '3'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.prosecdef
+    and has_function_privilege('authenticated', p.oid, 'execute')
+    and not has_function_privilege('anon', p.oid, 'execute')
+    and ((p.proname = 'join_with_invite'
+          and p.prosrc ~ 'if v_status = ''approved'' then\s+return false;'
+          and p.prosrc ~ 'if v_status = ''suspended'' then\s+[a-z]+ exception ''This account is suspended''')
+      or (p.proname = 'redeem_invite'
+          and p.prosrc ~ 'if v_status = ''approved'' then\s+return false;'
+          and p.prosrc ~ 'if v_status = ''suspended'' then\s+[a-z]+ exception ''This account is suspended'''
+          and p.prosrc ~ 'used_by is null and used_at is null\s+for [a-z]{6};'
+          and p.prosrc ~ 'p\.id = v_invite\.created_by and p\.status = ''approved''\s+for [a-z]{6};'
+          and p.prosrc ~ 'c\.invited_by = v_invite\.created_by;\s+if v_used >= v_quota then\s+return false;')
+      or (p.proname = 'create_invite'
+          and p.prosrc ~ 'from public\.profiles where id = v_user for [a-z]{6};'
+          and p.prosrc ~ 'c\.invited_by = v_user'
+          and p.prosrc ~ 'i\.used_by is null and i\.used_at is null'))
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks

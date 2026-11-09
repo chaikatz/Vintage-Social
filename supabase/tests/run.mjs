@@ -245,6 +245,7 @@ try {
     "14_moderation_0029_0033.sql",
     "16_launch_data_0035_0037.sql",
     "17_follows_0038.sql",
+    "18_writes_0039.sql",
   ]) {
     if (res.status !== 0 || process.exitCode === 1) break;
     if (!existsSync(join(here, file))) continue;
@@ -264,7 +265,7 @@ try {
     }
   }
 
-  // The read-only script the owner runs on production after 0023-0038: it
+  // The read-only script the owner runs on production after 0023-0039: it
   // must run clean here, without a single error (the SQL editor shows only
   // the last statement's result, or only the error), and its one table,
   // the last statement's, must say ok on every row.
@@ -275,7 +276,7 @@ try {
     const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
     const failing = rows.filter((l) => !l.endsWith("|t"));
     const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l));
-    if (r.status !== 0 || rows.length !== 48 || failing.length > 0 || errors.length > 0) {
+    if (r.status !== 0 || rows.length !== 60 || failing.length > 0 || errors.length > 0) {
       console.log("FAILED");
       process.stdout.write(r.stdout ?? "");
       process.stderr.write(r.stderr ?? "");
@@ -429,7 +430,7 @@ try {
       const rows = (r.stdout ?? "").split("\n").filter((l) => /^\d+\|/.test(l));
       const failing = rows.filter((l) => !l.endsWith("|t"));
       const errors = (r.stderr ?? "").split("\n").filter((l) => /ERROR:/.test(l));
-      if (r.status !== 0 || rows.length !== 48 || failing.length > 0 || errors.length > 0) {
+      if (r.status !== 0 || rows.length !== 60 || failing.length > 0 || errors.length > 0) {
         console.log("FAILED");
         process.stdout.write(r.stdout ?? "");
         process.stderr.write(r.stderr ?? "");
