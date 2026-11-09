@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { backFromDoor, shouldGoIn } from "@/components/gate/door";
+import { backFromDoor, invitationCarried, shouldGoIn } from "@/components/gate/door";
 
 /**
  * The door's ways out: a signed-in visitor never stays on the invitation
@@ -34,6 +34,21 @@ describe("a signed-in visitor at the door", () => {
   });
 });
 
+describe("an invitation link opened by someone already signed in", () => {
+  it("is taken through the door with them, so the waiting room can offer it", () => {
+    expect(invitationCarried("ansel-k", false)).toBe("ansel-k");
+    expect(invitationCarried("https://vintagesocial.app/i/Ansel-K", false)).toBe("ansel-k");
+  });
+  it("is not, once a join was tried on the card: its own words said what became of it", () => {
+    expect(invitationCarried("ansel-k", true)).toBeUndefined();
+  });
+  it("nor when there is none, or none the database could take", () => {
+    expect(invitationCarried("", false)).toBeUndefined();
+    expect(invitationCarried("ab", false)).toBeUndefined();
+    expect(invitationCarried("not one!", false)).toBeUndefined();
+  });
+});
+
 describe("the back mark", () => {
   it("goes back when there is a screen behind", () => {
     const router = { canGoBack: () => true, back: vi.fn(), replace: vi.fn() };
@@ -55,8 +70,11 @@ describe("the screens use them", () => {
   const hook = code("src/components/gate/useDoor.ts");
 
   it("the invitation card goes in through the door's hook, and only through it", () => {
-    expect(invite).toMatch(/const goIn = useDoorClosesBehind\(busy\);/);
-    expect(invite).toMatch(/await refreshProfile\(\);\s*await goIn\(\);/);
+    expect(invite).toMatch(/const goIn = useDoorClosesBehind\(busy, invitationCarried\(arrivedWith, tried\)\);/);
+    // A try is noted with the press that sends it, and the card stays put until it settles.
+    expect(invite).toMatch(/if \(Object\.values\(next\)\.some\(Boolean\)\) return;\s*setTried\(true\);\s*setBusy\(true\);/);
+    // Read fresh, after the invitation was taken up (tests/invite-join-profile.test.ts).
+    expect(invite).toMatch(/await refreshProfile\(\{ fresh: true \}\);\s*await goIn\(\);/);
     expect(invite).not.toMatch(/enterApp/);
   });
 
@@ -88,7 +106,22 @@ describe("the screens use them", () => {
   it("the hook waits on busy, asks the rule, and enters the app", () => {
     expect(hook).toMatch(/if \(shouldGoIn\(signedIn, busy, gone\.current\)\) void goIn\(\);/);
     expect(hook).toMatch(/\[signedIn, busy, goIn\]/);
-    expect(hook).toMatch(/gone\.current = true;\s*await enterApp\(\);/);
+    expect(hook).toMatch(/gone\.current = true;\s*await enterApp\(carried\.current\);/);
+    // The invitation as it stands when they go, not when goIn was made.
+    expect(hook).toMatch(/const carried = useRef\(invitation\);\s*carried\.current = invitation;/);
+  });
+
+  it("the root hands an invitation brought through the door to the waiting room, and only there", () => {
+    const provider = code("src/providers/SessionProvider.tsx");
+    expect(provider).toMatch(
+      /export async function enterApp\(invitation\?: string\): Promise<void> \{[\s\S]*?router\.replace\(invitation \? \{ pathname: "\/", params: \{ invitation \} \} : "\/"\);\s*\}/,
+    );
+    const index = code("app/index.tsx");
+    expect(index).toMatch(/const \{ invitation \} = useLocalSearchParams<\{ invitation\?: string \}>\(\);/);
+    // An approved member goes to the tabs whatever came with them.
+    expect(index).toMatch(
+      /if \(profile\?\.status === "approved"\) return <Redirect href="\/\(tabs\)" \/>;\s*if \(invitation\) return <Redirect href=\{\{ pathname: "\/\(gate\)\/pending", params: \{ invitation \} \}\} \/>;\s*return <Redirect href="\/\(gate\)\/pending" \/>;/,
+    );
   });
 
   it("every back mark at the door has a way out", () => {

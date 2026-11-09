@@ -322,6 +322,7 @@ export default function Compose() {
       takenAt,
       place: placeInput,
       tagIds: tags.map((t) => t.id),
+      tagNames: Object.fromEntries(tags.map((t) => [t.id, t.username])),
       assetId: params.assetId ?? null,
       author: authorFrom(profile, userId),
     };

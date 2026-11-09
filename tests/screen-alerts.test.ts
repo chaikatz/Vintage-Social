@@ -40,6 +40,7 @@ const SCREENS = [
   "app/comments.tsx",
   "app/messages/[id].tsx",
   "src/components/PostCard.tsx",
+  "src/utils/commentMenu.ts",
 ];
 
 describe("the screens' alerts", () => {

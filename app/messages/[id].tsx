@@ -38,6 +38,8 @@ import { useMinute } from "@/utils/useMinute";
 import { MAX_MESSAGE_LENGTH } from "@/utils/validation";
 import type { MessageWithPost, ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { LoadFailed } from "@/components/LoadFailed";
+import { readState } from "@/components/readState";
 import { useImageRetry } from "@/media/imageRetry";
 
 // A row that breaks this screen breaks only this screen, with the way back on its
@@ -254,14 +256,22 @@ export default function Thread() {
             : undefined,
         }}
       />
-      <FlatList
-        data={newestFirst}
-        inverted
-        keyExtractor={(m) => m.id}
-        contentContainerStyle={styles.listContent}
-        keyboardShouldPersistTaps="handled"
-        renderItem={renderBubble}
-      />
+      {readState(messagesQ) === "failed" ? (
+        // A read that failed is no answer: an empty conversation would not
+        // be true. The header's menu and the field below stay as they are.
+        <View style={styles.failed}>
+          <LoadFailed what="this conversation" onRetry={() => messagesQ.refetch()} />
+        </View>
+      ) : (
+        <FlatList
+          data={newestFirst}
+          inverted
+          keyExtractor={(m) => m.id}
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+          renderItem={renderBubble}
+        />
+      )}
       <View
         style={[
           styles.composer,
@@ -371,6 +381,7 @@ const styles = StyleSheet.create({
   // The stack's title style (app/_layout.tsx), over the same bold the stack lays under it.
   title: { fontFamily: type.serif, fontSize: 17 },
   listContent: { paddingVertical: spacing.md },
+  failed: { flex: 1 },
   bubbleRow: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
   rowMine: { alignItems: "flex-end" },
   rowTheirs: { alignItems: "flex-start" },

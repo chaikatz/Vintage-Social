@@ -1,6 +1,6 @@
 import React from "react";
 import { AppState, Linking, StyleSheet, Text, View } from "react-native";
-import { Redirect } from "expo-router";
+import { Redirect, useLocalSearchParams } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GateLayout } from "@/components/gate/GateLayout";
 import { GateButton } from "@/components/gate/GateButton";
@@ -13,7 +13,7 @@ import { slugFromInput } from "@/utils/inviteLink";
 import { showAlert, showPrompt } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { SUPPORT_EMAIL, supportMailto } from "@/config/launch";
-import { awaitsDecision, takesInvitation, waitingRoomState } from "@/components/gate/waitingRoom";
+import { awaitsDecision, invitationToOffer, takesInvitation, waitingRoomState } from "@/components/gate/waitingRoom";
 import { checkStatus } from "@/components/gate/checkStatus";
 import { DELETION_KEEPS_REPORTS } from "@/legal/documents";
 
@@ -100,6 +100,54 @@ export default function Pending() {
     if (approved) enterApp();
   }, [approved]);
 
+  // Read once more as the screen opens: a member just let in can be sent
+  // here by a read that left before their invitation was taken up, and
+  // would otherwise wait for the half-minute check below.
+  React.useEffect(() => {
+    refreshProfile().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, as it opens
+  }, []);
+
+  // An invitation taken up with the account already made: the database
+  // grants membership, or says why not. Above the redirect below with the
+  // hooks, since the offer just after calls it.
+  const takeUp = async (slug: string) => {
+    setRedeeming(true);
+    try {
+      const result = await redeemInviteLink(slug);
+      const problem = describeRedeem(result);
+      if (problem) {
+        showAlert("Not this one", problem);
+        return;
+      }
+      // Read after the invitation was taken up: the read this screen made
+      // as it opened can still be on its way, and says "applied".
+      await refreshProfile({ fresh: true });
+      await enterApp();
+    } catch (err) {
+      showAlert("Couldn’t join", errorMessage(err, "Your invitation wasn’t taken up. Check your connection and try again."));
+    } finally {
+      setRedeeming(false);
+    }
+  };
+
+  // An invitation link tapped while waiting is brought here through the
+  // door (door.ts). It used to be dropped, and "I have an invitation"
+  // opened empty: offered once, as the screen opens, and written into the
+  // prompt where the phone allows.
+  const { invitation } = useLocalSearchParams<{ invitation?: string }>();
+  const brought = invitationToOffer(invitation, profile?.status);
+  const offered = React.useRef(false);
+  React.useEffect(() => {
+    if (!brought || offered.current) return;
+    offered.current = true;
+    showAlert("Your invitation", "You opened an invitation. Take it up with the account you are signed in with?", [
+      { text: "Take it up", onPress: () => void takeUp(brought) },
+      { text: "Not now", style: "cancel" },
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, for the invitation brought
+  }, [brought]);
+
   // The screen also checks by itself: each time the app comes back to the
   // front, and every half minute while it is open. An applicant who is let
   // in while looking at this walks in without touching anything.
@@ -149,25 +197,11 @@ export default function Pending() {
     showPrompt(
       "Your invitation",
       "Enter the code or paste the link a member sent you.",
-      async (input) => {
+      (input) => {
         const slug = slugFromInput(input ?? "");
-        if (!slug) return;
-        setRedeeming(true);
-        try {
-          const result = await redeemInviteLink(slug);
-          const problem = describeRedeem(result);
-          if (problem) {
-            showAlert("Not this one", problem);
-            return;
-          }
-          await refreshProfile();
-          await enterApp();
-        } catch (err) {
-          showAlert("Couldn’t join", errorMessage(err, "Your invitation wasn’t taken up. Check your connection and try again."));
-        } finally {
-          setRedeeming(false);
-        }
+        if (slug) void takeUp(slug);
       },
+      brought ?? undefined,
     );
 
   // The same two questions as Settings → Delete account. An admin is never

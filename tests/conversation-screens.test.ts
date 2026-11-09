@@ -91,7 +91,11 @@ describe("a comment posted or removed", () => {
 
   it("says what went wrong in our words, never as an object printed", () => {
     expect(comments).not.toMatch(/err instanceof Error \? err\.message : String\(err\)/);
-    expect(comments.match(/errorMessage\(err, /g)).toHaveLength(2);
+    expect(comments.match(/errorMessage\(err, /g)).toHaveLength(1);
+    // Removing one goes through the menu every comment has (src/utils/commentMenu.ts).
+    const menu = read("src/utils/commentMenu.ts");
+    expect(menu).not.toMatch(/err instanceof Error \? err\.message : String\(err\)/);
+    expect(menu.match(/errorMessage\(err, /g)).toHaveLength(1);
   });
 });
 
@@ -133,6 +137,15 @@ describe("a list whose read failed", () => {
       expect(source).toMatch(failed);
     });
   }
+
+  it("app/messages/[id].tsx says a thread it could not read could not load, not that it is an empty conversation", () => {
+    const thread = read("app/messages/[id].tsx");
+    expect(thread).toMatch(
+      /\{readState\(messagesQ\) === "failed" \? \([\s\S]*?<LoadFailed what="this conversation" onRetry=\{\(\) => messagesQ\.refetch\(\)\} \/>[\s\S]*?\) : \(\s*<FlatList\s+data=\{newestFirst\}/,
+    );
+    // The thread's menu (Report, Block) is drawn either way.
+    expect(thread.indexOf("<Stack.Screen")).toBeLessThan(thread.indexOf('readState(messagesQ) === "failed"'));
+  });
 
   it("and a search that failed is not 'Nobody by that name'", () => {
     expect(read("app/(tabs)/search.tsx")).toMatch(

@@ -105,3 +105,39 @@ export function failureWords(reason: FailureReason, kind: PostDraft["kind"]): st
       return "Sign in again to post this.";
   }
 }
+
+/** "june", "june and tomas", "june, tomas and ansel". */
+function namesInWords(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * What is said when the post went up but tags did not all go on.
+ *
+ * `refused`: the members the database would not let be tagged (no longer
+ * a member, or a block between the two since the post was composed); the
+ * others are on the post, and those are named, by the names chosen in
+ * compose where the draft has them. Null `refused`: the tags could not be
+ * sent at all. Nothing is promised that the app cannot do: a post's tags
+ * cannot be changed once it is up.
+ */
+export function tagFailureWords(
+  draft: Pick<PostDraft, "kind" | "tagIds" | "tagNames">,
+  refused: readonly string[] | null,
+): { title: string; body: string } {
+  const what = draft.kind === "video" ? "The clip" : "The photograph";
+  if (!refused) return { title: "Posted, but the tags didn’t take", body: `${what} is up, but its tags may not all be on it.` };
+  const named = refused.map((id) => draft.tagNames?.[id]).filter((name): name is string => Boolean(name));
+  const unnamed = refused.length - named.length;
+  const who =
+    named.length === 0
+      ? unnamed === 1
+        ? "One member you tagged"
+        : `${unnamed} members you tagged`
+      : namesInWords(unnamed === 0 ? named : [...named, unnamed === 1 ? "one other member" : `${unnamed} other members`]);
+  const tagged = new Set(draft.tagIds).size;
+  return refused.length >= tagged
+    ? { title: "Posted, but the tags didn’t take", body: `${what} is up. ${who} couldn’t be tagged.` }
+    : { title: "Posted, but not every tag took", body: `${what} is up with your other tags. ${who} couldn’t be tagged.` };
+}

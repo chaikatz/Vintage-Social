@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { useQueries, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { removePostEverywhere, rereadPostActions, rewritePostEverywhere } from "@/utils/postCache";
+import { removePostEverywhere, rereadCommentPreviewsOf, rereadPostActions, rewritePostEverywhere } from "@/utils/postCache";
+import { showCommentMenu } from "@/utils/commentMenu";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { perfLog, shortId } from "@/utils/perf";
@@ -25,7 +26,7 @@ import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 export function usePostActions(userId: string, postIds: string[]) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { refreshProfile } = useSession();
+  const { refreshProfile, isAdmin } = useSession();
   // Your own eras can be arranged from any of your photographs once your
   // arrangement has been read and there is somewhere to keep a change.
   const erasReady = useEraEdits(userId).data?.ready === true;
@@ -81,6 +82,26 @@ export function usePostActions(userId: string, postIds: string[]) {
       router.push({ pathname: "/comments", params: { postId: post.id } });
     },
     [router, seed],
+  );
+
+  // Press and hold on a comment under the photograph: the menu it has on
+  // the Comments screen (src/utils/commentMenu.ts), Report for anyone
+  // else's. It opened Comments on release. Removed, the comment leaves
+  // what this screen and Comments show of it, and the count drops by one.
+  const onCommentLongPress = useCallback(
+    (comment: CommentWithAuthor) =>
+      showCommentMenu(comment, { userId, isAdmin }, () => {
+        const postId = comment.post_id;
+        queryClient.invalidateQueries({ queryKey: ["comments", postId] });
+        void rereadCommentPreviewsOf(queryClient, postId);
+        queryClient.invalidateQueries({ queryKey: ["post", postId] });
+        rewritePostEverywhere<PostWithAuthor>(queryClient, postId, (p) => ({
+          ...p,
+          comment_count: Math.max(0, p.comment_count - 1),
+        }));
+        void queryClient.invalidateQueries({ queryKey: ["feed"], refetchType: "none" });
+      }, "Removed from under a photograph"),
+    [userId, isAdmin, queryClient],
   );
 
   const onShare = useCallback(
@@ -274,6 +295,7 @@ export function usePostActions(userId: string, postIds: string[]) {
     onMore,
     onShare,
     onOpenComments,
+    onCommentLongPress,
     onOpenPost,
     onOpenLikes,
     commentsFor,

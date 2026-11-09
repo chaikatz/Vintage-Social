@@ -228,6 +228,16 @@ function numOrNull(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+/** Usernames by id, each a string, or none at all (a job from an older build has none). */
+function parseNames(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [id, name] of Object.entries(raw as Record<string, unknown>)) {
+    if (id && typeof name === "string" && name) out[id] = name;
+  }
+  return out;
+}
+
 function parseDraft(raw: unknown): PostDraft | null {
   if (!raw || typeof raw !== "object") return null;
   const d = raw as Record<string, unknown>;
@@ -253,6 +263,7 @@ function parseDraft(raw: unknown): PostDraft | null {
     lng: numOrNull(d.lng),
     placeId: strOrNull(d.placeId),
     tagIds: Array.isArray(d.tagIds) ? d.tagIds.filter(str) : [],
+    tagNames: parseNames(d.tagNames),
     assetId: strOrNull(d.assetId),
     author: {
       id: author.id,

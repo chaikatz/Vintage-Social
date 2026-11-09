@@ -1,5 +1,5 @@
 import { isNoFilter } from "@/filters/presets";
-import { MAX_VIDEO_SECONDS } from "@/utils/validation";
+import { MAX_VIDEO_SECONDS, clampLocation } from "@/utils/validation";
 import type { PostDraft } from "@/uploads";
 import type { ProfileRow } from "@/types/db";
 
@@ -206,6 +206,8 @@ export interface ComposeChoices {
   takenAt: string | null | undefined;
   place: PlaceInput;
   tagIds: readonly string[];
+  /** Their usernames by id, as chosen. */
+  tagNames?: Readonly<Record<string, string>>;
   /** The Darkroom's library identifier, when the photograph came from there. */
   assetId: string | null | undefined;
   author: DraftAuthor;
@@ -235,14 +237,28 @@ export function authorFrom(
 export function placeOf(place: PlaceInput): Pick<PostDraft, "location" | "lat" | "lng" | "placeId"> {
   if (place?.kind === "place") {
     return {
-      location: place.fields.location?.trim() || null,
+      // As the post can keep it, before anything goes up (clampLocation).
+      location: clampLocation(place.fields.location),
       lat: place.fields.lat,
       lng: place.fields.lng,
       placeId: place.fields.place_id,
     };
   }
-  if (place?.kind === "text") return { location: place.text.trim() || null, lat: null, lng: null, placeId: null };
+  if (place?.kind === "text") return { location: clampLocation(place.text), lat: null, lng: null, placeId: null };
   return { location: null, lat: null, lng: null, placeId: null };
+}
+
+/** The usernames of the members tagged, by id: theirs only, and a copy. */
+function tagNamesFor(
+  tagIds: readonly string[],
+  names: Readonly<Record<string, string>> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const id of tagIds) {
+    const name = names?.[id];
+    if (name) out[id] = name;
+  }
+  return out;
 }
 
 /** The outbox's draft, from the frozen choices and what developing made of the picture. */
@@ -265,6 +281,7 @@ export function buildPostDraft(choices: ComposeChoices, developed: Developed): P
     ...placeOf(choices.place),
     // A member tagged twice is one tag; the order chosen is kept.
     tagIds: [...new Set(choices.tagIds)],
+    tagNames: tagNamesFor(choices.tagIds, choices.tagNames),
     assetId: choices.assetId || null,
     author: { ...choices.author },
   };

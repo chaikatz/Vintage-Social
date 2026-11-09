@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import type { NativePlace, VintagePlacesModule } from "../../modules/vintage-places";
+import { clampLocation } from "@/utils/validation";
 
 /**
  * Named places for a post.
@@ -32,8 +33,12 @@ export async function searchPlaces(query: string): Promise<Place[]> {
     .map((p) => ({ ...p, category: p.category || null }));
 }
 
-/** What a chosen place writes onto the post: its name, its id, its point. */
+/**
+ * What a chosen place writes onto the post: its name, its id, its point.
+ * The name as the post can keep it (clampLocation); the id is the
+ * place's own, whole.
+ */
 export function placeFields(place: Place | null): { location: string | null; place_id: string | null; lat: number | null; lng: number | null } {
   if (!place) return { location: null, place_id: null, lat: null, lng: null };
-  return { location: place.name, place_id: place.id, lat: place.lat, lng: place.lng };
+  return { location: clampLocation(place.name), place_id: place.id, lat: place.lat, lng: place.lng };
 }

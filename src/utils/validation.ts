@@ -50,6 +50,21 @@ export const MAX_CAPTION_LENGTH = 500;
 /** Free text, not a coordinate — a place name fits in a line. */
 export const MAX_LOCATION_LENGTH = 80;
 
+/**
+ * A place's name as a post can keep it: trimmed, and no longer than the
+ * database takes (posts.location, char_length <= 80, migration 0005),
+ * counted in characters as Postgres counts them rather than in UTF-16
+ * units. Typed words are held to the limit as they are typed; a place
+ * chosen from the map can be named at greater length, and its post was
+ * refused at the insert, after the whole upload, and on every Retry.
+ */
+export function clampLocation(text: string | null | undefined): string | null {
+  const trimmed = (text ?? "").trim();
+  const chars = Array.from(trimmed);
+  if (chars.length <= MAX_LOCATION_LENGTH) return trimmed || null;
+  return chars.slice(0, MAX_LOCATION_LENGTH).join("").trimEnd() || null;
+}
+
 export const MAX_MESSAGE_LENGTH = 1000;
 export const MAX_BIO_LENGTH = 160;
 export const MAX_COMMENT_LENGTH = 500;

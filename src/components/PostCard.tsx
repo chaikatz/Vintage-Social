@@ -29,6 +29,8 @@ interface Props {
   onOpenLikes?: (post: PostWithAuthor) => void;
   /** The newest comments, shown under the caption. */
   comments?: CommentWithAuthor[];
+  /** Press and hold on one of them: its menu (Report, or Delete for your own), as on the Comments screen. */
+  onCommentLongPress?: (comment: CommentWithAuthor) => void;
   /** Whether this card is the one on screen; gates video playback. */
   active?: boolean;
   /** Whether its clip may have a player yet; see PostMedia. Defaults to true. */
@@ -68,6 +70,7 @@ export const PostCard = React.memo(function PostCard({
   onShare,
   onOpenLikes,
   comments,
+  onCommentLongPress,
   active = true,
   warm = true,
   frameOnly = false,
@@ -170,7 +173,12 @@ export const PostCard = React.memo(function PostCard({
       ) : null}
 
       {preview.map((c) => (
-        <Pressable key={c.id} onPress={() => onOpenComments(post)}>
+        <Pressable
+          key={c.id}
+          onPress={() => onOpenComments(post)}
+          // Held, the comment's own menu, and Comments is not opened on release.
+          onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+        >
           <Text style={styles.comment} numberOfLines={2}>
             <Text style={styles.captionAuthor}>{c.author.username}</Text> {c.body}
           </Text>
