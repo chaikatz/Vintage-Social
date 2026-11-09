@@ -30,9 +30,9 @@ or anywhere in the repository, and must never be.
   only function that differs is `create_invite`, whose wording predates
   0010 and which none of these files touches. Explore's plan, follower
   counts and the house thumbnails were checked on production. The `push`
-  function is **version 2 on production** (both files, JWT check on),
-  identical to the repository and answering; staging still runs
-  version 1.
+  function is **version 2 on production** (both files, JWT check on) and
+  answering; staging still runs version 1. The repository now holds
+  version 3, which goes with 0040 (below).
 - Step 1: `EXPO_PUBLIC_SUPPORT_EMAIL` is `support@vintagesocial.app` on
   expo.dev (Production), and `public/support.html` carries that address.
   Make sure that mailbox receives mail.
@@ -58,6 +58,29 @@ or anywhere in the repository, and must never be.
   SQL Editor). 53 house accounts are left, each with photographs, and the
   review account follows all 53. The copy is in `removed_20261108` too;
   section 7 records it.
+
+**Still to do after the final review of 8 November** (its fixes are in
+the branch; nothing below has been run on production yet):
+
+- Step 4: on **production**, `0039_writes_only_what_the_app_writes.sql`
+  and then `0040_blocks_messages_and_files.sql`, each pasted whole into
+  the SQL Editor and run once (each is safe to run twice), then verify
+  script 12: all 68 rows must read ok. 0039 lets members write only the
+  columns the app writes; 0040 makes a block hold for comments and likes
+  and tell the admins, sends a notice for each new message, lets the
+  avatars bucket take only JPEG and PNG pictures up to 2 MB, and gives the
+  push hook its secret. Neither changes any member's data. Ways back:
+  `supabase/tests/0039_rollback.sql`, and the note at the top of 0040.
+- Step 4, item 5: after 0040, the `push` function's **version 3** (it
+  refuses any call that is not the database's). There is no secret to
+  make or copy: 0040 makes it in the database.
+- Then a new build. The app's fixes from the final review (joining by
+  invitation, notice taps, Places, the Memory Room's zoom and iCloud
+  waits, failed pictures tried again, and the rest) reach phones only
+  with it. Until a phone has it, the build already installed lists each
+  message notice in Activity as "sent you a message." (the new build
+  leaves them out; they are for the lock screen).
+- Staging, if you want it to match: the same two files, and version 3.
 
 ---
 
@@ -357,7 +380,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false). The `13_` and
    `14_` files there are not verify scripts: see item 6.
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0040 in 67 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0040 in 68 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -380,7 +403,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0037 | Unread messages counted in the database | 38–39 |
    | 0038 | Follows that respect private accounts: a follow of a private account is always a request, the account accepts or declines it, an answered request leaves Activity, an account made public lets its requests in, and only the two members see a request | 40–48 |
    | 0039 | Members write only what the app writes: each table's columns as the app sends them and no others (an author can no longer undo an admin's removal, or date, count or repoint a photograph; nobody rewrites their counts or name in the club, moves a conversation or a tag, or dates what they file), a photograph's files and every portrait from the member's own folder, never a URL or another member's file, nothing for signed-out visitors, and the old invitation functions refuse a suspended account and count links and codes as one allowance | 49–60 |
-   | 0040 | A block holds for comments and likes and their notices, and files a report so the admins are told; a new message reaches the other member's phone; the avatars bucket takes JPEG and PNG pictures up to 2 MB; the database's calls to the `push` function carry its secret (needs item 5) | 61–67 |
+   | 0040 | A block holds for comments and likes and their notices, and files a report so the admins are told; a new message reaches the other member's phone; the avatars bucket takes JPEG and PNG pictures up to 2 MB; the database's calls to the `push` function carry its secret (needs item 5) | 61–68 |
 
 5. Redeploy the `push` function, which changed in the sweep. It is now
    **two files**, `index.ts` and `logic.ts` (`index.ts` imports
@@ -398,21 +421,16 @@ notice, and how to undo it. If you approve, in the merged branch:
    **From 0040, the function answers only the database** (version 3): a
    call without the push hook's secret is refused, so the anon key in the
    app no longer lets anyone set off On this day early or announce a
-   photograph again. Do these in this order, after 0040 is applied, or
-   every notice stops until they are done:
-   1. On your Mac: `openssl rand -hex 32` and copy the output (the
-      secret; it goes in exactly two places, never in the repository).
-   2. `npx supabase secrets set PUSH_HOOK_SECRET=<the secret> --project-ref scfwowqsqrnzpknzurmm`
-      (or Supabase → **Edge Functions** → **Secrets** → add
-      `PUSH_HOOK_SECRET`).
-   3. SQL Editor: `update public.app_settings set value = value || jsonb_build_object('secret', '<the secret>') where key = 'push_hook';`
-      From then on the database sends it with every call; the function
-      still live ignores it.
-   4. Deploy the function as above (it shows version 3). Then comment
-      on one of your photographs from a second account: the notice must
-      arrive. (Deployed before step 2 or step 3, it refuses every call
-      until both are done; without step 2 its logs say
-      "PUSH_HOOK_SECRET is not set".)
+   photograph again. 0040 makes the secret in the database and keeps it
+   there (in `app_settings.push_hook`, given to the hook whenever it is
+   written without one); version 3 reads it there with its service key.
+   Nobody makes, copies or sees it, and nothing is set on the function.
+   Deploy version 3 only after 0040 is applied: before it, the hook has no
+   secret and every call is refused until 0040 runs. Version 2 ignores the
+   secret, so nothing stops between the two. Then comment on one of your
+   photographs from a second account: the notice must arrive. (Version 3
+   also takes a `PUSH_HOOK_SECRET` set on the function instead, if one is
+   ever wanted; it must then match the hook's.)
 6. On a project whose house accounts are seeded after the migrations (a
    fresh project; production's are already there), run
    `0034_seed_thumbnails_at_a_standard_width.sql` again after

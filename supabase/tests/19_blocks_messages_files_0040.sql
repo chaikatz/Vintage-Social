@@ -101,7 +101,8 @@ begin
 end
 $fn$;
 
--- The hook, as a project has it (no secret yet).
+-- The hook, as 0017's instructions write it (no secret: 0040's trigger
+-- gives it one, section 6).
 insert into public.app_settings (key, value) values
   ('push_hook', '{"url": "https://example.test/functions/v1/push", "key": "anon-key"}')
 on conflict (key) do update set value = excluded.value;
@@ -307,25 +308,71 @@ insert into tests.results (name, expected, actual) values
      :'applicant' || '/avatar.jpg', :'applicant')));
 
 -- ---------------------------------------------------------------------------
--- 6. push_event sends the hook's secret, when it has one
+-- 6. the hook keeps a secret the database made, and push_event sends it
 -- ---------------------------------------------------------------------------
+-- The hook was written at the top without one, as 0017's instructions
+-- write it: the trigger gave it one.
+insert into tests.results (name, expected, actual) values
+  ('the hook, written without a secret, was given one: 64 hexadecimal characters', 'true',
+   (select ((value->>'secret') ~ '^[0-9a-f]{64}$')::text from public.app_settings where key = 'push_hook'));
+create temp table g_secret as select value->>'secret' as s from public.app_settings where key = 'push_hook';
+
 delete from g_calls;
 \o /dev/null
 select public.push_event('memories', null);
-update public.app_settings set value = value || '{"secret": ""}' where key = 'push_hook';
-select public.push_event('memories', null);
-update public.app_settings set value = value || '{"secret": "s3cret-for-the-test"}' where key = 'push_hook';
-select public.push_event('memories', null);
 \o
 insert into tests.results (name, expected, actual) values
-  ('without a secret (or an empty one), the headers are as they were', 'Bearer anon-key|-,Bearer anon-key|-',
-   (select string_agg((headers->>'Authorization') || '|' || coalesce(headers->>'x-push-secret', '-'), ',' order by seq)
-      from (select * from g_calls order by seq limit 2) c)),
-  ('with one, it rides in x-push-secret, beside the key', 'Bearer anon-key|s3cret-for-the-test|application/json',
-   (select (headers->>'Authorization') || '|' || (headers->>'x-push-secret') || '|' || (headers->>'Content-Type')
+  ('push_event sends it in x-push-secret, beside the key', 'Bearer anon-key|the hook''s secret|application/json',
+   (select (headers->>'Authorization') || '|' ||
+           case when headers->>'x-push-secret' = (select s from g_secret) then 'the hook''s secret' else coalesce(headers->>'x-push-secret', 'none') end || '|' ||
+           (headers->>'Content-Type')
       from g_calls order by seq desc limit 1)),
   ('to the same address, with the same body', 'https://example.test/functions/v1/push|{"id": null, "kind": "memories"}',
    (select url || '|' || body::text from g_calls order by seq desc limit 1));
+
+-- Rewritten without one (a new key), the hook keeps the secret it had.
+update public.app_settings set value = '{"url": "https://example.test/functions/v1/push", "key": "anon-key-2"}' where key = 'push_hook';
+insert into tests.results (name, expected, actual) values
+  ('rewritten without a secret, the hook keeps the one it had, and takes the new key', 'true|anon-key-2',
+   (select ((value->>'secret') = (select s from g_secret))::text || '|' || (value->>'key')
+      from public.app_settings where key = 'push_hook'));
+-- Emptied, it is the same.
+update public.app_settings set value = value || '{"secret": ""}' where key = 'push_hook';
+insert into tests.results (name, expected, actual) values
+  ('given an empty secret, the hook keeps the one it had', 'true',
+   (select ((value->>'secret') = (select s from g_secret))::text from public.app_settings where key = 'push_hook'));
+-- One written on purpose is kept as it is.
+update public.app_settings set value = value || '{"secret": "s3cret-for-the-test"}' where key = 'push_hook';
+insert into tests.results (name, expected, actual) values
+  ('one written on purpose is kept', 's3cret-for-the-test',
+   (select value->>'secret' from public.app_settings where key = 'push_hook'));
+-- Made afresh, as on a new project, the hook gets a new one of its own.
+delete from public.app_settings where key = 'push_hook';
+insert into public.app_settings (key, value) values
+  ('push_hook', '{"url": "https://example.test/functions/v1/push", "key": "anon-key"}');
+insert into tests.results (name, expected, actual) values
+  ('a hook made afresh gets a new secret of its own', 'true|false',
+   (select ((value->>'secret') ~ '^[0-9a-f]{64}$')::text || '|' || ((value->>'secret') = (select s from g_secret))::text
+      from public.app_settings where key = 'push_hook'));
+-- Nothing else in app_settings is touched.
+insert into tests.results (name, expected, actual) values
+  ('nothing else in app_settings is given a secret', '0',
+   (select count(*)::text from public.app_settings where key <> 'push_hook' and value ? 'secret'));
+
+-- With no secret at all (as before this file: the trigger off), push_event
+-- sends what 0017 sent.
+alter table public.app_settings disable trigger app_settings_push_hook_secret;
+update public.app_settings set value = value - 'secret' where key = 'push_hook';
+delete from g_calls;
+\o /dev/null
+select public.push_event('memories', null);
+\o
+alter table public.app_settings enable trigger app_settings_push_hook_secret;
+insert into tests.results (name, expected, actual) values
+  ('without a secret, the headers are as they were', 'Bearer anon-key|-',
+   (select (headers->>'Authorization') || '|' || coalesce(headers->>'x-push-secret', '-') from g_calls order by seq desc limit 1));
+
+update public.app_settings set value = value || '{"secret": "s3cret-for-the-test"}' where key = 'push_hook';
 
 -- A notice sent with the secret: Ben writes to Ana again.
 delete from g_calls;
@@ -378,7 +425,10 @@ insert into tests.results (name, expected, actual) values
    tests.g_as(:'cara', format('insert into public.comments (post_id, author_id, body) values (%L, %L, ''again'')', :'p_ana', :'cara')) || ',' ||
    tests.g_as(:'ben', format('insert into public.comments (post_id, author_id, body) values (%L, %L, ''again'')', :'p_ana', :'ben'))),
   ('and the avatars bucket is as the first time', '2097152|{image/jpeg,image/png}',
-   (select file_size_limit::text || '|' || allowed_mime_types::text from storage.buckets where id = 'avatars'));
+   (select file_size_limit::text || '|' || allowed_mime_types::text from storage.buckets where id = 'avatars')),
+  ('and the hook keeps its secret, with one trigger to keep it', 's3cret-for-the-test|1',
+   (select value->>'secret' from public.app_settings where key = 'push_hook') || '|' ||
+   (select count(*)::text from pg_trigger where tgrelid = 'public.app_settings'::regclass and tgname = 'app_settings_push_hook_secret'));
 
 \pset border 2
 select r.seq, r.name, r.expected, r.actual,

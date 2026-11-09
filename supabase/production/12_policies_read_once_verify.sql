@@ -786,6 +786,20 @@ with checks as (
     and p.prosrc ~ '''x-push-secret''' and p.prosrc ~ 'v_hook->>''secret'''
     and not has_function_privilege('authenticated', p.oid, 'execute')
     and not has_function_privilege('anon', p.oid, 'execute')
+  union all
+  -- (In tgtype, 1 a row, 2 before, 4 an insert and 16 an update: 23.)
+  select 68, '0040: the push hook keeps a secret the database made, and has one (a trigger; its function in private, nobody''s to call)', count(*)::text, '1'
+  from pg_trigger t
+  join pg_proc f on f.oid = t.tgfoid
+  join pg_namespace n on n.oid = f.pronamespace
+  where t.tgrelid = 'public.app_settings'::regclass and t.tgname = 'app_settings_push_hook_secret' and not t.tgisinternal
+    and t.tgtype = 23
+    and n.nspname = 'private' and f.proname = 'push_hook_keeps_a_secret'
+    and f.proconfig @> array['search_path=""'] and f.prosrc ~ 'gen_random_uuid'
+    and not has_function_privilege('authenticated', f.oid, 'execute')
+    and not has_function_privilege('anon', f.oid, 'execute')
+    and not exists (select 1 from public.app_settings s
+                     where s.key = 'push_hook' and length(coalesce(s.value->>'secret', '')) < 32)
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks

@@ -13,8 +13,9 @@
 // platform's JWT check admits it, and with the push hook's secret in
 // x-push-secret (push_event, 0040), so the function knows the call is the
 // database's: the anon key is in every copy of the app, and a call without
-// the secret is refused before anything is read or sent. The function holds
-// the same secret as PUSH_HOOK_SECRET. Everything it sends is checked against
+// the secret is refused before anything is read or sent. The database makes
+// the secret and keeps it in app_settings.push_hook; the function reads it
+// there with its service key (HookSecret, logic.ts). Everything it sends is checked against
 // the recipient's preferences and stamped once: `activity.pushed_at`,
 // `posts.notified_at`, and a per-day guard for memories. Calling it again
 // with the same id sends nothing (a report: `reports.pushed_at`). Nothing here reads a phone's photo
@@ -55,8 +56,8 @@ import {
   eachChunk,
   eachPageByKey,
   goneTokens,
+  HookSecret,
   IDS_PER_READ,
-  isDatabaseCaller,
   memoryDays,
   pickMemories,
   PUSH_SECRET_HEADER,
@@ -113,15 +114,21 @@ const admin = createClient(
   { auth: { persistSession: false }, global: { fetch: withDeadline((url, init) => fetch(url, init), DB_TIMEOUT_MS) } },
 );
 
-/** The push hook's secret (0040): only the database's push_event sends it. */
-const PUSH_SECRET = Deno.env.get("PUSH_HOOK_SECRET") ?? "";
+/**
+ * The push hook's secret (0040): only the database's push_event sends it.
+ * Read where the database keeps it; PUSH_HOOK_SECRET, if set, instead.
+ */
+const hookSecret = new HookSecret(async () => {
+  const { data } = await admin.from("app_settings").select("value").eq("key", "push_hook").maybeSingle();
+  return (data?.value as { secret?: unknown } | null | undefined)?.secret;
+}, Deno.env.get("PUSH_HOOK_SECRET") ?? "");
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("POST only", { status: 405 });
   // The database's calls only: the anon key alone could set off the day's
   // memories early, or announce a photograph again.
-  if (!isDatabaseCaller(req.headers.get(PUSH_SECRET_HEADER), PUSH_SECRET)) {
-    if (!PUSH_SECRET) console.error("PUSH_HOOK_SECRET is not set: every call is refused");
+  if (!(await hookSecret.admits(req.headers.get(PUSH_SECRET_HEADER)))) {
+    if (hookSecret.missing) console.error("The push hook has no secret (0040 makes one): every call is refused");
     return new Response("Not allowed", { status: 401 });
   }
   let payload: { kind?: Kind; id?: string | null };

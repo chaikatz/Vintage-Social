@@ -660,9 +660,11 @@ these need accounts or values that are intentionally not in this repo:
   each honouring the member's toggles in Settings → Notifications. Dead tokens are retired
   automatically. The hook it is called through is the `push_hook` row in `app_settings`
   (`{"url": ".../functions/v1/push", "key": "<anon key>", "secret": "<push secret>"}`), set per
-  project and never committed. From migration 0040 the database sends the secret in an
-  `x-push-secret` header, and the function (version 3) refuses any call without it; the
-  function holds the same value as its `PUSH_HOOK_SECRET` secret (APP_STORE_LAUNCH.md, step 4, item 5).
+  project and never committed. The secret is made by the database (0040: a trigger gives the hook
+  one whenever it is written without one, keeping the one it had) and never leaves it. The
+  database sends it in an `x-push-secret` header, and the function (version 3) reads it from
+  `app_settings` with its service key and refuses any call without it (APP_STORE_LAUNCH.md,
+  step 4, item 5).
 - **iOS delivery needs an APNs key in EAS**: run `npx eas-cli credentials --platform ios` on the Mac,
   choose the production build profile → *Push Notifications* → set up a key. Without it tokens are
   filed but Apple delivers nothing. `expo-notifications` is native, so this is a full EAS build.

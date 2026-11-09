@@ -67,16 +67,31 @@
 --      buckets are unchanged: only an active member may write to them,
 --      and their limits are the platform's.
 --   6. The push function knows its caller. push_event (0017) sends, with
---      each call, a header only the database knows (x-push-secret), when
---      the push hook has one ("secret" in app_settings.push_hook, set by
---      the owner, never in the repository). The push function, from its
---      version 3, refuses any call without it, so the public anon key no
---      longer lets anyone set off the day's On This Day early or announce
---      a photograph again. Until the hook has a secret, push_event sends
---      exactly what it sent before; version 2 ignores the header.
---      Order on production: this file; the secret set on the function
---      (PUSH_HOOK_SECRET) and in the hook; then version 3 (APP_STORE_LAUNCH.md,
---      step 4, item 5).
+--      each call, a header only the database knows (x-push-secret): the
+--      push hook's secret ("secret" in app_settings.push_hook). The
+--      secret is made here, in the database, and kept there: a trigger
+--      gives the hook one whenever it is written without one (keeping the
+--      one it had, if it had one), and this file writes the hook as it is,
+--      so it gets one now. Nobody types it, copies it or sees it, and it
+--      is never in the repository. The push function, from its version 3,
+--      reads it with its service key and refuses any call without it, so
+--      the public anon key no longer lets anyone set off the day's On This
+--      Day early or announce a photograph again. Version 2 ignores the
+--      header, so nothing stops in between.
+--      Order on production: this file, then version 3 of the function
+--      (APP_STORE_LAUNCH.md, step 4, item 5). Version 3 before this file
+--      refuses every call until it runs.
+--
+-- To undo: drop the policies "comments: none across a block" and "likes:
+-- none across a block", the triggers messages_notify_trigger (on
+-- messages) and app_settings_push_hook_secret (on app_settings), and the
+-- functions private.post_across_a_block, private.notify_message and
+-- private.push_hook_keeps_a_secret; run again the earlier definitions of
+-- block_member (0018), notify_like and notify_comment (0001), notify_tag
+-- (0015) and push_event (0017); and set the avatars bucket's
+-- file_size_limit and allowed_mime_types back to null. Version 3 of the
+-- push function must go back to version 2 first, or it refuses every
+-- call. Reports and Activity rows filed meanwhile stay.
 --
 -- What members would notice: a like or comment on the photograph of a
 -- member on the other side of a block is refused (the heart goes back;
@@ -365,3 +380,38 @@ $$;
 
 -- As 0017 left it: the database's own.
 revoke execute on function public.push_event(text, uuid) from public, anon, authenticated;
+
+-- The hook's secret is made in the database and kept there. Whenever the
+-- hook is written without one (as 0017's instructions write it, on a new
+-- project, or rewritten for a new key), it keeps the secret it had, or,
+-- with none, gets a new one: 64 hexadecimal characters from two random
+-- UUIDs, which PostgreSQL draws from the server's strong random source.
+-- One written in the hook on purpose is kept as it is. Only the owner
+-- writes app_settings (0039 left members and visitors no write there).
+create or replace function private.push_hook_keeps_a_secret()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.key = 'push_hook'
+     and jsonb_typeof(new.value) = 'object'
+     and coalesce(new.value->>'secret', '') = '' then
+    new.value := new.value || jsonb_build_object('secret', coalesce(
+      case when tg_op = 'UPDATE' and jsonb_typeof(old.value) = 'object'
+           then nullif(old.value->>'secret', '') end,
+      replace(pg_catalog.gen_random_uuid()::text || pg_catalog.gen_random_uuid()::text, '-', '')));
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function private.push_hook_keeps_a_secret() from public, anon, authenticated;
+
+drop trigger if exists app_settings_push_hook_secret on public.app_settings;
+create trigger app_settings_push_hook_secret
+  before insert or update on public.app_settings
+  for each row execute function private.push_hook_keeps_a_secret();
+
+-- The hook as it is now gets its secret (and, run again, keeps it).
+update public.app_settings set value = value where key = 'push_hook';
