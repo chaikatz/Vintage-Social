@@ -87,7 +87,8 @@ export const PlaceSheet = memo(function PlaceSheet({ sheet, onOpenPost, onClose 
           contentContainerStyle={styles.content}
           // Three screens of squares either side of the reader, as the grid draws.
           windowSize={GRID_SCREENS}
-          initialNumToRender={ACROSS * 4}
+          // Rows, not squares: enough to fill the sheet as it rises.
+          initialNumToRender={4}
         />
       </Animated.View>
     </View>

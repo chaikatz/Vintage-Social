@@ -66,7 +66,11 @@ export interface ExportLabelText {
   placeLines: 0 | 1 | 2;
   /** `SEPTEMBER 15, 2026`. */
   date: string;
-  /** `@chai · MEMBER NO. 00027`, or just `@chai`. The founding designation stays on the profile; the print says member. */
+  /**
+   * `@chai · MEMBER`, `@chai · MEMBER NO. 00027` for a member who chose to
+   * show their number, or just `@chai` for an account with none. The
+   * founding designation stays on the profile; the print says member.
+   */
   credit: string;
 }
 

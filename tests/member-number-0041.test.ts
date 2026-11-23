@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { errorMessage } from "@/utils/errorMessage";
 
 /**
  * 0041 and the app's half of it: a member's number is shown only if they
@@ -155,6 +156,18 @@ describe("the switch in Settings", () => {
     expect(settings).toContain("Your profile always says Member. Turn this on to show your number, ${memberNumberText(memberNo)}, beside it and on the prints you share.");
     const save = settings.slice(settings.indexOf("const save = async"), settings.indexOf("const openDoc"));
     expect(save).not.toMatch(/show_member_no/);
+  });
+
+  it("says the app's calm words, not the database's, when the database has no such column yet", () => {
+    // What PostgREST answers a write to a column it does not know (a database before 0041).
+    const missing = "Could not find the 'show_member_no' column of 'profiles' in the schema cache";
+    const fallback = "Your number is shown as it was. Try again in a moment.";
+    const asError = Object.assign(new Error(missing), { name: "PostgrestError", code: "PGRST204", details: null, hint: null });
+    expect(errorMessage(asError, fallback)).toBe(fallback);
+    expect(errorMessage({ code: "PGRST204", message: missing, details: null, hint: null }, fallback)).toBe(fallback);
+    // And where 0039 was run again after it: the column is there, the grant is not.
+    expect(errorMessage({ code: "42501", message: "permission denied for table profiles", details: null, hint: null }, fallback)).toBe(fallback);
+    expect(settings).toContain(`errorMessage(err, "${fallback}")`);
   });
 
   it("is offered to a member with a number", () => {
