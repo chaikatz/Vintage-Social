@@ -127,10 +127,10 @@ set encrypted_password = '${digest}',
     updated_at = now()
 where email = '${EMAIL.replace(/'/g, "''")}';
 
--- Sessions opened with the old password end now.
+-- Sessions opened with the old password end now. (refresh_tokens.user_id is text, users.id a uuid.)
 update auth.refresh_tokens
 set revoked = true, updated_at = now()
-where user_id = (select id from auth.users where email = '${EMAIL.replace(/'/g, "''")}')
+where user_id = (select id::text from auth.users where email = '${EMAIL.replace(/'/g, "''")}')
   and revoked = false;
 
 -- Check: one user, confirmed, updated just now; the profile approved with its allowance.
