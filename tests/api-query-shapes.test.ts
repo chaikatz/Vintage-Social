@@ -979,6 +979,48 @@ describe("the home feed", () => {
     h.feedPage = "missing";
     await expect(posts.fetchFeedPage(ME, null)).rejects.toBeTruthy();
   });
+
+  describe("a look at what is newest (Home's new posts)", () => {
+    it("is one read of a few rows through feed_page: ids, times and authors, no list of who is followed, no names or faces", async () => {
+      club(800);
+      const head = await posts.fetchFeedHead(ME, 4);
+      expect(h.requests.length).toBe(1);
+      expect(h.requests[0].url.pathname).toBe("/rest/v1/rpc/feed_page");
+      expect(JSON.parse(h.requests[0].body ?? "{}")).toEqual({ p_limit: 4 });
+      expect(h.requests[0].url.searchParams.get("select")).toBe("id,created_at,author_id,author:profiles!posts_author_id_fkey(id)");
+      expect(h.requests[0].url.href.length).toBeLessThan(300);
+      // The newest of the feed, in its order, and nothing but what a look needs.
+      expect(head.map((p) => p.id)).toEqual(truth().slice(0, 4));
+      for (const row of head) expect(Object.keys(row).sort()).toEqual(["author_id", "created_at", "id"]);
+    });
+
+    it("is the top of the very page the feed would read", async () => {
+      club(60);
+      const head = await posts.fetchFeedHead(ME, 4);
+      const page = await posts.fetchFeedPage(ME, null);
+      expect(head.map((p) => p.id)).toEqual(page.slice(0, 4).map((p) => p.id));
+      expect(head.map((p) => p.created_at)).toEqual(page.slice(0, 4).map((p) => p.created_at));
+    });
+
+    it("leaves out a post whose author the reader may not see, as the feed does, so it is never announced", async () => {
+      club(10);
+      const hidden = id("f1", 0);
+      h.tables.profiles = h.tables.profiles.filter((p) => p.id !== hidden);
+      h.tables.posts.push({ id: id("f5", 1), author_id: hidden, created_at: at(10_000), removed_at: null });
+      const head = await posts.fetchFeedHead(ME, 4);
+      expect(head.map((p) => p.id)).not.toContain(id("f5", 1));
+      expect(head.map((p) => p.id)).toEqual(truth().filter((pid) => pid !== id("f5", 1)).slice(0, 3));
+    });
+
+    it("is read the old way where the database has no feed_page yet, the same rows", async () => {
+      club(10);
+      const there = await posts.fetchFeedHead(ME, 4);
+      h.feedPage = "missing";
+      posts.forgetFeedPageMissing();
+      const old = await posts.fetchFeedHead(ME, 4);
+      expect(old).toEqual(there);
+    });
+  });
 });
 
 describe("a photograph on its own", () => {
