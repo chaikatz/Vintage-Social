@@ -171,8 +171,8 @@ describe("the camera and the clip", () => {
     expect(under).toMatch(
       /<View style=\{styles\.boxes\}>\s*\{native \? \(\s*<BoxedWay\s+icon="camera"\s+label="Camera"\s+hint="Take one now"[\s\S]*?\) : null\}\s*<BoxedWay\s+icon="video"\s+label="Short video"/,
     );
-    // Not the quiet capitals they were: those stay for the shelf alone.
-    expect(tab.match(/<QuietWay\b/g)).toHaveLength(1);
+    // Not the quiet capitals they were: those stay for the room's shelf (Today in other years, Set aside).
+    expect(tab.match(/<QuietWay\b/g)).toHaveLength(2);
     expect(tab.match(/<BoxedWay\b/g)).toHaveLength(2);
     expect(boxed).toMatch(/<Feather name=\{icon\} size=\{BOX_MARK\} color=\{colors\.ink\} \/>/);
     expect(boxed).toMatch(/<Text style=\{styles\.boxWord\} maxFontSizeMultiplier=\{BAR_TYPE_CAP\}>\s*\{label\}\s*<\/Text>/);
