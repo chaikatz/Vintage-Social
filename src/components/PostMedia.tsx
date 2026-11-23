@@ -349,13 +349,20 @@ export function PostMedia({
         <Animated.View style={[StyleSheet.absoluteFill, zoomStyle]}>
           <Image
             source={inFrame}
-            // The grid's small square is almost always already on disk, so
-            // it stands in while the full frame arrives instead of a blank.
+            // The grid's small square is almost always already on disk
+            // (Home fetches the next posts' ahead, src/media/prefetch.ts),
+            // so it stands in while the full frame arrives instead of a
+            // blank.
             placeholder={thumb && thumb !== inFrame ? thumb : undefined}
             placeholderContentFit="cover"
             style={[StyleSheet.absoluteFill, live ? ({ filter: live.filter } as object) : null]}
             contentFit="cover"
-            transition={120}
+            // No dissolve. The image view dissolves every picture it is
+            // given, one already in memory too (ImageView.swift,
+            // renderSourceImage), so a photograph scrolled back to faded in
+            // from the paper each time, as if it were still loading. With
+            // the small copy standing in, the full frame simply sharpens it.
+            transition={0}
             priority={priority}
             cachePolicy={cachePolicy}
             recyclingKey={pictureKey}

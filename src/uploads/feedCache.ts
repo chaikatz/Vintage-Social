@@ -103,9 +103,10 @@ export function feedHas(data: InfiniteData<PostWithAuthor[]> | undefined, id: st
  * from the cache first. A fetch that started before the post existed
  * ends by writing pages read without it (a refetch reads them afresh, and
  * a next page is added to the pages as they were when it began), so
- * whatever was put in by hand meanwhile is gone when it lands.
+ * whatever was put in by hand meanwhile is gone when it lands. Home's new
+ * posts wait on it the same way (src/media/newPosts.ts).
  */
-function fetchSettled(queryClient: QueryClient, key: QueryKey): Promise<boolean> {
+export function fetchSettled(queryClient: QueryClient, key: QueryKey): Promise<boolean> {
   const cache = queryClient.getQueryCache();
   const query = cache.find({ queryKey: key, exact: true });
   if (!query || query.state.fetchStatus === "idle") return Promise.resolve(query != null);

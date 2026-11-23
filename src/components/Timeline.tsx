@@ -498,7 +498,9 @@ const Row = React.memo(function Row({
           source={url}
           style={[StyleSheet.absoluteFill, live ? ({ filter: live } as object) : null]}
           contentFit="cover"
-          transition={80}
+          // No dissolve: a picture already in memory faded in again each
+          // time its row drew it (the image view dissolves whatever it is given).
+          transition={0}
           cachePolicy="memory-disk"
           recyclingKey={post.id}
           key={retry.attempt}

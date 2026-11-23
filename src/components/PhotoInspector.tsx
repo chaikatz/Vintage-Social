@@ -249,7 +249,9 @@ function ZoomablePhoto({
             placeholderContentFit="contain"
             style={{ width: fitWidth, height: fitHeight }}
             contentFit="contain"
-            transition={120}
+            // No dissolve: the photograph is usually in memory already, from
+            // the line it was opened from, and faded in as if it were not.
+            transition={0}
             priority="high"
             cachePolicy="memory-disk"
             key={retry.attempt}

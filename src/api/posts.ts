@@ -137,8 +137,18 @@ export function feedFillSize(read: number): number {
 // of photographs (a hashed subplan over all of profiles, planned at
 // 1,000 members), so it is done here, on the page.
 
-/** One read of the feed's rows after `before`, `size` of them at most, authors and all. */
-async function readFeedRows(userId: string, before: FeedCursor | null, size: number): Promise<PostWithAuthor[]> {
+/**
+ * One read of the feed's rows after `before`, `size` of them at most,
+ * authors and all. `select` is what of each row comes back: the whole row
+ * with its author's name and face for a page, or a few columns for a look
+ * at what is newest (fetchFeedHead).
+ */
+async function readFeedRows(
+  userId: string,
+  before: FeedCursor | null,
+  size: number,
+  select: string = POST_WITH_AUTHOR,
+): Promise<PostWithAuthor[]> {
   if (Date.now() >= feedPageMissingUntil) {
     // The order is asked of PostgREST too: the function's own order is
     // not promised to survive the query PostgREST wraps around it to join
@@ -148,7 +158,7 @@ async function readFeedRows(userId: string, before: FeedCursor | null, size: num
         "feed_page",
         before ? { p_limit: size, p_before_at: before.at, p_before_id: before.id } : { p_limit: size },
       )
-      .select(POST_WITH_AUTHOR)
+      .select(select)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false });
     if (!error) return (data ?? []) as unknown as PostWithAuthor[];
@@ -160,7 +170,7 @@ async function readFeedRows(userId: string, before: FeedCursor | null, size: num
 
   const query = supabase
     .from("posts")
-    .select(POST_WITH_AUTHOR)
+    .select(select)
     .in("author_id", authorIds)
     .is("removed_at", null);
   const { data, error } = await pageAfter(query, "created_at", "id", before)
@@ -169,6 +179,31 @@ async function readFeedRows(userId: string, before: FeedCursor | null, size: num
     .limit(size);
   if (error) throw error;
   return (data ?? []) as unknown as PostWithAuthor[];
+}
+
+/** A post as a look at the newest of the feed sees it: enough to tell whether it is new, and whose. */
+export type FeedHeadRow = Pick<PostRow, "id" | "created_at" | "author_id">;
+
+/**
+ * Of each post a look reads, its id, time and author, and the author's id
+ * alone from their profile: a post whose author the reader may not see
+ * comes back without one and is left out, as a page leaves it out
+ * (withAuthors), so a look never announces a post the feed will not show.
+ */
+const FEED_HEAD = "id, created_at, author_id, author:profiles!posts_author_id_fkey(id)";
+
+/**
+ * The newest few posts of the member's feed, for Home's look at whether
+ * anything new has been posted (src/media/newPosts.ts): one read of a few
+ * rows of three columns, through feed_page as a page is, never a page with
+ * its pictures, names and faces. Bounded like every read (the app's
+ * request limit, src/lib/boundedFetch.ts).
+ */
+export async function fetchFeedHead(userId: string, size: number): Promise<FeedHeadRow[]> {
+  const head = (row: FeedHeadRow): FeedHeadRow => ({ id: row.id, created_at: row.created_at, author_id: row.author_id });
+  if (isDemoMode()) return demo.demoFetchFeedPage(userId, null, size).map(head);
+  const rows = await readFeedRows(userId, null, size, FEED_HEAD);
+  return withAuthors(rows).map(head);
 }
 
 /**
