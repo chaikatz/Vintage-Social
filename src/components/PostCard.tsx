@@ -6,7 +6,10 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { colors, spacing, type } from "@/theme";
 import { postedAgo, postedAgoSpoken, shortDate } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
+import { mentionedUsernames } from "@/utils/mentions";
+import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { Avatar } from "./Avatar";
+import { MentionText, NameLink } from "./MemberText";
 import { PostMedia } from "./PostMedia";
 import { authorShown, withAuthors } from "./hiddenAuthors";
 import type { ClipSurface } from "@/utils/videoTiming";
@@ -100,10 +103,14 @@ export const PostCard = React.memo(function PostCard({
           place the date simply starts the line. Nothing else — the film
           stock is in the picture. */}
       <View style={styles.header}>
-        <Pressable onPress={() => onOpenProfile(post.author.username)}>
+        <Pressable
+          onPress={() => onOpenProfile(post.author.username)}
+          accessibilityRole="button"
+          accessibilityLabel={`${post.author.username}’s profile`}
+        >
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
         </Pressable>
-        <Pressable style={styles.headerText} onPress={() => onOpenProfile(post.author.username)}>
+        <Pressable style={styles.headerText} onPress={() => onOpenProfile(post.author.username)} accessibilityRole="button">
           <Text style={styles.username} numberOfLines={1}>
             {post.author.username}
           </Text>
@@ -160,7 +167,9 @@ export const PostCard = React.memo(function PostCard({
 
       {post.caption ? (
         <Text style={styles.caption}>
-          <Text style={styles.captionAuthor}>{post.author.username}</Text> {post.caption}
+          {/* The name and every @name in the words open their member's page. */}
+          <NameLink username={post.author.username} onOpenProfile={onOpenProfile} style={styles.captionAuthor} />{" "}
+          <MentionText text={post.caption} onOpenProfile={onOpenProfile} />
         </Text>
       ) : null}
 
@@ -178,9 +187,27 @@ export const PostCard = React.memo(function PostCard({
           onPress={() => onOpenComments(post)}
           // Held, the comment's own menu, and Comments is not opened on release.
           onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+          // To VoiceOver the line is one element: opened, Comments; its names are its actions (src/utils/nameActions.ts).
+          accessibilityActions={[{ name: "activate" }, ...nameActions([c.author.username, ...mentionedUsernames(c.body)])]}
+          onAccessibilityAction={(e) => {
+            const username = nameFromAction(e.nativeEvent.actionName);
+            if (username) onOpenProfile(username);
+            else if (e.nativeEvent.actionName === "activate") onOpenComments(post);
+          }}
         >
           <Text style={styles.comment} numberOfLines={2}>
-            <Text style={styles.captionAuthor}>{c.author.username}</Text> {c.body}
+            {/* A name, or an @name, opens its member's page; held, the comment's menu, as the rest of the line. */}
+            <NameLink
+              username={c.author.username}
+              onOpenProfile={onOpenProfile}
+              onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+              style={styles.captionAuthor}
+            />{" "}
+            <MentionText
+              text={c.body}
+              onOpenProfile={onOpenProfile}
+              onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+            />
           </Text>
         </Pressable>
       ))}

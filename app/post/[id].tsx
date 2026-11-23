@@ -19,6 +19,10 @@ import { fetchPost } from "@/api/posts";
 import { fetchPostTags, removeTag } from "@/api/tags";
 import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
+import { useOpenProfile } from "@/hooks/useOpenProfile";
+import { MentionText, NameLink } from "@/components/MemberText";
+import { mentionedUsernames } from "@/utils/mentions";
+import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -72,6 +76,9 @@ export default function PostDetail() {
   const postIds = useMemo(() => (id ? [id] : []), [id]);
   const { isLiked, likeCountFor, toggleLike, onMore, onShare, onOpenComments, onCommentLongPress, onOpenLikes, commentsFor } =
     usePostActions(userId, postIds);
+  // Every name on the page opens its member's page; the one this photograph
+  // was opened from is gone back to, not opened again (src/hooks/useOpenProfile.ts).
+  const openMember = useOpenProfile();
 
   const post = postQ.data;
   const own = Boolean(post) && post!.author_id === userId;
@@ -117,7 +124,7 @@ export default function PostDetail() {
   const preview = withAuthors(commentsFor(post)).slice(-INLINE_COMMENTS);
   const hidden = post.comment_count - preview.length;
   const sameNight = night.data?.length ?? 0;
-  const openProfile = () => router.push(`/user/${post.author.username}`);
+  const openProfile = () => openMember(post.author.username);
   const shownTags = withMembers(tagsQ.data ?? []).filter((t) => t.status === "accepted" || t.user_id === userId);
   const myTag = shownTags.find((t) => t.user_id === userId);
 
@@ -128,10 +135,10 @@ export default function PostDetail() {
       {/* Laid out as a feed card, because that is what it is: who, then the
           picture, then the quiet row of actions and the words. */}
       <View style={styles.header}>
-        <Pressable onPress={openProfile}>
+        <Pressable onPress={openProfile} accessibilityRole="button" accessibilityLabel={`${post.author.username}’s profile`}>
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
         </Pressable>
-        <Pressable style={styles.headerText} onPress={openProfile}>
+        <Pressable style={styles.headerText} onPress={openProfile} accessibilityRole="button">
           <Text style={styles.username} numberOfLines={1}>
             {post.author.username}
           </Text>
@@ -150,7 +157,8 @@ export default function PostDetail() {
               <Text
                 key={t.user_id}
                 style={[styles.withName, t.status === "pending" && styles.withPending]}
-                onPress={() => router.push(`/user/${t.member.username}`)}
+                onPress={() => openMember(t.member.username)}
+                accessibilityRole="link"
               >
                 {t.member.username}
                 {t.status === "pending" ? " (pending)" : ""}
@@ -200,7 +208,9 @@ export default function PostDetail() {
 
       {post.caption ? (
         <Text style={styles.caption}>
-          <Text style={styles.captionAuthor}>{post.author.username}</Text> {post.caption}
+          {/* The name and every @name in the words open their member's page. */}
+          <NameLink username={post.author.username} onOpenProfile={openMember} style={styles.captionAuthor} />{" "}
+          <MentionText text={post.caption} onOpenProfile={openMember} />
         </Text>
       ) : null}
 
@@ -215,9 +225,27 @@ export default function PostDetail() {
       ) : null}
       {preview.map((c) => (
         // Held, the comment's own menu, as on the Comments screen and in the feed.
-        <Pressable key={c.id} onPress={() => onOpenComments(post)} onLongPress={() => onCommentLongPress(c)}>
+        <Pressable
+          key={c.id}
+          onPress={() => onOpenComments(post)}
+          onLongPress={() => onCommentLongPress(c)}
+          // To VoiceOver the line is one element: opened, Comments; its names are its actions (src/utils/nameActions.ts).
+          accessibilityActions={[{ name: "activate" }, ...nameActions([c.author.username, ...mentionedUsernames(c.body)])]}
+          onAccessibilityAction={(e) => {
+            const username = nameFromAction(e.nativeEvent.actionName);
+            if (username) openMember(username);
+            else if (e.nativeEvent.actionName === "activate") onOpenComments(post);
+          }}
+        >
           <Text style={styles.comment} numberOfLines={2}>
-            <Text style={styles.captionAuthor}>{c.author.username}</Text> {c.body}
+            {/* A name, or an @name, opens its member's page; held, the comment's menu, as the rest of the line. */}
+            <NameLink
+              username={c.author.username}
+              onOpenProfile={openMember}
+              onLongPress={() => onCommentLongPress(c)}
+              style={styles.captionAuthor}
+            />{" "}
+            <MentionText text={c.body} onOpenProfile={openMember} onLongPress={() => onCommentLongPress(c)} />
           </Text>
         </Pressable>
       ))}

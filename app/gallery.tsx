@@ -32,6 +32,7 @@ import {
   startLanding,
 } from "@/utils/galleryLanding";
 import { usePostActions } from "@/hooks/usePostActions";
+import { useOpenProfile } from "@/hooks/useOpenProfile";
 import { useEraEdits } from "@/hooks/useEraEdits";
 import { useSession } from "@/providers/SessionProvider";
 import type { PostWithAuthor } from "@/types/db";
@@ -289,7 +290,9 @@ export default function Gallery() {
   // list drawing again draws again only the cards that did change (see
   // src/media/stableCards.ts).
   const [counted] = useState(likeCounted);
-  const openProfile = useCallback((username: string) => router.push(`/user/${username}`), [router]);
+  // A name opens its member's page; this gallery's own member's, opened from
+  // their page, is gone back to rather than opened again (src/hooks/useOpenProfile.ts).
+  const openProfile = useOpenProfile();
   const more = useCallback((p: PostWithAuthor) => onMore(p, () => router.back()), [onMore, router]);
 
   // Only the card on screen plays (visibleId, above), and only it and its

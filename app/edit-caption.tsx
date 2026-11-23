@@ -11,6 +11,9 @@ import { fetchPost, updateCaption } from "@/api/posts";
 import { MAX_CAPTION_LENGTH } from "@/utils/validation";
 import { rewritePostEverywhere } from "@/utils/postCache";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { MentionSuggestions } from "@/components/MentionSuggestions";
+import { useMentionField } from "@/hooks/useMentionField";
+import { useSession } from "@/providers/SessionProvider";
 
 // A row that breaks this sheet breaks only this sheet, with the way back on its
 // page: a sheet has no back button (src/navigation/Recover.tsx).
@@ -27,6 +30,7 @@ export { RecoverPageWithBack as ErrorBoundary } from "@/navigation/Recover";
 export default function EditCaption() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { session } = useSession();
   const { postId } = useLocalSearchParams<{ postId: string }>();
 
   const postQ = useQuery({
@@ -37,6 +41,8 @@ export default function EditCaption() {
   const [draft, setDraft] = useState<string | null>(null);
   const caption = draft ?? postQ.data?.caption ?? "";
   const unchanged = caption.trim() === (postQ.data?.caption ?? "").trim();
+  // An @name in the caption: the members it could be, over Cancel and Save while it is written.
+  const captionField = useMentionField(caption, setDraft, MAX_CAPTION_LENGTH);
 
   const save = useMutation({
     mutationFn: () => updateCaption(postId ?? "", caption),
@@ -64,6 +70,9 @@ export default function EditCaption() {
             inputAccessoryViewID={KEYBOARD_DONE}
             value={caption}
             onChangeText={(t) => setDraft(t.slice(0, MAX_CAPTION_LENGTH))}
+            onSelectionChange={captionField.onSelectionChange}
+            onFocus={captionField.onFocus}
+            onBlur={captionField.onBlur}
             multiline
             autoFocus
             placeholder="Optional — keep it quiet."
@@ -74,6 +83,9 @@ export default function EditCaption() {
           <Text style={styles.count}>
             {caption.length}/{MAX_CAPTION_LENGTH}
           </Text>
+        </View>
+        <View style={styles.suggestions}>
+          <MentionSuggestions mention={captionField.mention} myId={session?.user?.id ?? ""} onPick={captionField.pick} />
         </View>
         <View style={styles.footer}>
           <Button title="Cancel" variant="secondary" onPress={() => router.back()} style={styles.half} disabled={save.isPending} />
@@ -121,4 +133,5 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   half: { flex: 1 },
+  suggestions: { paddingHorizontal: spacing.lg },
 });
