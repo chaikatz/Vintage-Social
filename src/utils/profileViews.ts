@@ -29,14 +29,16 @@ export const PROFILE_VIEWS: readonly { view: ProfileView; label: string }[] = [
 /**
  * Whether a tap on a photograph opens its author's gallery, to keep
  * scrolling through their work from there, or the post on its own. The
- * two grids and the eras open the gallery; the timeline, the map and the
- * places, which are read a photograph at a time, open the post. One you
- * were tagged in belongs to its author's gallery, not this one, and
- * always opens on its own.
+ * two grids and the eras open the gallery, and so does the map, whose
+ * photographs are opened from the grid of a place's squares its pins
+ * bring up (src/components/PlaceSheet.tsx), as the profile's grid opens
+ * them; the timeline and the places, which are read a photograph at a
+ * time, open the post. One you were tagged in belongs to its author's
+ * gallery, not this one, and always opens on its own.
  */
 export function opensGallery(view: ProfileView, post: { tagged_in?: boolean }): boolean {
   if (post.tagged_in) return false;
-  return view === "posted" || view === "taken" || view === "eras";
+  return view === "posted" || view === "taken" || view === "eras" || view === "map";
 }
 
 /**

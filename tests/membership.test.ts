@@ -3,7 +3,9 @@ import {
   FOUNDING_MEMBER_LIMIT,
   formatMemberNumber,
   isFoundingMember,
+  memberNumberText,
   membershipLine,
+  showsMemberNumber,
 } from "@/utils/membership";
 import { DEMO_PROFILES } from "@/demo/fixtures";
 
@@ -31,10 +33,44 @@ describe("membership numbers", () => {
     expect(isFoundingMember(0)).toBe(false);
   });
 
-  it("writes the profile line", () => {
-    expect(membershipLine(27)).toBe("MEMBER · NO. 00027");
-    expect(membershipLine(FOUNDING_MEMBER_LIMIT + 1)).toBe("MEMBER · NO. 10001");
-    expect(membershipLine(null)).toBeNull();
+  it("writes the profile line: the number after MEMBER for a member who chose to show it", () => {
+    expect(membershipLine(27, true)).toBe("MEMBER · NO. 00027");
+    expect(membershipLine(FOUNDING_MEMBER_LIMIT + 1, true)).toBe("MEMBER · NO. 10001");
+    expect(membershipLine(null, true)).toBeNull();
+  });
+
+  it("says MEMBER alone for everyone else, and nothing for someone not let in", () => {
+    expect(membershipLine(27, false)).toBe("MEMBER");
+    expect(membershipLine(1, false)).toBe("MEMBER");
+    expect(membershipLine(null, false)).toBeNull();
+    expect(membershipLine(undefined, false)).toBeNull();
+    expect(membershipLine(0, false)).toBeNull();
+  });
+
+  it("writes the number in a sentence", () => {
+    expect(memberNumberText(27)).toBe("No. 00027");
+    expect(memberNumberText(123_456)).toBe("No. 123456");
+  });
+});
+
+describe("whether a member shows their number", () => {
+  it("is their choice, and hidden unless they made it", () => {
+    expect(showsMemberNumber({ show_member_no: true })).toBe(true);
+    expect(showsMemberNumber({ show_member_no: false })).toBe(false);
+  });
+
+  it("reads a profile from before 0041, with no such column, as hidden", () => {
+    expect(showsMemberNumber({})).toBe(false);
+    expect(showsMemberNumber({ show_member_no: null })).toBe(false);
+    expect(showsMemberNumber(null)).toBe(false);
+    expect(showsMemberNumber(undefined)).toBe(false);
+    // Only a stored true: nothing that merely looks like one.
+    expect(showsMemberNumber({ show_member_no: "true" as unknown as boolean })).toBe(false);
+  });
+
+  it("is hidden for every member of the demo club but the one who chose to show it", () => {
+    const showing = DEMO_PROFILES.filter((p) => showsMemberNumber(p)).map((p) => p.username);
+    expect(showing).toEqual(["tomas.lindqvist"]);
   });
 });
 

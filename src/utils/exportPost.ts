@@ -52,6 +52,8 @@ export async function brandVideo(
   format: ExportFormat,
   paper: ExportPaper,
   memberNo: number | null | undefined,
+  /** Whether the author chose to show their number, as on the print's own card. */
+  showMemberNo: boolean,
   onStage?: (stage: string) => void,
 ): Promise<string> {
   if (!native?.brand) throw new Error("Branding a film is not available in this build");
@@ -66,7 +68,7 @@ export async function brandVideo(
   onStage?.("Printing…");
   const iconUri = await iconFile();
   const width = VIDEO_WIDTH[format];
-  const words = exportLabelText(post, memberNo);
+  const words = exportLabelText(post, memberNo, showMemberNo);
   const L = exportLayout(printRatio(post.width, post.height), format, width, { placeLines: words.placeLines });
   const c = exportPalette(paper);
   const date = post.taken_at ?? post.created_at;

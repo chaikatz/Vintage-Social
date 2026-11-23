@@ -581,6 +581,9 @@ insert into tests.results (name, expected, actual) values
 -- ---------------------------------------------------------------------------
 -- the catalogue: exactly these columns, for members; nothing for visitors
 -- ---------------------------------------------------------------------------
+-- (With the files after 0039 that add one: 0041's show_member_no on
+-- profiles, the member's own "Show my member number" switch, proven in
+-- 20_member_number_0041.sql.)
 create temp table w_written as
 select c.relname::text as tbl, x.privilege_type as priv, a.attname::text as col
 from pg_class c
@@ -600,7 +603,7 @@ insert into tests.results (name, expected, actual) values
    || 'notification_prefs UPDATE comments,follows,likes,memories,messages,posts,tags,updated_at,user_id; '
    || 'post_tags INSERT post_id,tagged_by,user_id; post_tags UPDATE decided_at,status; '
    || 'posts INSERT author_id,caption,duration_seconds,filter_baked,filter_id,height,id,lat,lng,location,media_path,media_type,place_id,show_date_stamp,taken_at,thumb_path,width; '
-   || 'posts UPDATE caption; profiles UPDATE avatar_url,bio,city,full_name,is_private; '
+   || 'posts UPDATE caption; profiles UPDATE avatar_url,bio,city,full_name,is_private,show_member_no; '
    || 'push_tokens INSERT created_at,device,invalid_at,platform,token,updated_at,user_id; '
    || 'push_tokens UPDATE created_at,device,invalid_at,platform,token,updated_at,user_id; '
    || 'reports INSERT comment_id,details,post_id,profile_id,reason,reporter_id,target_type; '
@@ -726,11 +729,15 @@ insert into tests.results (name, expected, actual) values
       and pg_get_functiondef(p.oid) = b.definition
       and p.proacl::text = (select acl from w_fn where sig = b.signature)));
 
+-- Then 0041 after it, as the files run in order: 0039 takes back every
+-- update on profiles and gives back its own five columns, so the column
+-- 0041 gives members (show_member_no) is given again by 0041 alone.
 \o /dev/null
 \ir ../migrations/0039_writes_only_what_the_app_writes.sql
+\ir ../migrations/0041_member_number_shown_by_choice.sql
 \o
 insert into tests.results (name, expected, actual) values
-  ('0039 applied again over its rollback: every table''s and column''s privileges as the first time', '0',
+  ('0039 applied again over its rollback (and 0041 after it): every table''s and column''s privileges as the first time', '0',
    (select count(*)::text from (
       (select * from w_acl
        except
@@ -759,12 +766,13 @@ insert into tests.results (name, expected, actual) values
       and p.pronamespace = 'public'::regnamespace and p.proname in ('join_with_invite', 'redeem_invite', 'create_invite')
      where pg_get_functiondef(p.oid) = f.def and p.proacl::text = f.acl));
 
--- And once more on top of itself: nothing changes.
+-- And once more on top of itself (0041 after it again): nothing changes.
 \o /dev/null
 \ir ../migrations/0039_writes_only_what_the_app_writes.sql
+\ir ../migrations/0041_member_number_shown_by_choice.sql
 \o
 insert into tests.results (name, expected, actual) values
-  ('0039 applied a third time changes nothing', '0,0',
+  ('0039 applied a third time (and 0041 after it) changes nothing', '0,0',
    (select count(*)::text from (
       select c.oid::regclass::text, c.relacl::text,
              (select string_agg(a.attname || '=' || a.attacl::text, ' ' order by a.attnum)

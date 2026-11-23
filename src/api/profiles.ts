@@ -102,6 +102,12 @@ export interface ProfileEdits {
   avatar_url?: string;
   city?: string;
   is_private?: boolean;
+  /**
+   * Settings' "Show my member number" (0041). Sent on its own, by its
+   * switch: a database before 0041 refuses it (no such column), and the
+   * switch says so and goes back, while Save, which never sends it, works.
+   */
+  show_member_no?: boolean;
 }
 
 export async function updateOwnProfile(userId: string, edits: ProfileEdits): Promise<void> {

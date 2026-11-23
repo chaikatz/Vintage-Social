@@ -102,7 +102,11 @@ export const DEMO_PROFILES: ProfileRow[] = numbered([
     invited_by: DEMO_IDS.admin,
     is_private: true,
   }),
-  member(DEMO_IDS.tomas, "tomas.lindqvist", "Tomas Lindqvist", "North light. Quiet water.", "Stockholm", "@t.lindqvist", "tomas-face", 360, { invited_by: DEMO_IDS.elena }),
+  // Shows his number on his profile (Settings, "Show my member number"): the demo has one of each.
+  member(DEMO_IDS.tomas, "tomas.lindqvist", "Tomas Lindqvist", "North light. Quiet water.", "Stockholm", "@t.lindqvist", "tomas-face", 360, {
+    invited_by: DEMO_IDS.elena,
+    show_member_no: true,
+  }),
   member(DEMO_IDS.june, "june.nakamura", "June Nakamura", "Gardens, trains, breakfast.", "Kyoto", "@june.naka", "june-face", 340, { invited_by: DEMO_IDS.elena }),
   member(DEMO_IDS.arthur, "arthur.beaumont", "Arthur Beaumont", "Old cafés and older stone.", "Paris", "@a.beaumont", "arthur-face", 300, { invited_by: DEMO_IDS.tomas }),
   member(DEMO_IDS.clara, "clara.reyes", "Clara Reyes", "Color, but gently.", "Mexico City", "@clara.rys", "clara-face", 260, { invited_by: DEMO_IDS.june }),

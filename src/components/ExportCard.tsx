@@ -16,6 +16,8 @@ interface Props {
   width: number;
   /** The author's membership number, when known. Never invented. */
   memberNo?: number | null;
+  /** Whether the author chose to show it; without it, the label says MEMBER alone. */
+  showMemberNo?: boolean;
   /** The picture has drawn; a capture will not be blank. */
   onReady?: () => void;
 }
@@ -42,9 +44,9 @@ export function exportPalette(paper: ExportPaper) {
  * were cut short ("VINTA…") on the shared print; at a smaller one the
  * print no longer matched its own film.
  */
-export function ExportCard({ post, source, format, paper, width, memberNo, onReady }: Props) {
+export function ExportCard({ post, source, format, paper, width, memberNo, showMemberNo = false, onReady }: Props) {
   const ratio = printRatio(post.width, post.height);
-  const words = exportLabelText(post, memberNo);
+  const words = exportLabelText(post, memberNo, showMemberNo);
   const L = exportLayout(ratio, format, width, { placeLines: words.placeLines });
   const c = exportPalette(paper);
   const date = post.taken_at ?? post.created_at;

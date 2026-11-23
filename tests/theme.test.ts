@@ -302,7 +302,8 @@ describe("the tokens, where they are used", () => {
         expect(sw, f).toContain(`thumbColor={${value} ? colors.paperRaised : colors.knob}`);
       }
     }
-    expect(seen).toBe(3);
+    // Settings' three (Private account, Show my member number, the notifications' one) and Post's.
+    expect(seen).toBe(4);
   });
 
   it("sets the shutter's ink only on the shutter, and the camera's on a photograph", () => {

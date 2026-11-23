@@ -170,8 +170,8 @@ function lineKey(line: PlaceLine<GridPost>): string {
   return line.key;
 }
 
-/** A place's heading. Drawn again only when what it says changes. */
-const PlaceHead = memo(function PlaceHead({
+/** A place's heading. Drawn again only when what it says changes. The map's place sheet heads its photographs with it too. */
+export const PlaceHead = memo(function PlaceHead({
   title,
   placed,
   count,
