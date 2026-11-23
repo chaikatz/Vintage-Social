@@ -85,14 +85,36 @@ describe("Home's new posts", () => {
     expect(hook).toMatch(/const watching = Boolean\(userId\) && focused && appFront && online && hasFeed;/);
   });
 
-  it("go in without a word only at the very top with no finger on the list", () => {
-    expect(home).toMatch(/\(\) => scrollY\.current <= AT_TOP_PX && !dragging\.current && !gliding\.current/);
-    for (const handler of ["onScroll", "onScrollBeginDrag", "onScrollEndDrag", "onMomentumScrollBegin", "onMomentumScrollEnd"]) {
-      expect(home).toMatch(new RegExp(`${handler}=\\{${handler}\\}`));
-    }
+  it("go in without a word only at the very top, the list still, with no finger on it", () => {
+    // What counts is src/media/newPosts.ts listAtTop, run in tests/newPosts.test.ts.
+    expect(home).toMatch(/const \[where\] = useState\(listAtTop\);/);
+    expect(home).toMatch(/const atTop = useCallback\(\(\) => where\.atTop\(Date\.now\(\)\), \[where\]\);/);
+    const handlers = [
+      "onScroll",
+      "onScrollBeginDrag",
+      "onScrollEndDrag",
+      "onMomentumScrollBegin",
+      "onMomentumScrollEnd",
+      // A touch that scrolls nothing: a tap, a long press, a pinch, a finger at rest.
+      "onTouchStart",
+      "onTouchEnd",
+      "onTouchCancel",
+    ];
+    for (const handler of handlers) expect(home).toMatch(new RegExp(`${handler}=\\{${handler}\\}`));
+    // A drag's speed is handed on (a drag let go without it ends a glide),
+    // and a touch ends only with its last finger.
+    expect(home).toMatch(/where\.dragEnded\(e\.nativeEvent\.contentOffset\.y, e\.nativeEvent\.velocity\?\.y\)/);
+    expect(home).toMatch(/where\.touchEnded\(e\.nativeEvent\.touches\?\.length \?\? 0\)/);
+    expect(home).toMatch(/const onTouchStart = useCallback\(\(\) => where\.touchBegan\(Date\.now\(\)\), \[where\]\);/);
+    expect(home).toMatch(/const onTouchCancel = useCallback\(\(\) => where\.touchEnded\(0\), \[where\]\);/);
     // The handlers write down where the list is; none of them draws Home again.
-    const handlers = home.slice(home.indexOf("const onScroll = useCallback"), home.indexOf("const atTop = useCallback"));
-    expect(handlers).not.toMatch(/set[A-Z]\w*\(/);
+    const written = home.slice(home.indexOf("const onScroll = useCallback"), home.indexOf("const toTop = useCallback"));
+    expect(written).toMatch(/const onTouchEnd = useCallback/);
+    expect(written).not.toMatch(/set[A-Z]\w*\(/);
+  });
+
+  it("are put in place only if the member is still at the top once any read out has landed", () => {
+    expect(hook).toMatch(/placeFreshFirstPage\(queryClient, key, rows, readAt, FEED_PAGE_SIZE, \(\) => atTopRef\.current\(\)\)/);
   });
 
   it("are read in two small steps, never by reading every page held again", () => {

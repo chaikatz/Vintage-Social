@@ -24,8 +24,14 @@ import { fetchSettled } from "@/uploads/feedCache";
 /** How often Home looks, while it is in front. */
 export const NEW_POSTS_EVERY_MS = 45_000;
 
-/** How many of the newest posts one look reads. */
-export const FEED_HEAD_SIZE = 4;
+/**
+ * How many of the newest posts one look reads: a few, and more than a
+ * member is likely to post in a row. The member's own posts are never
+ * new, so a look filled with them would not see a friend's post just
+ * under them; eight rows of three columns (fetchFeedHead) is still one
+ * small read.
+ */
+export const FEED_HEAD_SIZE = 8;
 
 /**
  * A held newest page older than this is read again before it is put in
@@ -35,6 +41,81 @@ export const FRESH_PAGE_KEEP_MS = 60_000;
 
 /** How far down, in points, a list still counts as at its very top. */
 export const AT_TOP_PX = 4;
+
+/**
+ * How long a finger on the list counts as still there without word of its
+ * lifting. The end of a touch can go unheard (the view it began on let go
+ * of under it); past this it is taken to have ended, so a lost one cannot
+ * keep new posts from going in place for good. Long, as a finger resting
+ * on a card or a pinch held on a photograph can be: at worst a look
+ * meanwhile shows the "New posts" tag instead.
+ */
+export const TOUCH_FORGOTTEN_MS = 10_000;
+
+/**
+ * Where Home's list is, and whether anything is moving it or resting on
+ * it, written down from the list's own events and never drawn: new posts
+ * go in without a word only at the very top, with the list still and no
+ * finger on it (src/hooks/useNewPosts.ts).
+ *
+ * A drag lasts from its start until the finger lifts. A glide lasts from
+ * its start until it ends, and is over too at a new drag, or at a drag let
+ * go without speed: a glide stopped by a finger need not say it ended. A
+ * touch that scrolls nothing (a tap, a long press, a pinch on a
+ * photograph, a finger resting on a card) lasts from the first finger down
+ * until the last one lifts, a drag ends, or TOUCH_FORGOTTEN_MS has passed.
+ */
+export interface ListAtTop {
+  scrolled(y: number): void;
+  dragBegan(): void;
+  dragEnded(y: number, velocityY?: number): void;
+  glideBegan(): void;
+  glideEnded(y: number): void;
+  touchBegan(now: number): void;
+  /** A finger lifted or the touch was called off, `fingersLeft` still down. */
+  touchEnded(fingersLeft: number): void;
+  /** At the very top, still, and untouched, as of `now`. */
+  atTop(now: number): boolean;
+}
+
+export function listAtTop(): ListAtTop {
+  let y = 0;
+  let dragging = false;
+  let gliding = false;
+  let touchedAt: number | null = null;
+  return {
+    scrolled(at) {
+      y = at;
+    },
+    dragBegan() {
+      dragging = true;
+      gliding = false;
+    },
+    dragEnded(at, velocityY) {
+      dragging = false;
+      touchedAt = null;
+      y = at;
+      if (!velocityY) gliding = false;
+    },
+    glideBegan() {
+      gliding = true;
+    },
+    glideEnded(at) {
+      gliding = false;
+      y = at;
+    },
+    touchBegan(now) {
+      touchedAt = now;
+    },
+    touchEnded(fingersLeft) {
+      if (!(fingersLeft > 0)) touchedAt = null;
+    },
+    atTop(now) {
+      const touching = touchedAt !== null && now - touchedAt < TOUCH_FORGOTTEN_MS;
+      return y <= AT_TOP_PX && !dragging && !gliding && !touching;
+    },
+  };
+}
 
 /** A post as a look sees it: enough to tell whether it is new, and whose it is. */
 export type HeadRow = { id: string; created_at: string; author_id: string };
@@ -131,7 +212,7 @@ export function mergeFreshFirstPage(
 }
 
 /** What became of a newly read first page handed to the feed. */
-export type FreshPlaced = "placed" | "stale" | "gone";
+export type FreshPlaced = "placed" | "stale" | "gone" | "moved";
 
 /**
  * Put a newly read first page into the feed's cache, merged with what it
@@ -144,7 +225,9 @@ export type FreshPlaced = "placed" | "stale" | "gone";
  * deleted, reported or posted here meanwhile, a refresh that landed, each
  * write the feed anew, and a page read before them would undo them. Then
  * it is "stale" and the caller reads it again. "gone": the feed is no
- * longer held (signed out).
+ * longer held (signed out). "moved": `stillWanted`, asked once any wait
+ * is over and just before the page is written, said no (the member left
+ * the top meanwhile), and nothing is written.
  */
 export async function placeFreshFirstPage(
   client: QueryClient,
@@ -152,12 +235,14 @@ export async function placeFreshFirstPage(
   fresh: PostWithAuthor[],
   readAt: number,
   pageSize: number,
+  stillWanted: () => boolean = () => true,
 ): Promise<FreshPlaced> {
   const alive = await fetchSettled(client, key);
   if (!alive) return "gone";
   const state = client.getQueryState<InfiniteData<PostWithAuthor[], Cursor | null>>(key);
   if (!state || state.data === undefined) return "gone";
   if (state.dataUpdatedAt > readAt) return "stale";
+  if (!stillWanted()) return "moved";
   client.setQueryData<InfiniteData<PostWithAuthor[], Cursor | null>>(key, (data) => mergeFreshFirstPage(data, fresh, pageSize));
   return "placed";
 }

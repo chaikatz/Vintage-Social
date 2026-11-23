@@ -85,15 +85,24 @@ export function useNewPosts({
     // nothing more to read until they tap it (which reads it again if it
     // has been held a while) or reach the top.
     if (keptCovers && !atTopRef.current()) return;
-    const readAt = Date.now();
-    const rows = await fetchFeedPage(me, null);
+    let readAt = Date.now();
+    let rows = await fetchFeedPage(me, null);
     if (userRef.current !== me) return;
-    if (atTopRef.current()) {
-      const placed = await placeFreshFirstPage(queryClient, key, rows, readAt, FEED_PAGE_SIZE);
-      if (placed !== "stale") {
+    // At the very top, in place: written only if the member is still at
+    // the top once any read of the feed already out has landed. When the
+    // feed changed while the page was read (the member's own post, a
+    // delete, a refresh), it is read once more, rather than show the tag
+    // to a member who is at the top.
+    for (let tries = 0; atTopRef.current(); tries++) {
+      const placed = await placeFreshFirstPage(queryClient, key, rows, readAt, FEED_PAGE_SIZE, () => atTopRef.current());
+      if (placed === "placed" || placed === "gone") {
         setFresh(null);
         return;
       }
+      if (placed === "moved" || tries > 0) break;
+      readAt = Date.now();
+      rows = await fetchFeedPage(me, null);
+      if (userRef.current !== me) return;
     }
     setFresh({ userId: me, rows, readAt });
     prefetchNewPosts(newerThanHeld(rows, postsRef.current, me));

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent, type ViewToken } from "react-native";
+import { FlatList, StyleSheet, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { focusManager, onlineManager, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,7 +20,7 @@ import { pendingNeedsTop } from "@/uploads/store";
 import { idsAround } from "@/media/cardWindow";
 import { commentsOrNone, likeCounted } from "@/media/stableCards";
 import { refreshFromFirstPage, refreshOnReturn } from "@/media/feedPages";
-import { AT_TOP_PX } from "@/media/newPosts";
+import { listAtTop } from "@/media/newPosts";
 import { prefetchAhead } from "@/media/prefetch";
 import type { PostWithAuthor } from "@/types/db";
 
@@ -201,33 +201,28 @@ export default function Home() {
     }
   }, [pending, focused]);
 
-  // Where the list is and whether a finger is on it, for new posts put in
-  // without a word (below). Written down as the list reports it, never
-  // drawn: the list reports every scroll whatever is listening.
-  const scrollY = useRef(0);
-  const dragging = useRef(false);
-  const gliding = useRef(false);
-  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollY.current = e.nativeEvent.contentOffset.y;
-  }, []);
-  const onScrollBeginDrag = useCallback(() => {
-    dragging.current = true;
-  }, []);
-  const onScrollEndDrag = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    dragging.current = false;
-    scrollY.current = e.nativeEvent.contentOffset.y;
-  }, []);
-  const onMomentumScrollBegin = useCallback(() => {
-    gliding.current = true;
-  }, []);
-  const onMomentumScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    gliding.current = false;
-    scrollY.current = e.nativeEvent.contentOffset.y;
-  }, []);
-  const atTop = useCallback(
-    () => scrollY.current <= AT_TOP_PX && !dragging.current && !gliding.current,
-    [],
+  // Where the list is, whether it is moving, and whether a finger is on
+  // it, for new posts put in without a word (below). Written down as the
+  // list reports it, never drawn: the list reports every scroll and touch
+  // whatever is listening (src/media/newPosts.ts, listAtTop).
+  const [where] = useState(listAtTop);
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => where.scrolled(e.nativeEvent.contentOffset.y), [where]);
+  const onScrollBeginDrag = useCallback(() => where.dragBegan(), [where]);
+  const onScrollEndDrag = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => where.dragEnded(e.nativeEvent.contentOffset.y, e.nativeEvent.velocity?.y),
+    [where],
   );
+  const onMomentumScrollBegin = useCallback(() => where.glideBegan(), [where]);
+  const onMomentumScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => where.glideEnded(e.nativeEvent.contentOffset.y),
+    [where],
+  );
+  // A finger on the list that scrolls nothing counts too: a tap, a long
+  // press, a pinch on a photograph, a finger resting on a card.
+  const onTouchStart = useCallback(() => where.touchBegan(Date.now()), [where]);
+  const onTouchEnd = useCallback((e: GestureResponderEvent) => where.touchEnded(e.nativeEvent.touches?.length ?? 0), [where]);
+  const onTouchCancel = useCallback(() => where.touchEnded(0), [where]);
+  const atTop = useCallback(() => where.atTop(Date.now()), [where]);
   const toTop = useCallback(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), []);
 
   // New posts from the members followed, as they are posted: put in at
@@ -358,6 +353,9 @@ export default function Home() {
         onScrollEndDrag={onScrollEndDrag}
         onMomentumScrollBegin={onMomentumScrollBegin}
         onMomentumScrollEnd={onMomentumScrollEnd}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchCancel}
       />
       {newPosts.waiting ? <NewPostsTag onPress={newPosts.showNew} /> : null}
     </Screen>

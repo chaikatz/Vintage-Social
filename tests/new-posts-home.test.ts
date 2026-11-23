@@ -146,15 +146,19 @@ const api = vi.hoisted(() => ({
   page: [] as unknown[],
   heads: 0,
   pages: 0,
+  /** What happens on the phone while page number `n` is being read. */
+  whilePage: null as null | ((n: number) => void),
 }));
 vi.mock("@/api/posts", () => ({
   FEED_PAGE_SIZE: 12,
-  fetchFeedHead: async () => {
+  // The newest `size` of the feed, as feed_page reads them.
+  fetchFeedHead: async (_userId: string, size: number) => {
     api.heads++;
-    return api.head;
+    return api.head.slice(0, size);
   },
   fetchFeedPage: async () => {
     api.pages++;
+    api.whilePage?.(api.pages);
     return api.page;
   },
 }));
@@ -234,6 +238,7 @@ beforeEach(() => {
   api.page = feed.slice(0, 12);
   api.heads = 0;
   api.pages = 0;
+  api.whilePage = null;
   prefetched.length = 0;
 });
 afterEach(() => {
@@ -337,6 +342,63 @@ describe("Home's look for new posts", () => {
     expect(api.pages).toBe(2);
     expect(flat()[0].id).toBe(fresh.id);
     expect(flat().map((p) => p.id)).not.toContain(feed[3].id);
+    hook.unmount();
+  });
+
+  it("reads the page once more, rather than show the tag at the top, when the feed changed while it was read", async () => {
+    const { hook, client, flat } = setup({ top: true });
+    const mine = post(2050, ME);
+    api.head = [head(fresh), head(feed[0])];
+    api.page = [fresh, ...feed.slice(0, 11)];
+    api.whilePage = (n) => {
+      if (n === 1) {
+        // The member's own post, put on top of Home by the outbox while the page was out.
+        vi.setSystemTime(Date.now() + 10);
+        client.setQueryData<InfiniteData<PostWithAuthor[], unknown>>(["feed", ME], (d) =>
+          d ? { ...d, pages: [[mine, ...d.pages[0]], ...d.pages.slice(1)] } : d,
+        );
+      } else api.page = [mine, fresh, ...feed.slice(0, 10)];
+    };
+    await vi.advanceTimersByTimeAsync(NEW_POSTS_EVERY_MS);
+    expect(api.pages).toBe(2);
+    expect(hook.current.waiting).toBe(false);
+    expect(flat().slice(0, 3).map((p) => p.id)).toEqual([mine.id, fresh.id, feed[0].id]);
+    expect(new Set(flat().map((p) => p.id)).size).toBe(flat().length);
+    hook.unmount();
+  });
+
+  it("leaves the posts behind the tag when the member leaves the top while a read of the feed already out lands", async () => {
+    const { hook, client, view, flat } = setup({ top: true });
+    api.head = [head(fresh), head(feed[0])];
+    api.page = [fresh, ...feed.slice(0, 11)];
+    const query = client.getQueryCache().find({ queryKey: ["feed", ME] })!;
+    // A read of the feed (the next page) leaves while the page is being read.
+    api.whilePage = () => query.setState({ fetchStatus: "fetching" });
+    await vi.advanceTimersByTimeAsync(NEW_POSTS_EVERY_MS);
+    expect(api.pages).toBe(1);
+    // The member scrolls down; the read comes to nothing (no signal) and lets go.
+    view.top = false;
+    query.setState({ fetchStatus: "idle" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(flat()[0].id).toBe(feed[0].id);
+    expect(hook.current.waiting).toBe(true);
+    hook.unmount();
+  });
+
+  it("finds a friend's post just under several of the member's own, posted since", async () => {
+    const { hook, client } = setup({ top: false });
+    const mine = [post(2400, ME), post(2300, ME), post(2200, ME), post(2100, ME)];
+    // The outbox put each of the member's own on top of Home as it was posted.
+    client.setQueryData<InfiniteData<PostWithAuthor[], unknown>>(["feed", ME], (d) =>
+      d ? { ...d, pages: [[...mine, ...d.pages[0]], ...d.pages.slice(1)] } : d,
+    );
+    // A friend posted just before them.
+    api.head = [...mine, fresh, ...feed.slice(0, 7)].map(head);
+    api.page = [...mine, fresh, ...feed.slice(0, 7)];
+    await vi.advanceTimersByTimeAsync(NEW_POSTS_EVERY_MS);
+    expect(api.pages).toBe(1);
+    expect(hook.current.waiting).toBe(true);
+    expect(prefetched.map((posts) => posts.map((p) => p.id))).toEqual([[fresh.id]]);
     hook.unmount();
   });
 

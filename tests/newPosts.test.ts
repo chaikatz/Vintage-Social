@@ -4,6 +4,8 @@ import {
   AT_TOP_PX,
   FEED_HEAD_SIZE,
   NEW_POSTS_EVERY_MS,
+  TOUCH_FORGOTTEN_MS,
+  listAtTop,
   mergeFreshFirstPage,
   newPostsWatch,
   newerThan,
@@ -123,8 +125,103 @@ describe("when Home looks for new posts", () => {
 
   it("reads only a few of the newest posts", () => {
     expect(FEED_HEAD_SIZE).toBeGreaterThanOrEqual(1);
-    expect(FEED_HEAD_SIZE).toBeLessThanOrEqual(5);
+    expect(FEED_HEAD_SIZE).toBeLessThanOrEqual(8);
     expect(AT_TOP_PX).toBeLessThanOrEqual(8);
+  });
+});
+
+describe("whether the list is at its very top, still and with no finger on it", () => {
+  const T = 1_000_000;
+
+  it("is at rest at the top, and is not further down", () => {
+    const list = listAtTop();
+    expect(list.atTop(T)).toBe(true);
+    list.scrolled(AT_TOP_PX);
+    expect(list.atTop(T)).toBe(true);
+    list.scrolled(AT_TOP_PX + 1);
+    expect(list.atTop(T)).toBe(false);
+    list.glideEnded(0);
+    expect(list.atTop(T)).toBe(true);
+  });
+
+  it("is not while it is dragged, nor while a drag let go with speed glides on, until the glide ends", () => {
+    const list = listAtTop();
+    list.dragBegan();
+    expect(list.atTop(T)).toBe(false);
+    // As iOS tells it: the drag's end with its speed, then the glide.
+    list.dragEnded(0, -1.5);
+    list.glideBegan();
+    expect(list.atTop(T)).toBe(false);
+    list.glideEnded(0);
+    expect(list.atTop(T)).toBe(true);
+    // Let go without speed past the top, it springs back: a glide too.
+    list.dragBegan();
+    list.dragEnded(-40, 0);
+    list.glideBegan();
+    list.scrolled(0);
+    expect(list.atTop(T)).toBe(false);
+    list.glideEnded(0);
+    expect(list.atTop(T)).toBe(true);
+  });
+
+  it("takes a glide caught by a new drag to be over, though it never said it ended", () => {
+    const list = listAtTop();
+    list.dragBegan();
+    list.dragEnded(600, -3);
+    list.glideBegan();
+    // A finger stops the glide and drags back to the top; no end of the glide is heard.
+    list.dragBegan();
+    expect(list.atTop(T)).toBe(false);
+    list.dragEnded(0, 0);
+    expect(list.atTop(T)).toBe(true);
+  });
+
+  it("takes a glide to be over at a drag let go without speed, even when the drag's start went unheard", () => {
+    for (const speed of [0, undefined]) {
+      const list = listAtTop();
+      list.glideBegan();
+      list.dragEnded(0, speed);
+      expect(list.atTop(T)).toBe(true);
+    }
+  });
+
+  it("is not while a finger is on it that scrolls nothing (a tap, a long press, a finger at rest), until it lifts", () => {
+    const list = listAtTop();
+    list.touchBegan(T);
+    expect(list.atTop(T + 600)).toBe(false);
+    list.touchEnded(0);
+    expect(list.atTop(T + 600)).toBe(true);
+    // Called off (the system took the touch): ended too.
+    list.touchBegan(T + 1_000);
+    expect(list.atTop(T + 1_100)).toBe(false);
+    list.touchEnded(0);
+    expect(list.atTop(T + 1_100)).toBe(true);
+  });
+
+  it("is not while a pinch is on a photograph, until its last finger lifts", () => {
+    const list = listAtTop();
+    list.touchBegan(T);
+    list.touchBegan(T + 40);
+    list.touchEnded(1);
+    expect(list.atTop(T + 2_000)).toBe(false);
+    list.touchEnded(0);
+    expect(list.atTop(T + 2_000)).toBe(true);
+  });
+
+  it("never holds a touch whose end went unheard for good: a drag's end lifts it, and so does time", () => {
+    const dragged = listAtTop();
+    dragged.touchBegan(T);
+    dragged.dragBegan();
+    dragged.dragEnded(0, 0);
+    expect(dragged.atTop(T + 1)).toBe(true);
+
+    const lost = listAtTop();
+    lost.touchBegan(T);
+    expect(lost.atTop(T + TOUCH_FORGOTTEN_MS - 1)).toBe(false);
+    expect(lost.atTop(T + TOUCH_FORGOTTEN_MS)).toBe(true);
+    // Long enough for a finger at rest or a held pinch, and seconds, not minutes.
+    expect(TOUCH_FORGOTTEN_MS).toBeGreaterThanOrEqual(3_000);
+    expect(TOUCH_FORGOTTEN_MS).toBeLessThanOrEqual(15_000);
   });
 });
 
@@ -154,6 +251,20 @@ describe("what counts as new", () => {
     // may run ahead of the server's.
     const own = { ...post(10_000, ME, "mine"), created_at: new Date(Date.UTC(2026, 10, 24)).toISOString() };
     expect(ids(newerThanHeld(head([post(60), post(50)]), [own, ...held], ME))).toEqual(["p0060"]);
+  });
+
+  it("a friend's post just under several of the member's own, posted since: a look reads deep enough to see it", () => {
+    // The newest held of someone else's is at 10; a friend posts at 15,
+    // then the member posts several in a row, each put on top of Home by
+    // the outbox. A look of the four newest saw only the member's own.
+    for (const inARow of [4, FEED_HEAD_SIZE - 1]) {
+      const db = server([post(10), post(5)]);
+      const mine = Array.from({ length: inARow }, (_, i) => post(20 + i, ME, `own${i}`));
+      db.add(post(15), ...mine);
+      const holds = [...[...mine].reverse(), post(10), post(5)];
+      const look = head(db.all().slice(0, FEED_HEAD_SIZE));
+      expect(ids(newerThanHeld(look, holds, ME)), `${inARow} in a row`).toEqual(["p0015"]);
+    }
   });
 
   it("anything by someone followed, when the feed held has none of theirs", () => {
@@ -333,6 +444,29 @@ describe("putting the page in", () => {
     expect(held()[0].id).toBe("mine");
     expect(await placeFreshFirstPage(client, ["feed", ME], fresh, readAt, PAGE)).toBe("stale");
     expect(held()[0].id).toBe("mine");
+    unsubscribe();
+  });
+
+  it("asks once a read of the feed out has landed, just before writing, whether it is still wanted (the member still at the top)", async () => {
+    const db = server(Array.from({ length: 30 }, (_, i) => post(1000 - i * 10)));
+    const { client, observer, unsubscribe, held } = feedOn(db);
+    await observer.refetch();
+    db.add(post(1100));
+    const readAt = Date.now();
+    const fresh = db.page(null);
+    vi.setSystemTime(readAt + 5);
+    // A read of the feed out, which comes to nothing (no signal): the feed is as it was.
+    const query = client.getQueryCache().find({ queryKey: ["feed", ME] })!;
+    query.setState({ fetchStatus: "fetching" });
+    let atTop = true;
+    const placed = placeFreshFirstPage(client, ["feed", ME], fresh, readAt, PAGE, () => atTop);
+    // The member scrolls down while it is out.
+    atTop = false;
+    query.setState({ fetchStatus: "idle" });
+    expect(await placed).toBe("moved");
+    expect(held()[0].id).toBe("p1000");
+    expect(await placeFreshFirstPage(client, ["feed", ME], fresh, readAt, PAGE, () => true)).toBe("placed");
+    expect(held()[0].id).toBe("p1100");
     unsubscribe();
   });
 
