@@ -148,8 +148,13 @@ describe("a list whose read failed", () => {
   });
 
   it("and a search that failed is not 'Nobody by that name'", () => {
+    // "Nobody" is said only of an answer that came, for exactly what is typed (nobodyFound, tests/memberSearch.test.ts).
     expect(read("app/(tabs)/search.tsx")).toMatch(
-      /results\.isError && settledQ\.trim\(\) === q\.trim\(\) \? \(\s*<LoadFailed what="the search" onRetry=\{\(\) => results\.refetch\(\)\} \/>\s*\) : results\.isFetched/,
+      /failed \? \(\s*<LoadFailed what="the search" onRetry=\{\(\) => results\.refetch\(\)\} \/>\s*\) : nobody \? \(\s*<EmptyState title="Nobody by that name"/,
     );
+    // A failed answer to what is typed is said, not hidden behind rows held from the one before.
+    expect(read("app/(tabs)/search.tsx")).toMatch(/const failed = results\.isError && settled === typed;/);
+    expect(read("app/(tabs)/search.tsx")).toMatch(/data=\{failed \? NO_ROWS : ranked\}/);
+    expect(read("app/(tabs)/search.tsx")).toMatch(/fetched: results\.isFetched/);
   });
 });

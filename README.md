@@ -565,6 +565,17 @@ kind — the only reason a picture is near the top is that it was taken
 recently. Your own posts are left out, because explore is for finding other
 people.
 
+The field above it finds members from the first letter (`src/utils/memberSearch.ts`).
+One letter brings the usernames that start with it, read as a range of the
+username index, so it reads a page of members however large the club grows;
+names and the middles of words join from the second letter, when the reads
+of them are narrow enough to be worth it. Usernames that start with what was
+typed come first, then names with a word that does, then the rest; within each,
+who you were just looking at, who you follow and who follows you
+(`src/utils/searchRank.ts`). While the next answer comes, the last one stays,
+narrowed to what is typed, so the list neither blanks nor shows anyone the
+letters no longer find.
+
 ## Nominations
 
 A member does not hand out a referral link. They put someone's name
