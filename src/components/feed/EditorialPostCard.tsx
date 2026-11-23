@@ -405,14 +405,14 @@ const styles = StyleSheet.create({
     ...type.body,
     fontSize: 14,
     color: colors.ink,
-    paddingHorizontal: EDGE,
+    marginHorizontal: EDGE,
   },
   comment: {
     ...type.body,
     fontSize: 14,
     color: colors.ink,
-    paddingHorizontal: EDGE,
-    paddingTop: spacing.xs,
+    marginHorizontal: EDGE,
+    marginTop: spacing.xs,
   },
   // Who wrote it, in the words' own face, size and ink, half bold, as the name over the print is.
   author: { fontWeight: "500" },

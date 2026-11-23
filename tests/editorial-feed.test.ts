@@ -595,8 +595,13 @@ describe("the editorial card", () => {
   it("sets everything around the print where Instagram does: one edge on the left, the same on the right", () => {
     expect(card).toMatch(/const EDGE = 12;/);
     // The member, the label with its buttons, the caption, the comments and when it went up start EDGE in.
-    for (const name of ["header", "label", "caption", "comment", "posted"]) {
+    for (const name of ["header", "label", "posted"]) {
       expect(style(name), name).toMatch(/paddingHorizontal: EDGE,/);
+    }
+    // The caption and the comments by margin: their names are links, and on the phone a link in padded words is tapped a padding away from where it is drawn (tests/name-link-hit-area.test.ts).
+    for (const name of ["caption", "comment"]) {
+      expect(style(name), name).toMatch(/marginHorizontal: EDGE,/);
+      expect(style(name), name).not.toMatch(/padding/);
     }
     // The hairline runs between the same two edges.
     expect(style("rule")).toMatch(/marginHorizontal: EDGE,/);
@@ -605,7 +610,8 @@ describe("the editorial card", () => {
     expect(style("more")).toMatch(/marginRight: -\(TARGET - DOTS \* 0\.75\) \/ 2,/);
     // And nothing else sets its own sides.
     const written = card.slice(card.indexOf("const styles = StyleSheet.create("));
-    expect(written.match(/padding(Horizontal|Left|Right): /g)).toHaveLength(6);
+    expect(written.match(/padding(Horizontal|Left|Right): /g)).toHaveLength(4);
+    expect(written.match(/marginHorizontal: EDGE,/g)).toHaveLength(3);
   });
 
   it("sets the buttons and the place and the date where the print sets its label under the rule", () => {
