@@ -27,6 +27,12 @@ interface Props {
 export const GRID_GAP = 2;
 /** Screens of squares the grid draws: three either side of the one in view. Places draws as many. */
 export const GRID_SCREENS = 7;
+/**
+ * Squares fetched ahead of the rest: the first four rows, about what the
+ * first screen shows under a profile's header or Explore's field. The
+ * squares below them, drawn ahead of the reader, wait their turn.
+ */
+export const GRID_FIRST_SCREEN = 12;
 
 /** The classic three-column square grid. */
 export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refreshing }: Props) {
@@ -47,7 +53,14 @@ export function PhotoGrid({ posts, onOpenPost, header, empty, onRefresh, refresh
       // square of a profile of a few hundred photographs the moment it
       // opened, and held them all.
       windowSize={GRID_SCREENS}
-      renderItem={({ item }) => <PhotoTile post={item} size={size} onPress={() => onOpenPost(item)} />}
+      renderItem={({ item, index }) => (
+        <PhotoTile
+          post={item}
+          size={size}
+          onPress={() => onOpenPost(item)}
+          priority={index < GRID_FIRST_SCREEN ? "high" : "normal"}
+        />
+      )}
     />
   );
 }
@@ -75,6 +88,7 @@ export function PhotoTile({
   onPressOut,
   accessibilityLabel,
   accessibilityHint,
+  priority = "normal",
 }: {
   post: GridPost;
   size: number;
@@ -92,6 +106,8 @@ export function PhotoTile({
   accessibilityLabel?: string;
   /** What a tap does, when it is not the usual (an era being arranged moves the photograph). */
   accessibilityHint?: string;
+  /** Fetch this square ahead of the others: the first screen of a grid. Defaults to "normal". */
+  priority?: "high" | "normal";
 }) {
   // A video's square is its poster frame. The media path itself is a
   // movie, which an <Image> cannot draw — so a video with no poster
@@ -133,7 +149,11 @@ export function PhotoTile({
           placeholderContentFit="cover"
           style={[styles.cell, live ? ({ filter: live } as object) : null]}
           contentFit="cover"
-          transition={60}
+          // No dissolve: the image view dissolves a square already in
+          // memory too, and a grid scrolled back over faded in square by
+          // square, as if it were loading again.
+          transition={0}
+          priority={priority}
           // Held in memory as well as on disk, as the feed's photographs
           // are: the grid draws three screens either side and lets the rest
           // go, and a square scrolled back to was read from disk and

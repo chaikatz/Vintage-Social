@@ -29,7 +29,9 @@ export function Avatar({ path, username, size = 36 }: Props) {
     <Image
       source={url}
       style={[styles.image, round]}
-      transition={80}
+      // No dissolve: a face already in memory faded in again on every card
+      // drawn (the image view dissolves whatever it is given).
+      transition={0}
       recyclingKey={String(url)}
       cachePolicy="memory-disk"
       key={retry.attempt}
