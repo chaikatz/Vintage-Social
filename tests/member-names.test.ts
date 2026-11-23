@@ -184,7 +184,12 @@ describe("names everywhere else", () => {
     for (const file of ["app/likes.tsx", "app/follows.tsx", "app/requests.tsx", "app/admin/members.tsx"]) {
       expect(code(file), file).toMatch(/onPress=\{\(\) => router\.push\(`\/user\/\$\{item\.username\}`\)\}/);
     }
-    expect(code("app/(tabs)/search.tsx")).toMatch(/router\.push\(`\/user\/\$\{member\.username\}`\);/);
+    // Search opens a result through openMember, which also files it in Recent.
+    const search = code("app/(tabs)/search.tsx");
+    expect(search).toMatch(/const openMember = useCallback\([\s\S]*?router\.push\(`\/user\/\$\{username\}`\);/);
+    expect(search).toMatch(/<SearchResult member=\{item\} onOpen=\{openMember\} \/>/);
+    expect(search).toMatch(/onPress=\{\(\) => onOpen\(member\)\}/);
+    expect(search).toMatch(/onPress=\{\(\) => openMember\(item\)\}/);
   });
 });
 
