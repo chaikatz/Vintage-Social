@@ -163,10 +163,61 @@ describe("the page, at a glance", () => {
   });
 });
 
+describe("the camera and the clip", () => {
+  const boxed = tab.slice(tab.indexOf("function BoxedWay"), tab.indexOf("function QuietWay"));
+
+  it("are two ruled boxes under the library's bar, each with its mark and its word", () => {
+    const under = library.slice(library.indexOf('title="Choose a photograph"'));
+    expect(under).toMatch(
+      /<View style=\{styles\.boxes\}>\s*\{native \? \(\s*<BoxedWay\s+icon="camera"\s+label="Camera"\s+hint="Take one now"[\s\S]*?\) : null\}\s*<BoxedWay\s+icon="video"\s+label="Short video"/,
+    );
+    // Not the quiet capitals they were: those stay for the shelf alone.
+    expect(tab.match(/<QuietWay\b/g)).toHaveLength(1);
+    expect(tab.match(/<BoxedWay\b/g)).toHaveLength(2);
+    expect(boxed).toMatch(/<Feather name=\{icon\} size=\{BOX_MARK\} color=\{colors\.ink\} \/>/);
+    expect(boxed).toMatch(/<Text style=\{styles\.boxWord\} maxFontSizeMultiplier=\{TYPE_CAP\}>\s*\{label\}\s*<\/Text>/);
+  });
+
+  it("are lettered and marked in ink on the raised paper, ruled in the secondary ink, and darken when pressed", () => {
+    expect(style(tab, "boxWord")).toMatch(/color: colors\.ink[,\s]/);
+    expect(style(tab, "boxWord")).toMatch(/fontFamily: type\.mono, fontSize: 11,/);
+    expect(style(tab, "box")).toMatch(/backgroundColor: colors\.paperRaised,/);
+    expect(style(tab, "box")).toMatch(/borderWidth: 1,\s*borderColor: colors\.inkSoft,/);
+    expect(style(tab, "boxPressed")).toMatch(/backgroundColor: colors\.paperSunken/);
+    expect(boxed).toMatch(/style=\{\(\{ pressed \}\) => \[styles\.box, pressed && styles\.boxPressed\]\}/);
+    expect(boxed).toMatch(/<ActivityIndicator size="small" color=\{colors\.ink\}/);
+    // Square, as the bars are: ink on paper, not a button in a browser.
+    expect(style(tab, "box")).not.toMatch(/borderRadius/);
+    // The clip's limit under them is in the secondary ink, not the faint one.
+    expect(style(tab, "waysNoteText")).toMatch(/color: colors\.inkSoft/);
+  });
+
+  it("are comfortable to the thumb, and named to VoiceOver by their words", () => {
+    expect(Number(tab.match(/const BOX_HEIGHT = (\d+);/)?.[1])).toBeGreaterThanOrEqual(48);
+    expect(style(tab, "box")).toMatch(/minHeight: BOX_HEIGHT,/);
+    expect(style(tab, "box")).toMatch(/flexGrow: 1,\s*flexBasis: BOX_BASIS,/);
+    expect(boxed).toMatch(/accessibilityRole="button"\s+accessibilityLabel=\{label\}\s+accessibilityHint=\{hint\}\s+accessibilityState=\{\{ busy, disabled: held \}\}/);
+  });
+
+  it("sit side by side in half the column of a 320 pt phone, their words free to take a second line", () => {
+    const basis = Number(tab.match(/const BOX_BASIS = (\d+);/)?.[1]);
+    const mark = Number(tab.match(/const BOX_MARK = (\d+);/)?.[1]);
+    const column = 320 - 2 * 16; // spacing.lg either side of the body
+    const half = (column - 12) / 2; // spacing.md between them
+    expect(basis).toBeLessThanOrEqual(half);
+    // SHORT VIDEO, Courier New at 0.6 em with its tracking, beside its mark, inside the box's padding and rule.
+    const word = "Short video".length * (11 * 0.6 + 1.6);
+    expect(word + mark + 8 + 2 * 8 + 2).toBeLessThanOrEqual(half);
+    expect(style(tab, "boxes")).toMatch(/flexDirection: "row", flexWrap: "wrap"/);
+    expect(style(tab, "boxWord")).toMatch(/flexShrink: 1/);
+  });
+});
+
 describe("at the largest text sizes on the narrowest phones", () => {
   it("wraps the ways rather than running off the page", () => {
     expect(style(tab, "ways")).toMatch(/flexDirection: "row",\s*flexWrap: "wrap"/);
     expect(style(tab, "ways")).toMatch(/rowGap: spacing\.\w+/);
+    expect(style(tab, "boxes")).toMatch(/rowGap: spacing\.\w+/);
   });
 
   it("keeps each bar's centred label clear of its arrow on either side, and lets the bar grow", () => {
@@ -230,14 +281,17 @@ describe("one tap, one editor", () => {
     expect(tab).toMatch(/busy=\{busy === "camera"\}/);
     expect(tab).toMatch(/busy=\{busy === "video"\}/);
     expect(tab).toMatch(/const held = busy !== null;/);
-    // The two bars, each quiet way's own Pressable, and On this day.
-    expect(tab.match(/disabled=\{held\}/g)).toHaveLength(4);
+    // The two bars, the camera's and the clip's box, the shelf's quiet way, and On this day.
+    expect(tab.match(/disabled=\{held\}/g)).toHaveLength(5);
     // Handed to the camera, the clip, the shelf, the room's part of the page and On this day.
     expect(tab.match(/\bheld=\{held\}/g)).toHaveLength(5);
     expect(tab).toMatch(/<MemoryRoomDoor held=\{held\} \/>/);
     expect(tab).toMatch(/<OnThisDay held=\{held\}/);
     // The old busy ring, shown on the library whatever was tapped, is gone.
-    expect(tab).not.toMatch(/busy=\{opening\}|Feather/);
+    expect(tab).not.toMatch(/busy=\{opening\}/);
+    // The page's one Feather is the boxes' mark, which the spinner stands in for.
+    expect(tab.match(/<Feather\b/g)).toHaveLength(1);
+    expect(tab).toMatch(/<View style=\{\[styles\.boxInside, busy && styles\.hidden\]\}>\s*<Feather name=\{icon\}/);
   });
 });
 
