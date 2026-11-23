@@ -152,6 +152,15 @@ describe("demo store", () => {
     // ruby is still an applicant and must not surface in member search
     expect(demoSearchProfiles("ruby").length).toBe(0);
   });
+
+  it("searches from the first letter, as the database is asked", () => {
+    // One letter: usernames that start with it, not names or the middles of words.
+    expect(demoSearchProfiles("M").map((p) => p.username)).toEqual(["margot.dubois"]);
+    expect(demoSearchProfiles("o").map((p) => p.username)).toEqual(["otis.whitfield"]);
+    // From the second: usernames that start with it, then names, then the rest.
+    expect(demoSearchProfiles("ma").map((p) => p.username)).toEqual(["margot.dubois", "elena.marchetti", "tomas.lindqvist"]);
+    expect(demoSearchProfiles("ar").map((p) => p.username)).toEqual(["arthur.beaumont", "clara.reyes", "elena.marchetti", "margot.dubois"]);
+  });
 });
 
 /**

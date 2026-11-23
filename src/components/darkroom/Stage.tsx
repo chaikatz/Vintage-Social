@@ -19,6 +19,16 @@ import { actionNamed, spokenActions, STAGE_HINT, STAGE_LABEL, type StageAction }
 /** One page of the pager: a print, or the page after the last of them. */
 type Item = { kind: "print"; print: Print } | { kind: "tail" };
 
+/**
+ * Pages mounted: the one in view and two either side, so the next two
+ * prints are on the stage, asking for their photographs, while this one
+ * is looked at (`wantsPhotograph` in plateImage.ts). Two at a time are
+ * added as the window moves, so after a turn the page two ahead is mounted
+ * on the next frame, not the one after.
+ */
+const STAGE_WINDOW = 5;
+const STAGE_BATCH = 2;
+
 /** The browser has no momentum events: a scroll that has been still this long has settled. */
 const WEB_SETTLE_MS = 140;
 /**
@@ -312,8 +322,8 @@ export const Stage = React.forwardRef<StageHandle, {
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         initialScrollIndex={Math.min(index, items.length - 1)}
         initialNumToRender={1}
-        maxToRenderPerBatch={1}
-        windowSize={3}
+        maxToRenderPerBatch={STAGE_BATCH}
+        windowSize={STAGE_WINDOW}
         removeClippedSubviews
         onScroll={onScroll}
         scrollEventThrottle={16}

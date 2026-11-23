@@ -11,6 +11,8 @@ import { colors, radii, spacing, type } from "@/theme";
 import { fetchBlockedProfiles, unblockMember } from "@/api/blocks";
 import { useSession } from "@/providers/SessionProvider";
 import { useNameFace } from "@/utils/nameFace";
+import { useOpenProfile } from "@/hooks/useOpenProfile";
+import { memberLabel } from "@/components/memberLabel";
 
 // A row that breaks this screen breaks only this screen, with the way back on its
 // page as well as in its header: a screen opened from a link has no back button
@@ -24,6 +26,8 @@ export default function Blocked() {
   const userId = session?.user?.id ?? "";
   // Editorial (Preview): each member's username, half bold.
   const face = useNameFace();
+  // Face and name open the member's page, as in every list of members; Unblock stands beside them.
+  const openMember = useOpenProfile();
 
   const blocked = useQuery({
     queryKey: ["blocked", userId],
@@ -65,11 +69,18 @@ export default function Blocked() {
         }
         renderItem={({ item }) => (
           <View style={styles.row}>
-            <Avatar path={item.avatar_url} username={item.username} size={40} />
-            <View style={styles.rowText}>
-              <Text style={[styles.username, face]}>{item.username}</Text>
-              {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
-            </View>
+            <Pressable
+              style={styles.person}
+              onPress={() => openMember(item.username)}
+              accessibilityRole="button"
+              accessibilityLabel={memberLabel(item.username, item.full_name)}
+            >
+              <Avatar path={item.avatar_url} username={item.username} size={40} />
+              <View style={styles.rowText}>
+                <Text style={[styles.username, face]}>{item.username}</Text>
+                {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
+              </View>
+            </Pressable>
             <Pressable
               style={styles.unblock}
               onPress={() => unblock.mutate(item.id)}
@@ -96,6 +107,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,
   },
+  person: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.md },
   rowText: { flex: 1 },
   username: { fontSize: 15, color: colors.ink },
   fullName: { ...type.caption, marginTop: 1 },

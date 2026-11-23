@@ -86,6 +86,9 @@ or anywhere in the repository, and must never be.
   leaves them out; they are for the lock screen).
 - Staging, if you want it to match: the same two files, and version 3
   (staging still runs version 1).
+- Step 4: `0041_member_number_shown_by_choice.sql` on production, then
+  verify script 12 (69 rows). Build 53 works before it too: it shows
+  every member's number hidden and says it couldn't save the switch.
 
 ---
 
@@ -377,15 +380,18 @@ notice, and how to undo it. If you approve, in the merged branch:
    straight after 0022 and then 0023–0037, and every check passes). Then
    the rest from 0023 up in number order as above, 0038 again in its
    turn (it is safe to run twice).
-   On production, which has had 0023–0038 since 8 November, the new
-   files start at `0039_writes_only_what_the_app_writes.sql`: run it and
-   every later file, in number order. 0039 changes no member's data; its
-   way back is `supabase/tests/0039_rollback.sql`.
+   On production, which has had 0023–0040 since 9 November, the new
+   files start at `0041_member_number_shown_by_choice.sql`: run it and
+   every later file, in number order. 0041 adds one column, false for
+   every member (a member's number is then hidden until they choose to
+   show it); its way back is the two lines at the end of its header.
+   If 0039 is ever run again, run 0041 again after it: 0039 takes back
+   the switch's column.
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false). The `13_` and
    `14_` files there are not verify scripts: see item 6.
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0040 in 68 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0041 in 69 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -409,6 +415,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0038 | Follows that respect private accounts: a follow of a private account is always a request, the account accepts or declines it, an answered request leaves Activity, an account made public lets its requests in, and only the two members see a request | 40–48 |
    | 0039 | Members write only what the app writes: each table's columns as the app sends them and no others (an author can no longer undo an admin's removal, or date, count or repoint a photograph; nobody rewrites their counts or name in the club, moves a conversation or a tag, or dates what they file), a photograph's files and every portrait from the member's own folder, never a URL or another member's file, nothing for signed-out visitors, and the old invitation functions refuse a suspended account and count links and codes as one allowance | 49–60 |
    | 0040 | A block holds for comments and likes and their notices, and files a report so the admins are told; a new message reaches the other member's phone; the avatars bucket takes JPEG and PNG pictures up to 2 MB; the database's calls to the `push` function carry its secret (needs item 5) | 61–68 |
+   | 0041 | A member's number is shown only if they choose: a switch in Settings, "Show my member number", off for everyone until they turn it on; the profile always says MEMBER | 69 |
 
 5. Redeploy the `push` function, which changed in the sweep. It is now
    **two files**, `index.ts` and `logic.ts` (`index.ts` imports

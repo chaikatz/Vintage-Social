@@ -37,6 +37,7 @@ import {
   DEMO_REPORTS,
 } from "./fixtures";
 import { groupEras } from "@/utils/memories";
+import { SEARCH_LIMIT, SEARCH_MIN_LENGTH, matchTier, orderMatches, searchNeedle } from "@/utils/memberSearch";
 import type { EraEdits } from "@/utils/eraEdits";
 
 /**
@@ -414,17 +415,12 @@ export function demoFetchProfileById(id: string): ProfileRow | null {
   return p ? clone(p) : null;
 }
 
+/** As the database is asked (src/api/profiles.ts): from the first letter, in the same order, a page at most. */
 export function demoSearchProfiles(q: string): ProfileRow[] {
-  const needle = q.trim().toLowerCase();
-  if (needle.length < 2) return [];
-  return state.profiles
-    .filter(
-      (p) =>
-        p.status === "approved" &&
-        (p.username.includes(needle) || (p.full_name ?? "").toLowerCase().includes(needle)),
-    )
-    .sort((a, b) => a.username.localeCompare(b.username))
-    .map(clone);
+  const needle = searchNeedle(q);
+  if (needle.length < SEARCH_MIN_LENGTH) return [];
+  const found = state.profiles.filter((p) => p.status === "approved" && matchTier(needle, p) !== null);
+  return orderMatches(needle, found, SEARCH_LIMIT).map(clone);
 }
 
 export function demoUpdateProfile(userId: string, edits: Partial<ProfileRow>): void {
@@ -729,6 +725,7 @@ export function demoSubmitApplication(input: {
     status: "applied",
     invite_quota: 0,
     member_no: null, // no number until an admin lets them in
+    show_member_no: false, // hidden unless they choose to show it, as the database starts everyone (0041)
     invited_by: null,
     is_private: false,
     post_count: 0,
@@ -899,6 +896,7 @@ export function demoJoinWithInvite(input: {
     status: "approved",
     invite_quota: 5,
     member_no: null, // issued just below, the way redeem_invite does
+    show_member_no: false, // hidden unless they choose to show it, as the database starts everyone (0041)
     invited_by: inviter,
     is_private: false,
     post_count: 0,

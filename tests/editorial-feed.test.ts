@@ -567,10 +567,13 @@ describe("the editorial card", () => {
   });
 
   it("writes the caption after the member's name, as a comment is written", () => {
+    // The name a link to the member's page, the words after it with every @name a link too (src/components/MemberText.tsx).
     expect(body).toMatch(
-      /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}\s*<\/Text>\s*\) : null\}/,
+      /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\{" "\}\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} \/>\s*<\/Text>\s*\) : null\}/,
     );
-    expect(body).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
+    expect(body).toMatch(
+      /<Text style=\{styles\.comment\} numberOfLines=\{2\}>\s*<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\{" "\}\s*<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s*\/>\s*<\/Text>/,
+    );
     // Who wrote it, in the words' own face, size and ink, half bold: exactly the face every name takes under Editorial.
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
     expect(card).toMatch(/\n {2}author: \{ fontWeight: "500" \},/);

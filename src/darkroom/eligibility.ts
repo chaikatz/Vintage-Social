@@ -94,21 +94,30 @@ export const DAY_REACHES: readonly { reach: DayReach; days: number }[] = [
   { reach: "week", days: 3 },
   { reach: "season", days: 14 },
 ];
-/** The day itself is one page this long. */
+/**
+ * The day itself is read a page this long at a time, each page on from
+ * where the last one stopped, until the day is read to its end: every
+ * photograph of the anniversary is shown, however many there are.
+ */
 export const DAY_FIRST = 150;
-/** A day that holds more is read on in slices this wide, from where that page stopped, so its afternoon is never lost. */
-export const DAY_OVERFLOW_SLICE_MS = 3 * HOUR;
-export const DAY_OVERFLOW_FIRST = 20;
+/**
+ * However many photographs one anniversary holds, it is read in no more
+ * than this many pages: six thousand photographs on one day of one year.
+ * A bound on the reading, not on what is shown — no camera roll comes near it.
+ */
+export const DAY_PAGES = 40;
 /** A wider window is read in this many equal slices, each a page this long. */
 export const WIDE_SLICES = 3;
 export const WIDE_FIRST = 50;
 /** Fewer moments than this across all the years, and On This Day reaches further. Also what the day must hold to open the room. */
 export const ON_THIS_DAY_MINIMUM = 3;
-/** At most this many from any one year, at least this far apart. */
+/**
+ * Reaching out to the week or the time of year, at most this many from
+ * any one year, at least this far apart. The anniversary's own
+ * photographs are never among those counted: every one of them is shown.
+ */
 export const PER_YEAR = 4;
 export const PER_YEAR_GAP_MS = 45 * MINUTE;
-/** On This Day is never longer than this. */
-export const ON_THIS_DAY_CAP = 40;
 /**
  * Up to this many years back, On This Day reads every year's anniversary
  * straight away. A library whose oldest photograph is further back than

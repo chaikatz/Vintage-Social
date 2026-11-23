@@ -16,6 +16,9 @@ import { postAge } from "@/utils/time";
 import { useImageRetry } from "@/media/imageRetry";
 import { useSession } from "@/providers/SessionProvider";
 import { useNameFace } from "@/utils/nameFace";
+import { useOpenProfile } from "@/hooks/useOpenProfile";
+import { NameLink } from "@/components/MemberText";
+import { nameActions, nameFromAction } from "@/utils/nameActions";
 import type { ActivityWithRefs } from "@/types/db";
 
 // A row that breaks this screen breaks only this screen (src/navigation/Recover.tsx).
@@ -84,6 +87,8 @@ export default function Activity() {
     },
   });
 
+  // The face and the name in a notice open the member's page; the rest of it, what it is about.
+  const openMember = useOpenProfile();
   const open = (item: ActivityWithRefs) => {
     // A request is answered on Requests, where its push opens too: the
     // asker's profile has no Accept or Decline.
@@ -113,16 +118,37 @@ export default function Activity() {
             : null;
           const isModeration = item.type === "moderation";
           return (
-            <Pressable style={[styles.row, !item.read_at && styles.unread]} onPress={() => open(item)}>
+            <Pressable
+              style={[styles.row, !item.read_at && styles.unread]}
+              onPress={() => open(item)}
+              // To VoiceOver the notice is one element: a double tap opens what it is about, never
+              // the name under the middle of it; the member's page is its action.
+              onAccessibilityTap={() => open(item)}
+              accessibilityActions={nameActions([isModeration ? null : item.actor?.username])}
+              onAccessibilityAction={(e) => {
+                const username = nameFromAction(e.nativeEvent.actionName);
+                if (username) openMember(username);
+              }}
+            >
               {isModeration ? (
                 <View style={styles.moderationDot} />
+              ) : item.actor ? (
+                <Pressable
+                  onPress={() => openMember(item.actor!.username)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.actor.username}’s profile`}
+                >
+                  <Avatar path={item.actor.avatar_url} username={item.actor.username} size={40} />
+                </Pressable>
               ) : (
-                <Avatar path={item.actor?.avatar_url} username={item.actor?.username ?? "?"} size={40} />
+                <Avatar path={null} username="?" size={40} />
               )}
               <View style={styles.text}>
                 <Text style={styles.line}>
                   {!isModeration && item.actor ? (
-                    <Text style={[styles.actor, face]}>{item.actor.username} </Text>
+                    <>
+                      <NameLink username={item.actor.username} onOpenProfile={openMember} style={[styles.actor, face]} />{" "}
+                    </>
                   ) : (
                     <Text style={styles.actor}>VINTAGE </Text>
                   )}

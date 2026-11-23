@@ -201,29 +201,56 @@ describe("a bar titled with a username", () => {
   });
 });
 
-/** Every place a username is drawn under Editorial, and how it takes the face. */
+/**
+ * Every place a username is drawn under Editorial, and how it takes the face.
+ * A name is drawn by a Text, or by a link to the member's page (NameLink, in
+ * src/components/MemberText.tsx), which draws the username it opens inside
+ * the Text around it, in the style it is handed: there the face is in that style.
+ */
 const SITES: [file: string, what: string, pattern: RegExp][] = [
-  ["app/(tabs)/activity.tsx", "who did it", /<Text style=\{\[styles\.actor, face\]\}>\{item\.actor\.username\} <\/Text>/],
+  ["app/(tabs)/activity.tsx", "who did it, a link to their page", /<NameLink username=\{item\.actor\.username\} onOpenProfile=\{openMember\} style=\{\[styles\.actor, face\]\} \/>\{" "\}/],
   ["app/admin/applications.tsx", "the username asked for", /<Text style=\{\[styles\.username, face\]\}>\{item\.desired_username\}<\/Text>/],
   ["app/blocked.tsx", "each member blocked", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
-  ["app/comments.tsx", "the caption's author", /<Text style=\{\[styles\.author, face\]\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/],
-  ["app/comments.tsx", "each comment's author", /<Text style=\{\[styles\.author, face\]\}>\{comment\.author\.username\}<\/Text> \{comment\.body\}/],
+  [
+    "app/comments.tsx",
+    "the caption's author, a link to their page",
+    /<NameLink username=\{post\.author\.username\} onOpenProfile=\{openAuthor\} style=\{\[styles\.author, face\]\} \/>\{" "\}\s*<MentionText text=\{post\.caption\} onOpenProfile=\{openAuthor\} \/>/,
+  ],
+  [
+    "app/comments.tsx",
+    "each comment's author, a link to their page",
+    /<NameLink username=\{comment\.author\.username\} onOpenProfile=\{onOpenAuthor\} onLongPress=\{hold\} style=\{\[styles\.author, face\]\} \/>\{" "\}\s*<MentionText text=\{comment\.body\} onOpenProfile=\{onOpenAuthor\} onLongPress=\{hold\} \/>/,
+  ],
   ["app/compose.tsx", "who was there", /<Text style=\{\[styles\.tagNames, face\]\} numberOfLines=\{1\}>\s*\{tags\.map\(\(t\) => t\.username\)\.join\(", "\)\}/],
   ["app/messages/index.tsx", "who each thread is with, an unread thread's style after the face", /<Text style=\{\[styles\.username, face, unread && styles\.unreadText\]\}>\s*\{conversation\.peer\.username\}/],
-  ["app/messages/[id].tsx", "whose photograph was sent, your own bubble's ink after it", /<Text style=\{\[styles\.sharedCaption, face, mine && styles\.textMine\]\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/],
+  [
+    "app/messages/[id].tsx",
+    "whose photograph was sent, a link to their page: the face on the name, your own bubble's ink from the line around it",
+    /<Text style=\{\[styles\.sharedCaption, mine && styles\.textMine\]\} numberOfLines=\{1\}>\s*<NameLink username=\{shared\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{face\} \/>\s*<\/Text>/,
+  ],
   ["app/post/[id].tsx", "the author", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/],
   [
     "app/post/[id].tsx",
-    "who was there, a pending tag's style after the face",
-    /style=\{\[styles\.withName, face, t\.status === "pending" && styles\.withPending\]\}\s*onPress=\{\(\) => router\.push\(`\/user\/\$\{t\.member\.username\}`\)\}\s*>\s*\{t\.member\.username\}\s*\{t\.status === "pending" \? " \(pending\)" : ""\}/,
+    "who was there, each a link to their page, a pending tag's style after the face",
+    /style=\{\[styles\.withName, face, t\.status === "pending" && styles\.withPending\]\}\s*onPress=\{\(\) => openMember\(t\.member\.username\)\}\s*accessibilityRole="link"\s*>\s*\{t\.member\.username\}\s*\{t\.status === "pending" \? " \(pending\)" : ""\}/,
   ],
-  ["app/post/[id].tsx", "each comment's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{c\.author\.username\}<\/Text> \{c\.body\}/],
+  [
+    "app/post/[id].tsx",
+    "each comment's author, a link to their page",
+    /<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{openMember\}\s+onLongPress=\{\(\) => onCommentLongPress\(c\)\}\s+style=\{\[styles\.captionAuthor, face\]\}\s*\/>\{" "\}\s*<MentionText text=\{c\.body\} onOpenProfile=\{openMember\} onLongPress=\{\(\) => onCommentLongPress\(c\)\} \/>/,
+  ],
   ["app/requests.tsx", "each member asking", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
   ["app/share.tsx", "the photograph's author", /<Text style=\{\[styles\.previewAuthor, face\]\}>\{post\?\.author\?\.username \?\? ""\}<\/Text>/],
   ["app/share.tsx", "each member to send it to", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
   ["src/components/UserRow.tsx", "every list of members: Search, Recent, Followers, Likes and the admin's Members", /<Text style=\{\[styles\.username, face\]\}>\{username\}<\/Text>/],
+  ["src/components/MentionSuggestions.tsx", "each member an @name being written could be: Comments, New post and Edit caption", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{m\.username\}/],
   ["src/components/PendingPostCard.tsx", "the author", /<Text style=\{\[styles\.username, face\]\} numberOfLines=\{1\}>\s*\{draft\.author\.username\}/],
-  ["src/components/PendingPostCard.tsx", "the caption's author", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{draft\.author\.username\}<\/Text> \{draft\.caption\.trim\(\)\}/],
+  [
+    "src/components/PendingPostCard.tsx",
+    "the caption's author, a link to their page",
+    /<NameLink username=\{draft\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{\[styles\.captionAuthor, face\]\} \/>\{" "\}\s*<MentionText text=\{draft\.caption\.trim\(\)\} onOpenProfile=\{onOpenProfile\} \/>/,
+  ],
+  ["src/components/PendingPostCard.tsx", "the caption's author, where the card is given no profile to open", /<Text style=\{\[styles\.captionAuthor, face\]\}>\{draft\.author\.username\}<\/Text> \{draft\.caption\.trim\(\)\}/],
   ["src/components/ProfileHeader.tsx", "the name, only where it falls back to the username", /<Text style=\{\[styles\.name, profile\.full_name == null \? face : undefined\]\}>\{profile\.full_name \?\? profile\.username\}<\/Text>/],
   ["src/components/TagPicker.tsx", "each member chosen", /<Text style=\{\[styles\.chipText, face\]\}>\{p\.username\}<\/Text>/],
   ["src/components/TagPicker.tsx", "each member to choose", /<Text style=\{\[styles\.username, face\]\}>\{item\.username\}<\/Text>/],
@@ -241,6 +268,7 @@ const READERS = [
   "app/post/[id].tsx",
   "app/requests.tsx",
   "app/share.tsx",
+  "src/components/MentionSuggestions.tsx",
   "src/components/PendingPostCard.tsx",
   "src/components/ProfileHeader.tsx",
   "src/components/TagPicker.tsx",
@@ -250,7 +278,9 @@ const READERS = [
 describe("every username the app draws", () => {
   for (const [file, what, pattern] of SITES) {
     it(`${file}: ${what}`, () => {
+      // Found, and found once: each place is named here once.
       expect(code(file)).toMatch(pattern);
+      expect(code(file).match(new RegExp(pattern.source, "g")), file).toHaveLength(1);
     });
   }
 
@@ -277,41 +307,55 @@ describe("every username the app draws", () => {
       expect(card.match(new RegExp(`\\n {2}${name}: \\{ [^\\n]* \\},`))?.[0], name).not.toMatch(/fontFamily|letterSpacing|type\.mono/);
     }
     expect(card).toMatch(/<Text style=\{styles\.username\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/);
-    expect(card).toMatch(/<Text style=\{styles\.author\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/);
-    expect(card).toMatch(/<Text style=\{styles\.author\}>\{c\.author\.username\}<\/Text> \{c\.body\}/);
+    // Before the caption and each comment, the name is a link to the member's page, in that same sheet's style; the words after it are theirs.
+    expect(card).toMatch(/<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\{" "\}\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} \/>/);
+    expect(card).toMatch(
+      /<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\{" "\}\s*<MentionText\s+text=\{c\.body\}/,
+    );
+    expect(card.match(/<NameLink\b(?:=>|[^>])*\/>/g)?.map((link) => link.match(/style=\{[^}]*\}/)?.[0])).toEqual(["style={styles.author}", "style={styles.author}"]);
     // The caption and the comments themselves keep the comments' own type.
     expect(card).toMatch(/\n {2}comment: \{\s*\.\.\.type\.body,\s*fontSize: 14,/);
   });
 
-  it("is none of them left out: a Text that draws a username has the face, or a reason not to", () => {
-    // Where a username is drawn without the hook, and why.
+  it("is none of them left out: a Text or a link that draws a username has the face, or a reason not to", () => {
+    // Where a username is drawn without the hook, and why: what draws it (a Text, or a NameLink, by the username it opens), and what.
     const without: Record<string, RegExp> = {
       // Always Editorial: its sheet sets the name medium (above).
-      "src/components/feed/EditorialPostCard.tsx": /^\{(post|c)\.author\.username\}$/,
+      "src/components/feed/EditorialPostCard.tsx": /^(Text \{post\.author\.username\}|NameLink \{(post|c)\.author\.username\})$/,
       // Drawn only under Original: Home and the gallery draw the editorial card under Editorial.
-      "src/components/PostCard.tsx": /^\{(post|c)\.author\.username\}$/,
+      "src/components/PostCard.tsx": /^(Text \{post\.author\.username\}|NameLink \{(post|c)\.author\.username\})$/,
       // The initial that stands in for a picture, not the name.
-      "src/components/Avatar.tsx": /^\{\(username\[0\] \?\? "\?"\)\.toUpperCase\(\)\}$/,
-      // A post's own page: the caption's author, in the caption's serif, which has no half bold (see below).
-      "app/post/[id].tsx": /^\{post\.author\.username\}$/,
-      // An admin's report line: who wrote the reported comment, then its words. The page's names stay regular, as in its sentences (below).
-      "app/admin/reports.tsx": /^\{item\.comment\.author\?\.username \?\? "unknown"\}$/,
+      "src/components/Avatar.tsx": /^Text \{\(username\[0\] \?\? "\?"\)\.toUpperCase\(\)\}$/,
+      // A post's own page: the caption's author, in the caption's serif, which has no half bold (see below). Its other names have the face.
+      "app/post/[id].tsx": /^NameLink \{post\.author\.username\}$/,
+      // An admin's report: every name on it (who reported it, who wrote the comment, the member reported) is one link, nameOf's,
+      // in the page's own name style under either layout. The trial leaves the page as it was (below).
+      "app/admin/reports.tsx": /^(Text \{nameOf\(item\.comment\.author\?\.username\)\}|NameLink \{username\})$/,
+      // The link itself, which draws a name in whatever style the place hands it (each place is read here), and an @name in what a
+      // member wrote: their words as typed, in the link's accent, never the face (below).
+      "src/components/MemberText.tsx": /^(Text \{children \?\? username\}|NameLink \{part\.username\})$/,
     };
     const drawn: string[] = [];
     for (const file of sources().filter((f) => f.endsWith(".tsx"))) {
       const source = code(file);
       // A Text whose words start with a username: its opening tag, then the expression.
-      for (const m of source.matchAll(/<Text\b((?:=>|[^>])*?)>\s*(\{[^{}]*\b(?:desired_)?username\b[^{}]*\})/g)) {
-        const [, props, child] = m;
-        const site = `${file}: ${child}`;
+      const texts = [...source.matchAll(/<Text\b((?:=>|[^>])*?)>\s*(\{[^{}]*\b(?:desired_)?username\b[^{}]*\})/g)].map(([, props, child]) => [props, `Text ${child}`]);
+      // A link to a member's page, which draws the username it opens: its props, then that username.
+      const links = [...source.matchAll(/<NameLink\b((?:=>|[^>])*?)\/?>/g)].map(([, props]) => [props, `NameLink {${props.match(/\busername=\{([^{}]*)\}/)?.[1]}}`]);
+      for (const [props, what] of [...texts, ...links]) {
+        const site = `${file}: ${what}`;
         drawn.push(site);
         if (/\bface\b/.test(props)) continue;
         expect(without[file], site).toBeDefined();
-        expect(child, site).toMatch(without[file]);
+        expect(what, site).toMatch(without[file]);
       }
     }
-    // The scan finds what it is meant to: the Texts above with the face, and the seven without.
-    expect(drawn.length).toBeGreaterThanOrEqual(SITES.length + 7);
+    // The scan finds what it is meant to: the places above with the face, and the twelve without.
+    expect(drawn.length).toBeGreaterThanOrEqual(SITES.length + 12);
+    // An admin's report: its names through the one link, in the page's style, never the face; "unknown" for a member who has left.
+    const reports = code("app/admin/reports.tsx");
+    expect(reports).toMatch(/const nameOf = \(username: string \| null \| undefined\) =>\s*username \? <NameLink username=\{username\} onOpenProfile=\{openName\} style=\{styles\.name\} \/> : "unknown";/);
+    expect(reports.match(/\{nameOf\([^{}]*\)\}/g)).toEqual(["{nameOf(item.reporter?.username)}", "{nameOf(item.comment.author?.username)}", "{nameOf(item.member.username)}"]);
   });
 
   it("is only ever a username: display names, captions, comments and messages keep their own weight", () => {
@@ -342,8 +386,26 @@ describe("every username the app draws", () => {
           expect(words, site).not.toMatch(/full_name|caption|\.body|bio|preview/);
         }
       }
+      // A link with the face: it draws the username it opens, given no words of its own, and the face is in its style alone.
+      for (const m of source.matchAll(/<NameLink\b((?:=>|[^>])*?)(\/?)>/g)) {
+        const [tag, props, closed] = m;
+        if (!/\bface\b/.test(props)) continue;
+        faced += 1;
+        const site = `${file}: ${tag}`;
+        expect(closed, site).toBe("/");
+        expect(props.match(/\busername=\{([^{}]*)\}/)?.[1], site).toMatch(/^(?:[\w$]+\.)*username$/);
+        expect(props.replace(/\bstyle=\{(?:\[[^\]]*\]|face)\}/, ""), site).not.toMatch(/\bface\b/);
+      }
+      // What a member wrote, @names and all, keeps the line's own weight: the face is never handed to their words.
+      expect(source, file).not.toMatch(/<MentionText\b(?:=>|[^>])*\bface\b/);
     }
     expect(faced).toBe(SITES.length);
+    // A link draws the username it opens, unless given words of its own, in the style it is handed, and an @name in a member's
+    // words in the accent: the module that draws them never reads the face itself.
+    const links = code("src/components/MemberText.tsx");
+    expect(links).toMatch(/<Text\s+style=\{style\}(?:=>|[^>])*>\s*\{children \?\? username\}\s*<\/Text>/);
+    expect(links).toMatch(/<NameLink\s+key=\{i\}\s+username=\{part\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onLongPress\}\s+style=\{styles\.mention\}\s*>\s*\{part\.text\}\s*<\/NameLink>/);
+    expect(links).not.toMatch(/\bface\b|nameFace/);
   });
 
   it("in a sentence is drawn as the sentence is, regular already, so the sentence is left as it was", () => {
@@ -360,6 +422,14 @@ describe("every username the app draws", () => {
       "app/(tabs)/search.tsx": [/^`Forget \$\{item\.username\}`$/],
       "app/blocked.tsx": [/^`Unblock \$\{item\.username\}`$/],
       "app/requests.tsx": [/^`Accept \$\{item\.username\}`$/, /^`Decline \$\{item\.username\}`$/],
+      // A member's picture, a button VoiceOver reads by whose page it opens: spoken, never drawn.
+      "app/(tabs)/activity.tsx": [/^`\$\{item\.actor\.username\}’s profile`$/],
+      "app/comments.tsx": [/^`\$\{post\.author\.username\}’s profile`$/, /^`\$\{comment\.author\.username\}’s profile`$/],
+      "app/messages/index.tsx": [/^`\$\{conversation\.peer\.username\}’s profile`$/],
+      "app/post/[id].tsx": [/^`\$\{post\.author\.username\}’s profile`$/],
+      "src/components/PostCard.tsx": [/^`\$\{post\.author\.username\}’s profile`$/],
+      // A row's names as its actions, which VoiceOver speaks and hands back by these words: never drawn.
+      "src/utils/nameActions.ts": [/^`View \$\{username\}’s profile`$/],
       // The public web page, written on the server: the preference is kept on the phone.
       "src/share/publicPage.ts": [/^`A photograph from \$\{p\.username\}’s archive · VINTAGE`$/],
       // The Block dialog from a message thread's "…": the system draws it.
@@ -392,6 +462,13 @@ describe("every username the app draws", () => {
     }
     // The scan finds what it is meant to: each sentence allowed above, once, and no other.
     expect(found).toHaveLength(Object.values(written).flat().length);
+    // Those spoken are what VoiceOver reads for a button, written where the button is; a row's actions are named and labelled by theirs.
+    for (const file of ["app/(tabs)/search.tsx", "app/blocked.tsx", "app/requests.tsx", "app/(tabs)/activity.tsx", "app/comments.tsx", "app/messages/index.tsx", "app/post/[id].tsx", "src/components/PostCard.tsx"]) {
+      for (const site of found.filter((s) => s.startsWith(`${file}: `))) {
+        expect(code(file), site).toContain(`accessibilityLabel={${site.slice(file.length + 2)}}`);
+      }
+    }
+    expect(code("src/utils/nameActions.ts")).toMatch(/const said = `View \$\{username\}’s profile`;\s*out\.push\(\{ name: said, label: said \}\);/);
     // The sentences the app draws itself are set regular, so a name in one is never bold under either layout.
     const regular = (file: string, name: string) => {
       const rule = code(file).match(new RegExp(`\\n {2}${name}: \\{ ([^\\n]*) \\},`))?.[1];
@@ -401,12 +478,12 @@ describe("every username the app draws", () => {
     regular("src/components/EmptyState.tsx", "body");
     regular("app/user/[username].tsx", "lockedTitle");
     regular("app/user/[username].tsx", "lockedBody");
-    regular("app/admin/reports.tsx", "headline");
     for (const base of [type.caption, type.body, type.title]) expect(base).not.toHaveProperty("fontWeight");
     // And drawn as they always were: the sentence a string, and the name in it no Text of its own.
     expect(code("src/components/EmptyState.tsx")).toMatch(/\n {2}body\?: string;\n/);
     expect(code("app/user/[username].tsx")).toMatch(/<Text style=\{styles\.lockedTitle\}>You blocked \{profile\.username\}<\/Text>/);
-    expect(code("app/admin/reports.tsx")).toMatch(/\{item\.target_type\} · reported by \{item\.reporter\?\.username \?\? "unknown"\} ·\{" "\}/);
+    // An admin's report writes its names as links of their own, nameOf's, not words of its sentences (above).
+    expect(code("app/admin/reports.tsx")).toMatch(/\{item\.target_type\} · reported by \{nameOf\(item\.reporter\?\.username\)\} ·\{" "\}/);
   });
 });
 
@@ -431,14 +508,18 @@ function rule(file: string, name: string): Record<string, unknown> {
   );
 }
 
+/** The parts of a style as written: each of an array's, or the one style. */
+const partsOf = (style: string) => style.replace(/^\[|\]$/g, "").split(/,\s*/);
+
 /**
- * A Text's style array as written at a site, drawn under a layout with its
- * state on or off, flattened as React Native flattens it: each style over
- * the ones before it, and a state's style only while the state holds.
- * "before" is the array as claude/product-polish writes it: without the face.
+ * A name's style as written at a site (an array, or the face alone), drawn
+ * under a layout with its state on or off, flattened as React Native
+ * flattens it: each style over the ones before it, and a state's style only
+ * while the state holds.
+ * "before" is the style as claude/product-polish writes it: without the face.
  */
 function drawn(file: string, array: string, layout: "original" | "editorial" | "before", state: boolean): Record<string, unknown> {
-  const parts = array.replace(/^\[|\]$/g, "").split(/,\s*/);
+  const parts = partsOf(array);
   const face = layout === "before" ? undefined : nameFace(layout);
   return Object.assign(
     {},
@@ -454,29 +535,65 @@ function drawn(file: string, array: string, layout: "original" | "editorial" | "
   );
 }
 
-/** Every style array that holds the face, in every file that reads it. */
+/**
+ * Every style that holds the face, in every file that reads it: an array, or
+ * the face alone, on a link drawn inside a Text that sets the rest.
+ */
 const arrays = () =>
-  READERS.flatMap((file) => [...code(file).matchAll(/style=\{(\[[^\]]*\bface\b[^\]]*\])\}/g)].map((m) => [file, m[1]] as const));
+  READERS.flatMap((file) => [...code(file).matchAll(/style=\{(\[[^\]]*\bface\b[^\]]*\]|face)\}/g)].map((m) => [file, m[1]] as const));
+
+/** The style of each Text a place in a source is drawn inside, outermost first: each opened before it and not yet closed. */
+function around(source: string, at: number): string[] {
+  const open: string[] = [];
+  for (const [tag, props, closed] of source.slice(0, at).matchAll(/<Text\b((?:=>|[^>])*?)(\/?)>|<\/Text>/g)) {
+    if (tag === "</Text>") open.pop();
+    else if (closed !== "/") open.push(props.match(/\bstyle=\{(styles\.\w+|\[[^\]]*\])\}/)?.[1] ?? props.trim());
+  }
+  return open;
+}
 
 describe("a name under each layout", () => {
   it("is never given to a name inside words set in a face with no half bold, where the phone would draw it bold", () => {
     // A serif or the typewriter has a regular and a bold cut and nothing between, and iOS matches 500 to the bold.
     const block = (file: string, name: string) =>
       code(file).match(new RegExp(`\\n  ${name}: \\{([\\s\\S]*?)\\},?\\n`))?.[1] ?? "";
-    let nested = 0;
+    // The theme's styles that carry a family of their own (the title's and the wordmark's serif), spread or named.
+    const families = Object.entries(type).filter(([, style]) => typeof style === "object" && "fontFamily" in style).map(([name]) => name);
+    expect(families.sort()).toEqual(["title", "wordmark"]);
+    const ofAFamily = new RegExp(`type\\.(serif|mono|${families.join("|")})\\b|fontFamily`);
+    const inside: string[] = [];
     for (const file of READERS) {
-      for (const m of code(file).matchAll(/<Text style=\{styles\.(\w+)\}[^>]*>\s*<Text style=\{\[[^\]]*\bface\b[^\]]*\]\}/g)) {
-        nested += 1;
-        expect(block(file, m[1]), `${file}: inside styles.${m[1]}`).not.toMatch(/type\.(serif|mono)|fontFamily/);
+      const source = code(file);
+      // Each name given the face, a Text or a link, and every Text it is drawn inside, whose face it takes.
+      for (const m of source.matchAll(/<(?:Text|NameLink)\b(?:=>|[^>])*?style=\{(?:\[[^\]]*\bface\b[^\]]*\]|face)\}/g)) {
+        for (const style of around(source, m.index)) {
+          inside.push(`${file}: ${style}`);
+          expect(style, `${file}: inside ${style}`).not.toMatch(ofAFamily);
+          for (const [, name] of style.matchAll(/\bstyles\.(\w+)/g)) {
+            expect(block(file, name), `${file}: inside styles.${name}`).not.toMatch(ofAFamily);
+          }
+        }
       }
     }
-    expect(nested).toBeGreaterThan(0);
+    // The scan finds what it is meant to: each name with the face that is drawn inside a line of words.
+    expect(inside).toEqual([
+      "app/(tabs)/activity.tsx: styles.line",
+      "app/comments.tsx: styles.text",
+      "app/comments.tsx: styles.text",
+      "app/messages/[id].tsx: [styles.sharedCaption, mine && styles.textMine]",
+      "app/post/[id].tsx: styles.withText",
+      "app/post/[id].tsx: styles.comment",
+      "src/components/PendingPostCard.tsx: styles.caption",
+      "src/components/PendingPostCard.tsx: styles.caption",
+    ]);
     // The one name left as under Original for that reason: a post's own caption is set in the serif.
     expect(block("app/post/[id].tsx", "caption")).toMatch(/fontFamily: type\.serif/);
-    expect(code("app/post/[id].tsx")).toMatch(/<Text style=\{styles\.caption\}>\s*<Text style=\{styles\.captionAuthor\}>\{post\.author\.username\}<\/Text> \{post\.caption\}/);
+    expect(code("app/post/[id].tsx")).toMatch(
+      /<Text style=\{styles\.caption\}>\s*<NameLink username=\{post\.author\.username\} onOpenProfile=\{openMember\} style=\{styles\.captionAuthor\} \/>\{" "\}\s*<MentionText text=\{post\.caption\} onOpenProfile=\{openMember\} \/>\s*<\/Text>/,
+    );
   });
 
-  it("is found in every style array that holds the face, one for each place above", () => {
+  it("is found in every style that holds the face, one for each place above", () => {
     expect(arrays()).toHaveLength(SITES.length);
   });
 
@@ -498,7 +615,7 @@ describe("a name under each layout", () => {
         // The face, the size, the colour and the spacing: as they were.
         expect(after, site).toEqual(before);
         // The weight: a state's where a state that sets one holds and comes after the face, and medium everywhere else.
-        const parts = array.slice(1, -1).split(/,\s*/);
+        const parts = partsOf(array);
         const afterFace = parts.slice(parts.findIndex((p) => /\bface\b/.test(p)) + 1);
         const stated = afterFace
           .map((p) => p.match(/^.+ && styles\.(\w+)$/)?.[1])
@@ -519,18 +636,20 @@ describe("a name under each layout", () => {
   it("comes after the place's own style and before any state's, so the state still wins", () => {
     const found = arrays();
     for (const [file, array] of found) {
-      const parts = array.slice(1, -1).split(/,\s*/);
+      const parts = partsOf(array);
       const at = parts.findIndex((part) => /\bface\b/.test(part));
       // Before the face only the place's own style, never one that depends on a state.
       for (const before of parts.slice(0, at)) expect(before, `${file}: ${array}`).toMatch(/^styles\.\w+$/);
     }
-    // The three a state marks, each with the state after the face.
+    // Two a state marks in the name's own style, each with the state after the face.
     const marked = found.filter(([, array]) => /&& styles\./.test(array)).map(([file, array]) => `${file}: ${array}`);
     expect(marked).toEqual([
-      "app/messages/[id].tsx: [styles.sharedCaption, face, mine && styles.textMine]",
       "app/messages/index.tsx: [styles.username, face, unread && styles.unreadText]",
       'app/post/[id].tsx: [styles.withName, face, t.status === "pending" && styles.withPending]',
     ]);
+    // The third, your own bubble, marks the line a photograph's author is drawn in: the name's own style is the face alone, the
+    // weight, and the bubble's ink reaches the name through the line (below).
+    expect(found.filter(([, array]) => array === "face")).toEqual([["app/messages/[id].tsx", "face"]]);
   });
 });
 
@@ -551,15 +670,24 @@ describe("a state a place marks a name for", () => {
 
   it("a photograph sent in your own bubble: its author's name in the bubble's light ink on its dark paper", () => {
     const file = "app/messages/[id].tsx";
-    const array = code(file).match(/<Text style=\{(\[[^\]]*\])\} numberOfLines=\{1\}>\s*\{shared\.author\.username\}/)![1];
+    // The line under the photograph, and the name in it, a link: the name takes the line's type and ink, and lays its own style over them.
+    const [, line, own] = code(file).match(
+      /<Text style=\{(\[[^\]]*\])\} numberOfLines=\{1\}>\s*<NameLink username=\{shared\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{([^{}]*)\} \/>\s*<\/Text>/,
+    )!;
+    // The name's own style is the face, and nothing else: the line, your own bubble's ink with it, is as it was under either layout.
+    expect(own).toBe("face");
+    expect(line).not.toMatch(/\bface\b/);
+    const name = (layout: "original" | "editorial" | "before", mine: boolean) => ({ ...drawn(file, line, layout, mine), ...drawn(file, own, layout, mine) });
     expect(rule(file, "bubbleMine")).toEqual({ backgroundColor: colors.shutter, borderColor: colors.shutter });
+    // The bubble's ink sets no weight, so the face under it is the name's weight still.
     expect(rule(file, "textMine")).toEqual({ color: colors.onShutter });
-    expect(drawn(file, array, "editorial", true)).toEqual({ fontSize: 11, color: colors.onShutter, marginTop: 4, fontWeight: "500" });
+    expect(name("editorial", true)).toEqual({ fontSize: 11, color: colors.onShutter, marginTop: 4, fontWeight: "500" });
     // In their bubble, on the raised paper, its own faint ink.
-    expect(drawn(file, array, "editorial", false)).toEqual({ fontSize: 11, color: colors.inkFaint, marginTop: 4, fontWeight: "500" });
+    expect(name("editorial", false)).toEqual({ fontSize: 11, color: colors.inkFaint, marginTop: 4, fontWeight: "500" });
     // Under Original exactly as before the trial.
-    expect(drawn(file, array, "original", true)).toEqual({ fontSize: 11, marginTop: 4, color: colors.onShutter });
-    expect(drawn(file, array, "original", false)).toEqual({ fontSize: 11, marginTop: 4, color: colors.inkFaint });
+    expect(name("original", true)).toEqual({ fontSize: 11, marginTop: 4, color: colors.onShutter });
+    expect(name("original", false)).toEqual({ fontSize: 11, marginTop: 4, color: colors.inkFaint });
+    for (const mine of [false, true]) expect(name("original", mine)).toEqual(name("before", mine));
   });
 
   it("a member tagged who has not yet accepted: faint and regular, as the state sets it, with \"(pending)\" after", () => {
@@ -589,7 +717,7 @@ describe("the trial still comes out cleanly", () => {
     }
   });
 
-  it("leaves the places where a name was already regular in a sentence as they were", () => {
+  it("leaves the places where a name was already regular in a sentence, and an admin's report, as they were", () => {
     for (const file of ["app/follows.tsx", "app/admin/reports.tsx", "src/components/EraList.tsx", "src/components/EmptyState.tsx"]) {
       expect(readFileSync(path.join(root, file), "utf8"), file).not.toMatch(/Editorial|nameFace|useNameTitleStyle|aroundName/);
       expect(code(file), file).not.toMatch(/\bface\b/);
@@ -623,6 +751,7 @@ describe("the trial still comes out cleanly", () => {
         "tests/galleryLanding.test.ts",
         "tests/stableCards.test.ts",
         "tests/thread-menu.test.ts",
+        "tests/member-names.test.ts",
         "e2e/launch-test.mjs",
       ].sort(),
     );

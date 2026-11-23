@@ -10,8 +10,7 @@ import {
   DAY_DIRECT_YEARS,
   DAY_FIRST,
   DAY_MS,
-  DAY_OVERFLOW_FIRST,
-  DAY_OVERFLOW_SLICE_MS,
+  DAY_PAGES,
   DAY_REACHES,
   EARLIEST_PLAUSIBLE,
   EDIT_GAP_MS,
@@ -25,7 +24,6 @@ import {
   MAX_IN_FLIGHT,
   MOMENT_GAP_MS,
   OCCASION_MEMORY,
-  ON_THIS_DAY_CAP,
   ON_THIS_DAY_MINIMUM,
   PER_YEAR,
   PER_YEAR_GAP_MS,
@@ -65,11 +63,11 @@ export { ON_THIS_DAY_MINIMUM, REDISCOVERY_AGE_DAYS, ROLL_LENGTH } from "./eligib
  * out from under a chapter. The decisions are pure and seeded, so the
  * tests can hold them to their word.
  *
- *   On This Day   the same calendar date in earlier years, reaching out
- *                 to the week and then the time of year when the day
- *                 itself is thin. A few from each year, spread through
- *                 it; one from every year, oldest first, before a second
- *                 from any.
+ *   On This Day   the same calendar date in earlier years: every
+ *                 photograph of it, year by year, newest year first.
+ *                 When the day itself is thin it reaches out to the
+ *                 week and then the time of year for a few more from
+ *                 around it, spread through each year.
  *   Surprise      rolls of twenty-four from anywhere older than the last
  *                 few months: a year drawn with a lean toward the old,
  *                 a moment drawn inside it, the nearest real frames read
@@ -306,8 +304,17 @@ export async function monthIndex(source: LibrarySource, year: number): Promise<n
 export interface DayResult {
   /** How far it had to reach: the day itself, the week around it, or the time of year. */
   reach: DayReach;
-  /** In the order they are shown: one from each year, oldest first, then the rest. */
+  /**
+   * In the order they are shown: the years newest first, each year's in
+   * the order they were taken. At the day reach every photograph of the
+   * anniversary, however many; reaching wider, the anniversary's own
+   * photographs, every one, and a few from around it.
+   */
   prints: Print[];
+  /** How many moments those are — a burst is one — which is what decides whether the day holds enough. */
+  moments: number;
+  /** Each year that holds any of them, newest first, with how many it holds. */
+  years: { year: number; count: number }[];
 }
 
 function isLeap(year: number): boolean {
@@ -353,21 +360,34 @@ async function yearsBack(lib: LibrarySource, now: number, known?: number | null)
 }
 
 /**
- * One anniversary day. Usually a single page holds all of it. A day that
- * holds more — a wedding, a first day in a new city — is read on from
- * where that page stopped in slices of three hours, each from its own
- * start, so every three hours of the day that holds a photograph is
- * represented and the afternoon is never lost to the morning.
+ * Every photograph of one stretch of time, in the order they were taken:
+ * a page, then the next page on from where that one stopped, until the
+ * stretch is read to its end. A page starts at its predecessor's last
+ * instant, so frames that share it are not skipped, and frames read twice
+ * are kept once; a page that brings nothing new steps past that instant.
+ * So more frames than a page holds at one exact millisecond would lose
+ * those past the page: Photos' fetch already leaves out the extra frames
+ * of a burst, and no camera writes that many at one instant otherwise.
+ * No more than `pages` pages: a bound on the reading, far past any real day.
  */
-async function readDay(lib: LibrarySource, day: TimeRange): Promise<Print[]> {
-  const page = await lib.page({ range: day, first: DAY_FIRST, order: "asc" });
-  if (!page.hasNextPage || page.prints.length === 0) return page.prints;
-  const reached = page.prints[page.prints.length - 1].takenAt;
-  const rest = { from: Math.floor(reached) + 1, to: day.to };
-  if (rest.from >= rest.to) return page.prints;
-  const slices = split(rest, Math.ceil((rest.to - rest.from) / DAY_OVERFLOW_SLICE_MS));
-  const more = await Promise.all(slices.map((range) => lib.page({ range, first: DAY_OVERFLOW_FIRST, order: "asc" })));
-  return page.prints.concat(...more.map((p) => p.prints));
+export async function readAll(lib: LibrarySource, range: TimeRange, pages = DAY_PAGES): Promise<Print[]> {
+  const out: Print[] = [];
+  const seen = new Set<string>();
+  let from = range.from;
+  for (let i = 0; i < pages && from < range.to; i++) {
+    const page = await lib.page({ range: { from, to: range.to }, first: DAY_FIRST, order: "asc" });
+    let fresh = 0;
+    for (const p of page.prints) {
+      if (seen.has(p.id)) continue;
+      seen.add(p.id);
+      out.push(p);
+      fresh += 1;
+    }
+    if (!page.hasNextPage || page.prints.length === 0) break;
+    const last = Math.floor(page.prints[page.prints.length - 1].takenAt);
+    from = fresh > 0 && last > from ? last : Math.max(last, from) + 1;
+  }
+  return out.sort(byTime);
 }
 
 /** A week or a season, in equal slices, so a heavy first day cannot crowd out the rest. */
@@ -406,10 +426,10 @@ function spreadApart(group: readonly Print[], chosen: Print[]): void {
 }
 
 /**
- * One year's share: at most four of its moments, at least 45 minutes
- * apart, the anniversary's own day first, then the days of its week, then
- * the rest of the season — so a trip the days before never crowds out the
- * two photographs taken on the day itself.
+ * One year's share from around the anniversary: at most four of its
+ * moments, at least 45 minutes apart, the anniversary's own day first,
+ * then the days of its week, then the rest of the season — so a trip the
+ * days before never crowds out the two photographs taken on the day itself.
  */
 function chooseForYear(moments: readonly Print[], date: Date): Print[] {
   const chosen: Print[] = [];
@@ -427,31 +447,26 @@ function chooseForYear(moments: readonly Print[], date: Date): Print[] {
   return chosen.sort(byTime);
 }
 
-/** Sweep one: each year's middle moment, oldest year first. Sweep two: the rest, oldest year first, each in time order. */
-function sweep(perYear: readonly Print[][]): Print[] {
-  const first: Print[] = [];
-  const second: Print[] = [];
-  for (const picks of perYear) {
-    if (picks.length === 0) continue;
-    const middle = Math.floor((picks.length - 1) / 2);
-    first.push(picks[middle]);
-    picks.forEach((p, i) => {
-      if (i !== middle) second.push(p);
-    });
-  }
-  return [...first, ...second].slice(0, ON_THIS_DAY_CAP);
+/** Two lists in capture order as one, each photograph once. */
+function joined(a: readonly Print[], b: readonly Print[]): Print[] {
+  const ids = new Set(a.map((p) => p.id));
+  return [...a, ...b.filter((p) => !ids.has(p.id))].sort(byTime);
 }
 
 /**
  * The same calendar date in every earlier year.
  *
- * The day itself is read first. Only when every year together yields
- * fewer than three moments does it reach out to the week, and then to
- * the season; what a narrower reach found is carried into the wider one,
- * so widening never loses the day. `maxReach` stops it early: the room's
+ * The day itself is read first, every photograph of it, in every year.
+ * Only when every year together holds fewer than three moments does it
+ * reach out to the week, and then to the season, for a few more from
+ * around the date; every photograph of the day itself is still shown, so
+ * widening never loses any of it. `maxReach` stops it early: the room's
  * first decision asks only whether the day itself holds enough, and can
  * then turn to Surprise without waiting for two wider sweeps it would
  * throw away.
+ *
+ * Shown by year, newest first, and in each year in the order they were
+ * taken, so the day reads as it went, year by year back. Nothing caps it.
  *
  * Seen history is ignored here — the date is the reason to look again.
  * `oldest`, when the caller already has it (null for an empty library),
@@ -471,25 +486,37 @@ export async function onThisDay(
           .filter((y) => Number.isInteger(y) && y < today.getFullYear() && y >= new Date(EARLIEST_PLAUSIBLE).getFullYear())
           .sort((a, b) => a - b)
       : await yearsBack(lib, now, opts.oldest);
-  const widest = Math.max(0, DAY_REACHES.findIndex((r) => r.reach === (opts.maxReach ?? "season")));
-  let found: Print[][] = list.map(() => []);
+  const dates = list.map((year) => anniversary(year, today.getMonth(), today.getDate()));
+  const usable = (frames: readonly Print[]) => frames.filter((p) => isEligible(p, { now }));
+
+  // The day itself, every photograph of it.
+  const days = await Promise.all(dates.map(async (date) => usable(await readAll(lib, around(date, 0)))));
+  let shown: Print[][] = days;
+  let moments = days.reduce((n, d) => n + condense(d).length, 0);
   let reach: DayReach = DAY_REACHES[0].reach;
-  for (let i = 0; i <= widest; i++) {
+
+  // Reaching wider, a few more from around the date in each year, the day's own kept whole.
+  const widest = Math.max(0, DAY_REACHES.findIndex((r) => r.reach === (opts.maxReach ?? "season")));
+  let carried: Print[][] = days.map((d, k) => chooseForYear(condense(d), dates[k]));
+  for (let i = 1; i <= widest && moments < ON_THIS_DAY_MINIMUM; i++) {
     const tier = DAY_REACHES[i];
     reach = tier.reach;
-    const carried = found;
-    found = await Promise.all(
-      list.map(async (year, k) => {
-        const date = anniversary(year, today.getMonth(), today.getDate());
-        const window = around(date, tier.days);
-        const frames = tier.days === 0 ? await readDay(lib, window) : await readWide(lib, window);
-        const usable = frames.filter((p) => isEligible(p, { now }));
-        return chooseForYear(condense([...usable, ...carried[k]]), date);
-      }),
+    const picks = await Promise.all(
+      dates.map(async (date, k) => chooseForYear(condense([...usable(await readWide(lib, around(date, tier.days))), ...carried[k]]), date)),
     );
-    if (found.reduce((n, l) => n + l.length, 0) >= ON_THIS_DAY_MINIMUM) break;
+    carried = picks;
+    moments = picks.reduce((n, l) => n + l.length, 0);
+    shown = picks.map((p, k) => joined(days[k], p));
   }
-  return { reach, prints: sweep(found) };
+
+  // Newest year first.
+  const byYear = list.map((year, k) => ({ year, prints: shown[k] })).filter((y) => y.prints.length > 0).reverse();
+  return {
+    reach,
+    prints: byYear.flatMap((y) => y.prints),
+    moments,
+    years: byYear.map((y) => ({ year: y.year, count: y.prints.length })),
+  };
 }
 
 /**
@@ -498,7 +525,7 @@ export async function onThisDay(
  * On This Day from reaching further, so the two can never disagree.
  */
 export function opensOnThisDay(day: DayResult | null | undefined): boolean {
-  return day != null && day.reach === "day" && day.prints.length >= ON_THIS_DAY_MINIMUM;
+  return day != null && day.reach === "day" && day.moments >= ON_THIS_DAY_MINIMUM;
 }
 
 // ---------------------------------------------------------------------------

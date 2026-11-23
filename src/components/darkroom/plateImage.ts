@@ -56,15 +56,42 @@ export const PROOF_AHEAD = 2;
 /**
  * Whether a page draws the soft proof (a 48 pt thumbnail Photos keeps on
  * the phone, scaled up): the settled page, the one before and the two
- * after. The full photograph is still asked for only by the pages the
- * stage has mounted.
+ * after.
  */
 export function wantsProof(index: number, settled: number): boolean {
   return index >= settled - PROOF_BEHIND && index <= settled + PROOF_AHEAD;
 }
 
-/** The full image dissolves in over this; a print already drawn this visit comes from memory and does not. */
-export const DISSOLVE = { duration: 240, effect: "cross-dissolve", timing: "ease-out" } as const;
+/**
+ * The full photograph is asked for by the same pages: the settled one,
+ * the one before, and the two after — kept warm, so a print is sharp
+ * before it is turned to. The stage mounts two pages either side
+ * (`STAGE_WINDOW` in Stage.tsx); the page two behind draws its well only,
+ * so no more than four plates hold a decoded photograph at once (one more
+ * than when only the next was warm), and Photos is asked for the next
+ * two while the member is still looking at this one. A print still in
+ * iCloud is brought down meanwhile, its progress drawn along the signature
+ * line once it is in front.
+ */
+export const PHOTO_BEHIND = PROOF_BEHIND;
+export const PHOTO_AHEAD = PROOF_AHEAD;
+
+export function wantsPhotograph(index: number, settled: number): boolean {
+  return index >= settled - PHOTO_BEHIND && index <= settled + PHOTO_AHEAD;
+}
+
+/** The pages whose photograph is held in memory: the warm ones, for letting go of the rest (`drawn.ts`). */
+export function warmIds(prints: readonly { id: string }[], settled: number): string[] {
+  return prints.slice(Math.max(0, settled - PHOTO_BEHIND), settled + PHOTO_AHEAD + 1).map((p) => p.id);
+}
+
+/**
+ * The full image dissolves in over this, from its soft proof; a print
+ * already drawn this visit comes from memory and does not dissolve at all.
+ * Short: a photograph on the phone comes in within a frame or two, and
+ * the dissolve is all the member waits on.
+ */
+export const DISSOLVE = { duration: 150, effect: "cross-dissolve", timing: "ease-out" } as const;
 
 /** Heard nothing at all of a first try for this long while in front of the member — no picture, no failure, no progress — a plate asks again; and, offline, says why. */
 export const PLATE_STALL_MS = 12_000;

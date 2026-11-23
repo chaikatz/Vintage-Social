@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
+import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -37,8 +38,9 @@ export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
  * step up from the black, lettered in white. The library's is the
  * house's ruled bar in ink (solid where it is the page's only bar), one
  * tap to the system picker as it always was; the camera and a short clip
- * are quiet words under it, with the clip's limit beneath them. Then On
- * this day, one line at the foot.
+ * are two smaller ruled boxes under it, side by side, each with its mark
+ * and its word in ink, with the clip's limit beneath them. Then On this
+ * day, one line at the foot.
  *
  * This tab never reads the photo library. It may be on screen, or
  * preloaded beside one, without the member having gone near the Memory
@@ -113,9 +115,10 @@ export default function Create() {
             maxFontSizeMultiplier={BAR_TYPE_CAP}
             style={styles.bar}
           />
-          <View style={styles.ways}>
+          <View style={styles.boxes}>
             {native ? (
-              <QuietWay
+              <BoxedWay
+                icon="camera"
                 label="Camera"
                 hint="Take one now"
                 busy={busy === "camera"}
@@ -123,7 +126,8 @@ export default function Create() {
                 onPress={() => openWith("camera", takeForCompose)}
               />
             ) : null}
-            <QuietWay
+            <BoxedWay
+              icon="video"
               label="Short video"
               hint={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`}
               busy={busy === "video"}
@@ -152,11 +156,16 @@ type Way = "photo" | "camera" | "video";
 const TYPE_CAP = 2.4;
 /** The serif line stops growing sooner: here "photograph." still fits on one line of a 320 pt phone, so it is never broken in two. */
 const TITLE_CAP = 1.8;
-/** The bars' capitals stop growing here. At the largest sizes a label takes two lines, and its bar grows to hold them. */
+/** The bars' capitals, and the boxes' under them, stop growing here. At the largest sizes a label takes two lines, and its bar grows to hold them. */
 const BAR_TYPE_CAP = 1.8;
 /** GateButton's arrow is 18 wide, 16 in from the edge: the label keeps clear of it on both sides, so it stays centred. */
 const BAR_INSET = 36;
 const TOUCH = 44;
+/** The camera's and the clip's boxes: taller than a touch needs, and each half the column of the narrowest phone. */
+const BOX_HEIGHT = 48;
+const BOX_BASIS = 132;
+/** Their marks, a size up from the field's and the row's 15. */
+const BOX_MARK = 17;
 /** The print on the On this day line: a small 4 × 5, the shape the feed gives a portrait. */
 const PRINT_WIDTH = 44;
 const PRINT_HEIGHT = 55;
@@ -167,9 +176,11 @@ const PRINT_HEIGHT = 55;
  * When the member left the room within the last twelve hours the line
  * becomes where they were — "You left off in August 2018." — read from
  * the place the room keeps on disk, which knows the month without asking
- * the library. When anything is set aside, SET ASIDE stands under the
- * bar, as the camera and the clip stand under the library's, and opens
- * the shelf.
+ * the library. Under the bar, as the camera and the clip stand under the
+ * library's: TODAY IN OTHER YEARS, one tap into the room's On this day,
+ * every photograph of this day in other years (named apart from the On
+ * this day at the foot of the page, which is the member's own posts);
+ * and, when anything is set aside, SET ASIDE, which opens the shelf.
  */
 function MemoryRoomDoor({ held }: { held: boolean }) {
   const router = useRouter();
@@ -203,9 +214,17 @@ function MemoryRoomDoor({ held }: { held: boolean }) {
         maxFontSizeMultiplier={BAR_TYPE_CAP}
         style={styles.bar}
       />
-      {n > 0 ? (
-        <View style={[styles.ways, styles.shelf]}>
-          {/* Counted as the room's Contents counts it. */}
+      <View style={[styles.ways, styles.shelf]}>
+        <QuietWay
+          label="Today in other years"
+          spoken="Today in other years, in the Memory Room"
+          hint="Opens every photograph from this day in other years, year by year."
+          busy={false}
+          held={held}
+          onPress={() => router.push({ pathname: "/darkroom", params: { mode: "on-this-day" } })}
+        />
+        {n > 0 ? (
+          // Counted as the room's Contents counts it.
           <QuietWay
             label={`Set aside · ${countLabel(n)}`}
             spoken={`Set aside, ${n} ${n === 1 ? "photograph" : "photographs"}`}
@@ -214,18 +233,68 @@ function MemoryRoomDoor({ held }: { held: boolean }) {
             held={held}
             onPress={() => router.push({ pathname: "/darkroom", params: { mode: "set-aside" } })}
           />
-        </View>
-      ) : null}
+        ) : null}
+      </View>
     </View>
   );
 }
 
 /**
- * One of the quieter ways in, as a line of capitals: the camera, a short
- * clip, the shelf of prints set aside. While it is the one opening, a
- * small spinner stands where its letters were, in a box the same size,
- * so nothing beside it moves. Its letters are never held to one line: a
- * word in tracked capitals cut short reads as "SET ASID…".
+ * The camera, or a short clip: a smaller ruled box under the library's
+ * bar, on the raised paper, square-cornered as the bars are, ruled in the
+ * secondary ink where the bar is ruled in ink, with its mark and its word
+ * in ink, so both can be seen at a glance on paper and on black. The two
+ * share the column half and half (the clip alone, where there is no
+ * camera, takes all of it). While it is the one opening, a small spinner
+ * stands where its mark and word were, in a box the same size, so nothing
+ * beside it moves. Its word is never held to one line: at the largest
+ * text sizes it takes two, and the box grows to hold them. Its letters
+ * stop growing where the bars' do (BAR_TYPE_CAP): iOS grows the letters
+ * but not the tracking between them, and at the page's own cap CAMERA is
+ * wider than half the column of a 320 pt phone, and broken in two.
+ */
+function BoxedWay({
+  icon,
+  label,
+  hint,
+  busy,
+  held,
+  onPress,
+}: {
+  icon: "camera" | "video";
+  label: string;
+  hint: string;
+  busy: boolean;
+  held: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={held}
+      style={({ pressed }) => [styles.box, pressed && styles.boxPressed]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      accessibilityState={{ busy, disabled: held }}
+    >
+      <View style={[styles.boxInside, busy && styles.hidden]}>
+        <Feather name={icon} size={BOX_MARK} color={colors.ink} />
+        <Text style={styles.boxWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
+          {label}
+        </Text>
+      </View>
+      {busy ? <ActivityIndicator size="small" color={colors.ink} style={StyleSheet.absoluteFill} /> : null}
+    </Pressable>
+  );
+}
+
+/**
+ * One of the quieter ways in, as a line of capitals: the shelf of prints
+ * set aside. While it is the one opening, a small spinner stands where its
+ * letters were, in a box the same size, so nothing beside it moves. Its
+ * letters are never held to one line: a word in tracked capitals cut short
+ * reads as "SET ASID…".
  */
 function QuietWay({
   label,
@@ -381,7 +450,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: BAR_INSET,
     marginTop: spacing.lg,
   },
-  // SHORT VIDEO goes under CAMERA rather than off the page at the largest sizes.
+  // The shelf's line of capitals: it wraps rather than running off the page at the largest sizes.
   ways: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.xl + spacing.xs, rowGap: spacing.xs, marginTop: spacing.xs },
   // The library is drawn up into the empty foot of SET ASIDE's touch box,
   // so the two ways in sit about as far apart with the shelf as without it.
@@ -389,9 +458,29 @@ const styles = StyleSheet.create({
   way: { minHeight: TOUCH, justifyContent: "center" },
   // Its trailing tracking is kept (no negative margin): the box is as wide as its letters.
   wayWord: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 2.2, ...caps, color: colors.inkSoft },
-  // Drawn up under the words it glosses, into the empty foot of their touch boxes, and never takes their taps.
-  waysNote: { marginTop: -spacing.sm },
-  waysNoteText: { fontSize: 12, lineHeight: 17, color: colors.inkFaint },
+  // The camera and the clip, side by side under the library's bar.
+  boxes: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.md, rowGap: spacing.md, marginTop: spacing.md },
+  box: {
+    flexGrow: 1,
+    flexBasis: BOX_BASIS,
+    minHeight: BOX_HEIGHT,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.paperRaised,
+    // The secondary ink, a step down from the library bar's rule in ink: an
+    // edge that can be seen on paper and on black, where the hairline greys
+    // could not.
+    borderWidth: 1,
+    borderColor: colors.inkSoft,
+  },
+  boxPressed: { backgroundColor: colors.paperSunken },
+  boxInside: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
+  // The bars' own letters (mono, 11, in ink), tracked a little less to sit beside the mark in half the column of a 320 pt phone.
+  boxWord: { flexShrink: 1, fontFamily: type.mono, fontSize: 11, letterSpacing: 1.6, ...caps, color: colors.ink, textAlign: "center" },
+  // Under the boxes it glosses, in the page's secondary ink, and never takes their taps.
+  waysNote: { marginTop: spacing.sm },
+  waysNoteText: { fontSize: 12, lineHeight: 17, color: colors.inkSoft },
 
   hairline: { height: 1, backgroundColor: colors.border },
   daySection: { marginTop: spacing.xl + spacing.xs },

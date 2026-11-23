@@ -94,7 +94,8 @@ describe("the feed card in a list", () => {
       expect(card).not.toMatch(/\{\s*\.\.\.item/);
       expect(card).not.toMatch(/=>/);
       expect(screen).toMatch(/const \[counted\] = useState\(likeCounted\);/);
-      expect(screen).toMatch(/const openProfile = useCallback\(/);
+      // One function for the screen's life: its own, or the one every name opens a page with (src/hooks/useOpenProfile.ts).
+      expect(screen).toMatch(/const openProfile = (useCallback\(|useOpenProfile\(\);)/);
       expect(screen).toMatch(/const more = useCallback\(/);
     });
   }

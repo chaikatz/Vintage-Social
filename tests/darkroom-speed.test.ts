@@ -21,13 +21,18 @@ import {
   PLATE_STALL_MS,
   PlateStall,
   progressOf,
+  PHOTO_AHEAD,
+  PHOTO_BEHIND,
   PROOF_AHEAD,
   PROOF_BEHIND,
   quietAllowed,
   SILENT_TRIES,
   stallCheck,
+  wantsPhotograph,
   wantsProof,
+  warmIds,
 } from "@/components/darkroom/plateImage";
+import { CaptionHeights } from "@/components/darkroom/geometry";
 import { Visit } from "@/components/darkroom/visit";
 import { gated, inBackground, onThisDay, Surprise, yearIndex } from "@/darkroom/discovery";
 import { MAX_IN_FLIGHT } from "@/darkroom/eligibility";
@@ -389,8 +394,52 @@ describe("a plate's photograph", () => {
     expect(wantsProof(0, 0)).toBe(true);
     expect(wantsProof(-1, 0)).toBe(true);
     expect(read("app/darkroom.tsx")).toMatch(/proof=\{chapter != null && wantsProof\(index, chapter\.index\)\}/);
-    // The full photograph is still asked for only by the pages the stage mounts: the one in view and one either side.
-    expect(read("src/components/darkroom/Stage.tsx")).toMatch(/initialNumToRender=\{1\}\s*maxToRenderPerBatch=\{1\}\s*windowSize=\{3\}/);
+  });
+
+  it("keeps the next two plates warm: their photographs asked for while this one is looked at, and no more than four held", () => {
+    expect([PHOTO_BEHIND, PHOTO_AHEAD]).toEqual([1, 2]);
+    const settled = 10;
+    // The stage mounts two pages either side; the one two behind draws its well only.
+    const mounted = [8, 9, 10, 11, 12];
+    expect(mounted.filter((i) => wantsPhotograph(i, settled))).toEqual([9, 10, 11, 12]);
+    // The same pages as the proof: a plate asking for its photograph always has its soft proof under it.
+    for (let i = 0; i < 20; i++) expect(wantsPhotograph(i, settled)).toBe(wantsProof(i, settled));
+    const stage = read("src/components/darkroom/Stage.tsx");
+    expect(stage).toMatch(/const STAGE_WINDOW = 5;/);
+    expect(stage).toMatch(/const STAGE_BATCH = 2;/);
+    expect(stage).toMatch(/initialNumToRender=\{1\}\s*maxToRenderPerBatch=\{STAGE_BATCH\}\s*windowSize=\{STAGE_WINDOW\}/);
+    // Under the editor only the settled print draws, as before.
+    expect(read("app/darkroom.tsx")).toMatch(
+      /images=\{\(focused && chapter != null && wantsPhotograph\(index, chapter\.index\)\) \|\| isCurrent\}\s+inFront=\{focused\}/,
+    );
+    // The warm plates are the ones kept when the memory is let go.
+    expect(warmIds([{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }, { id: "e" }, { id: "f" }], 2)).toEqual(["b", "c", "d", "e"]);
+    expect(warmIds([{ id: "a" }, { id: "b" }], 0)).toEqual(["a", "b"]);
+  });
+
+  it("lets a page that stops asking for its photograph start again from its proof when it asks again", () => {
+    const pageSource = read("src/components/darkroom/PrintPage.tsx");
+    const photo = pageSource.slice(pageSource.indexOf("function Photograph("), pageSource.indexOf("function Full("));
+    expect(photo).toMatch(/useEffect\(\(\) => \{\s*if \(images\) return;\s*setDrawn\(false\);\s*setDeveloped\(false\);\s*onCloud\(null\);\s*\}, \[images, onCloud\]\);/);
+  });
+
+  it("is laid out once at the size it is drawn: a caption measured before is used, not the estimate", () => {
+    const known = new CaptionHeights();
+    expect(known.get(1.3, false)).toBeNull();
+    known.set(1.3, false, 61.6);
+    expect(known.get(1.3, false)).toBe(62);
+    // A caption whose word dropped to its own row is the exception: the least height is kept.
+    known.set(1.3, false, 80);
+    expect(known.get(1.3, false)).toBe(62);
+    known.set(1.3, false, 58);
+    expect(known.get(1.3, false)).toBe(58);
+    // Each type size and line count apart; nothing kept from a measure that is not one.
+    expect(known.get(1.3, true)).toBeNull();
+    known.set(1, true, Number.NaN);
+    expect(known.get(1, true)).toBeNull();
+    const pageSource = read("src/components/darkroom/PrintPage.tsx");
+    expect(pageSource).toMatch(/const caption = measured \?\? captions\.get\(fontScale, long\) \?\? captionHeight\(fontScale, long \? 2 : 1\);/);
+    expect(pageSource).toMatch(/if \(holdLayout\) return;\s*captions\.set\(fontScale, long, h\);/);
   });
 
   it("reads iCloud's progress as Photos sends it for a ph:// address, and bytes elsewhere", () => {
@@ -420,7 +469,8 @@ describe("a plate's proof, as its photograph comes in", () => {
   it("stays under the photograph for the whole of its dissolve, and goes at once when there is none", () => {
     // expo-image fades the photograph in from an empty view over 240 ms: the proof is what it fades in over.
     expect(proofHoldMs(photographRequest(true, false))).toBe(DISSOLVE.duration);
-    expect(DISSOLVE.duration).toBe(240);
+    // Short: a photograph on the phone comes within a frame or two, and the dissolve is all the member waits on.
+    expect(DISSOLVE.duration).toBe(150);
     // Drawn before this visit, or under Reduce Motion: no dissolve, no wait.
     expect(proofHoldMs(photographRequest(false, false))).toBe(0);
     expect(proofHoldMs(photographRequest(true, true))).toBe(0);
@@ -431,7 +481,9 @@ describe("a plate's proof, as its photograph comes in", () => {
     expect(photograph).toMatch(/\{images && source != null && proof && !developed \? \(/);
     expect(photograph).not.toMatch(/proof && !drawn/);
     expect(photograph).toMatch(/onDeveloped=\{\(\) => setDeveloped\(true\)\}/);
-    expect(photograph.match(/setDeveloped\(/g)).toHaveLength(1);
+    // Set only by the photograph's own view; the one other is a page letting its photograph go.
+    expect(photograph.match(/setDeveloped\(true\)/g)).toHaveLength(1);
+    expect(photograph.match(/setDeveloped\(/g)).toHaveLength(2);
     // The view that dissolves says when it is done, by the request it was made with, and forgets its timer as it goes.
     expect(full).toMatch(/const ms = proofHoldMs\(request\);/);
     expect(full).toMatch(/if \(ms === 0\) \{\s*hold\.current = null;\s*onDeveloped\(\);\s*return;\s*\}/);
@@ -491,7 +543,7 @@ describe("a plate zoomed in", () => {
     expect(page.match(/<Closer\b/g)).toHaveLength(1);
     // Under the editor the room is not in front: the closer goes, so one full decode is live behind it.
     expect(photograph).toMatch(/const inFront = props\.inFront \?\? true;/);
-    expect(read("app/darkroom.tsx")).toMatch(/images=\{focused \|\| isCurrent\}\s+inFront=\{focused\}/);
+    expect(read("app/darkroom.tsx")).toMatch(/\|\| isCurrent\}\s+inFront=\{focused\}/);
   });
 
   it("never starts a download from iCloud: at the first word of one, or a failure, it is given up", () => {
@@ -715,9 +767,9 @@ describe("the room's photographs in memory", () => {
     expect(room).toMatch(/void Image\.clearMemoryCache\(\)\.catch\(\(\) => undefined\)/);
     const loaded = room.slice(room.indexOf("const imageLoaded = useCallback"), room.indexOf("const hasLoaded = useCallback"));
     expect(loaded).toMatch(/const \{ first, release \} = loaded\.current\.add\(id\);/);
-    // The plates on screen (the one in front and one either side) keep their photographs, and stay counted as drawn.
+    // The warm plates (the one in front, one behind, two ahead) keep their photographs, and stay counted as drawn.
     expect(loaded).toMatch(
-      /if \(release\) \{\s*const c = live\.current\.chapter;\s*const onScreen = c \? c\.prints\.slice\(Math\.max\(0, c\.index - 1\), c\.index \+ 2\)\.map\(\(p\) => p\.id\) : \[\];\s*loaded\.current\.released\(\[\.\.\.onScreen, id\]\);\s*releaseDrawn\(\);/,
+      /if \(release\) \{\s*const c = live\.current\.chapter;\s*\/\/[^\n]*\n\s*const onScreen = c \? warmIds\(c\.prints, c\.index\) : \[\];\s*loaded\.current\.released\(\[\.\.\.onScreen, id\]\);\s*releaseDrawn\(\);/,
     );
     const unmount = room.slice(room.indexOf("// --- mount and unmount"));
     expect(unmount).toMatch(/mounted\.current = false;\s*\/\/[^\n]*\n\s*releaseDrawn\(\);/);

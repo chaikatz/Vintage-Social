@@ -113,15 +113,17 @@ describe("what a report shows the admin", () => {
   const card = src.slice(src.indexOf("renderItem={({ item }) => ("), src.indexOf("{tab === \"open\" ? (\n              <View style={styles.actions}>"));
 
   it("a reported comment: its words and who wrote them, and whether it is removed already", () => {
-    expect(card).toMatch(/\{item\.comment \? \(\s*<Text style=\{styles\.resolution\}>\s*\{item\.comment\.author\?\.username \?\? "unknown"\}: “\{item\.comment\.body\}”\s*\{item\.comment\.removed_at \? " · removed" : ""\}/);
+    expect(card).toMatch(/\{item\.comment \? \(\s*<Text style=\{styles\.resolution\}>\s*\{nameOf\(item\.comment\.author\?\.username\)\}: “\{item\.comment\.body\}”\s*\{item\.comment\.removed_at \? " · removed" : ""\}/);
   });
 
   it("a reported member: their name", () => {
-    expect(card).toContain("{item.member ? <Text style={styles.resolution}>Member: {item.member.username}</Text> : null}");
+    expect(card).toContain("{item.member ? <Text style={styles.resolution}>Member: {nameOf(item.member.username)}</Text> : null}");
   });
 
   it("a reporter who has left: unknown (0031 keeps the report)", () => {
-    expect(card).toContain('reported by {item.reporter?.username ?? "unknown"}');
+    expect(card).toContain("reported by {nameOf(item.reporter?.username)}");
+    // Each name a link to the member's page; one who has left, "unknown".
+    expect(src).toMatch(/const nameOf = \(username: string \| null \| undefined\) =>\s*username \? <NameLink username=\{username\} onOpenProfile=\{openName\} style=\{styles\.name\} \/> : "unknown";/);
   });
 
   it("what has been deleted since, on the open list, with what can be done", () => {

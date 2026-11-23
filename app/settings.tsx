@@ -19,6 +19,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { darkroomAvailable } from "@/darkroom/source";
 import { forgetDarkroomHistory } from "@/darkroom/forget";
 import { MAX_BIO_LENGTH } from "@/utils/validation";
+import { memberNumberText, showsMemberNumber } from "@/utils/membership";
 import { loadAppearance, setAppearance, type AppearanceChoice } from "@/utils/appearance";
 import { FEED_LAYOUTS, setFeedLayout, useFeedLayout } from "@/utils/feedLayout";
 import { FEED_PAPERS, setFeedPaper, useFeedPaper } from "@/utils/feedPaper";
@@ -167,6 +168,40 @@ export default function Settings() {
     if (!userId) return;
     setIsPrivate(on);
     privacyWriter.set(on);
+  };
+
+  // Whether the profile shows the member's number after MEMBER: off unless
+  // they turn it on, written as it is flipped, as the switch above is. A
+  // database before 0041 has no such column and refuses the write: the
+  // switch goes back, and says so, like any other refusal.
+  const memberNo = profile?.member_no ?? null;
+  const usernameRef = useRef(profile?.username ?? "");
+  usernameRef.current = profile?.username ?? "";
+  const savedShowNumber = useRef(showsMemberNumber(profile));
+  const [showNumber, setShowNumber] = useState(() => showsMemberNumber(profile));
+  const [numberWriter] = useState(() =>
+    createSettingWriter<boolean>({
+      write: async (on) => {
+        await updateOwnProfile(userIdRef.current, { show_member_no: on });
+        savedShowNumber.current = on;
+      },
+      onSaved: () => {
+        refreshRef.current().catch(() => undefined);
+        // The other copies of your own profile: the print's and the
+        // gallery's author, and your page as others open it.
+        queryClient.invalidateQueries({ queryKey: ["profile-by-id", userIdRef.current] });
+        queryClient.invalidateQueries({ queryKey: ["profile", usernameRef.current] });
+      },
+      onFailed: (err) => {
+        setShowNumber(savedShowNumber.current);
+        showAlert("Couldn’t change that", errorMessage(err, "Your number is as it was. Try again in a moment."));
+      },
+    }),
+  );
+  const toggleNumber = (on: boolean) => {
+    if (!userId) return;
+    setShowNumber(on);
+    numberWriter.set(on);
   };
 
   const requests = useQuery({
@@ -362,6 +397,24 @@ export default function Settings() {
           </Text>
           <Feather name="chevron-right" size={16} color={colors.inkFaint} />
         </Pressable>
+      ) : null}
+
+      {typeof memberNo === "number" && memberNo > 0 ? (
+        <View style={[styles.settingRow, styles.settingNext]}>
+          <View style={styles.settingText}>
+            <Text style={styles.settingLabel}>Show my member number</Text>
+            <Text style={styles.settingHint}>
+              {`Your profile always says Member. Turn this on to show your number, ${memberNumberText(memberNo)}, beside it and on the prints you share.`}
+            </Text>
+          </View>
+          <Switch
+            value={showNumber}
+            onValueChange={toggleNumber}
+            accessibilityLabel="Show my member number"
+            trackColor={{ true: colors.accent, false: colors.borderStrong }}
+            thumbColor={showNumber ? colors.paperRaised : colors.knob}
+          />
+        </View>
       ) : null}
 
       <View style={styles.divider} />
@@ -568,6 +621,8 @@ const styles = StyleSheet.create({
   avatarLabel: { ...type.label, marginTop: spacing.sm, color: colors.accent },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.xl },
   settingRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.lg },
+  // A second switch under the first, with the room the requests row has above it.
+  settingNext: { marginTop: spacing.xl },
   settingText: { flex: 1 },
   settingLabel: { fontSize: 15, color: colors.ink },
   settingHint: { ...type.caption, marginTop: 3, lineHeight: 18 },

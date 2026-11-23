@@ -281,8 +281,10 @@ await shot("09-admitted");
 
 await tab("profile", 2800);
 const newMember = await text();
-check("New member is numbered on entry", /NO\. \d{5}/.test(newMember));
-check("New member reads as a member", /MEMBER · NO\. \d{5}/.test(newMember));
+// Numbered on entry (the admins' Members list shows it), and the number
+// hidden until they choose to show it in Settings: MEMBER alone.
+check("New member reads as a member", /\bMEMBER\b/.test(newMember));
+check("New member's number is hidden until they choose to show it", !/NO\. \d{5}/.test(newMember));
 await shot("10-new-member");
 
 // ===========================================================================
@@ -785,7 +787,8 @@ check(
   `${tomasTitleDrawn} / ${profileTitle}`,
 );
 const tomas = await text();
-check("Profile shows MEMBER and number", /MEMBER · NO\. \d{5}/.test(tomas));
+// Tomas chose to show his number (the demo's one of each).
+check("Profile shows MEMBER and the number its member chose to show", /MEMBER · NO\. \d{5}/.test(tomas));
 await shot("13-profile-founding");
 const follow = () => seen(page.getByText(/^(Follow|Following|Requested)$/)).first();
 const before = await follow().textContent();

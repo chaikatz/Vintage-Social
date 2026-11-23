@@ -12,6 +12,12 @@
  * The first ten thousand are founding members, permanently. The cut-off is
  * on the number, not on a date or a flag, so it cannot drift: member 9,999
  * is founding whether they joined on the first day or the last.
+ *
+ * Whether others see it is the member's choice (Settings, "Show my member
+ * number"; `profiles.show_member_no`, 0041). Hidden unless they choose to
+ * show it: a profile always says MEMBER, and the number follows only for a
+ * member who turned it on. The same on their prints. Admins see every
+ * number in their Members list, whatever the member chose.
  */
 
 /** Members numbered at or below this are founding members, for good. */
@@ -25,7 +31,21 @@ const DIGITS = 5;
  * width rather than being truncated.
  */
 export function formatMemberNumber(memberNo: number): string {
-  return `NO. ${String(memberNo).padStart(DIGITS, "0")}`;
+  return memberNumberText(memberNo).toUpperCase();
+}
+
+/** `27` → `No. 00027`: the number in a sentence. */
+export function memberNumberText(memberNo: number): string {
+  return `No. ${String(memberNo).padStart(DIGITS, "0")}`;
+}
+
+/**
+ * Whether this member chose to show their number. Only a stored `true`
+ * does: a profile read from a database without the column (before 0041),
+ * or remembered on the phone from before it, has none, and is hidden.
+ */
+export function showsMemberNumber(profile: { show_member_no?: boolean | null } | null | undefined): boolean {
+  return profile?.show_member_no === true;
 }
 
 export function isFoundingMember(memberNo: number | null | undefined): boolean {
@@ -33,11 +53,13 @@ export function isFoundingMember(memberNo: number | null | undefined): boolean {
 }
 
 /**
- * The line shown on a profile: `MEMBER · NO. 00027`. The number itself
- * says how early someone came; the word is the same for everyone. Null
- * for anyone who has not been approved yet — an applicant has no number.
+ * The line shown on a profile: `MEMBER`, and `MEMBER · NO. 00027` for a
+ * member who chose to show their number (`shown`). The word is the same
+ * for everyone and always there; the number says how early someone came,
+ * and is theirs to show. Null for anyone who has not been approved yet —
+ * an applicant has no number, and is not a member.
  */
-export function membershipLine(memberNo: number | null | undefined): string | null {
+export function membershipLine(memberNo: number | null | undefined, shown: boolean): string | null {
   if (typeof memberNo !== "number" || memberNo < 1) return null;
-  return `MEMBER · ${formatMemberNumber(memberNo)}`;
+  return shown ? `MEMBER · ${formatMemberNumber(memberNo)}` : "MEMBER";
 }

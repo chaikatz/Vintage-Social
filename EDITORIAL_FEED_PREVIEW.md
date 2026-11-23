@@ -63,7 +63,7 @@ comments and the members tagged in it; the name before its caption is left
 as under Original, since that caption is set in the serif, which has no half
 bold, and the phone would draw 500 there as the serif's bold), the card of a post on its way up, every list of members
 (Search and its recent searches, Followers and Following, Likes, the admin's
-Members), Tag people, the photograph's author in Send to, the admin's
+Members), Tag people, the members offered while an @name is written, the photograph's author in Send to, the admin's
 Applications, a profile's name where it falls back to the username, and a
 bar's title where it is a username (below), which stays regular. Names
 regular under Original take the medium too (Requests, Blocked members, the
@@ -89,8 +89,8 @@ other bar's title (Settings, Messages, an era's gallery and the rest) is the
 stack's own under both layouts, and so is the Profile tab's, which the app
 draws itself in the same serif and was regular already. So is every sentence
 the app writes a username into (an empty Followers or Following list's, an
-empty Eras page's, a private or blocked profile's lines, a report's
-headline): each is set regular, so the name in it is too. Display names,
+empty Eras page's, a private or blocked profile's lines): each is set regular, so the name in it is too. An admin's
+report draws each name on it as a link in the page's own style, as it is under Original. Display names,
 what a member types into a field, and what members wrote (captions,
 comments, messages) are as they were. A system alert titled with a username
 is drawn by iOS in its own bold and cannot be styled.
@@ -128,19 +128,21 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `app/user/[username].tsx` | a member's profile: its title, their username, not bold (nothing else on it) |
 | `app/(tabs)/_layout.tsx` | Home's wordmark bar and tab bar on the paper |
 | `app/settings.tsx` | the Feed layout and Paper choices |
-| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx` | the usernames each screen draws, half bold (in `app/messages/index.tsx`, before an unread thread's style, so its name is semibold; in `app/messages/[id].tsx`, before your own bubble's style, and the thread's title too; in `app/post/[id].tsx`, before a pending tag's) |
-| `src/components/UserRow.tsx`, `src/components/TagPicker.tsx`, `src/components/PendingPostCard.tsx`, `src/components/ProfileHeader.tsx` | the same, in the parts those screens share (the profile header only where its name falls back to the username) |
+| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx` | the usernames each screen draws, half bold (in `app/messages/index.tsx`, before an unread thread's style, so its name is semibold; in `app/messages/[id].tsx`, on the name alone, inside the line that keeps your own bubble's ink, and the thread's title too; in `app/post/[id].tsx`, before a pending tag's) |
+| `src/components/UserRow.tsx`, `src/components/TagPicker.tsx`, `src/components/MentionSuggestions.tsx`, `src/components/PendingPostCard.tsx`, `src/components/ProfileHeader.tsx` | the same, in the parts those screens share (the profile header only where its name falls back to the username) |
 | `tests/video-playback.test.ts` | the Home and gallery playback guards accept either card |
 | `tests/galleryLanding.test.ts` | its gallery guard reads whichever card the gallery's seam draws |
 | `tests/stableCards.test.ts` | its Home and gallery card-props guard accepts either card |
 | `tests/thread-menu.test.ts` | its guard on the thread's title link accepts the title style as well as the stack's |
+| `tests/member-names.test.ts` | its guards on the names that are links accept the names' face in a link's style |
 | `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face, weight, colour and spacing on Home, in the comments, in Activity and in the inbox (an unread thread's name semibold, a read one's medium), and a profile's and a gallery's title (the stack's serif, ink and size, regular, beside a bar titled with other words), and that Original sets the names and those titles back to the stack's own weight and otherwise exactly as Editorial drew them |
 
 `src/components/PostCard.tsx` (drawn only under Original, so its names are
-left as they are), every other bar's title, and the sentences with a
+left as they are), `app/admin/reports.tsx` (its names are links in the page's
+own style), every other bar's title, and the sentences with a
 username in them (regular already: those on `app/user/[username].tsx`,
 whose title alone is touched, and `app/follows.tsx`,
-`app/admin/reports.tsx`, `src/components/EraList.tsx`,
+`src/components/EraList.tsx`,
 `src/components/EmptyState.tsx`, `src/components/eraBook.ts`), `PostMedia`,
 `usePostActions`, uploads, filters, the Memory Room, native modules and
 Supabase are not touched. `PendingPostCard` is touched for the names alone.
@@ -156,7 +158,7 @@ From the repository root, on the branch to clean:
 
 ```bash
 git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts EDITORIAL_FEED_PREVIEW.md
-git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx "app/user/[username].tsx" src/components/UserRow.tsx src/components/TagPicker.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/thread-menu.test.ts e2e/launch-test.mjs
+git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx "app/user/[username].tsx" src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/thread-menu.test.ts tests/member-names.test.ts e2e/launch-test.mjs
 npx tsc --noEmit && npx vitest run
 git commit -m "Remove the Editorial feed preview"
 ```
@@ -181,11 +183,10 @@ every file the names' face touches, they are the import from
 `@/utils/nameFace` (`useNameFace`), the
 `const face = useNameFace();` line with the comment above it, and each place
 it is used: `[style, face]` goes back to `style` (in `app/messages/index.tsx`,
-`[styles.username, face, unread && styles.unreadText]`, in
-`app/messages/[id].tsx`, `[styles.sharedCaption, face, mine && styles.textMine]`
-and in `app/post/[id].tsx`,
+`[styles.username, face, unread && styles.unreadText]` and in `app/post/[id].tsx`,
 `[styles.withName, face, t.status === "pending" && styles.withPending]` lose
-only `face`; in `src/components/ProfileHeader.tsx` the array with its
+only `face`; in `app/messages/[id].tsx` the link to a photograph's author
+loses its `style={face}`; in `src/components/ProfileHeader.tsx` the array with its
 `? face : undefined` goes back to the plain style). Afterwards
 `git diff claude/product-polish -- app src tests e2e`
 should be empty, and

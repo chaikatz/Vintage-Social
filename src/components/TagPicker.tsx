@@ -10,6 +10,8 @@ import { memberLabel } from "./memberLabel";
 import { LoadFailed } from "./LoadFailed";
 import type { ProfileRow } from "@/types/db";
 import { KEYBOARD_DONE } from "@/components/KeyboardDone";
+import { useDebounced } from "@/hooks/useDebounced";
+import { SEARCH_DEBOUNCE_MS, searchKey, searchNeedle } from "@/utils/memberSearch";
 
 export type Taggable = Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">;
 
@@ -24,6 +26,8 @@ interface Props {
 
 /** How many people one photograph can name. */
 export const MAX_TAGS = 10;
+/** The sheet lists who you follow until two letters are typed. */
+const TAG_SEARCH_FROM = 2;
 
 /**
  * Naming who was there.
@@ -36,7 +40,12 @@ export const MAX_TAGS = 10;
  */
 export function TagPicker({ visible, myId, selected, onChange, onClose }: Props) {
   const [q, setQ] = useState("");
-  const searching = q.trim().length >= 2;
+  // Asked a beat after typing stops, as Search asks after its first letter:
+  // from two letters a search is three reads (src/api/profiles.ts), and a
+  // quick name is one question rather than one a letter. Filed as Search
+  // files its answers, so either can use the other's.
+  const settled = useDebounced(searchNeedle(q), SEARCH_DEBOUNCE_MS);
+  const searching = settled.length >= TAG_SEARCH_FROM;
   // Editorial (Preview): every username in the sheet, half bold.
   const face = useNameFace();
 
@@ -50,8 +59,8 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
     staleTime: 5 * 60_000,
   });
   const results = useQuery({
-    queryKey: ["search", q],
-    queryFn: () => searchProfiles(q),
+    queryKey: searchKey(settled),
+    queryFn: () => searchProfiles(settled),
     enabled: visible && searching,
   });
 

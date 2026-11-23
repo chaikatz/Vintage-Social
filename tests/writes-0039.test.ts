@@ -95,7 +95,12 @@ describe("0039: the columns members may write are the columns the app sends", ()
   });
 
   it("a profile: what Settings and sign-up change, and nothing filed", () => {
-    expect(granted("profiles", "update")).toEqual(fields("src/api/profiles.ts", "ProfileEdits"));
+    // With 0041's one column, the member-number switch (tests/member-number-0041.test.ts).
+    const later = code(read("supabase/migrations/0041_member_number_shown_by_choice.sql"))
+      .match(/grant update \(([^)]*)\) on public\.profiles to authenticated;/)?.[1]
+      .split(",").map((c) => c.trim()) ?? [];
+    expect(later).toEqual(["show_member_no"]);
+    expect([...granted("profiles", "update"), ...later].sort()).toEqual(fields("src/api/profiles.ts", "ProfileEdits"));
     expect(sent("src/api/membership.ts", '.from("profiles").update(')).toEqual(["avatar_url"]);
     expect(granted("profiles", "insert")).toEqual([]);
     expect(sql()).toMatch(/revoke insert, update on public\.profiles from anon, authenticated;/);

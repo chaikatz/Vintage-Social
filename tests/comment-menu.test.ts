@@ -108,7 +108,7 @@ describe("where a comment is shown, a press and hold opens it", () => {
 
   it("the Comments screen", () => {
     const comments = code("app/comments.tsx");
-    expect(comments).toMatch(/<Pressable style=\{styles\.comment\} onLongPress=\{\(\) => onLongPress\(comment\)\}>/);
+    expect(comments).toMatch(/<Pressable\s+style=\{styles\.comment\}\s+onLongPress=\{\(\) => onLongPress\(comment\)\}/);
     expect(comments).toMatch(/const onCommentLongPress = useCallback\(\s*\(comment: CommentWithAuthor\) =>\s*showCommentMenu\(comment, \{ userId, isAdmin \}, \(\) => \{/);
   });
 

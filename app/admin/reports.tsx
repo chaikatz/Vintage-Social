@@ -24,6 +24,8 @@ import { pagesOf, rowsOf, withRowsBack, withoutRows, type QueuePages } from "@/c
 import { removalTarget, sameTarget } from "@/components/reportTargets";
 import { errorMessage } from "@/utils/errorMessage";
 import { postAge } from "@/utils/time";
+import { useOpenProfile } from "@/hooks/useOpenProfile";
+import { NameLink } from "@/components/MemberText";
 import type { ReportStatus } from "@/types/db";
 
 // A row that breaks this page breaks only this page, with the way back on
@@ -62,6 +64,10 @@ export default function AdminReports() {
   const { isAdmin, profileLoaded } = useSession();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ReportStatus>("open");
+  // Every name on a report opens its member's page; one who has left reads "unknown".
+  const openName = useOpenProfile();
+  const nameOf = (username: string | null | undefined) =>
+    username ? <NameLink username={username} onOpenProfile={openName} style={styles.name} /> : "unknown";
 
   // Fifty at a time, the next fifty as the list nears its end: one read of
   // fifty used to be all the screen ever showed (src/api/moderation.ts).
@@ -210,7 +216,7 @@ export default function AdminReports() {
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Text style={styles.headline}>
-              {item.target_type} · reported by {item.reporter?.username ?? "unknown"} ·{" "}
+              {item.target_type} · reported by {nameOf(item.reporter?.username)} ·{" "}
               {postAge(item.created_at)}
             </Text>
             <Text style={styles.reason}>{item.reason}</Text>
@@ -218,11 +224,11 @@ export default function AdminReports() {
             {/* What was reported, so it is never removed or dismissed unseen: the comment's words and who wrote them, the member's name. */}
             {item.comment ? (
               <Text style={styles.resolution}>
-                {item.comment.author?.username ?? "unknown"}: “{item.comment.body}”
+                {nameOf(item.comment.author?.username)}: “{item.comment.body}”
                 {item.comment.removed_at ? " · removed" : ""}
               </Text>
             ) : null}
-            {item.member ? <Text style={styles.resolution}>Member: {item.member.username}</Text> : null}
+            {item.member ? <Text style={styles.resolution}>Member: {nameOf(item.member.username)}</Text> : null}
             {tab === "open" && goneSince(item) ? <Text style={styles.details}>{goneSince(item)}</Text> : null}
             {item.resolution_note ? (
               <Text style={styles.resolution}>Resolution: {item.resolution_note}</Text>
@@ -290,6 +296,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   headline: { fontSize: 12, color: colors.inkFaint },
+  // A member's name on a report: a link to their page, in the line's own size.
+  name: { fontWeight: "600", color: colors.ink },
   reason: { fontSize: 15, fontWeight: "600", color: colors.ink, marginTop: spacing.xs },
   details: { ...type.body, fontSize: 13, fontStyle: "italic", color: colors.inkSoft, marginTop: spacing.xs },
   resolution: {

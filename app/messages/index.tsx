@@ -9,6 +9,8 @@ import { LoadFailed } from "@/components/LoadFailed";
 import { colors, spacing, type } from "@/theme";
 import { fetchConversations } from "@/api/messages";
 import { useSession } from "@/providers/SessionProvider";
+import { useOpenProfile } from "@/hooks/useOpenProfile";
+import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { postAge } from "@/utils/time";
 import { inboxPreview } from "@/utils/messageText";
 import { useNameFace } from "@/utils/nameFace";
@@ -28,6 +30,7 @@ export default function Messages() {
   const router = useRouter();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
+  const openMember = useOpenProfile();
 
   const conversations = useQuery({
     queryKey: ["conversations", userId],
@@ -57,6 +60,7 @@ export default function Messages() {
           <ConversationRow
             conversation={item}
             onPress={() => router.push(`/messages/${item.id}`)}
+            onOpenProfile={openMember}
           />
         )}
       />
@@ -67,9 +71,12 @@ export default function Messages() {
 function ConversationRow({
   conversation,
   onPress,
+  onOpenProfile,
 }: {
   conversation: ConversationWithPeer;
   onPress: () => void;
+  /** Their face opens their page; the rest of the row, the conversation. */
+  onOpenProfile: (username: string) => void;
 }) {
   const last = conversation.last_message;
   const unread = conversation.unread_count > 0;
@@ -79,12 +86,28 @@ function ConversationRow({
   const face = useNameFace();
 
   return (
-    <Pressable style={styles.row} onPress={onPress}>
-      <Avatar
-        path={conversation.peer.avatar_url}
-        username={conversation.peer.username}
-        size={46}
-      />
+    <Pressable
+      style={styles.row}
+      onPress={onPress}
+      // To VoiceOver the row is one element: a double tap opens the conversation; their page is its action.
+      onAccessibilityTap={onPress}
+      accessibilityActions={nameActions([conversation.peer.username])}
+      onAccessibilityAction={(e) => {
+        const username = nameFromAction(e.nativeEvent.actionName);
+        if (username) onOpenProfile(username);
+      }}
+    >
+      <Pressable
+        onPress={() => onOpenProfile(conversation.peer.username)}
+        accessibilityRole="button"
+        accessibilityLabel={`${conversation.peer.username}’s profile`}
+      >
+        <Avatar
+          path={conversation.peer.avatar_url}
+          username={conversation.peer.username}
+          size={46}
+        />
+      </Pressable>
       <View style={styles.rowText}>
         <Text style={[styles.username, face, unread && styles.unreadText]}>
           {conversation.peer.username}

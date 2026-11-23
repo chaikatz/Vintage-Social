@@ -31,6 +31,9 @@ import { blockMember } from "@/api/blocks";
 import { markedRead, readThread, unreadIds } from "@/utils/threadPoll";
 import { threadOnScreen } from "@/utils/threadOnScreen";
 import { useSession } from "@/providers/SessionProvider";
+import { useOpenProfile } from "@/hooks/useOpenProfile";
+import { NameLink } from "@/components/MemberText";
+import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
 import { PHOTOGRAPH_UNAVAILABLE, newestUnreadFrom, photographUnavailable } from "@/utils/messageText";
@@ -141,11 +144,14 @@ export default function Thread() {
   // The same function for every row, so typing in the field below, which
   // draws this screen again on each letter, leaves the bubbles as they are.
   const openPost = useCallback((postId: string) => router.push(`/post/${postId}`), [router]);
+  // A name opens its member's page; theirs, when this thread was opened from
+  // it, is gone back to rather than opened again (src/hooks/useOpenProfile.ts).
+  const openMember = useOpenProfile();
   const renderBubble = useCallback(
     ({ item }: { item: MessageWithPost }) => (
-      <Bubble message={item} mine={item.sender_id === userId} onOpenPost={openPost} />
+      <Bubble message={item} mine={item.sender_id === userId} onOpenPost={openPost} onOpenProfile={openMember} />
     ),
-    [userId, openPost],
+    [userId, openPost, openMember],
   );
 
   // Who the thread is with: their profile from the title, and Report and
@@ -155,8 +161,8 @@ export default function Thread() {
   const peer = peerQ.data ?? null;
   const { width } = useWindowDimensions();
   const openProfile = useCallback(() => {
-    if (peer) router.push(`/user/${peer.username}`);
-  }, [peer, router]);
+    if (peer) openMember(peer.username);
+  }, [peer, openMember]);
   // Out of the thread, which shows nothing of theirs now. Handed to the
   // Block tap itself, not to the mutation: react-query drops a tap's own
   // onSuccess once the screen has gone (swiped away while the block was
@@ -318,10 +324,12 @@ const Bubble = React.memo(function Bubble({
   message,
   mine,
   onOpenPost,
+  onOpenProfile,
 }: {
   message: MessageWithPost;
   mine: boolean;
   onOpenPost: (postId: string) => void;
+  onOpenProfile: (username: string) => void;
 }) {
   // Its age moves on with the app's one clock, not with whatever else on
   // the screen happens to be drawn again.
@@ -339,7 +347,18 @@ const Bubble = React.memo(function Bubble({
     <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
       <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
         {shared ? (
-          <Pressable style={styles.shared} onPress={() => onOpenPost(shared.id)}>
+          <Pressable
+            style={styles.shared}
+            onPress={() => onOpenPost(shared.id)}
+            // To VoiceOver the photograph is one element: a double tap opens the post, never the
+            // name under it; its member's page is its action.
+            onAccessibilityTap={() => onOpenPost(shared.id)}
+            accessibilityActions={nameActions([shared.author?.username])}
+            onAccessibilityAction={(e) => {
+              const username = nameFromAction(e.nativeEvent.actionName);
+              if (username) onOpenProfile(username);
+            }}
+          >
             {thumb ? (
               <Image
                 source={thumb}
@@ -354,8 +373,8 @@ const Bubble = React.memo(function Bubble({
             ) : null}
             {/* A photograph whose author the reader may not see comes without one. */}
             {shared.author ? (
-              <Text style={[styles.sharedCaption, face, mine && styles.textMine]} numberOfLines={1}>
-                {shared.author.username}
+              <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
+                <NameLink username={shared.author.username} onOpenProfile={onOpenProfile} style={face} />
               </Text>
             ) : null}
           </Pressable>

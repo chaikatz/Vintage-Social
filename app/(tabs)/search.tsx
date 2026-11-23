@@ -1,9 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebounced } from "@/hooks/useDebounced";
 import { rankSearch } from "@/utils/searchRank";
+import {
+  SEARCH_MIN_LENGTH,
+  lastEmptyAnswer,
+  nobodyFound,
+  searchDelay,
+  searchKey,
+  searchNeedle,
+  shownResults,
+} from "@/utils/memberSearch";
 import { fetchFollowsAmong } from "@/api/profiles";
 import Feather from "@expo/vector-icons/Feather";
 import { Screen } from "@/components/Screen";
@@ -13,6 +22,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { colors, radii, spacing, type } from "@/theme";
 import { searchProfiles } from "@/api/profiles";
+import type { ProfileRow } from "@/types/db";
 import { fetchExplore } from "@/api/posts";
 import { dealExplore, newSeed } from "@/utils/shuffle";
 import {
@@ -38,6 +48,8 @@ const FOLLOWS_AMONG_STALE_MS = 60_000;
  * results back until the request's own deadline.
  */
 const FOLLOWS_AMONG_WAIT_MS = 1200;
+/** An answer is asked again after this, not on every return to the same letters while typing. */
+const SEARCH_STALE_MS = 30_000;
 
 /**
  * Find people, or look at what the rest of VINTAGE has been shooting.
@@ -57,16 +69,21 @@ export default function Search() {
   const userId = session?.user?.id ?? "";
   const [q, setQ] = useState("");
   const [focused, setFocused] = useState(false);
-  const searching = q.trim().length >= 2;
+  // From the first letter (src/utils/memberSearch.ts).
+  const typed = searchNeedle(q);
+  const searching = typed.length >= SEARCH_MIN_LENGTH;
 
-  // Asked a beat after typing stops, and the last answer stays up while
-  // the next one comes, so the list does not blank on every keystroke.
-  const settledQ = useDebounced(q, 250);
+  // The first letter is asked about at once; after it, a beat after typing
+  // stops. Each answer is filed under the letters it answers (searchKey),
+  // and the last one stays up, narrowed to what is typed, while the next
+  // comes (shownResults), so the list neither blanks nor shows a late
+  // answer to letters typed before.
+  const settled = useDebounced(typed, searchDelay(typed));
   const queryClient = useQueryClient();
   const results = useQuery({
-    queryKey: ["search", settledQ],
+    queryKey: searchKey(settled),
     queryFn: async () => {
-      const found = await searchProfiles(settledQ);
+      const found = await searchProfiles(settled);
       // Where the member stands with these results comes with them, so
       // they are drawn in their order at once (below). A failure there
       // only leaves them unranked: prefetchQuery does not throw. Waited
@@ -85,8 +102,9 @@ export default function Search() {
       }
       return found;
     },
-    enabled: settledQ.trim().length >= 2,
+    enabled: settled.length >= SEARCH_MIN_LENGTH,
     placeholderData: keepPreviousData,
+    staleTime: SEARCH_STALE_MS,
   });
 
   // One seed per visit; pull-to-refresh draws another. The set itself is
@@ -120,20 +138,58 @@ export default function Search() {
     enabled: Boolean(userId) && resultIds.length > 0,
     staleTime: FOLLOWS_AMONG_STALE_MS,
   });
+  const shown = useMemo(
+    () => shownResults({ typed, answered: settled, rows: results.data, held: results.isPlaceholderData }),
+    [typed, settled, results.data, results.isPlaceholderData],
+  );
   const ranked = useMemo(
     () =>
-      rankSearch(results.data ?? [], {
-        recentIds: new Set(recent.map((r) => r.id)),
-        followingIds: new Set(circleQ.data?.following ?? []),
-        followerIds: new Set(circleQ.data?.followers ?? []),
-      }),
-    [results.data, recent, circleQ.data],
+      rankSearch(
+        shown,
+        {
+          recentIds: new Set(recent.map((r) => r.id)),
+          followingIds: new Set(circleQ.data?.following ?? []),
+          followerIds: new Set(circleQ.data?.followers ?? []),
+        },
+        typed,
+      ),
+    [shown, recent, circleQ.data, typed],
   );
+  // The answer to what is typed failed: no rows held from an earlier one
+  // stand in for it. A refetch that failed keeps the answer it had, which
+  // is still the answer to these letters, and stays up.
+  const failed = results.isError && settled === typed && results.data === undefined;
+  // The last answer that found nobody, kept while the next letters' comes
+  // (set during render, as React has a state that follows another: it
+  // settles in the same pass and draws nothing in between).
+  const [emptyFor, setEmptyFor] = useState<string | null>(null);
+  const nextEmptyFor = lastEmptyAnswer(emptyFor, {
+    needle: settled,
+    rows: results.data,
+    current: results.isSuccess && !results.isPlaceholderData,
+  });
+  if (nextEmptyFor !== emptyFor) setEmptyFor(nextEmptyFor);
+  const nobody = nobodyFound({
+    typed,
+    answered: settled,
+    rows: results.data,
+    held: results.isPlaceholderData,
+    fetched: results.isFetched,
+    emptyFor: nextEmptyFor,
+  });
 
-  const openMember = (member: RecentSearch) => {
-    setRecent(rememberRecent(member));
-    router.push(`/user/${member.username}`);
-  };
+  // Kept the same from one render to the next, so a row drawn already is not drawn again as each letter is typed.
+  const openMember = useCallback(
+    ({ id, username, full_name, avatar_url }: RecentSearch) => {
+      setRecent(rememberRecent({ id, username, full_name, avatar_url }));
+      router.push(`/user/${username}`);
+    },
+    [router],
+  );
+  const renderResult = useCallback(
+    ({ item }: { item: ProfileRow }) => <SearchResult member={item} onOpen={openMember} />,
+    [openMember],
+  );
 
   const field = (
     <View style={styles.searchWrap}>
@@ -164,29 +220,21 @@ export default function Search() {
       <Screen padded={false}>
         {field}
         <FlatList
-          // Nothing from the last term is shown under a new one; the list
-          // waits the beat until the query has caught up with what is typed.
-          data={settledQ.trim() === q.trim() ? ranked : []}
+          // Only members who match what is typed: the answer to it, or,
+          // until that comes, the last answer narrowed to it.
+          data={failed ? NO_ROWS : ranked}
           keyExtractor={(p) => p.id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           ListEmptyComponent={
             // A search that failed is no answer: "Nobody by that name" would not be true.
-            results.isError && settledQ.trim() === q.trim() ? (
+            failed ? (
               <LoadFailed what="the search" onRetry={() => results.refetch()} />
-            ) : results.isFetched && settledQ.trim() === q.trim() && !results.isPlaceholderData ? (
+            ) : nobody ? (
               <EmptyState title="Nobody by that name" body="Try a different spelling." />
             ) : null
           }
-          renderItem={({ item }) => (
-            <UserRow
-              username={item.username}
-              avatarPath={item.avatar_url}
-              title={item.full_name}
-              subtitle={item.city}
-              onPress={() => openMember(item)}
-            />
-          )}
+          renderItem={renderResult}
         />
       </Screen>
     );
@@ -258,6 +306,27 @@ export default function Search() {
     </Screen>
   );
 }
+
+const NO_ROWS: ProfileRow[] = [];
+
+/** One member in the results, drawn again only when they or what opens them change. */
+const SearchResult = memo(function SearchResult({
+  member,
+  onOpen,
+}: {
+  member: ProfileRow;
+  onOpen: (member: RecentSearch) => void;
+}) {
+  return (
+    <UserRow
+      username={member.username}
+      avatarPath={member.avatar_url}
+      title={member.full_name}
+      subtitle={member.city}
+      onPress={() => onOpen(member)}
+    />
+  );
+});
 
 const styles = StyleSheet.create({
   searchWrap: {

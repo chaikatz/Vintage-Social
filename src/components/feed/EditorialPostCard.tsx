@@ -8,7 +8,10 @@ import { PRINT_WIDTH, exportLabelText, exportLayout, type TextBox } from "@/util
 import { paperStyle, useFeedPaper } from "@/utils/feedPaper";
 import { postedAgo, postedAgoSpoken } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
+import { mentionedUsernames } from "@/utils/mentions";
+import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { Avatar } from "../Avatar";
+import { MentionText, NameLink } from "../MemberText";
 import { INLINE_COMMENTS, PostCard } from "../PostCard";
 import { PostMedia } from "../PostMedia";
 import { authorShown, withAuthors } from "../hiddenAuthors";
@@ -173,7 +176,9 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
 
       {post.caption ? (
         <Text style={styles.caption}>
-          <Text style={styles.author}>{post.author.username}</Text> {post.caption}
+          {/* The name and every @name in the words open their member's page. */}
+          <NameLink username={post.author.username} onOpenProfile={onOpenProfile} style={styles.author} />{" "}
+          <MentionText text={post.caption} onOpenProfile={onOpenProfile} />
         </Text>
       ) : null}
 
@@ -183,9 +188,28 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
           onPress={() => onOpenComments(post)}
           // Held, the comment's own menu, and Comments is not opened on release.
           onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+          // To VoiceOver the line is one element: a double tap opens Comments, never a name
+          // under the middle of it; its names are its actions (src/utils/nameActions.ts).
+          onAccessibilityTap={() => onOpenComments(post)}
+          accessibilityActions={nameActions([c.author.username, ...mentionedUsernames(c.body)])}
+          onAccessibilityAction={(e) => {
+            const username = nameFromAction(e.nativeEvent.actionName);
+            if (username) onOpenProfile(username);
+          }}
         >
           <Text style={styles.comment} numberOfLines={2}>
-            <Text style={styles.author}>{c.author.username}</Text> {c.body}
+            {/* A name, or an @name, opens its member's page; held, the comment's menu, as the rest of the line. */}
+            <NameLink
+              username={c.author.username}
+              onOpenProfile={onOpenProfile}
+              onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+              style={styles.author}
+            />{" "}
+            <MentionText
+              text={c.body}
+              onOpenProfile={onOpenProfile}
+              onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+            />
           </Text>
         </Pressable>
       ))}

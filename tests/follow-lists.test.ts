@@ -88,6 +88,16 @@ describe("Who was there (the tag sheet)", () => {
     expect(src).toMatch(/if \(!searching && following\.hasNextPage && !following\.isFetchingNextPage && !following\.isFetchNextPageError\) \{\s*following\.fetchNextPage\(\);/);
   });
 
+  it("asks a beat after typing stops, under the key Search files its answers by", () => {
+    // From two letters a search is three reads: one a letter would be three a keystroke.
+    expect(src).toMatch(/const settled = useDebounced\(searchNeedle\(q\), SEARCH_DEBOUNCE_MS\);/);
+    expect(src).toMatch(/const searching = settled\.length >= TAG_SEARCH_FROM;/);
+    expect(src).toMatch(/const TAG_SEARCH_FROM = 2;/);
+    expect(src).toMatch(/queryKey: searchKey\(settled\),\s*queryFn: \(\) => searchProfiles\(settled\),\s*enabled: visible && searching,/);
+    // Nothing is asked with the raw letters as they are typed.
+    expect(src).not.toMatch(/searchProfiles\(q\)|\["search", q\]/);
+  });
+
   it("says a failed read failed, rather than that nobody is there", () => {
     expect(src).toMatch(
       /searching && results\.isError \? \(\s*<LoadFailed what="the search" onRetry=\{\(\) => results\.refetch\(\)\} \/>\s*\) : !searching && following\.isError \? \(\s*<LoadFailed what="who you follow" onRetry=\{\(\) => following\.refetch\(\)\} \/>/,
