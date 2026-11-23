@@ -454,8 +454,12 @@ photographs (busy days of five or more, no more than one quiet day apart,
 twelve photographs or more, a fortnight at most), named plainly by their
 dates. Both are found on the phone from the library's dates, read newest
 first a bounded page at a time as Contents asks (EARLIER OCCASIONS reads
-further back), kept for the session, and open every photograph of the
-stretch in the order taken (`src/darkroom/occasions.ts`). Entry
+further back), kept for the visit, and taken up by a later visit only
+within ten minutes and while the recent stretch still counts the same, so
+photographs taken with the room closed are in *This week* the next time
+it opens; a stretch is listed once, under LATELY when it is one of those.
+They open every photograph of the stretch in the order taken
+(`src/darkroom/occasions.ts`). Entry
 without a chapter resumes a place under twelve hours old, otherwise opens
 On this day when the day has three moments and was not finished today,
 otherwise Surprise me. Each chapter ends on an end page that hands on to

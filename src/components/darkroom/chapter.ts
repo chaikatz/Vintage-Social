@@ -116,6 +116,16 @@ export function dayYearsOf(day: DayResult | null): DayResult["years"] | null {
   return day && dayComplete(day) && day.years.length > 0 ? day.years : null;
 }
 
+/**
+ * A stretch's chapter kept from earlier is taken up again only while it
+ * holds as many photographs as the stretch now does: this week, kept from
+ * the morning, is read again in the evening with what was taken since.
+ * Any other chapter is taken up as it was left.
+ */
+export function keptStillHolds(kept: { prints: readonly unknown[] }, span: Pick<Span, "count"> | null): boolean {
+  return span == null || kept.prints.length === span.count;
+}
+
 /** Where to open in a chapter: at a given print, at a year's first print, or at the start. */
 export function startIndex(prints: readonly Print[], at: { startId?: string | null; startYear?: number | null }): number {
   if (at.startId) {

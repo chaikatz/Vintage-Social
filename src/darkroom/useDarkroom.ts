@@ -10,6 +10,7 @@ import {
   dropOnSettle,
   endingOf,
   JUMP_HALF_MS,
+  keptStillHolds,
   opensOnThisDay,
   pageAmong,
   placeIndex,
@@ -60,8 +61,10 @@ import type { DarkroomMode, DayReach, Print, Span } from "./types";
  *
  * A stretch — this week, last weekend, this month, an occasion — opens on
  * the photographs it was found with in Contents (`Occasions`, read in the
- * background once a session), every one, in the order taken; it deals
- * nothing more, and it is never the place kept on disk.
+ * background once a visit), every one, in the order taken; it deals
+ * nothing more, and it is never the place kept on disk. Kept from an
+ * earlier visit, it is taken up only while it holds as many as the
+ * stretch now does (`keptStillHolds`).
  *
  * Chapters. Each keeps its own position in memory (`keepChapter`), with
  * the dealer that was dealing it, so going back to a chapter finds the
@@ -288,8 +291,10 @@ export function useDarkroom(params: RoomParams) {
   }, [visit, patch]);
 
   /**
-   * Lately and the occasions, for Contents: the first read once a session,
-   * and `further` to read on to earlier ones. In the gate's back line.
+   * Lately and the occasions, for Contents: the first read once a visit
+   * (or taken up from an earlier visit while nothing new has come in), and
+   * `further` to read on to earlier ones. In the gate's back line. A read
+   * the library changed under is not shown: the read the change began is.
    */
   const loadOccasions = useCallback(
     async (further = false) => {
@@ -297,7 +302,8 @@ export function useDarkroom(params: RoomParams) {
       if (further) patch({ occasionsReading: true });
       try {
         const view = await visit.occasions(further);
-        patch({ occasions: view, occasionsReading: false });
+        if (view) patch({ occasions: view, occasionsReading: false });
+        else if (further) patch({ occasionsReading: false });
       } catch {
         // Contents shows what it had, and EARLIER OCCASIONS can be asked again.
         patch({ occasionsReading: false });
@@ -412,7 +418,7 @@ export function useDarkroom(params: RoomParams) {
       }
       const c = live.current.chapter;
       if (c?.mode === "year" && c.year != null) void loadMonths(c.year, true);
-      // Lately and the first occasions, so Contents has them when it opens: once a session.
+      // Lately and the first occasions, so Contents has them when it opens: once a visit, or taken up from an earlier one.
       void loadOccasions();
     }, 0);
   }, [visit, loadYears, askDay, commit, loadMonths, loadOccasions]);
@@ -509,7 +515,10 @@ export function useDarkroom(params: RoomParams) {
         await new Promise((r) => setTimeout(r, JUMP_HALF_MS));
         if (!still()) return;
       }
-      const kept = anew ? null : recallChapter(key);
+      const recalled = anew ? null : recallChapter(key);
+      // A stretch kept before photographs came into it (or went from it) is read again, at the print the member was on.
+      const outgrown = recalled && !keptStillHolds(recalled, span) ? recalled : null;
+      const kept = outgrown ? null : recalled;
       if (kept) {
         if (spec.mode === "set-aside") {
           const id = kept.prints[kept.index]?.id;
@@ -533,7 +542,8 @@ export function useDarkroom(params: RoomParams) {
           const prints = await visit.spanPrints(span);
           if (!still()) return keepAside(key, prints, null, null);
           if (prints.length === 0) return showEmpty("span", where);
-          show({ key, ...where, prints, index: startIndex(prints, spec), more: false, reach: null }, null);
+          const at = outgrown ? { startId: outgrown.prints[outgrown.index]?.id ?? null } : spec;
+          show({ key, ...where, prints, index: startIndex(prints, at), more: false, reach: null }, null);
           return;
         }
 
@@ -987,7 +997,7 @@ export function useDarkroom(params: RoomParams) {
       const before = live.current;
       // A print that failed to draw may draw now: one shared again comes back.
       const missing = whole ? new Set<string>() : new Set([...before.missing, ...deleted]);
-      commit({ access, missing, revision: before.revision + 1, years: whole ? null : before.years, occasions: null });
+      commit({ access, missing, revision: before.revision + 1, years: whole ? null : before.years, occasions: null, occasionsReading: false });
       if (!isGranted(access)) return settleAccess(access);
       const v = before.view;
       // The first chapter is still being dealt: it finishes with what it

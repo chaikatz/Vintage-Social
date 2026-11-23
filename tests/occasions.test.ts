@@ -33,8 +33,8 @@ import {
   readSpan,
   spanKey,
 } from "@/darkroom/occasions";
-import { choiceOf, endingOf, type Chapter } from "@/components/darkroom/chapter";
-import { Visit } from "@/components/darkroom/visit";
+import { choiceOf, endingOf, keptStillHolds, type Chapter } from "@/components/darkroom/chapter";
+import { OCCASIONS_FRESH_MS, Visit } from "@/components/darkroom/visit";
 import {
   chapterAnnouncement,
   chapterName,
@@ -469,26 +469,176 @@ describe("reading for occasions", () => {
     expect(lib.pages).toHaveLength(0);
   });
 
-  it("is kept for the session by the room: Contents opened again reads nothing, and a changed library is read afresh", async () => {
-    const lib = new FakeLibrary(library(1));
-    const visit = new Visit(lib);
-    expect(visit.knownOccasions()).toBeNull();
-    const first = await visit.occasions();
+  it("lets a read go: one under way stops after the page it is on", async () => {
+    const lib = new FakeLibrary(library(3));
+    const reader = new Occasions(lib, NOW, lib.prints[0].takenAt);
+    const reading = reader.first();
+    reader.release();
+    await reading;
+    expect(lib.pages.length).toBe(1);
+  });
+
+  it("lists a stretch once: an occasion that holds just what last weekend holds is under LATELY alone", async () => {
+    // Monday 23 November: a busy last weekend, and a trip in October.
+    const weekend = [...run(at(2026, 10, 21, 10), 7, 30 * MIN), ...run(at(2026, 10, 22, 10), 6, 30 * MIN)];
+    const october = [...run(at(2026, 9, 10, 10), 8, 30 * MIN), ...run(at(2026, 9, 11, 10), 8, 30 * MIN)];
+    const lib = new FakeLibrary([print(at(2026, 9, 1)), ...october, ...weekend]);
+    const reader = new Occasions(lib, NOW, at(2026, 9, 1));
+    let view = await reader.first();
+    while (view.more) view = await reader.more();
+    expect(view.lately?.find((s) => s.kind === "weekend")?.count).toBe(13);
+    expect(view.occasions.map((s) => s.count)).toEqual([16]);
+    expect(view.occasions.some((s) => s.count === 13)).toBe(false);
+    // A weekend that ran on past midnight into Monday is not the same photographs, and is listed in both places.
+    const late = new FakeLibrary([print(at(2026, 9, 1)), print(at(2026, 10, 5)), ...weekend, print(at(2026, 10, 23, 1, 30))]);
+    const both = new Occasions(late, NOW, at(2026, 9, 1));
+    let seen = await both.first();
+    while (seen.more) seen = await both.more();
+    expect(seen.occasions.map((s) => s.count)).toEqual([14]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("lately and the occasions between visits", () => {
+  // Wednesday 25 November 2026, at noon.
+  const NOW = at(2026, 10, 25, 12);
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const clock = (t: number) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(t);
+  };
+
+  /** A library with a little in it this week and this month, and a weekend away in October. */
+  function library(): Print[] {
+    return [
+      print(at(2025, 0, 5)),
+      print(at(2026, 10, 5, 12)),
+      ...run(at(2026, 9, 10, 10), 8, 30 * MIN),
+      ...run(at(2026, 9, 11, 10), 8, 30 * MIN),
+      ...run(at(2026, 10, 23, 8), 3),
+    ];
+  }
+
+  /** A library to which photographs can be added between visits, as the Camera adds them with the room closed. */
+  class GrowingLibrary extends FakeLibrary {
+    counts = 0;
+    add(more: readonly Print[]) {
+      this.prints.push(...more);
+      this.prints.sort((a, b) => a.takenAt - b.takenAt || (a.id < b.id ? -1 : 1));
+    }
+    async count(range: TimeRange) {
+      this.counts += 1;
+      return super.count(range);
+    }
+  }
+
+  it("shows, on a later visit the same day, the photographs taken between the two: in This week, its chapter, and a new occasion", async () => {
+    clock(NOW);
+    const lib = new GrowingLibrary(library());
+    const morning = new Visit(lib);
+    const first = (await morning.occasions())!;
+    const week = first.lately!.find((s) => s.kind === "week")!;
+    expect(week.count).toBe(3);
+    expect(first.occasions).toHaveLength(1);
+    // An evening out, photographed with the Camera while the room is closed: no word reaches the room.
+    clock(NOW + 6 * HOUR);
+    const party = run(at(2026, 10, 25, 19), 20, 5 * MIN);
+    lib.add(party);
+    const evening = new Visit(lib);
+    // Nothing is offered until this visit has asked.
+    expect(evening.knownOccasions()).toBeNull();
+    const later = (await evening.occasions())!;
+    const weekNow = later.lately!.find((s) => s.kind === "week")!;
+    expect(weekNow.count).toBe(23);
+    expect(later.lately!.find((s) => s.kind === "month")!.count).toBe(24);
+    // Its chapter holds every one of them.
+    const prints = await evening.spanPrints(weekNow);
+    expect(prints).toHaveLength(23);
+    expect(party.every((p) => prints.some((q) => q.id === p.id))).toBe(true);
+    // And the evening is an occasion of its own, newest first.
+    expect(later.occasions[0].title).toBe("November 25, 2026");
+    expect(later.occasions[0].count).toBe(20);
+    expect(later.occasions).toHaveLength(2);
+    expect(evening.knownOccasions()).toEqual(later);
+  });
+
+  it("asks even when the later visit comes within minutes", async () => {
+    clock(NOW);
+    const lib = new GrowingLibrary(library());
+    await new Visit(lib).occasions();
+    clock(NOW + 2 * MIN);
+    lib.add(run(at(2026, 10, 25, 11, 50), 4, MIN));
+    const soon = (await new Visit(lib).occasions())!;
+    expect(soon.lately!.find((s) => s.kind === "week")!.count).toBe(7);
+  });
+
+  it("takes up what an earlier visit read while nothing has come in: one count, and not a page more", async () => {
+    clock(NOW);
+    const lib = new GrowingLibrary(library());
+    const first = (await new Visit(lib).occasions())!;
     const pages = lib.pages.length;
+    const counts = lib.counts;
+    clock(NOW + 5 * MIN);
     const second = new Visit(lib);
-    expect(second.knownOccasions()?.occasions.length).toBe(first.occasions.length);
-    await second.occasions();
+    expect(second.knownOccasions()).toBeNull();
+    expect(await second.occasions()).toEqual(first);
     expect(lib.pages.length).toBe(pages);
-    // A stretch it found opens on its own photographs, without asking the library.
+    expect(lib.counts).toBe(counts + 1);
+    // Opened again within the visit, nothing at all is asked.
+    expect(second.knownOccasions()).toEqual(first);
+    await second.occasions();
+    expect(lib.counts).toBe(counts + 1);
+    // A stretch it found opens on its own photographs, without a page.
     const span = first.occasions[0];
     expect(await second.spanPrints(span)).toHaveLength(span.count);
     expect(lib.pages.length).toBe(pages);
-    // The library changed: let go, and a stretch no longer held is read again, every photograph of it.
-    second.libraryChanged(false);
-    expect(second.knownOccasions()).toBeNull();
-    const again = await second.spanPrints(span);
-    expect(again.map((p) => p.id).sort()).toEqual((await visit.spanPrints(span)).map((p) => p.id).sort());
+  });
+
+  it("reads afresh after ten minutes, as the year index is counted again", async () => {
+    clock(NOW);
+    const lib = new GrowingLibrary(library());
+    await new Visit(lib).occasions();
+    const pages = lib.pages.length;
+    clock(NOW + OCCASIONS_FRESH_MS);
+    await new Visit(lib).occasions();
+    expect(lib.pages.length).toBeGreaterThan(pages);
+  });
+
+  it("reads afresh when the library would not count, rather than trust an old reading", async () => {
+    clock(NOW);
+    const lib = new GrowingLibrary(library());
+    await new Visit(lib).occasions();
+    const pages = lib.pages.length;
+    const silent: LibrarySource = { count: () => Promise.reject(new Error("no")), page: (r) => lib.page(r), oldest: () => lib.oldest() };
+    // A second visit on a library that will not count is a new library to the cache: read whole.
+    const visit = new Visit(silent);
+    await visit.occasions();
+    expect(lib.pages.length).toBeGreaterThan(pages);
+    const after = lib.pages.length;
+    await new Visit(silent).occasions();
+    expect(lib.pages.length).toBeGreaterThan(after);
+  });
+
+  it("lets go when the library changes: a stretch no longer held is read again, and a read begun before the change is not shown", async () => {
+    clock(NOW);
+    const lib = new GrowingLibrary(library());
+    const visit = new Visit(lib);
+    const first = (await visit.occasions())!;
+    const span = first.occasions[0];
+    visit.libraryChanged(false);
+    expect(visit.knownOccasions()).toBeNull();
+    const again = await visit.spanPrints(span);
     expect(again).toHaveLength(span.count);
+    // A read under way when Photos says the library changed answers null, and the read the change began is the one shown.
+    const stale = visit.occasions();
+    visit.libraryChanged(false);
+    const fresh = visit.occasions();
+    expect(await stale).toBeNull();
+    expect((await fresh)?.occasions[0].count).toBe(span.count);
+    expect(visit.knownOccasions()).toEqual(await fresh);
   });
 });
 
@@ -547,9 +697,27 @@ describe("a stretch as a chapter", () => {
     expect(spanEnd(week)).toBe("That is everything from this week.");
     expect(spanEnd(span({ kind: "weekend", title: "Last weekend" }))).toBe("That is everything from last weekend.");
     expect(emptyPage("span", { now: NOW, limited: false }).words[0].act).toBe("contents");
+    // An empty stretch is headed as Contents listed it.
+    expect(emptyPage("span", { now: NOW, limited: false, span: s }).eyebrow).toBe(CONTENTS_OCCASIONS);
+    expect(emptyPage("span", { now: NOW, limited: false, span: week }).eyebrow).toBe(CONTENTS_LATELY);
+    expect(emptyPage("span", { now: NOW, limited: false, span: span({ kind: "weekend" }) }).eyebrow).toBe(CONTENTS_LATELY);
     expect(spanLabel(s)).toBe("June 12–15, 2024, 86 photographs");
     expect(dayYearLabel(2021, 1)).toBe("2021, On this day, 1 photograph");
     expect(yearsOfDay(NOW)).toBe("November 23 in other years");
+    expect(yearsOfDay(NOW, "day")).toBe("November 23 in other years");
+    // A thin day reaches out to the week or the season, and its years count those: said so.
+    expect(yearsOfDay(NOW, "week")).toBe("Around November 23 in other years");
+    expect(yearsOfDay(NOW, "season")).toBe("Around November 23 in other years");
+  });
+
+  it("takes up a stretch kept from earlier only while it holds what the stretch holds now", () => {
+    const prints = run(at(2026, 10, 23, 8), 3);
+    expect(keptStillHolds({ prints }, span({ kind: "week", count: 3 }))).toBe(true);
+    // This week, kept from the morning, is read again in the evening with the photographs taken since.
+    expect(keptStillHolds({ prints }, span({ kind: "week", count: 23 }))).toBe(false);
+    expect(keptStillHolds({ prints }, span({ kind: "week", count: 2 }))).toBe(false);
+    // Any other chapter is taken up as it was left.
+    expect(keptStillHolds({ prints }, null)).toBe(true);
   });
 
   it("captions its prints as a year does: the date, and the day of the week", () => {
@@ -580,11 +748,22 @@ describe("the room's surfaces for them", () => {
     expect(contents).toMatch(/Everything here is read on this iPhone\. Nothing is sent\./);
   });
 
-  it("reads them in the background line, once a session, after the first print and as Contents opens", () => {
+  it("reads them in the background line, once a visit, after the first print and as Contents opens", () => {
     const visit = read("src/components/darkroom/visit.ts");
-    expect(visit).toMatch(/new Occasions\(inBackground\(this\.source\), Date\.now\(\), oldest\)/);
+    expect(visit).toMatch(/new Occasions\(inBackground\(this\.source\), at, oldest\)/);
+    // The check a later visit makes before taking up an earlier reading is a count, in the back line too.
+    expect(visit).toMatch(/await inBackground\(this\.source\)\s*\.count\(kept\.reader\.recentRange\)/);
     const room = read("src/darkroom/useDarkroom.ts");
-    expect(room).toMatch(/\/\/ Lately and the first occasions, so Contents has them when it opens: once a session\.\s*void loadOccasions\(\);/);
+    expect(room).toMatch(/\/\/ Lately and the first occasions, so Contents has them when it opens: once a visit, or taken up from an earlier one\.\s*void loadOccasions\(\);/);
+    // A read the library changed under is not shown, and a library change leaves no EARLIER OCCASIONS spinning.
+    expect(room).toMatch(/if \(view\) patch\(\{ occasions: view, occasionsReading: false \}\);/);
+    expect(room).toMatch(/occasions: null, occasionsReading: false \}\);/);
+    // A stretch kept before photographs came into it is read again, at the print the member was on.
+    expect(room).toMatch(/const outgrown = recalled && !keptStillHolds\(recalled, span\) \? recalled : null;/);
+    expect(room).toMatch(/startIndex\(prints, at\)/);
+    // The empty page of a stretch knows which stretch it was, and the years of a thin day say "Around".
+    expect(read("app/darkroom.tsx")).toMatch(/emptyPage\(state\.view\.why, \{ now, limited, span: state\.where\?\.span \?\? null \}\)/);
+    expect(read("src/components/darkroom/Contents.tsx")).toMatch(/\{yearsOfDay\(now, day\)\}/);
     expect(read("src/components/darkroom/useContentsSheet.ts")).toMatch(/void room\.loadOccasions\(\);/);
     // Nothing of a stretch is written to the place on disk: it is found afresh each session.
     expect(read("src/darkroom/session.ts")).toMatch(/if \(p\.mode === "span"\) return;/);

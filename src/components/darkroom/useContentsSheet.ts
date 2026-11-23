@@ -9,7 +9,8 @@ import { prunedNote } from "./words";
  *
  * Opening it asks for what it shows that may have changed: the year
  * index (counted again only when it is no longer fresh), the open year's
- * months, lately and the first occasions (read once a session), and —
+ * months, lately and the first occasions (read once a visit, or taken up
+ * from an earlier one while nothing new has come in), and —
  * under full access — whether every print on the shelf is still in the
  * library, so it can say once if some are not.
  *

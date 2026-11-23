@@ -365,6 +365,9 @@ async function yearsBack(lib: LibrarySource, now: number, known?: number | null)
  * stretch is read to its end. A page starts at its predecessor's last
  * instant, so frames that share it are not skipped, and frames read twice
  * are kept once; a page that brings nothing new steps past that instant.
+ * So more frames than a page holds at one exact millisecond would lose
+ * those past the page: Photos' fetch already leaves out the extra frames
+ * of a burst, and no camera writes that many at one instant otherwise.
  * No more than `pages` pages: a bound on the reading, far past any real day.
  */
 export async function readAll(lib: LibrarySource, range: TimeRange, pages = DAY_PAGES): Promise<Print[]> {

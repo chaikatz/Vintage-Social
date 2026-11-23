@@ -24,8 +24,11 @@ import type { LibrarySource, Print, Span, TimeRange } from "./types";
  * The library is read newest first, a page at a time, a stretch of time at
  * a time, only as far as Contents asks: a first read finds this month and
  * the first few occasions, and each EARLIER OCCASIONS reads on from there.
- * What one read finds is kept for the session (`Occasions`), so opening
- * Contents again reads nothing.
+ * What one read finds is kept (`Occasions`), so opening Contents again
+ * in the same visit reads nothing; a later visit takes it up only while
+ * nothing new has come into the recent stretch (`Visit`). An occasion
+ * that holds just what a recent stretch holds is listed once, under
+ * LATELY.
  *
  * The rules (`occasionsIn`, `lately`, `occasionTitle`) are pure, so the
  * tests can hold them to their word.
@@ -139,13 +142,19 @@ export function latelySpans(now: number, read: readonly Print[], weekStartsOn = 
   for (const w of lately(now, weekStartsOn)) {
     const prints = sorted.filter((p) => p.takenAt >= w.from && p.takenAt < w.to);
     if (prints.length === 0) continue;
-    const same = out.some(
-      (o) => o.prints.length === prints.length && o.prints[0].id === prints[0].id && o.prints[o.prints.length - 1].id === prints[prints.length - 1].id,
-    );
-    if (same) continue;
+    if (out.some((o) => holdingOf(o.prints) === holdingOf(prints))) continue;
     out.push({ span: { ...w, count: prints.length, cover: coverOf(prints) }, prints });
   }
   return out;
+}
+
+/**
+ * What a stretch holds, as one short string: how many photographs, and the
+ * first and last of them in the order taken. Two stretches with the same
+ * holding are the same photographs, listed once.
+ */
+export function holdingOf(prints: readonly Print[]): string {
+  return prints.length === 0 ? "0" : `${prints.length}:${prints[0].id}:${prints[prints.length - 1].id}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +368,15 @@ export interface OccasionsView {
 }
 
 /**
+ * The stretch a new photograph lands in: from the earliest edge of lately
+ * to the end of today. A later visit takes up what was read only while
+ * this stretch holds what it held when the reading began (`Visit`).
+ */
+export function recentStretch(now: number, weekStartsOn = WEEK_STARTS_ON): TimeRange {
+  return { from: Math.min(...lately(now, weekStartsOn).map((w) => w.from)), to: midnight(new Date(now), 1) };
+}
+
+/**
  * The library read newest first for its occasions, as far as has been
  * asked, and kept: what has been found, and the photographs of each, for
  * the chapter it opens.
@@ -388,10 +406,15 @@ export class Occasions {
   private readonly held = new Map<string, Print[]>();
   private heldCount = 0;
   private latelyFound: Span[] | null = null;
+  /** What each recent stretch holds (`holdingOf`): an occasion holding the same is not listed a second time. */
+  private readonly latelyHoldings = new Set<string>();
+  /** What each occasion found holds, by its key. */
+  private readonly holdings = new Map<string, string>();
   private ended = false;
   private reading: Promise<OccasionsView> | null = null;
   private begun = false;
   private done = false;
+  private released = false;
 
   constructor(
     private readonly lib: LibrarySource,
@@ -401,8 +424,23 @@ export class Occasions {
   ) {
     this.frontier = midnight(new Date(now), 1);
     this.floor = Math.max(EARLIEST_PLAUSIBLE, oldest ?? EARLIEST_PLAUSIBLE);
-    this.latelyFrom = Math.min(...lately(now, weekStartsOn).map((w) => w.from));
+    this.latelyFrom = recentStretch(now, weekStartsOn).from;
     if (oldest == null) this.ended = true;
+  }
+
+  /** The stretch a new photograph lands in, as this reader reads it. */
+  get recentRange(): TimeRange {
+    return recentStretch(this.now, this.weekStartsOn);
+  }
+
+  /**
+   * The room has let this reader go (the library changed, or a later
+   * visit read afresh): a read under way stops after the page it is on,
+   * so a burst of changes never leaves several reads running behind one
+   * another.
+   */
+  release(): void {
+    this.released = true;
   }
 
   /** A read has finished: what it found is what Contents shows. */
@@ -416,9 +454,14 @@ export class Occasions {
     return this.begun ? Promise.resolve(this.view) : this.more();
   }
 
-  /** What has been found so far. */
+  /**
+   * What has been found so far. An occasion that holds exactly what a
+   * recent stretch holds (last weekend was the busy weekend) is listed
+   * once, under LATELY.
+   */
   get view(): OccasionsView {
-    return { lately: this.latelyFound ?? (this.ended ? [] : null), occasions: [...this.found], more: !this.ended };
+    const occasions = this.found.filter((s) => !this.latelyHoldings.has(this.holdings.get(spanKey(s)) ?? ""));
+    return { lately: this.latelyFound ?? (this.ended ? [] : null), occasions, more: !this.ended };
   }
 
   /** The photographs of a stretch this reader found, for its chapter; null when it did not find it. */
@@ -450,7 +493,7 @@ export class Occasions {
   private async read(): Promise<OccasionsView> {
     const target = this.found.length + OCCASIONS_PER_READ;
     let pages = 0;
-    while (!this.ended && pages < PAGES_PER_READ && (this.found.length < target || this.latelyFound == null)) {
+    while (!this.ended && !this.released && pages < PAGES_PER_READ && (this.found.length < target || this.latelyFound == null)) {
       pages += 1;
       await this.page();
       this.settle();
@@ -482,7 +525,10 @@ export class Occasions {
       this.recent.push(...usable.filter((p) => p.takenAt >= this.latelyFrom));
       if (this.frontier <= this.latelyFrom || this.ended) {
         const found = latelySpans(this.now, this.recent, this.weekStartsOn);
-        for (const f of found) this.hold(f.span, f.prints);
+        for (const f of found) {
+          this.hold(f.span, f.prints);
+          this.latelyHoldings.add(holdingOf(f.prints));
+        }
         this.latelyFound = found.map((f) => f.span);
         this.recent = [];
       }
@@ -509,6 +555,7 @@ export class Occasions {
       if (!this.ended && o.first - OCCASION_GAP_DAYS <= frontierDay) continue;
       const span = occasionSpan(o);
       this.found.push(span);
+      this.holdings.set(spanKey(span), holdingOf(o.prints));
       this.hold(span, o.prints);
       for (const p of o.prints) settled.add(p.id);
     }

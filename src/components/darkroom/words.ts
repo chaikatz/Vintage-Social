@@ -37,9 +37,13 @@ export const EARLIER_OCCASIONS = "Earlier occasions";
 /** Where no occasion has been found in what was read. */
 export const NO_OCCASIONS = "No occasions found yet: days with many photographs show here.";
 
-/** Over the years under On this day: "October 22 in other years". */
-export function yearsOfDay(now: number): string {
-  return `${monthDay(now)} in other years`;
+/**
+ * Over the years under On this day: "October 22 in other years"; or, on a
+ * thin day whose chapter reaches out to the week or the time of year (and
+ * so whose counts do too), "Around October 22 in other years".
+ */
+export function yearsOfDay(now: number, state: DayState = "day"): string {
+  return state === "week" || state === "season" ? `Around ${monthDay(now)} in other years` : `${monthDay(now)} in other years`;
 }
 
 /** A year under On this day, for VoiceOver: "2019, On this day, 12 photographs". */
@@ -469,7 +473,7 @@ export type EmptyWhy =
   /** A stretch (this week, an occasion) holds nothing now: its photographs went since it was found. */
   | "span";
 
-export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean }): PageWords {
+export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean; span?: Pick<Span, "kind"> | null }): PageWords {
   const thisYear = new Date(ctx.now).getFullYear();
   switch (why) {
     case "library":
@@ -529,7 +533,8 @@ export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean })
       return exhaustedPage(ctx.limited);
     case "span":
       return {
-        eyebrow: CONTENTS_OCCASIONS,
+        // Under the heading it was chosen from: this week and last weekend are LATELY.
+        eyebrow: ctx.span && ctx.span.kind !== "occasion" ? CONTENTS_LATELY : CONTENTS_OCCASIONS,
         title: "Nothing here now.",
         body: "Its photographs are no longer in your library.",
         words: [TO_CONTENTS, SURPRISE, LIBRARY],

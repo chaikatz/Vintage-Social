@@ -190,7 +190,7 @@ export function Contents({
           {dayYears && dayYears.length > 0 && !nothingToday ? (
             <View style={styles.monthsBlock} testID="darkroom-day-years">
               <RoomText kind="eyebrow" accessibilityRole="header" maxFontSizeMultiplier={2.4} style={styles.monthsHead}>
-                {yearsOfDay(now)}
+                {yearsOfDay(now, day)}
               </RoomText>
               <View style={styles.months}>
                 {dayYears.map((y) => (

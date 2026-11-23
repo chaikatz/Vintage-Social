@@ -513,7 +513,7 @@ export default function Darkroom() {
       : state.view.kind === "denied"
         ? deniedPage(iosMajor)
         : state.view.kind === "empty"
-          ? emptyPage(state.view.why, { now, limited })
+          ? emptyPage(state.view.why, { now, limited, span: state.where?.span ?? null })
           : null;
   const granted = state.access === "full" || state.access === "limited";
   const inside = granted && state.view.kind !== "firstVisit" && state.view.kind !== "checking";
