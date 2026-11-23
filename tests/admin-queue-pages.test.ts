@@ -113,11 +113,11 @@ describe("what a report shows the admin", () => {
   const card = src.slice(src.indexOf("renderItem={({ item }) => ("), src.indexOf("{tab === \"open\" ? (\n              <View style={styles.actions}>"));
 
   it("a reported comment: its words and who wrote them, and whether it is removed already", () => {
-    expect(card).toMatch(/\{item\.comment \? \(\s*<Text style=\{styles\.resolution\}>\s*\{nameOf\(item\.comment\.author\?\.username\)\}: “\{item\.comment\.body\}”\s*\{item\.comment\.removed_at \? " · removed" : ""\}/);
+    expect(card).toMatch(/\{item\.comment \? \(\s*<View style=\{styles\.resolution\}>\s*<Text style=\{styles\.resolutionText\}>\s*\{nameOf\(item\.comment\.author\?\.username\)\}: “\{item\.comment\.body\}”\s*\{item\.comment\.removed_at \? " · removed" : ""\}/);
   });
 
   it("a reported member: their name", () => {
-    expect(card).toContain("{item.member ? <Text style={styles.resolution}>Member: {nameOf(item.member.username)}</Text> : null}");
+    expect(card).toMatch(/\{item\.member \? \(\s*<View style=\{styles\.resolution\}>\s*<Text style=\{styles\.resolutionText\}>Member: \{nameOf\(item\.member\.username\)\}<\/Text>\s*<\/View>\s*\) : null\}/);
   });
 
   it("a reporter who has left: unknown (0031 keeps the report)", () => {

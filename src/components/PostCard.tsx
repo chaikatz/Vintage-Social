@@ -316,16 +316,16 @@ const styles = StyleSheet.create({
   caption: {
     ...type.body,
     fontSize: 14,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xs + 2,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xs + 2,
   },
   captionAuthor: { fontWeight: "600" },
   comment: {
     ...type.body,
     fontSize: 14,
     color: colors.ink,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xs + 2,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xs + 2,
   },
   commentsLink: {
     ...type.caption,
