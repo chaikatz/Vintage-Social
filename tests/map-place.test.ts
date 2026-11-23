@@ -251,6 +251,9 @@ describe("the map's wiring (src/components/PostMap.tsx)", () => {
   it("lets a touch on a pin's picture be the pin's, and draws a pin again only when its photographs change", () => {
     expect(map).toMatch(/<View style=\{styles\.pin\} pointerEvents="none">/);
     expect(map).toMatch(/const Pin = memo\(function Pin\(/);
+    // Nothing drawn over the map takes a tap meant for a pin.
+    expect(map).toMatch(/<Text style=\{styles\.note\} pointerEvents="none">/);
+    expect(map).toMatch(/<View style=\{styles\.empty\} pointerEvents="none">/);
   });
 
   it("draws a bounded number of pins, the ones about the screen", () => {

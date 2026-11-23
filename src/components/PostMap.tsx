@@ -172,7 +172,8 @@ export function PostMap({ posts, onOpenPost, header }: Props) {
             </Text>
           </View>
         ) : unplaced > 0 ? (
-          <Text style={styles.note}>
+          // Over the map's foot, where a pin may stand: a tap there is the pin's.
+          <Text style={styles.note} pointerEvents="none">
             {unplaced} without a place
           </Text>
         ) : null}
