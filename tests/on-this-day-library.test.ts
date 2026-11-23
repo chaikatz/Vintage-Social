@@ -569,6 +569,17 @@ describe("the On this day page", () => {
   it("uses the typographer's apostrophe in what it says", () => {
     expect(page).not.toMatch(/"[^"\n]*\w'\w[^"\n]*"|>[^<{]*\w'\w[^<{]*</);
   });
+
+  it("opens every one of them in the Memory Room in one tap, and each year at its own first", () => {
+    const library = page.slice(page.indexOf("<SectionLabel>In your library</SectionLabel>"));
+    expect(library).toMatch(
+      /granted && darkroomAvailable\(\) && libraryTotal > 0 \? \(\s*<View style=\{styles\.limited\}>\s*<Pressable\s+onPress=\{\(\) => openDay\(\)\}/,
+    );
+    expect(library).toMatch(/accessibilityLabel="Open them in the Memory Room"/);
+    // The room's On this day, at a year when one is given.
+    expect(page).toMatch(/params: year != null \? \{ mode: "on-this-day", year: String\(year\) \} : \{ mode: "on-this-day" \}/);
+    expect(page).toMatch(/onPress=\{\(\) => openDay\(today\.getFullYear\(\) - day\.yearsAgo\)\}/);
+  });
 });
 
 describe("the picker's On this day", () => {

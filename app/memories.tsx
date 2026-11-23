@@ -335,6 +335,22 @@ export default function Memories() {
       {showLibrary ? (
         <View style={styles.section}>
           <SectionLabel>In your library</SectionLabel>
+          {/* Every one of them, a print at a time, year by year: one tap into the Memory Room's On this day. */}
+          {granted && darkroomAvailable() && libraryTotal > 0 ? (
+            <View style={styles.limited}>
+              <Pressable
+                onPress={() => openDay()}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={({ pressed }) => [styles.limitedWay, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Open them in the Memory Room"
+                accessibilityHint="Shows every photograph from this day, a year at a time, newest year first."
+                testID="memories-open-room"
+              >
+                <Text style={styles.limitedWord}>Open them in the Memory Room →</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {reach === "limited" ? (
             <View style={styles.limited}>
               <Text style={styles.limitedLine}>VINTAGE can see only the photographs you’ve chosen.</Text>

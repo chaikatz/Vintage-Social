@@ -167,9 +167,11 @@ const PRINT_HEIGHT = 55;
  * When the member left the room within the last twelve hours the line
  * becomes where they were — "You left off in August 2018." — read from
  * the place the room keeps on disk, which knows the month without asking
- * the library. When anything is set aside, SET ASIDE stands under the
- * bar, as the camera and the clip stand under the library's, and opens
- * the shelf.
+ * the library. Under the bar, as the camera and the clip stand under the
+ * library's: TODAY IN OTHER YEARS, one tap into the room's On this day,
+ * every photograph of this day in other years (named apart from the On
+ * this day at the foot of the page, which is the member's own posts);
+ * and, when anything is set aside, SET ASIDE, which opens the shelf.
  */
 function MemoryRoomDoor({ held }: { held: boolean }) {
   const router = useRouter();
@@ -203,9 +205,17 @@ function MemoryRoomDoor({ held }: { held: boolean }) {
         maxFontSizeMultiplier={BAR_TYPE_CAP}
         style={styles.bar}
       />
-      {n > 0 ? (
-        <View style={[styles.ways, styles.shelf]}>
-          {/* Counted as the room's Contents counts it. */}
+      <View style={[styles.ways, styles.shelf]}>
+        <QuietWay
+          label="Today in other years"
+          spoken="Today in other years, in the Memory Room"
+          hint="Opens every photograph from this day in other years, year by year."
+          busy={false}
+          held={held}
+          onPress={() => router.push({ pathname: "/darkroom", params: { mode: "on-this-day" } })}
+        />
+        {n > 0 ? (
+          // Counted as the room's Contents counts it.
           <QuietWay
             label={`Set aside · ${countLabel(n)}`}
             spoken={`Set aside, ${n} ${n === 1 ? "photograph" : "photographs"}`}
@@ -214,8 +224,8 @@ function MemoryRoomDoor({ held }: { held: boolean }) {
             held={held}
             onPress={() => router.push({ pathname: "/darkroom", params: { mode: "set-aside" } })}
           />
-        </View>
-      ) : null}
+        ) : null}
+      </View>
     </View>
   );
 }

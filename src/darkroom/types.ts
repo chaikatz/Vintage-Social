@@ -66,8 +66,33 @@ export interface LibrarySource {
   oldest(): Promise<number | null>;
 }
 
-/** The ways into the library. */
-export type DarkroomMode = "on-this-day" | "surprise" | "year" | "set-aside";
+/**
+ * The ways into the library. `span` is a stretch of it chosen in Contents:
+ * this week, last weekend, this month, or an occasion found in it.
+ */
+export type DarkroomMode = "on-this-day" | "surprise" | "year" | "set-aside" | "span";
+
+/**
+ * A stretch of the library a chapter can be: one of the recent stretches
+ * Contents lists under LATELY, or an occasion — days on end with many
+ * photographs, read as one — under OCCASIONS. Found on the phone from the
+ * dates the library already gives; its photographs are held for the
+ * session by the reader that found it (`src/darkroom/occasions.ts`).
+ */
+export interface Span {
+  kind: "week" | "weekend" | "month" | "occasion";
+  /** `from` inclusive, `to` exclusive, in milliseconds. */
+  from: number;
+  to: number;
+  /** Its name in Contents and on its title card: "This week", "June 12–15, 2024", "Lisbon · June 2024". */
+  title: string;
+  /** The running head's name for it, short enough for the head. */
+  head: string;
+  /** The photographs the chapter shows. */
+  count: number;
+  /** The photograph that stands for an occasion in Contents. */
+  cover: Print | null;
+}
 
 /** How far On This Day had to reach to find something. */
 export type DayReach = "day" | "week" | "season";

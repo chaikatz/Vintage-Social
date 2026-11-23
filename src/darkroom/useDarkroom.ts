@@ -5,6 +5,7 @@ import * as MediaLibrary from "expo-media-library";
 import {
   choiceOf,
   dayStateOf,
+  dayYearsOf,
   DEFAULT_DAY_MINIMUM,
   dropOnSettle,
   endingOf,
@@ -21,10 +22,12 @@ import {
 } from "@/components/darkroom/chapter";
 import { appendNew, Dealer, editReader, surpriseReader } from "@/components/darkroom/dealer";
 import { Drawn } from "@/components/darkroom/drawn";
+import { warmIds } from "@/components/darkroom/plateImage";
 import { Visit } from "@/components/darkroom/visit";
 import type { DayState, EmptyWhy } from "@/components/darkroom/words";
 import { readAccess, requestAccess, type LibraryAccess } from "./access";
-import { REDISCOVERY_AGE_DAYS, type YearCount } from "./discovery";
+import { REDISCOVERY_AGE_DAYS, type DayResult, type YearCount } from "./discovery";
+import type { OccasionsView } from "./occasions";
 import { dayFinished, finishDay, flushHistory, localDay, markSeen } from "./history";
 import {
   chapterKey,
@@ -40,7 +43,7 @@ import {
 } from "./session";
 import { isSetAside, pruneSetAside, setAsidePrints } from "./setAside";
 import { darkroomSource } from "./source";
-import type { DarkroomMode, DayReach, Print } from "./types";
+import type { DarkroomMode, DayReach, Print, Span } from "./types";
 
 /**
  * The Darkroom's state: whether it may look, which chapter is open and
@@ -54,6 +57,11 @@ import type { DarkroomMode, DayReach, Print } from "./types";
  * start; On this day opens when the day holds three moments and was not
  * already seen to its end today, and Surprise — already dealing — opens
  * when not. By year is never the first way in.
+ *
+ * A stretch — this week, last weekend, this month, an occasion — opens on
+ * the photographs it was found with in Contents (`Occasions`, read in the
+ * background once a session), every one, in the order taken; it deals
+ * nothing more, and it is never the place kept on disk.
  *
  * Chapters. Each keeps its own position in memory (`keepChapter`), with
  * the dealer that was dealing it, so going back to a chapter finds the
@@ -102,6 +110,12 @@ export interface DarkroomState {
   months: { year: number; counts: number[] } | null;
   /** What On this day holds today, for Contents. */
   day: DayState;
+  /** The years On this day holds today, newest first, each with its count, for Contents. */
+  dayYears: DayResult["years"] | null;
+  /** Lately and the occasions, as far as they have been read; null until they have been. */
+  occasions: OccasionsView | null;
+  /** Earlier occasions are being read. */
+  occasionsReading: boolean;
   /** Prints known to be gone from the library, or from the shared selection. */
   missing: ReadonlySet<string>;
   /** Bumped when the library changes, so a page that failed to draw tries again. */
@@ -142,6 +156,9 @@ export function useDarkroom(params: RoomParams) {
     years: visit?.freshYears() ?? null,
     months: null,
     day: "unknown",
+    dayYears: null,
+    occasions: visit?.knownOccasions() ?? null,
+    occasionsReading: false,
     missing: new Set(),
     revision: 0,
   }));
@@ -266,9 +283,28 @@ export function useDarkroom(params: RoomParams) {
   const askDay = useCallback(async (background = false) => {
     if (!visit) throw new Error("No library");
     const result = await visit.askDay(background);
-    patch({ day: dayStateOf(result) });
+    patch({ day: dayStateOf(result), dayYears: dayYearsOf(result) });
     return result;
   }, [visit, patch]);
+
+  /**
+   * Lately and the occasions, for Contents: the first read once a session,
+   * and `further` to read on to earlier ones. In the gate's back line.
+   */
+  const loadOccasions = useCallback(
+    async (further = false) => {
+      if (!visit) return;
+      if (further) patch({ occasionsReading: true });
+      try {
+        const view = await visit.occasions(further);
+        patch({ occasions: view, occasionsReading: false });
+      } catch {
+        // Contents shows what it had, and EARLIER OCCASIONS can be asked again.
+        patch({ occasionsReading: false });
+      }
+    },
+    [visit, patch],
+  );
 
   /** Batches for the chapter on the stage. */
   const listen = useCallback(
@@ -376,8 +412,10 @@ export function useDarkroom(params: RoomParams) {
       }
       const c = live.current.chapter;
       if (c?.mode === "year" && c.year != null) void loadMonths(c.year, true);
+      // Lately and the first occasions, so Contents has them when it opens: once a session.
+      void loadOccasions();
     }, 0);
-  }, [visit, loadYears, askDay, commit, loadMonths]);
+  }, [visit, loadYears, askDay, commit, loadMonths, loadOccasions]);
 
   const show = useCallback(
     (c: Omit<Chapter, "generation" | "rebase" | "failed">, d: Dealer | null) => {
@@ -389,7 +427,7 @@ export function useDarkroom(params: RoomParams) {
       pagerGeneration.current += 1;
       const more = c.more || (c.mode === "surprise" && waitingForYears(d));
       const chapter: Chapter = { ...c, more, failed: false, generation: pagerGeneration.current, rebase: 0 };
-      commit({ chapter, view: { kind: "prints" }, where: { mode: c.mode, year: c.year, month: c.month }, loading: null });
+      commit({ chapter, view: { kind: "prints" }, where: { mode: c.mode, year: c.year, month: c.month, span: c.span ?? null }, loading: null });
       // The print a chapter opens on is shown without a settle, and counts as shown (MORE FROM leaves it out).
       const first = c.prints[c.index];
       if (first) visit?.record(first);
@@ -454,14 +492,15 @@ export function useDarkroom(params: RoomParams) {
       if (!visit) return;
       const ticket = ++opening.current;
       const still = () => ticket === opening.current && mounted.current;
-      const key = chapterKey(spec.mode, spec.year, spec.month);
-      const where: Where = { mode: spec.mode, year: spec.year, month: spec.month };
+      const span = spec.mode === "span" ? spec.span ?? null : null;
+      const key = chapterKey(spec.mode, spec.year, spec.month, span);
+      const where: Where = { mode: spec.mode, year: spec.year, month: spec.month, span };
       if (live.current.view.kind === "prints") {
         keepShown(false);
         dealer.current?.release();
         dealer.current = null;
       }
-      commit({ loading: { mode: spec.mode, year: spec.year, month: spec.month, since: Date.now(), jump: Boolean(spec.jump) } });
+      commit({ loading: { mode: spec.mode, year: spec.year, month: spec.month, span, since: Date.now(), jump: Boolean(spec.jump) } });
 
       // Back to a chapter already visited: the same prints, the same deal.
       const anew = spec.fresh || spec.pin || spec.shifted;
@@ -487,6 +526,16 @@ export function useDarkroom(params: RoomParams) {
 
       try {
         if (spec.mode === "set-aside") return openShelf(key, where, (shelf) => startIndex(shelf, spec));
+
+        if (spec.mode === "span") {
+          // A stretch's photographs were found with it; one the session no longer holds is read again.
+          if (!span) return showEmpty("failed", where);
+          const prints = await visit.spanPrints(span);
+          if (!still()) return keepAside(key, prints, null, null);
+          if (prints.length === 0) return showEmpty("span", where);
+          show({ key, ...where, prints, index: startIndex(prints, spec), more: false, reach: null }, null);
+          return;
+        }
 
         if (spec.mode === "on-this-day") {
           const day = await askDay();
@@ -571,7 +620,7 @@ export function useDarkroom(params: RoomParams) {
         void dealt.then((p) => keepAside(surpriseKey, p, d, null));
         return;
       }
-      if (day) patch({ day: dayStateOf(day) });
+      if (day) patch({ day: dayStateOf(day), dayYears: dayYearsOf(day) });
       if (opensOnThisDay(day, dayFinished(), localDay(now))) {
         show({ key: chapterKey("on-this-day", null, 0), mode: "on-this-day", year: null, month: 0, prints: day!.prints, index: 0, more: false, reach: "day" }, null);
         // Surprise, already dealing, is kept for when Contents asks for it.
@@ -765,7 +814,7 @@ export function useDarkroom(params: RoomParams) {
       void d.read(c.mode === "surprise" ? BATCH.surprise : BATCH.year);
       return;
     }
-    void open({ mode: c.mode, year: c.year, month: c.month, fresh: true, startId: c.prints[c.prints.length - 1]?.id ?? null });
+    void open({ mode: c.mode, year: c.year, month: c.month, span: c.span, fresh: true, startId: c.prints[c.prints.length - 1]?.id ?? null });
   }, [commit, open]);
 
   /** The error page's TRY AGAIN: the year index rebuilt, and the way in tried again. */
@@ -775,7 +824,7 @@ export function useDarkroom(params: RoomParams) {
     void loadYears(true, true);
     const w = live.current.where;
     if (w) {
-      void open({ mode: w.mode, year: w.year, month: w.month, fresh: true });
+      void open({ mode: w.mode, year: w.year, month: w.month, span: w.span, fresh: true });
     } else {
       started.current = false;
       void checkAccess();
@@ -790,9 +839,9 @@ export function useDarkroom(params: RoomParams) {
    * already in view, which the choice simply leaves as it is (`choiceOf`).
    */
   const choose = useCallback(
-    (mode: DarkroomMode, year: number | null = null, month: number | null = null): boolean => {
+    (mode: DarkroomMode, year: number | null = null, month: number | null = null, span: Span | null = null): boolean => {
       const s = live.current;
-      const spec = choiceOf({ showing: s.view.kind === "prints", where: s.where, chapter: s.chapter }, mode, year, month);
+      const spec = choiceOf({ showing: s.view.kind === "prints", where: s.where, chapter: s.chapter }, mode, year, month, span);
       if (!spec) return false;
       void open(spec);
       return true;
@@ -851,7 +900,8 @@ export function useDarkroom(params: RoomParams) {
       const { first, release } = loaded.current.add(id);
       if (release) {
         const c = live.current.chapter;
-        const onScreen = c ? c.prints.slice(Math.max(0, c.index - 1), c.index + 2).map((p) => p.id) : [];
+        // The warm plates — the settled one, one behind, two ahead — keep what they hold.
+        const onScreen = c ? warmIds(c.prints, c.index) : [];
         loaded.current.released([...onScreen, id]);
         releaseDrawn();
       }
@@ -937,7 +987,7 @@ export function useDarkroom(params: RoomParams) {
       const before = live.current;
       // A print that failed to draw may draw now: one shared again comes back.
       const missing = whole ? new Set<string>() : new Set([...before.missing, ...deleted]);
-      commit({ access, missing, revision: before.revision + 1, years: whole ? null : before.years });
+      commit({ access, missing, revision: before.revision + 1, years: whole ? null : before.years, occasions: null });
       if (!isGranted(access)) return settleAccess(access);
       const v = before.view;
       // The first chapter is still being dealt: it finishes with what it
@@ -949,8 +999,8 @@ export function useDarkroom(params: RoomParams) {
       // iCloud on a new phone, appear without leaving the room.
       if (v.kind === "empty" || v.kind === "checking") {
         const w = before.where;
-        if (w && v.kind === "empty" && (v.why === "day" || v.why === "shelf" || v.why === "failed")) {
-          void open({ mode: w.mode, year: w.year, month: w.month, fresh: true });
+        if (w && v.kind === "empty" && (v.why === "day" || v.why === "shelf" || v.why === "failed" || v.why === "span")) {
+          void open({ mode: w.mode, year: w.year, month: w.month, span: w.span, fresh: true });
         } else if (started.current) void openDefault();
         else if (introSeen()) begin();
         return;
@@ -960,12 +1010,14 @@ export function useDarkroom(params: RoomParams) {
         // print in front of the member if it is still there to keep.
         const c = before.chapter;
         const print = c.prints[c.index] ?? null;
-        void open({ mode: c.mode, year: c.year, month: c.month, fresh: true, keep: print, startId: print?.id ?? null });
+        void open({ mode: c.mode, year: c.year, month: c.month, span: c.span, fresh: true, keep: print, startId: print?.id ?? null });
       }
       // Counted again now if Contents has shown them; otherwise when it next opens.
       if (before.years != null) void loadYears(true, true);
+      // Lately and the occasions, read again from the library as it is now.
+      if (before.occasions != null) void loadOccasions();
     },
-    [visit, commit, settleAccess, open, openDefault, begin, loadYears],
+    [visit, commit, settleAccess, open, openDefault, begin, loadYears, loadOccasions],
   );
 
   useEffect(() => {
@@ -1041,6 +1093,7 @@ export function useDarkroom(params: RoomParams) {
     retry,
     loadYears,
     loadMonths,
+    loadOccasions,
     pruneShelf,
     imageLoaded,
     imageGone,

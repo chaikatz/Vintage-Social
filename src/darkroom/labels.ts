@@ -145,6 +145,7 @@ function nearestAnniversary(ms: number, now: number): { year: number; days: numb
  *   On this day   OCTOBER 22, 2019    Seven years ago today | … this week | …, around this time
  *   Surprise      AUGUST 2014         Twelve years ago | Last year | Earlier this year
  *   By year       AUGUST 14, 2016     A Sunday
+ *   A stretch     AUGUST 14, 2016     A Sunday        (this week, an occasion)
  *   Set aside     AUGUST 2016         Ten years ago
  *
  * On This Day counts years by the anniversary the print was found near —
@@ -178,7 +179,7 @@ export function captionFor(
     } else {
       line = `${yearsAgo(years)}, around this time`;
     }
-  } else if (mode === "year") {
+  } else if (mode === "year" || mode === "span") {
     label = fullDate(ms).toUpperCase();
     line = `A ${weekday(ms)}`;
   } else {

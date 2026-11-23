@@ -79,6 +79,35 @@ export function captionHeight(fontScale: number, lines: 1 | 2): number {
   return CAPTION_GAP + Math.round(14 * s1) + 6 + Math.round(20 * s2) * lines;
 }
 
+/**
+ * The caption heights pages have measured this session, by type size and
+ * by whether the second line runs to two. A page is laid out at the
+ * height measured before it, where there is one, rather than at the
+ * estimate: a plate laid out at the estimate and then refitted to its
+ * measure changes size, and on the phone its photograph is asked of
+ * Photos a second time at the new size, the first request thrown away.
+ * So where the estimate is out at a type size, only the first page there
+ * refits. The least height measured is kept — a caption whose word drops
+ * to a row of its own is taller, and is the exception — so a page whose
+ * word does that still refits, as it always did, and the next is not
+ * laid out at its height.
+ */
+export class CaptionHeights {
+  private readonly known = new Map<string, number>();
+
+  get(fontScale: number, long: boolean): number | null {
+    return this.known.get(`${fontScale}:${long}`) ?? null;
+  }
+
+  set(fontScale: number, long: boolean, height: number): void {
+    if (!(Number.isFinite(height) && height > 0)) return;
+    const key = `${fontScale}:${long}`;
+    const was = this.known.get(key);
+    const h = Math.round(height);
+    if (was == null || h < was) this.known.set(key, h);
+  }
+}
+
 /** Width over height, or square for a print whose size the library did not say. */
 export function ratioOf(size: { width: number; height: number }): number {
   return size.width > 0 && size.height > 0 && Number.isFinite(size.width / size.height) ? size.width / size.height : 1;

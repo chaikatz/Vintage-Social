@@ -23,13 +23,13 @@ import { developedAt, markSeen } from "@/darkroom/history";
 import { captionFor } from "@/darkroom/labels";
 import { contentsFound, markContentsFound } from "@/darkroom/session";
 import { putBack, toggleSetAside, useSetAside } from "@/darkroom/setAside";
-import type { DarkroomMode, Print } from "@/darkroom/types";
+import type { DarkroomMode, Print, Span } from "@/darkroom/types";
 import { Contents } from "@/components/darkroom/Contents";
 import { Develop } from "@/components/darkroom/Develop";
 import { haptics } from "@/components/darkroom/haptics";
 import { LookContext, motion, type Look } from "@/components/darkroom/look";
 import { Plate } from "@/components/darkroom/Plate";
-import { wantsProof } from "@/components/darkroom/plateImage";
+import { wantsPhotograph, wantsProof } from "@/components/darkroom/plateImage";
 import { PrintPage } from "@/components/darkroom/PrintPage";
 import { rooms, useScheme } from "@/components/darkroom/room";
 import { RunningHead } from "@/components/darkroom/RunningHead";
@@ -70,8 +70,11 @@ export { RecoverRoom as ErrorBoundary } from "@/navigation/Recover";
  *
  * The member's own camera roll, one print at a time, set as a photobook:
  * a running head, a plate with its caption hung beneath, a Contents
- * sheet, title cards and end pages. This day in other years, a roll of
- * twenty-four from the back of the drawer, or a year read as a chapter.
+ * sheet, title cards and end pages. This day in other years, every
+ * photograph of it, year by year; a roll of twenty-four from the back of
+ * the drawer; this week, last weekend or this month; an occasion — days
+ * on end with many photographs — found in the library; or a year read as
+ * a chapter.
  * Swipe for the next, or tap the photograph: its right half turns on, its
  * left half back. DEVELOP takes the print into the ordinary editor
  * to post; SET ASIDE keeps it on this phone to come back to. Printed on
@@ -216,6 +219,7 @@ export default function Darkroom() {
     where,
     loadYears: darkroom.loadYears,
     loadMonths: darkroom.loadMonths,
+    loadOccasions: darkroom.loadOccasions,
     pruneShelf: darkroom.pruneShelf,
   });
 
@@ -297,8 +301,8 @@ export default function Darkroom() {
     }
   };
 
-  const choose = (mode: DarkroomMode, year: number | null = null, month: number | null = null) => {
-    if (darkroom.choose(mode, year, month)) pendingAnnouncement.current = chapterAnnouncement(mode, year, now);
+  const choose = (mode: DarkroomMode, year: number | null = null, month: number | null = null, span: Span | null = null) => {
+    if (darkroom.choose(mode, year, month, span)) pendingAnnouncement.current = chapterAnnouncement(mode, year, now, span);
   };
 
   /** The first-visit word is said once: a second tap while iOS asks, or while the page fades, does nothing. */
@@ -340,6 +344,7 @@ export default function Darkroom() {
       case "surprise":
         return choose("surprise");
       case "chooseYear":
+      case "contents":
         return showContents();
       case "retry":
         return darkroom.retry();
@@ -438,7 +443,8 @@ export default function Darkroom() {
         pixelRatio={pixelRatio}
         current={isCurrent}
         proof={chapter != null && wantsProof(index, chapter.index)}
-        images={focused || isCurrent}
+        // The settled print and its warm neighbours ask for their photograph; under the editor, the settled one alone.
+        images={(focused && chapter != null && wantsPhotograph(index, chapter.index)) || isCurrent}
         inFront={focused}
         dissolve={!darkroom.hasLoaded(print.id)}
         revision={state.revision}
@@ -467,7 +473,7 @@ export default function Darkroom() {
   const renderTail = () => {
     if (!chapter) return <View />;
     if (chapter.more) {
-      const card = titleCardWords(chapter.mode, chapter.year, chapter.month, now);
+      const card = titleCardWords(chapter.mode, chapter.year, chapter.month, now, chapter.span);
       return card ? <TitleCard eyebrow={card.eyebrow} title={card.title} year={card.year} waiting /> : <View />;
     }
     const page = darkroom.ending ? endPage(darkroom.ending, { now, limited, years: state.years }) : null;
@@ -512,7 +518,7 @@ export default function Darkroom() {
   const granted = state.access === "full" || state.access === "limited";
   const inside = granted && state.view.kind !== "firstVisit" && state.view.kind !== "checking";
   const headWhere = fades.card && state.loading?.mode ? state.loading : where;
-  const headName = inside && headWhere?.mode ? chapterName(headWhere.mode, headWhere.year) : null;
+  const headName = inside && headWhere?.mode ? chapterName(headWhere.mode, headWhere.year, headWhere.span) : null;
   const n = chapter?.prints.length ?? 0;
   const developOpacity = useMemo(
     () => scrollX.interpolate({ inputRange: [(n - 1) * width, n * width], outputRange: [1, 0], extrapolate: "clamp" }),
@@ -612,15 +618,20 @@ export default function Darkroom() {
           months={where?.mode === "year" ? state.months : null}
           monthInView={chapter?.mode === "year" && current ? new Date(current.takenAt).getMonth() : null}
           day={state.day}
+          dayYears={state.dayYears}
+          yearInView={chapter?.mode === "on-this-day" && current ? new Date(current.takenAt).getFullYear() : null}
+          occasions={state.occasions}
+          occasionsReading={state.occasionsReading}
           shelfCount={shelf.length}
           prunedNote={sheet.note}
           limited={limited}
           toMonths={sheet.toMonths}
-          onChoose={(mode, year, month) => {
+          onChoose={(mode, year, month, span) => {
             haptics.chosen();
             sheet.close();
-            choose(mode, year ?? null, month ?? null);
+            choose(mode, year ?? null, month ?? null, span ?? null);
           }}
+          onEarlier={() => void darkroom.loadOccasions(true)}
           onLibrary={() => sheet.close(() => void pick())}
           onShareMore={() => sheet.close(() => void chooseMorePhotographs())}
           onSettings={() => sheet.close(openPhotoSettings)}

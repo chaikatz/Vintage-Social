@@ -15,6 +15,8 @@ import { mulberry32 } from "@/utils/shuffle";
 import {
   anniversary,
   editSize,
+  gated,
+  readAll,
   monthIndex,
   monthSlots,
   onThisDay,
@@ -423,7 +425,7 @@ describe("the year index", () => {
 // ---------------------------------------------------------------------------
 
 describe("on this day", () => {
-  it("sweeps the years oldest first: each year's middle moment, then the rest of each year in time order", async () => {
+  it("shows every photograph of the day, the years newest first, each year in the order taken", async () => {
     const lib = new FakeLibrary([
       print(at(2012, 9, 22, 9)),
       print(at(2012, 9, 22, 13)),
@@ -437,13 +439,20 @@ describe("on this day", () => {
     const day = await onThisDay(lib, { now: NOW });
     expect(day.reach).toBe("day");
     const hours = day.prints.map((p) => `${yearOf(p)} ${new Date(p.takenAt).getHours()}`);
-    expect(hours).toEqual(["2012 13", "2019 11", "2023 8", "2012 9", "2012 18", "2023 21"]);
+    expect(hours).toEqual(["2023 8", "2023 21", "2019 11", "2012 9", "2012 13", "2012 18"]);
+    // Each year with its count, newest first, for Contents.
+    expect(day.years).toEqual([
+      { year: 2023, count: 2 },
+      { year: 2019, count: 1 },
+      { year: 2012, count: 3 },
+    ]);
+    expect(day.moments).toBe(6);
   });
 
   it("finds its years from the oldest photograph alone, without counting anything", async () => {
     const lib = new FakeLibrary([print(at(2009, 2, 1)), print(at(2014, 9, 22, 9)), print(at(2017, 9, 22, 9)), print(at(2020, 9, 22, 9))]);
     const day = await onThisDay(lib, { now: NOW });
-    expect(day.prints.map(yearOf)).toEqual([2014, 2017, 2020]);
+    expect(day.prints.map(yearOf)).toEqual([2020, 2017, 2014]);
     expect(lib.calls.count).toHaveLength(0);
     expect(lib.calls.oldest).toBe(1);
     // One day page for each year from 2009 to 2025.
@@ -453,7 +462,7 @@ describe("on this day", () => {
   it("counts decades first when the oldest photograph is a century back, and finds that one too", async () => {
     const lib = new FakeLibrary([print(at(1904, 9, 22, 10)), print(at(2016, 9, 22, 9)), print(at(2021, 9, 22, 9))]);
     const day = await onThisDay(lib, { now: NOW });
-    expect(day.prints.map(yearOf)).toEqual([1904, 2016, 2021]);
+    expect(day.prints.map(yearOf)).toEqual([2021, 2016, 1904]);
     // 1900s … 2020s, and the lost dates in the 1960s, 1970s and 2000s.
     expect(lib.calls.count).toHaveLength(13 + 3);
     expect(lib.calls.page).toHaveLength(6 + 10 + 6); // 1904–09, the 2010s and 2020–25
@@ -462,7 +471,7 @@ describe("on this day", () => {
   it("uses an oldest date it is given instead of asking the library again", async () => {
     const lib = new FakeLibrary([print(at(2009, 2, 1)), print(at(2014, 9, 22, 9)), print(at(2017, 9, 22, 9)), print(at(2020, 9, 22, 9))]);
     const day = await onThisDay(lib, { now: NOW, oldest: lib.prints[0].takenAt });
-    expect(day.prints.map(yearOf)).toEqual([2014, 2017, 2020]);
+    expect(day.prints.map(yearOf)).toEqual([2020, 2017, 2014]);
     expect(lib.calls.oldest).toBe(0);
     expect(lib.calls.page).toHaveLength(17);
     // The year index takes it too.
@@ -470,7 +479,7 @@ describe("on this day", () => {
     expect(lib.calls.oldest).toBe(0);
     // A library already known to be empty is not asked anything at all.
     const empty = new FakeLibrary([]);
-    expect(await onThisDay(empty, { now: NOW, oldest: null })).toEqual({ reach: "season", prints: [] });
+    expect(await onThisDay(empty, { now: NOW, oldest: null })).toEqual({ reach: "season", prints: [], moments: 0, years: [] });
     expect(await yearIndex(empty, NOW, null)).toEqual([]);
     expect(empty.calls).toEqual({ count: [], page: [], oldest: 0 });
   });
@@ -480,7 +489,7 @@ describe("on this day", () => {
     for (const lost of [0, Date.UTC(2001, 0, 1)]) {
       const lib = new FakeLibrary([print(lost), print(at(2012, 9, 22, 9)), print(at(2016, 9, 22, 9)), print(at(2020, 9, 22, 9))]);
       const day = await onThisDay(lib, { now: NOW });
-      expect(day.prints.map(yearOf)).toEqual([2012, 2016, 2020]);
+      expect(day.prints.map(yearOf)).toEqual([2020, 2016, 2012]);
       // Only the decades the real photographs are in: 2010 to last year.
       const read = new Set(lib.calls.page.map((r) => new Date(r.range.from).getFullYear()));
       expect([...read].sort((a, b) => a - b)).toEqual(Array.from({ length: 16 }, (_, i) => 2010 + i));
@@ -490,7 +499,7 @@ describe("on this day", () => {
   it("uses the years it is given, leaving out this year and impossible ones", async () => {
     const lib = new FakeLibrary([print(at(2014, 9, 22, 9)), print(at(2017, 9, 22, 9)), print(at(2020, 9, 22, 9))]);
     const day = await onThisDay(lib, { now: NOW, years: [2020, 2014, 2017, 2026, 1850, 2014] });
-    expect(day.prints.map(yearOf)).toEqual([2014, 2017, 2020]);
+    expect(day.prints.map(yearOf)).toEqual([2020, 2017, 2014]);
     expect(lib.calls.oldest).toBe(0);
     expect(lib.calls.page).toHaveLength(3);
   });
@@ -505,23 +514,27 @@ describe("on this day", () => {
     for (const r of lib.calls.page) expect(r.range.to - r.range.from).toBeLessThanOrEqual(DAY + HOUR);
   });
 
-  it("reaches to the week, keeping the anniversary's own photographs even beside a heavy trip", async () => {
+  it("reaches to the week, keeping every one of the anniversary's own photographs even beside a heavy trip", async () => {
     const trip: Print[] = [];
     for (let d = 19; d <= 21; d++) trip.push(...series(at(2015, 9, d, 8), 120, 5 * MIN));
-    const onTheDay = [print(at(2015, 9, 22, 10)), print(at(2015, 9, 22, 19))];
+    // The day itself: one moment of three frames, and one more.
+    const onTheDay = [...series(at(2015, 9, 22, 10), 3, 20_000), print(at(2015, 9, 22, 19))];
     const lib = new FakeLibrary([...trip, ...onTheDay]);
     const day = await onThisDay(lib, { now: NOW });
     expect(day.reach).toBe("week");
     const ids = day.prints.map((p) => p.id);
     for (const p of onTheDay) expect(ids).toContain(p.id);
-    expect(day.prints).toHaveLength(4);
+    // Every frame of the day, and a few from the trip around it: four moments in all.
+    expect(day.moments).toBe(4);
+    expect(day.prints).toHaveLength(onTheDay.length + 2);
+    expect(day.years).toEqual([{ year: 2015, count: onTheDay.length + 2 }]);
   });
 
   it("reaches to the time of year when the week is thin too", async () => {
     const lib = new FakeLibrary([print(at(2014, 9, 22, 9)), print(at(2015, 10, 1, 9)), print(at(2019, 9, 10, 9))]);
     const day = await onThisDay(lib, { now: NOW });
     expect(day.reach).toBe("season");
-    expect(day.prints.map(yearOf)).toEqual([2014, 2015, 2019]);
+    expect(day.prints.map(yearOf)).toEqual([2019, 2015, 2014]);
   });
 
   it("stops at the day when asked to, whatever it found", async () => {
@@ -537,29 +550,53 @@ describe("on this day", () => {
     const lib = new FakeLibrary([print(at(2015, 2, 1))]);
     const day = await onThisDay(lib, { now: NOW });
     expect(day.prints).toEqual([]);
+    expect(day.years).toEqual([]);
     expect(opensOnThisDay(day)).toBe(false);
   });
 
-  it("takes at most four from a year, at least 45 minutes apart", async () => {
+  it("keeps every photograph of a busy year, and decides on moments: a burst is one", async () => {
     const lib = new FakeLibrary(series(at(2016, 9, 22, 8), 50, 10 * MIN));
     const day = await onThisDay(lib, { now: NOW });
-    expect(day.prints).toHaveLength(4);
-    const times = day.prints.map((p) => p.takenAt).sort((a, b) => a - b);
-    for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(45 * MIN);
-    // A morning burst of three minutes is one moment, so it gives one print.
+    expect(day.reach).toBe("day");
+    expect(day.prints).toHaveLength(50);
+    expect(day.prints.map((p) => p.takenAt)).toEqual([...day.prints.map((p) => p.takenAt)].sort((a, b) => a - b));
+    // A morning burst of three minutes is one moment: with one more in each of two other years, three in all.
     const burst = new FakeLibrary([...series(at(2016, 9, 22, 8), 4, MIN), ...series(at(2018, 9, 22, 9), 1, 0), ...series(at(2020, 9, 22, 9), 1, 0)]);
-    expect((await onThisDay(burst, { now: NOW })).prints).toHaveLength(3);
+    const shown = await onThisDay(burst, { now: NOW });
+    expect(shown.reach).toBe("day");
+    expect(shown.moments).toBe(3);
+    expect(shown.prints).toHaveLength(6);
+    expect(opensOnThisDay(shown)).toBe(true);
+    // Two moments are not enough, however many frames: it reaches further.
+    const thin = await onThisDay(new FakeLibrary([...series(at(2016, 9, 22, 8), 6, 20_000), ...series(at(2018, 9, 22, 9), 1, 0)]), { now: NOW });
+    expect(thin.reach).toBe("season");
+    expect(thin.prints).toHaveLength(7);
   });
 
-  it("does not lose a heavy day's afternoon to its morning", async () => {
+  it("reads a heavy day to its end, a page at a time, and loses none of it", async () => {
     // A wedding: 500 frames, one every 100 seconds, from 08:00 to 21:51.
     const lib = new FakeLibrary(series(at(2017, 9, 22, 8), 500, 100_000));
     const day = await onThisDay(lib, { now: NOW });
+    expect(day.prints).toHaveLength(500);
+    expect(new Set(day.prints.map((p) => p.id)).size).toBe(500);
     const hours = day.prints.map((p) => new Date(p.takenAt).getHours());
-    expect(day.prints).toHaveLength(4);
     expect(hours.some((h) => h >= 14 && h < 18)).toBe(true);
     expect(hours.some((h) => h >= 20)).toBe(true);
     expect(lib.calls.page.every((r) => r.first <= 150)).toBe(true);
+    // That day in four pages of at most 150, each on from where the last stopped; one page for each other year.
+    expect(lib.calls.page.filter((r) => new Date(r.range.from).getFullYear() === 2017)).toHaveLength(4);
+    expect(lib.calls.page).toHaveLength(4 + (2025 - 2017));
+  });
+
+  it("keeps frames that share an instant across the edge of a page", async () => {
+    // 160 frames at one second, then 10 more: the page ends among the shared instant.
+    const t = at(2017, 9, 22, 12);
+    const lib = new FakeLibrary([...series(t, 160, 0), ...series(t + 1000, 10, 1000)]);
+    const all = await readAll(gated(lib), { from: at(2017, 9, 22, 0), to: at(2017, 9, 23, 0) });
+    // At least the first page of the pile, and every frame after it; nothing twice, and the read ends.
+    expect(new Set(all.map((p) => p.id)).size).toBe(all.length);
+    expect(all.filter((p) => p.takenAt > t)).toHaveLength(10);
+    expect(lib.calls.page.length).toBeLessThanOrEqual(4);
   });
 
   it("gives the 29th of February to the 28th in a common year", async () => {
@@ -570,17 +607,27 @@ describe("on this day", () => {
     const lib = new FakeLibrary([print(at(2027, 1, 28, 9)), print(at(2024, 1, 29, 9)), print(at(2025, 1, 28, 9)), print(at(2025, 2, 1, 9))]);
     const day = await onThisDay(lib, { now: leapDay });
     expect(day.reach).toBe("day");
-    expect(day.prints.map(yearOf)).toEqual([2024, 2025, 2027]);
-    expect(captionFor(day.prints[2].takenAt, leapDay, "on-this-day", day.reach, null).line).toBe("One year ago today");
+    expect(day.prints.map(yearOf)).toEqual([2027, 2025, 2024]);
+    expect(captionFor(day.prints[0].takenAt, leapDay, "on-this-day", day.reach, null).line).toBe("One year ago today");
+    // On the 28th of February in a common year, a leap year's 29th is not its day.
+    const common = await onThisDay(new FakeLibrary([print(at(2024, 1, 29, 9)), print(at(2024, 1, 28, 9))]), { now: at(2026, 1, 28, 12), maxReach: "day" });
+    expect(common.prints.map((p) => new Date(p.takenAt).getDate())).toEqual([28]);
   });
 
-  it("is never longer than forty", async () => {
+  it("has no cap: twenty years of five each is a hundred, newest year first", async () => {
     const prints: Print[] = [];
     for (let y = 2006; y <= 2025; y++) for (let h = 8; h <= 20; h += 3) prints.push(print(at(y, 9, 22, h)));
     const day = await onThisDay(new FakeLibrary(prints), { now: NOW });
-    expect(day.prints).toHaveLength(40);
-    // The first sweep has every year once, oldest first.
-    expect(day.prints.slice(0, 20).map(yearOf)).toEqual(Array.from({ length: 20 }, (_, i) => 2006 + i));
+    expect(day.prints).toHaveLength(100);
+    expect(day.years.map((y) => y.year)).toEqual(Array.from({ length: 20 }, (_, i) => 2025 - i));
+    expect(day.years.every((y) => y.count === 5)).toBe(true);
+    expect(day.years.reduce((n, y) => n + y.count, 0)).toBe(day.prints.length);
+    // Grouped: every year's five together, in the order taken.
+    for (let i = 0; i < 20; i++) {
+      const group = day.prints.slice(i * 5, i * 5 + 5);
+      expect(new Set(group.map(yearOf))).toEqual(new Set([2025 - i]));
+      expect(group.map((p) => new Date(p.takenAt).getHours())).toEqual([8, 11, 14, 17, 20]);
+    }
   });
 });
 

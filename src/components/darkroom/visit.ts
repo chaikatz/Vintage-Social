@@ -1,5 +1,6 @@
 import { stillInLibrary } from "@/darkroom/develop";
 import {
+  gated,
   inBackground,
   monthIndex,
   onThisDay,
@@ -10,9 +11,10 @@ import {
   type YearCount,
 } from "@/darkroom/discovery";
 import { developedRecently, localDay, seenWithin } from "@/darkroom/history";
+import { Occasions, readSpan, type OccasionsView } from "@/darkroom/occasions";
 import { keepChapter, recallChapter, type ChapterKey } from "@/darkroom/session";
 import { isSetAside, setAsidePrints } from "@/darkroom/setAside";
-import type { LibrarySource, Print } from "@/darkroom/types";
+import type { LibrarySource, Print, Span } from "@/darkroom/types";
 import { dayComplete } from "./chapter";
 import { appendNew, Dealer, type Reader } from "./dealer";
 
@@ -29,7 +31,11 @@ import { appendNew, Dealer, type Reader } from "./dealer";
  *   every print settled on, and by year, for Surprise's exclusions and
  *     for MORE FROM;
  *   the Surprise dealers of the visit, which learn the year index when
- *     it arrives.
+ *     it arrives;
+ *   lately and the occasions (`Occasions`), read as far as Contents has
+ *     asked and kept, with their photographs, for the session — for the
+ *     day they were read on, and let go when Photos says the library
+ *     changed.
  *
  * It makes the engine's readers with the room's history and shelf wired
  * in, and wraps them in dealers whose late batches find their chapter's
@@ -48,6 +54,8 @@ const YEARS_FRESH_MS = 10 * 60_000;
 const PRUNE_NEAR = 2;
 
 let yearCache: { at: number; years: YearCount[] } | null = null;
+/** Lately and the occasions, for the day they were read on: shared by every visit of the session. */
+let occasionCache: { day: string; source: LibrarySource; reader: Occasions } | null = null;
 
 /**
  * A batch that arrived with no room showing its chapter goes into the
@@ -68,6 +76,7 @@ export class Visit {
   private readonly monthsAsked = new Map<number, Promise<number[]>>();
   private yearsAsked: Promise<YearCount[]> | null = null;
   private dayAsked: Promise<DayResult> | null = null;
+  private occasionsAsked: Promise<Occasions> | null = null;
   private day: { day: string; result: DayResult } | null = null;
 
   constructor(readonly source: LibrarySource) {}
@@ -191,6 +200,54 @@ export class Visit {
       );
   }
 
+  /**
+   * The session's reader of lately and the occasions, made once a day.
+   * It reads in the gate's back line: the prints a chapter is dealing
+   * are never kept waiting behind it.
+   */
+  private occasionReader(): Promise<Occasions> {
+    const day = localDay();
+    const kept = occasionCache;
+    if (kept && kept.day === day && kept.source === this.source) return Promise.resolve(kept.reader);
+    if (!this.occasionsAsked) {
+      const asked = this.oldest().then((oldest) => {
+        const reader = new Occasions(inBackground(this.source), Date.now(), oldest);
+        if (this.occasionsAsked === asked) occasionCache = { day, source: this.source, reader };
+        return reader;
+      });
+      this.occasionsAsked = asked;
+      const done = () => {
+        if (this.occasionsAsked === asked) this.occasionsAsked = null;
+      };
+      asked.then(done, done);
+    }
+    return this.occasionsAsked;
+  }
+
+  /** What has been found of lately and the occasions today, without reading anything. */
+  knownOccasions(): OccasionsView | null {
+    const kept = occasionCache;
+    return kept && kept.day === localDay() && kept.source === this.source && kept.reader.ready ? kept.reader.view : null;
+  }
+
+  /** Lately and the first occasions, read once a session; `further` reads on to earlier ones. */
+  async occasions(further = false): Promise<OccasionsView> {
+    const reader = await this.occasionReader();
+    return further ? reader.more() : reader.first();
+  }
+
+  /**
+   * A stretch's photographs, for its chapter: those the session's reader
+   * found it with, or, for one it did not find (the library changed
+   * since), read again.
+   */
+  async spanPrints(span: Span): Promise<Print[]> {
+    const kept = occasionCache;
+    const known = kept && kept.source === this.source ? kept.reader.printsOf(span) : null;
+    // The member is waiting on it: asked in the front line.
+    return known ?? readSpan(gated(this.source), { from: span.from, to: span.to });
+  }
+
   /** A print the member settled on. */
   record(print: Print): void {
     this.shown.add(print.id);
@@ -261,6 +318,9 @@ export class Visit {
   /** Photos said the library changed: what was counted is counted again when next asked. */
   libraryChanged(whole: boolean): void {
     yearCache = null;
+    // Lately and the occasions are read again when next asked: photographs come and go from them.
+    occasionCache = null;
+    this.occasionsAsked = null;
     this.oldestAsked = null;
     this.monthsAsked.clear();
     // A count or a day still being read answers its own callers, but is

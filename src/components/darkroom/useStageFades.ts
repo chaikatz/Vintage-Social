@@ -64,11 +64,13 @@ export function useStageFades(loading: Loading | null, now: number, reduceMotion
   const jump = loading?.jump ?? false;
   const year = loading?.year ?? null;
   const month = loading?.month ?? 0;
+  const span = loading?.span ?? null;
+  const spanAt = span ? `${span.from}:${span.to}` : null;
 
   // Loading begins, or learns which chapter it is.
   useEffect(() => {
     if (since == null) return;
-    const words = mode ? titleCardWords(mode, year, month, now) : null;
+    const words = mode ? titleCardWords(mode, year, month, now, span) : null;
     if (shownAt.current != null) {
       // A card is already up: it carries on, with the new chapter's words.
       fading.current?.stop();
@@ -90,7 +92,7 @@ export function useStageFades(loading: Loading | null, now: number, reduceMotion
     return clearTimers;
     // The loading's own identity: when it began, and what it is.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [since, mode, year, month]);
+  }, [since, mode, year, month, spanAt]);
 
   // Loading ends: back to the stage, through the card if one is up.
   useEffect(() => {
