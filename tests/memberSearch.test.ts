@@ -8,6 +8,7 @@ import {
   SEARCH_LIMIT,
   SEARCH_MIN_LENGTH,
   USERNAME_MAX,
+  lastEmptyAnswer,
   likeEscape,
   matchTier,
   nobodyFound,
@@ -138,6 +139,36 @@ describe("what the list draws while the member types", () => {
     expect(nobodyFound({ ...base, rows: [m("1", "zz_top")] })).toBe(false);
     expect(nobodyFound({ ...base, typed: "", answered: "" })).toBe(false);
   });
+
+  it("keeps saying nobody as the member types on past two letters that found nobody, while the next answer comes", () => {
+    // "zq" found nobody; "x" is typed. During the pause before it is asked, the answer in hand is still "zq"'s.
+    const waiting = { typed: "zqx", answered: "zq", rows: [], held: false, fetched: true, emptyFor: "zq" };
+    expect(nobodyFound(waiting)).toBe(true);
+    // Asked: "zq"'s answer is held while "zqx"'s comes.
+    expect(nobodyFound({ ...waiting, answered: "zqx", held: true, fetched: false })).toBe(true);
+    // Without that, the empty words blinked off between the two.
+    expect(nobodyFound({ ...waiting, emptyFor: null })).toBe(false);
+    // One letter is asked of usernames only: a name may still hold the next two.
+    expect(nobodyFound({ typed: "zq", answered: "z", rows: [], held: false, fetched: true, emptyFor: "z" })).toBe(false);
+    // Taken back a letter: fewer letters may find someone.
+    expect(nobodyFound({ typed: "z", answered: "zq", rows: [], held: false, fetched: true, emptyFor: "zq" })).toBe(false);
+    // Other letters altogether.
+    expect(nobodyFound({ typed: "ma", answered: "zq", rows: [], held: true, fetched: false, emptyFor: "zq" })).toBe(false);
+    // The answer to exactly what is typed, once it comes, is what is said.
+    expect(nobodyFound({ typed: "zqx", answered: "zqx", rows: [m("1", "zqx")], held: false, fetched: true, emptyFor: "zq" })).toBe(false);
+  });
+
+  it("remembers the last answer that found nobody, and forgets it once one finds someone or nothing is typed", () => {
+    const came = (needle: string, rows: unknown[] | undefined, current = true) => ({ needle, rows, current });
+    expect(lastEmptyAnswer(null, came("zq", []))).toBe("zq");
+    expect(lastEmptyAnswer("zq", came("zqx", []))).toBe("zqx");
+    // An earlier answer held, a failure, or nothing yet: what was known stands.
+    expect(lastEmptyAnswer("zq", came("zqx", [], false))).toBe("zq");
+    expect(lastEmptyAnswer("zq", came("zqx", [m("1", "margot")], false))).toBe("zq");
+    expect(lastEmptyAnswer("zq", came("zqx", undefined))).toBe("zq");
+    expect(lastEmptyAnswer("zq", came("ma", [m("1", "margot")]))).toBeNull();
+    expect(lastEmptyAnswer("zq", came("", undefined, false))).toBeNull();
+  });
 });
 
 describe("an answer that comes late", () => {
@@ -177,6 +208,38 @@ describe("an answer that comes late", () => {
     client.clear();
   });
 
+  it("leaves a refetch that failed on the answer it had, and a first answer that failed with none", async () => {
+    // What the Search tab's `failed` tells apart: only the second is a search that came to nothing.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let fail = false;
+    const options = (needle: string) => ({
+      queryKey: searchKey(needle),
+      queryFn: async () => {
+        if (fail) throw new Error("offline");
+        return [m("1", "margot")];
+      },
+      placeholderData: keepPreviousData,
+    });
+    const observer = new QueryObserver(client, options("ma"));
+    const unsubscribe = observer.subscribe(() => {});
+    await tick();
+    fail = true;
+    await observer.refetch();
+    const again = observer.getCurrentResult();
+    expect(again.isError).toBe(true);
+    expect(again.data?.map((r) => r.id)).toEqual(["1"]);
+    expect(again.isPlaceholderData).toBe(false);
+    // New letters whose answer fails: the last answer is not held over the failure.
+    observer.setOptions(options("mar"));
+    await tick();
+    await tick();
+    const next = observer.getCurrentResult();
+    expect(next.isError).toBe(true);
+    expect(next.data).toBeUndefined();
+    unsubscribe();
+    client.clear();
+  });
+
   it("is what the Search tab's query is keyed and held by", () => {
     const tab = readFileSync(path.resolve(import.meta.dirname, "..", "app/(tabs)/search.tsx"), "utf8");
     expect(tab).toMatch(/const typed = searchNeedle\(q\);/);
@@ -186,6 +249,11 @@ describe("an answer that comes late", () => {
     expect(tab).toMatch(/enabled: settled\.length >= SEARCH_MIN_LENGTH,\s*placeholderData: keepPreviousData,/);
     expect(tab).toMatch(/shownResults\(\{ typed, answered: settled, rows: results\.data, held: results\.isPlaceholderData \}\)/);
     expect(tab).toMatch(/data=\{failed \? NO_ROWS : ranked\}/);
+    // "Nobody" is held from the last answer that found nobody, kept from one render to the next.
+    expect(tab).toMatch(
+      /const nextEmptyFor = lastEmptyAnswer\(emptyFor, \{\s*needle: settled,\s*rows: results\.data,\s*current: results\.isSuccess && !results\.isPlaceholderData,\s*\}\);\s*if \(nextEmptyFor !== emptyFor\) setEmptyFor\(nextEmptyFor\);/,
+    );
+    expect(tab).toMatch(/emptyFor: nextEmptyFor,\s*\}\);/);
     // No minimum of its own: the old second-letter one is gone.
     expect(tab).not.toMatch(/length >= 2|settledQ/);
     // The rows are drawn once each, not again on every keystroke.

@@ -176,8 +176,42 @@ export function shownResults<T extends Searchable>(input: {
 
 const EMPTY: readonly never[] = [];
 
-/** Whether "Nobody by that name" is true: the answer for exactly what is typed has come, and it is empty. */
-export function nobodyFound(input: { typed: string; answered: string; rows: readonly unknown[] | undefined; held: boolean; fetched: boolean }): boolean {
-  const { typed, answered, rows, held, fetched } = input;
-  return fetched && !held && answered === typed && typed.length >= SEARCH_MIN_LENGTH && (rows?.length ?? 0) === 0;
+/**
+ * Whether "Nobody by that name" is true: the answer for exactly what is
+ * typed has come, and it is empty; or, until it comes, an answer to the
+ * first of these letters found nobody (`emptyFor`, from lastEmptyAnswer)
+ * and they were two or more. From two letters every way of matching
+ * (a username's start, a word of a name, anything that contains them) is
+ * asked, and whatever matches more letters contains these, so it would
+ * have been found: "Nobody" stays up as the member types on, rather than
+ * blinking off while each next answer comes.
+ */
+export function nobodyFound(input: {
+  typed: string;
+  answered: string;
+  rows: readonly unknown[] | undefined;
+  held: boolean;
+  fetched: boolean;
+  emptyFor?: string | null;
+}): boolean {
+  const { typed, answered, rows, held, fetched, emptyFor } = input;
+  if (typed.length < SEARCH_MIN_LENGTH) return false;
+  if (fetched && !held && answered === typed) return (rows?.length ?? 0) === 0;
+  return emptyFor != null && emptyFor.length >= NAMES_FROM && typed.startsWith(emptyFor);
+}
+
+/**
+ * The letters of the last answer that came, when it found nobody: none
+ * once an answer finds someone, or once nothing is typed. Search keeps it
+ * from one render to the next for nobodyFound. `current`: the rows in hand
+ * are the answer to `needle`, not an earlier one held while it comes, and
+ * not a failure.
+ */
+export function lastEmptyAnswer(
+  prev: string | null,
+  answer: { needle: string; rows: readonly unknown[] | undefined; current: boolean },
+): string | null {
+  if (answer.needle.length < SEARCH_MIN_LENGTH) return null;
+  if (!answer.current || answer.rows === undefined) return prev;
+  return answer.rows.length === 0 ? answer.needle : null;
 }

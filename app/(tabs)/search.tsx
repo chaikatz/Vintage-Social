@@ -6,6 +6,7 @@ import { useDebounced } from "@/hooks/useDebounced";
 import { rankSearch } from "@/utils/searchRank";
 import {
   SEARCH_MIN_LENGTH,
+  lastEmptyAnswer,
   nobodyFound,
   searchDelay,
   searchKey,
@@ -154,14 +155,27 @@ export default function Search() {
       ),
     [shown, recent, circleQ.data, typed],
   );
-  // The answer to what is typed failed: no rows held from an earlier one stand in for it.
-  const failed = results.isError && settled === typed;
+  // The answer to what is typed failed: no rows held from an earlier one
+  // stand in for it. A refetch that failed keeps the answer it had, which
+  // is still the answer to these letters, and stays up.
+  const failed = results.isError && settled === typed && results.data === undefined;
+  // The last answer that found nobody, kept while the next letters' comes
+  // (set during render, as React has a state that follows another: it
+  // settles in the same pass and draws nothing in between).
+  const [emptyFor, setEmptyFor] = useState<string | null>(null);
+  const nextEmptyFor = lastEmptyAnswer(emptyFor, {
+    needle: settled,
+    rows: results.data,
+    current: results.isSuccess && !results.isPlaceholderData,
+  });
+  if (nextEmptyFor !== emptyFor) setEmptyFor(nextEmptyFor);
   const nobody = nobodyFound({
     typed,
     answered: settled,
     rows: results.data,
     held: results.isPlaceholderData,
     fetched: results.isFetched,
+    emptyFor: nextEmptyFor,
   });
 
   // Kept the same from one render to the next, so a row drawn already is not drawn again as each letter is typed.
