@@ -426,22 +426,40 @@ hung beneath. Back is the left edge or the chevron;
 anywhere else a swipe turns the page. The way in is the first of the Post
 tab's two bars, ENTER THE MEMORY ROOM, printed as the invitation card is
 (brown and gold on the light print; on the dark one a grey card a step up
-from the black, lettered in white): SET ASIDE · 3 stands under it when
+from the black, lettered in white): TODAY IN OTHER YEARS stands under it,
+one tap into the room's On this day, and SET ASIDE · 3 beside it when
 anything is set aside, and "You left off in August 2018." replaces its
 line when the member was in the room
-within twelve hours. The "In your library" rows of On this day
-(`app/memories.tsx`) open it too. It exists on iOS and in the web demo only.
+within twelve hours. The "In your library" part of On this day
+(`app/memories.tsx`) opens it too, at every photograph of the day or at
+one year's. It exists on iOS and in the web demo only.
 
-There are four chapters, chosen in Contents (the chapter name, or the
+There are four ways in, chosen in Contents (the chapter name, or the
 CONTENTS tab in the running head, which says what is inside until it is
-first opened). *On this day* is this date in earlier years, widening
-to the week and then the season when the day is thin: at most four moments
-a year, one from each year oldest first and then the rest, forty at most.
+first opened), and the stretches of the library Contents lists besides.
+*On this day* is this date in earlier years: every photograph of the day,
+year by year, newest year first, each year's in the order taken, with
+each year and its count listed under the line in Contents. When the day
+holds fewer than three moments it widens to the week and then the season
+for a few more (at most four moments a year from around it), keeping every
+photograph of the day itself. Nothing caps it.
 *Surprise me* deals rolls of 24 from anywhere older than 90 days, weighted
 towards older and fuller years, and passes over what was looked at in the
 last three weeks, posted in the last year, or set aside. *By year* is an
 edit of the year, about 2.5 × √N photographs spread across its months,
-from any month to December. *Set aside* is the shelf, up to 500. Entry
+from any month to December. *Set aside* is the shelf, up to 500. Under
+LATELY, *This week*, *Last weekend* and *This month*; under OCCASIONS,
+newest first with a small cover and a count, days on end with many
+photographs (busy days of five or more, no more than one quiet day apart,
+twelve photographs or more, a fortnight at most), named plainly by their
+dates. Both are found on the phone from the library's dates, read newest
+first a bounded page at a time as Contents asks (EARLIER OCCASIONS reads
+further back), kept for the visit, and taken up by a later visit only
+within ten minutes and while the recent stretch still counts the same, so
+photographs taken with the room closed are in *This week* the next time
+it opens; a stretch is listed once, under LATELY when it is one of those.
+They open every photograph of the stretch in the order taken
+(`src/darkroom/occasions.ts`). Entry
 without a chapter resumes a place under twelve hours old, otherwise opens
 On this day when the day has three moments and was not finished today,
 otherwise Surprise me. Each chapter ends on an end page that hands on to

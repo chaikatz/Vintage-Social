@@ -307,10 +307,10 @@ describe("one tap, one editor", () => {
     expect(tab).toMatch(/busy=\{busy === "camera"\}/);
     expect(tab).toMatch(/busy=\{busy === "video"\}/);
     expect(tab).toMatch(/const held = busy !== null;/);
-    // The two bars, the camera's and the clip's box, the shelf's quiet way, and On this day.
+    // The two bars, the camera's and the clip's box, each quiet way's own Pressable, and On this day.
     expect(tab.match(/disabled=\{held\}/g)).toHaveLength(5);
-    // Handed to the camera, the clip, the shelf, the room's part of the page and On this day.
-    expect(tab.match(/\bheld=\{held\}/g)).toHaveLength(5);
+    // Handed to the camera, the clip, the room's Today in other years, the shelf, the room's part of the page and On this day.
+    expect(tab.match(/\bheld=\{held\}/g)).toHaveLength(6);
     expect(tab).toMatch(/<MemoryRoomDoor held=\{held\} \/>/);
     expect(tab).toMatch(/<OnThisDay held=\{held\}/);
     // The old busy ring, shown on the library whatever was tapped, is gone.
@@ -332,9 +332,18 @@ describe("the Memory Room's way in", () => {
     expect(room).toMatch(/\{returnLine \?\? "Rediscover something worth sharing\."\}/);
   });
 
+  it("puts TODAY IN OTHER YEARS under its bar, one tap into the room's On this day", () => {
+    const ways = room.slice(room.indexOf("<View style={[styles.ways, styles.shelf]}>"));
+    expect(ways).toMatch(/^<View style=\{\[styles\.ways, styles\.shelf\]\}>\s*<QuietWay\s+label="Today in other years"/);
+    expect(ways).toMatch(/onPress=\{\(\) => router\.push\(\{ pathname: "\/darkroom", params: \{ mode: "on-this-day" \} \}\)\}/);
+    // Named apart from the foot of the page's On this day, which is the member's posts, and said as the room's.
+    expect(ways).toMatch(/spoken="Today in other years, in the Memory Room"/);
+    expect(ways).not.toMatch(/label="On this day"/);
+  });
+
   it("puts SET ASIDE under its bar, counted, and only when something is set aside", () => {
     const shelf = room.slice(room.indexOf("{n > 0 ? ("));
-    expect(shelf).toMatch(/^\{n > 0 \? \(\s*<View style=\{\[styles\.ways, styles\.shelf\]\}>\s*<QuietWay\s+label=\{`Set aside · \$\{countLabel\(n\)\}`\}/);
+    expect(shelf).toMatch(/^\{n > 0 \? \(\s*<QuietWay\s+label=\{`Set aside · \$\{countLabel\(n\)\}`\}/);
     expect(shelf).toMatch(/spoken=\{`Set aside, \$\{n\} \$\{n === 1 \? "photograph" : "photographs"\}`\}/);
     expect(shelf).toMatch(/onPress=\{\(\) => router\.push\(\{ pathname: "\/darkroom", params: \{ mode: "set-aside" \} \}\)\}/);
     expect(tab).toMatch(/import \{ countLabel \} from "@\/darkroom\/labels"/);

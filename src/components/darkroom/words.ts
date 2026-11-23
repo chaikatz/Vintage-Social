@@ -1,6 +1,6 @@
 import type { YearCount } from "@/darkroom/discovery";
 import { captionFor, countLabel, fullDate, monthDay, monthName, monthYearWords, shortDay, yearsInWords } from "@/darkroom/labels";
-import type { DarkroomMode, DayReach } from "@/darkroom/types";
+import type { DarkroomMode, DayReach, Span } from "@/darkroom/types";
 
 /**
  * Every word the room says, in one place: chapter names, title cards,
@@ -20,31 +20,59 @@ export const SET_ASIDE_HINT_ON = "Double-tap to put it back.";
 export const SHELF_FULL = "The shelf is full. Put one back first.";
 export const STAGE_LABEL = "Photograph";
 export const STAGE_HINT = "Swipe up or down for the next or previous photograph.";
-export const CONTENTS_HINT = "Choose a way in, a year or a month.";
+export const CONTENTS_HINT = "Choose a way in, an occasion, a year or a month.";
 export const CHAPTER_HINT = "Opens the contents.";
 /** Under CONTENTS, until it has first been opened on this phone: what is in it. */
 export const CONTENTS_INVITE = "Every way in is here: this day, a roll, any year.";
 
 /** The Contents sheet's headings, one over each part, as an index sets them. */
 export const CONTENTS_WAYS_IN = "Ways in";
+export const CONTENTS_LATELY = "Lately";
+export const CONTENTS_OCCASIONS = "Occasions";
+export const CONTENTS_NEWEST = "Newest first";
 export const CONTENTS_BY_YEAR = "By year";
 export const CONTENTS_ORDER = "Oldest first";
+/** At the foot of the occasions: read on, further back. */
+export const EARLIER_OCCASIONS = "Earlier occasions";
+/** Where no occasion has been found in what was read. */
+export const NO_OCCASIONS = "No occasions found yet: days with many photographs show here.";
+
+/**
+ * Over the years under On this day: "October 22 in other years"; or, on a
+ * thin day whose chapter reaches out to the week or the time of year (and
+ * so whose counts do too), "Around October 22 in other years".
+ */
+export function yearsOfDay(now: number, state: DayState = "day"): string {
+  return state === "week" || state === "season" ? `Around ${monthDay(now)} in other years` : `${monthDay(now)} in other years`;
+}
+
+/** A year under On this day, for VoiceOver: "2019, On this day, 12 photographs". */
+export function dayYearLabel(year: number, count: number): string {
+  return `${year}, On this day, ${photographs(count)}`;
+}
+
+/** An occasion or a recent stretch, for VoiceOver: "June 12–15, 2024, 86 photographs". */
+export function spanLabel(span: Pick<Span, "title" | "count">): string {
+  return `${span.title}, ${photographs(span.count)}`;
+}
 
 /** Over the open year's month strip: "The months of 2016". */
 export function monthsOf(year: number): string {
   return `The months of ${year}`;
 }
 
-/** The running head's name for a chapter: "On this day" · "Surprise me" · "2016" · "Set aside". */
-export function chapterName(mode: DarkroomMode, year: number | null): string {
+/** The running head's name for a chapter: "On this day" · "Surprise me" · "2016" · "Set aside" · "This week" · "June 12–15, 2024". */
+export function chapterName(mode: DarkroomMode, year: number | null, span?: Span | null): string {
   if (mode === "on-this-day") return "On this day";
   if (mode === "surprise") return "Surprise me";
   if (mode === "set-aside") return "Set aside";
+  if (mode === "span") return span?.head ?? CONTENTS_LATELY;
   return year != null ? String(year) : "By year";
 }
 
 /** Said when the member changes chapter. */
-export function chapterAnnouncement(mode: DarkroomMode, year: number | null, now: number): string {
+export function chapterAnnouncement(mode: DarkroomMode, year: number | null, now: number, span?: Span | null): string {
+  if (mode === "span") return span?.title ?? CONTENTS_LATELY;
   return mode === "on-this-day" ? `On this day, ${monthDay(now)}` : chapterName(mode, year);
 }
 
@@ -54,7 +82,11 @@ export function titleCardWords(
   year: number | null,
   month: number,
   now: number,
+  span?: Span | null,
 ): { eyebrow: string; title: string; year: boolean } | null {
+  if (mode === "span") {
+    return span ? { eyebrow: span.kind === "occasion" ? CONTENTS_OCCASIONS : CONTENTS_LATELY, title: span.title, year: false } : null;
+  }
   if (mode === "on-this-day") return { eyebrow: "On this day", title: monthDay(now), year: false };
   if (mode === "surprise") return { eyebrow: "Surprise me", title: "Any year", year: false };
   if (mode === "year" && year != null) {
@@ -349,6 +381,7 @@ export type PageAct =
   | "library"
   | "surprise"
   | "chooseYear"
+  | "contents"
   | "retry"
   | "readOn"
   | "lookThroughYear"
@@ -385,6 +418,7 @@ const SURPRISE: PageWord = { label: "Surprise me", act: "surprise" };
 const CHOOSE_YEAR: PageWord = { label: "Choose a year", act: "chooseYear" };
 const SHARE_MORE: PageWord = { label: "Share more photographs", act: "shareMore" };
 const ALLOW_ALL: PageWord = { label: "Allow full access in Settings", act: "openSettings" };
+const TO_CONTENTS: PageWord = { label: "Back to the contents", act: "contents" };
 
 export function firstVisitPage(access: "undetermined" | "granted"): PageWords {
   return {
@@ -435,9 +469,11 @@ export type EmptyWhy =
   /** The library would not answer. */
   | "failed"
   /** Surprise has nothing left, even with every rule eased. */
-  | "exhausted";
+  | "exhausted"
+  /** A stretch (this week, an occasion) holds nothing now: its photographs went since it was found. */
+  | "span";
 
-export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean }): PageWords {
+export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean; span?: Pick<Span, "kind"> | null }): PageWords {
   const thisYear = new Date(ctx.now).getFullYear();
   switch (why) {
     case "library":
@@ -495,6 +531,14 @@ export function emptyPage(why: EmptyWhy, ctx: { now: number; limited: boolean })
       };
     case "exhausted":
       return exhaustedPage(ctx.limited);
+    case "span":
+      return {
+        // Under the heading it was chosen from: this week and last weekend are LATELY.
+        eyebrow: ctx.span && ctx.span.kind !== "occasion" ? CONTENTS_LATELY : CONTENTS_OCCASIONS,
+        title: "Nothing here now.",
+        body: "Its photographs are no longer in your library.",
+        words: [TO_CONTENTS, SURPRISE, LIBRARY],
+      };
   }
 }
 
@@ -514,6 +558,8 @@ export type Ending =
   | { kind: "roll" }
   | { kind: "exhausted" }
   | { kind: "shelf" }
+  /** A stretch (this week, an occasion) shown to its end. */
+  | { kind: "span"; span: Span | null }
   /** Reading on failed: the trailing page offers to try again. */
   | { kind: "readFailed" };
 
@@ -566,6 +612,12 @@ export function endPage(ending: Ending, ctx: { now: number; limited: boolean; ye
       return exhaustedPage(ctx.limited);
     case "shelf":
       return { eyebrow: "Set aside", title: "That is all you set aside.", words: [SURPRISE, LIBRARY] };
+    case "span":
+      return {
+        eyebrow: ending.span?.kind === "occasion" ? CONTENTS_OCCASIONS : CONTENTS_LATELY,
+        title: spanEnd(ending.span),
+        words: [TO_CONTENTS, SURPRISE, LIBRARY],
+      };
     case "readFailed":
       return {
         eyebrow: "The Memory Room",
@@ -608,6 +660,12 @@ export function dayFolio(state: DayState, now: number): string {
   if (state === "season") return "Around this time";
   if (state === "none") return "Nothing today";
   return shortDay(now);
+}
+
+/** "That is everything from this week." · "That is everything from June 12–15, 2024." */
+export function spanEnd(span: Pick<Span, "kind" | "title"> | null): string {
+  if (!span) return "That is everything from it.";
+  return `That is everything from ${span.kind === "occasion" ? span.title : span.title.toLowerCase()}.`;
 }
 
 /** "Set aside, 7 photographs" — one photograph is one. */

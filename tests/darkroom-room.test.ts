@@ -86,6 +86,7 @@ import {
   choiceOf,
   dayComplete,
   dayStateOf,
+  dayYearsOf,
   DEFAULT_DAY_MINIMUM,
   dropOnSettle,
   endingOf,
@@ -108,7 +109,8 @@ import {
 } from "@/components/darkroom/room";
 import { Visit } from "@/components/darkroom/visit";
 import { dark, light } from "@/theme";
-import type { LibrarySource, Print } from "@/darkroom/types";
+import type { DayResult } from "@/darkroom/discovery";
+import type { DayReach, LibrarySource, Print } from "@/darkroom/types";
 
 const NOW = new Date(2026, 9, 22, 12, 0).getTime(); // 22 October 2026, noon
 
@@ -646,7 +648,7 @@ describe("the room's other words", () => {
   it("says under CONTENTS what is in it, and heads each part of the sheet as an index does", () => {
     expect(CONTENTS_INVITE).toBe("Every way in is here: this day, a roll, any year.");
     // VoiceOver hears the same from CONTENTS itself.
-    expect(CONTENTS_HINT).toBe("Choose a way in, a year or a month.");
+    expect(CONTENTS_HINT).toBe("Choose a way in, an occasion, a year or a month.");
     expect([CONTENTS_WAYS_IN, CONTENTS_BY_YEAR, CONTENTS_ORDER]).toEqual(["Ways in", "By year", "Oldest first"]);
     expect(monthsOf(2016)).toBe("The months of 2016");
     // The year's heading is the chapter's own name for a year, as its title card says it.
@@ -675,23 +677,40 @@ describe("the room's other words", () => {
 
 describe("chapters", () => {
   const moments = (n: number) => Array.from({ length: n }, (_, i) => print(`d${i}`, day(2010 + i, 9, 22)));
+  /** A day's answer: its prints, how many moments those are, and each year's count, newest first. */
+  const dayOf = (reach: DayReach, prints: Print[], counted = prints.length): DayResult => {
+    const years = new Map<number, number>();
+    for (const p of prints) years.set(new Date(p.takenAt).getFullYear(), (years.get(new Date(p.takenAt).getFullYear()) ?? 0) + 1);
+    return { reach, prints, moments: counted, years: [...years].map(([year, count]) => ({ year, count })).sort((a, b) => b.year - a.year) };
+  };
 
-  it("opens On this day when the day itself holds three, and it was not finished today", () => {
-    expect(opensOnThisDay({ reach: "day", prints: moments(DEFAULT_DAY_MINIMUM) }, null, "2026-10-22")).toBe(true);
-    expect(opensOnThisDay({ reach: "day", prints: moments(2) }, null, "2026-10-22")).toBe(false);
-    expect(opensOnThisDay({ reach: "week", prints: moments(6) }, null, "2026-10-22")).toBe(false);
-    expect(opensOnThisDay({ reach: "day", prints: moments(6) }, "2026-10-22", "2026-10-22")).toBe(false);
-    expect(opensOnThisDay({ reach: "day", prints: moments(6) }, "2026-10-21", "2026-10-22")).toBe(true);
+  it("opens On this day when the day itself holds three moments, and it was not finished today", () => {
+    expect(opensOnThisDay(dayOf("day", moments(DEFAULT_DAY_MINIMUM)), null, "2026-10-22")).toBe(true);
+    expect(opensOnThisDay(dayOf("day", moments(2)), null, "2026-10-22")).toBe(false);
+    expect(opensOnThisDay(dayOf("week", moments(6)), null, "2026-10-22")).toBe(false);
+    expect(opensOnThisDay(dayOf("day", moments(6)), "2026-10-22", "2026-10-22")).toBe(false);
+    expect(opensOnThisDay(dayOf("day", moments(6)), "2026-10-21", "2026-10-22")).toBe(true);
     expect(opensOnThisDay(null, null, "2026-10-22")).toBe(false);
+    // Moments decide, not frames: twelve frames of two bursts are not enough to open on.
+    expect(opensOnThisDay(dayOf("day", moments(12), 2), null, "2026-10-22")).toBe(false);
   });
 
   it("knows when the day alone was asked, and what Contents may say", () => {
-    expect(dayComplete({ reach: "day", prints: moments(2) })).toBe(false);
-    expect(dayComplete({ reach: "week", prints: moments(2) })).toBe(true);
-    expect(dayStateOf({ reach: "day", prints: moments(1) })).toBe("unknown");
-    expect(dayStateOf({ reach: "season", prints: [] })).toBe("none");
-    expect(dayStateOf({ reach: "week", prints: moments(4) })).toBe("week");
+    expect(dayComplete(dayOf("day", moments(2)))).toBe(false);
+    expect(dayComplete(dayOf("week", moments(2)))).toBe(true);
+    expect(dayStateOf(dayOf("day", moments(1)))).toBe("unknown");
+    expect(dayStateOf(dayOf("season", []))).toBe("none");
+    expect(dayStateOf(dayOf("week", moments(4)))).toBe("week");
     expect(dayStateOf(null)).toBe("unknown");
+    // Its years for Contents, newest first, only from a complete answer.
+    expect(dayYearsOf(dayOf("day", moments(3)))).toEqual([
+      { year: 2012, count: 1 },
+      { year: 2011, count: 1 },
+      { year: 2010, count: 1 },
+    ]);
+    expect(dayYearsOf(dayOf("day", moments(1)))).toBeNull();
+    expect(dayYearsOf(dayOf("season", []))).toBeNull();
+    expect(dayYearsOf(null)).toBeNull();
   });
 
   it("opens at a given print, or at a year's first", () => {

@@ -1,6 +1,7 @@
 import type { DayResult } from "@/darkroom/discovery";
 import type { ChapterKey, SavedPlace } from "@/darkroom/session";
-import type { DarkroomMode, DayReach, Print } from "@/darkroom/types";
+import { spanKey } from "@/darkroom/occasions";
+import type { DarkroomMode, DayReach, Print, Span } from "@/darkroom/types";
 import type { Dealer } from "./dealer";
 import type { DayState, EmptyWhy, Ending } from "./words";
 
@@ -33,6 +34,8 @@ export interface Chapter {
   year: number | null;
   /** The month a year chapter opened at; 0 otherwise. */
   month: number;
+  /** The stretch a `span` chapter is: this week, last weekend, this month, or an occasion. */
+  span?: Span | null;
   prints: Print[];
   /** The settled page; `prints.length` is the end page. */
   index: number;
@@ -52,6 +55,7 @@ export interface Where {
   mode: DarkroomMode;
   year: number | null;
   month: number;
+  span?: Span | null;
 }
 
 /** A chapter being dealt. `mode` is null while the first way in is still being decided. */
@@ -59,6 +63,7 @@ export interface Loading {
   mode: DarkroomMode | null;
   year: number | null;
   month: number;
+  span?: Span | null;
   since: number;
   /** A jump inside a chapter, which fades the stage, rather than a cut to another. */
   jump: boolean;
@@ -69,6 +74,7 @@ export interface OpenSpec {
   mode: DarkroomMode;
   year: number | null;
   month: number;
+  span?: Span | null;
   startId?: string | null;
   /** On this day: open at that year's first print. */
   startYear?: number | null;
@@ -85,7 +91,7 @@ export interface OpenSpec {
 
 /** The default rule's choice (§4.2): the day itself holds three moments, and was not already seen to its end today. */
 export function opensOnThisDay(day: DayResult | null, finished: string | null, today: string): boolean {
-  return day != null && finished !== today && day.reach === "day" && day.prints.length >= DEFAULT_DAY_MINIMUM;
+  return day != null && finished !== today && day.reach === "day" && day.moments >= DEFAULT_DAY_MINIMUM;
 }
 
 /**
@@ -95,7 +101,7 @@ export function opensOnThisDay(day: DayResult | null, finished: string | null, t
  * about the weeks around it.
  */
 export function dayComplete(day: DayResult): boolean {
-  return !(day.reach === "day" && day.prints.length < DEFAULT_DAY_MINIMUM);
+  return !(day.reach === "day" && day.moments < DEFAULT_DAY_MINIMUM);
 }
 
 /** What Contents can say of On this day. */
@@ -103,6 +109,21 @@ export function dayStateOf(day: DayResult | null): DayState {
   if (!day || !dayComplete(day)) return "unknown";
   if (day.prints.length === 0) return "none";
   return day.reach;
+}
+
+/** The years under On this day in Contents, newest first: only from a complete answer. */
+export function dayYearsOf(day: DayResult | null): DayResult["years"] | null {
+  return day && dayComplete(day) && day.years.length > 0 ? day.years : null;
+}
+
+/**
+ * A stretch's chapter kept from earlier is taken up again only while it
+ * holds as many photographs as the stretch now does: this week, kept from
+ * the morning, is read again in the evening with what was taken since.
+ * Any other chapter is taken up as it was left.
+ */
+export function keptStillHolds(kept: { prints: readonly unknown[] }, span: Pick<Span, "count"> | null): boolean {
+  return span == null || kept.prints.length === span.count;
 }
 
 /** Where to open in a chapter: at a given print, at a year's first print, or at the start. */
@@ -178,15 +199,32 @@ export function placeIndex(prints: readonly Print[], place: Pick<SavedPlace, "de
  * month the chapter itself opened at is turned back to among the prints
  * already dealt, so it shows the same prints from that month's first;
  * any other month has its own kept position.
+ *
+ * A year under On this day opens the day at that year's first print: a
+ * jump inside the day when it is open, and nothing when that year is the
+ * one in view. A stretch — this week, an occasion — is its own chapter,
+ * and choosing the one open leaves it as it is.
  */
 export function choiceOf(
   room: { showing: boolean; where: Where | null; chapter: Pick<Chapter, "prints" | "index"> | null },
   mode: DarkroomMode,
   year: number | null,
   month: number | null,
+  span: Span | null = null,
 ): OpenSpec | null {
   const w = room.where;
   const here = room.showing && w != null && w.mode === mode;
+  if (mode === "span") {
+    if (!span) return null;
+    if (here && w.span != null && spanKey(w.span) === spanKey(span)) return null;
+    return { mode, year: null, month: 0, span, jump: false };
+  }
+  if (mode === "on-this-day" && year != null) {
+    const c = room.chapter;
+    const inView = here ? c?.prints[c.index] : undefined;
+    if (inView && new Date(inView.takenAt).getFullYear() === year) return null;
+    return { mode, year: null, month: 0, startYear: year, jump: here };
+  }
   if (here && mode !== "year") return null;
   if (here && w.year === year) {
     if (month == null) return null;
@@ -208,6 +246,7 @@ export function endingOf(ch: Chapter, dealer: Dealer | null): Ending {
   if (ch.failed) return { kind: "readFailed" };
   if (ch.mode === "on-this-day") return { kind: "day", reach: ch.reach };
   if (ch.mode === "set-aside") return { kind: "shelf" };
+  if (ch.mode === "span") return { kind: "span", span: ch.span ?? null };
   if (ch.mode === "surprise") return dealer?.reader?.ending === "exhausted" ? { kind: "exhausted" } : { kind: "roll" };
   const r = dealer?.reader;
   const smaller = r?.size != null && r.yearCount != null ? r.size < r.yearCount : false;

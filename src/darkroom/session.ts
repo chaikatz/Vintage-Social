@@ -1,7 +1,7 @@
 import { deleteDiskCache, readDiskCache, writeDiskCache } from "@/utils/diskCache";
 import { localDay } from "./history";
 import { monthYearWords } from "./labels";
-import type { DarkroomMode, DayReach, Print } from "./types";
+import type { DarkroomMode, DayReach, Print, Span } from "./types";
 
 /**
  * Where the member was.
@@ -196,6 +196,10 @@ export function savePlace(
   p: { mode: DarkroomMode; year: number | null; month: number; index: number; prints: readonly Print[] },
   now = Date.now(),
 ): void {
+  // A stretch (this week, an occasion) is found afresh each session: it is
+  // kept in memory like any chapter, but the place on disk stays the last
+  // way in that a later visit can take up again.
+  if (p.mode === "span") return;
   placeLoaded = true;
   placeDirty = true;
   const at = Math.max(0, Math.min(Math.trunc(p.index) || 0, p.prints.length));
@@ -296,8 +300,13 @@ export function reopenSession(): void {
 // Positions per chapter, in memory
 // ---------------------------------------------------------------------------
 
-/** "on-this-day" | "surprise" | "set-aside", or "year:2016:7" for 2016 opened from August. */
-export function chapterKey(mode: DarkroomMode, year: number | null, month: number): ChapterKey {
+/**
+ * "on-this-day" | "surprise" | "set-aside", or "year:2016:7" for 2016
+ * opened from August, or "span:<from>:<to>" for a stretch of the library
+ * (this week, an occasion), by its two edges.
+ */
+export function chapterKey(mode: DarkroomMode, year: number | null, month: number, span?: Pick<Span, "from" | "to"> | null): ChapterKey {
+  if (mode === "span") return `span:${span ? `${span.from}:${span.to}` : "none"}`;
   return mode === "year" ? `year:${year ?? "none"}:${month}` : mode;
 }
 

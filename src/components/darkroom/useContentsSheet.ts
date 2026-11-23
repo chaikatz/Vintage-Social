@@ -9,8 +9,10 @@ import { prunedNote } from "./words";
  *
  * Opening it asks for what it shows that may have changed: the year
  * index (counted again only when it is no longer fresh), the open year's
- * months, and — under full access — whether every print on the shelf is
- * still in the library, so it can say once if some are not.
+ * months, lately and the first occasions (read once a visit, or taken up
+ * from an earlier one while nothing new has come in), and —
+ * under full access — whether every print on the shelf is still in the
+ * library, so it can say once if some are not.
  *
  * Every choice closes it first. A choice that pushes a screen or opens a
  * picker is held until the sheet has gone (`dismissed`, iOS's onDismiss),
@@ -21,6 +23,7 @@ export function useContentsSheet(room: {
   where: Where | null;
   loadYears: () => Promise<unknown>;
   loadMonths: (year: number) => Promise<unknown>;
+  loadOccasions: () => Promise<unknown>;
   pruneShelf: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -42,6 +45,7 @@ export function useContentsSheet(room: {
     setOpen(true);
     void room.loadYears();
     if (room.where?.mode === "year" && room.where.year != null) void room.loadMonths(room.where.year);
+    void room.loadOccasions();
     void room.pruneShelf().then(() => {
       const n = takePrunedNote();
       if (n > 0 && mounted.current) setNote(prunedNote(n));

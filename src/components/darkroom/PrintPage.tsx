@@ -18,6 +18,7 @@ import { Blades } from "./Blades";
 import { Caption } from "./Caption";
 import {
   asksAgain,
+  CaptionHeights,
   captionHeight,
   captionWidth,
   feedCrops,
@@ -40,6 +41,8 @@ const PROOF_WIDTH = 48;
 const ZOOMED = 1.02;
 /** A download's rule follows each step of iCloud's progress over this, as DOWNLOAD AND DEVELOP's does. */
 const CLOUD_STEP_MS = 120;
+/** What the pages before have measured, so each page after is laid out — and its photograph asked for — once. */
+const captions = new CaptionHeights();
 
 /**
  * One print: a plate, and its label hung beneath — the signature line, as
@@ -173,7 +176,7 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
   const cloud = useCloudProgress(look.reduceMotion);
   /** Zoomed in, past actual size: the photograph is drawn again at the zoom's size. */
   const [closer, setCloser] = useState(false);
-  const caption = measured ?? captionHeight(fontScale, long ? 2 : 1);
+  const caption = measured ?? captions.get(fontScale, long) ?? captionHeight(fontScale, long ? 2 : 1);
   const box = plateBox(ratio, width, stageHeight, caption, pixelRatio);
   const captionW = captionWidth(box.width);
   const gap = signatureGap(captionW, pixelRatio);
@@ -216,6 +219,7 @@ export const PrintPage = memo(function PrintPage(props: PrintPageProps) {
           onWord={() => props.onWord(print)}
           onHeight={(h) => {
             if (holdLayout) return;
+            captions.set(fontScale, long, h);
             if (Math.abs(h - caption) >= 1) setMeasured(Math.round(h));
           }}
           testID={current ? "darkroom-caption" : undefined}
@@ -420,6 +424,16 @@ function Photograph(
       setAttempt((a) => a + 1);
     }
   }, [online, trouble, stall]);
+
+  // A page that stops asking for its photograph — two behind the one in
+  // view, or under the editor — lets it go, and starts again from its soft
+  // proof when it asks again, watched for a stall like any other.
+  useEffect(() => {
+    if (images) return;
+    setDrawn(false);
+    setDeveloped(false);
+    onCloud(null);
+  }, [images, onCloud]);
 
   // In front of the member, with neither a picture nor a failure: a
   // request Photos could not answer says nothing, so after a while of
