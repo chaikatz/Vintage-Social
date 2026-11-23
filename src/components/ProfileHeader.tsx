@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { colors, spacing, type } from "@/theme";
-import { membershipLine } from "@/utils/membership";
+import { membershipLine, showsMemberNumber } from "@/utils/membership";
 import { Avatar } from "./Avatar";
 import type { ProfileRow } from "@/types/db";
 
@@ -15,6 +15,9 @@ interface Props {
 }
 
 export function ProfileHeader({ profile, action, onPressStat }: Props) {
+  // MEMBER for every member; the number after it only for one who chose to
+  // show it (Settings). The same for your own page as for anyone's.
+  const membership = membershipLine(profile.member_no, showsMemberNumber(profile));
   return (
     <View style={styles.wrap}>
       <View style={styles.topRow}>
@@ -44,11 +47,9 @@ export function ProfileHeader({ profile, action, onPressStat }: Props) {
       </View>
       {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
       {profile.city ? <Text style={styles.city}>{profile.city}</Text> : null}
-      {/* Issued by the database when the member was let in, and permanent.
-          Nothing in Settings can change it. */}
-      {membershipLine(profile.member_no) ? (
-        <Text style={styles.membership}>{membershipLine(profile.member_no)}</Text>
-      ) : null}
+      {/* The number is issued by the database when the member was let in,
+          and permanent; whether it is shown is the member's own choice. */}
+      {membership ? <Text style={styles.membership}>{membership}</Text> : null}
       {action ? <View style={styles.action}>{action}</View> : null}
     </View>
   );

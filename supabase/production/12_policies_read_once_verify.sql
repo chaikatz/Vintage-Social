@@ -1,4 +1,4 @@
--- VINTAGE · production · verify 0023-0040 (policies read the caller once;
+-- VINTAGE · production · verify 0023-0041 (policies read the caller once;
 -- block checks answer only for the caller; the home feed in one piece,
 -- paged by cursor; a photograph's followers in order; Expo's receipts;
 -- comments, likes and tags only with their photograph; decisions reach
@@ -9,11 +9,12 @@
 -- unread messages counted in the database; follows that respect private
 -- accounts; members write only what the app writes; a block that holds
 -- for comments and likes and reaches the admins, messages notified,
--- portraits only in avatars, and the push function's own header)
+-- portraits only in avatars, and the push function's own header; a
+-- member's number shown only if they choose)
 --
 -- Run after applying, in number order, every file in supabase/migrations
 -- from 0023_policies_read_once.sql to
--- 0040_blocks_messages_and_files.sql. Paste the whole file into
+-- 0041_member_number_shown_by_choice.sql. Paste the whole file into
 -- the SQL editor and run it once. Read-only: the block at the start only plans a query (EXPLAIN
 -- without ANALYZE runs nothing) as a member and keeps what it saw in a
 -- setting of this session, and the one SELECT at the end reads the
@@ -26,9 +27,9 @@
 -- what it should be. Every `ok` must read true. If any does not, do not
 -- ship the build that relies on them; the rollbacks are
 -- supabase/tests/0023_rollback.sql, supabase/tests/0038_rollback.sql,
--- supabase/tests/0039_rollback.sql and the notes at the top of 0024-0037
--- and 0040, and none of 0023-0028, 0030-0037, 0039 or 0040 changes any
--- member's data (0029
+-- supabase/tests/0039_rollback.sql and the notes at the top of 0024-0037,
+-- 0040 and 0041, and none of 0023-0028, 0030-0037 or 0039-0041 changes any
+-- member's data (0041 adds a column, false for every member; 0029
 -- repairs profiles left at "applied", 0034 the house photographs'
 -- thumbnails, 0038 recounts follower and following counts that are off,
 -- none on production on 6 November; each says how to put them back). Run before the
@@ -507,6 +508,7 @@ with checks as (
                 and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'none'),
          'posts: whole table false, file author_id caption duration_seconds filter_baked filter_id height id lat lng location media_path media_type place_id show_date_stamp taken_at thumb_path width, change caption, visitors none'
   union all
+  -- (0041's one column, show_member_no, is row 69's: here, 0039's.)
   select 50, '0039: a profile: members change their name, bio, city, portrait and privacy, nothing else (not counts, name in the club, dates or standing); visitors nothing',
          'profiles: whole table ' || (select coalesce(bool_or(split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), false)
               from pg_class c, unnest(c.relacl) x
@@ -516,6 +518,7 @@ with checks as (
                 and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'a'), 'none')
            || ', change ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
               where a.attrelid = 'public.profiles'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'authenticated'
+                and a.attname <> 'show_member_no'
                 and split_part(split_part(x::text, '=', 2), '/', 1) ~ 'w'), 'none')
            || ', visitors ' || coalesce((select string_agg(a.attname, ' ' order by a.attname collate "C") from pg_attribute a, unnest(a.attacl) x
               where a.attrelid = 'public.profiles'::regclass and a.attnum > 0 and split_part(x::text, '=', 1) = 'anon'
@@ -809,6 +812,25 @@ with checks as (
                      where s.key = 'push_hook'
                        and (coalesce(jsonb_typeof(s.value->'secret'), '') <> 'string'
                             or length(s.value->>'secret') < 32))
+  union all
+  -- 27. 0041: a member's number is shown only if they choose. The column,
+  --     false unless set, and who may change it: members (on their own
+  --     row, as "profiles: update own" and 0039's restrictive policy
+  --     already say), never visitors. Read from the catalogues, so it
+  --     answers "no column" rather than failing where 0041 has not run.
+  select 69, '0041: profiles.show_member_no, false unless the member turns it on, is theirs to change (members may write it; visitors may not)',
+         coalesce((select format_type(a.atttypid, a.atttypmod)
+                          || case when a.attnotnull then ' not null' else ' null' end
+                          || ' default ' || coalesce(pg_get_expr(d.adbin, d.adrelid), 'none')
+                     from pg_attribute a
+                     left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+                    where a.attrelid = 'public.profiles'::regclass and a.attname = 'show_member_no' and not a.attisdropped), 'no column')
+           || ', changed by ' || coalesce((select string_agg(split_part(x::text, '=', 1), ' ' order by split_part(x::text, '=', 1))
+                from pg_attribute a, unnest(a.attacl) x
+               where a.attrelid = 'public.profiles'::regclass and a.attname = 'show_member_no' and not a.attisdropped
+                 and split_part(x::text, '=', 1) in ('anon', 'authenticated')
+                 and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'nobody'),
+         'boolean not null default false, changed by authenticated'
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks

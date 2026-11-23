@@ -111,15 +111,20 @@ describe("the label's words", () => {
   });
 
   it("says where, when and whose, from the post's own fields", () => {
-    const words = exportLabelText(post, 1);
+    const words = exportLabelText(post, 1, true);
     expect(words.place).toBe("THE METROPOLITAN MUSEUM OF ART");
     expect(words.placeLines).toBe(2);
     expect(words.date).toBe("SEPTEMBER 15, 2026");
     expect(words.credit).toBe("@chai · MEMBER NO. 00001");
   });
 
+  it("prints the number only for a member who chose to show it, and MEMBER either way", () => {
+    expect(exportLabelText(post, 1, false).credit).toBe("@chai · MEMBER");
+    expect(exportLabelText(post, 1, true).credit).toBe("@chai · MEMBER NO. 00001");
+  });
+
   it("leaves out what is not there and never invents a number", () => {
-    const words = exportLabelText({ ...post, location: "  ", taken_at: null }, null);
+    const words = exportLabelText({ ...post, location: "  ", taken_at: null }, null, true);
     expect(words.place).toBeNull();
     expect(words.placeLines).toBe(0);
     expect(words.date).toBe("SEPTEMBER 16, 2026");
@@ -130,13 +135,25 @@ describe("the label's words", () => {
   });
 
   it("says member, whatever the number, and formats any length of it", () => {
-    expect(memberCredit("chai", 27)).toBe("@chai · MEMBER NO. 00027");
-    expect(memberCredit("chai", 10_001)).toBe("@chai · MEMBER NO. 10001");
-    expect(memberCredit("a_very_long_username_indeed", 3)).toBe("@a_very_long_username_indeed · MEMBER NO. 00003");
-    expect(memberCredit("chai", null)).toBe("@chai");
-    expect(memberCredit("chai", 0)).toBe("@chai");
+    expect(memberCredit("chai", 27, true)).toBe("@chai · MEMBER NO. 00027");
+    expect(memberCredit("chai", 10_001, true)).toBe("@chai · MEMBER NO. 10001");
+    expect(memberCredit("a_very_long_username_indeed", 3, true)).toBe("@a_very_long_username_indeed · MEMBER NO. 00003");
+    expect(memberCredit("chai", null, true)).toBe("@chai");
+    expect(memberCredit("chai", 0, true)).toBe("@chai");
     // One @, however the name arrives.
-    expect(memberCredit("@chai", 27)).toBe("@chai · MEMBER NO. 00027");
+    expect(memberCredit("@chai", 27, true)).toBe("@chai · MEMBER NO. 00027");
+  });
+
+  it("says member without the number unless the member chose to show it", () => {
+    expect(memberCredit("chai", 27, false)).toBe("@chai · MEMBER");
+    expect(memberCredit("@chai", 10_001, false)).toBe("@chai · MEMBER");
+    // An account with no number is not called a member on the print.
+    expect(memberCredit("chai", null, false)).toBe("@chai");
+    expect(memberCredit("chai", 0, false)).toBe("@chai");
+    // Never longer than the credit with the number, which the label was measured for.
+    expect(memberCredit("a_very_long_username_indeed", 3, false).length).toBeLessThan(
+      memberCredit("a_very_long_username_indeed", 3, true).length,
+    );
   });
 });
 

@@ -94,10 +94,16 @@ export function placeLineCount(place: string | null | undefined): 0 | 1 | 2 {
   return p.length > PLACE_WRAP_AT ? 2 : 1;
 }
 
-/** The member's line under the date: always `@name`; a real number or nothing after it. */
-export function memberCredit(username: string, memberNo: number | null | undefined): string {
+/**
+ * The member's line under the date: always `@name`; then, for a member,
+ * `MEMBER`, with their number after it only if they chose to show it
+ * (`shown`, Settings), as their profile does. Nothing after the name for
+ * an account with no number.
+ */
+export function memberCredit(username: string, memberNo: number | null | undefined, shown: boolean): string {
   const name = `@${username.trim().replace(/^@+/, "")}`;
   if (typeof memberNo !== "number" || memberNo < 1) return name;
+  if (!shown) return `${name} · MEMBER`;
   const number = formatMemberNumber(memberNo);
   return `${name} · MEMBER ${number}`;
 }
@@ -111,13 +117,15 @@ export function memberCredit(username: string, memberNo: number | null | undefin
 export function exportLabelText(
   post: { location: string | null; taken_at: string | null; created_at: string; author: { username: string } },
   memberNo: number | null | undefined,
+  /** Whether the author chose to show their number (src/utils/membership.ts). */
+  shown: boolean,
 ): ExportLabelText {
   const place = post.location?.trim() ? post.location.trim().toUpperCase() : null;
   return {
     place,
     placeLines: placeLineCount(place),
     date: signatureDate(post.taken_at ?? post.created_at).toUpperCase(),
-    credit: memberCredit(post.author.username, memberNo),
+    credit: memberCredit(post.author.username, memberNo, shown),
   };
 }
 

@@ -60,6 +60,13 @@ export type ProfileRow = {
    * when the member is let in. Null until then. Never edited by a member.
    */
   member_no: number | null;
+  /**
+   * Whether the member shows that number on their profile and their
+   * prints (Settings, "Show my member number"; 0041). Off unless they turn
+   * it on. Absent from a profile read from a database before 0041, which
+   * reads as off: only `true` shows it (src/utils/membership.ts).
+   */
+  show_member_no?: boolean | null;
   /** The member who nominated them, recorded at the moment of joining. */
   invited_by: string | null;
   /** Private members approve each follower by hand. */

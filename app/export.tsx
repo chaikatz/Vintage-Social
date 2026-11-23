@@ -23,6 +23,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { shareUrl, shareUrlLabel } from "@/utils/shareLink";
 import { PRINT_WIDTH, STORY_WIDTH, exportLayout, printRatio, type ExportFormat, type ExportPaper } from "@/utils/exportLayout";
 import { brandVideo, canBrandVideo, canExport, capturePrint, shareFile } from "@/utils/exportPost";
+import { showsMemberNumber } from "@/utils/membership";
 
 // A row that breaks this sheet breaks only the sheet, with the way back on its page,
 // as a sheet's header has none (src/navigation/Recover.tsx).
@@ -77,13 +78,15 @@ export default function Export() {
   const mine = Boolean(post && post.author_id === userId);
 
   // The author's membership number, for the label. Never invented: absent
-  // until it is known, absent for good if there is none.
+  // until it is known, absent for good if there is none. Printed only if
+  // they chose to show it, as their profile shows it; MEMBER alone if not.
   const authorQ = useQuery({
     queryKey: ["profile-by-id", post?.author_id],
     queryFn: () => fetchProfileById(post!.author_id),
     enabled: Boolean(post?.author_id),
   });
   const memberNo = authorQ.data?.member_no ?? null;
+  const showMemberNo = showsMemberNumber(authorQ.data);
 
   // The link, if this photograph already has one.
   const canLink = mine && !isDemoMode() && canExport();
@@ -172,7 +175,7 @@ export default function Export() {
       if (filmAsFilm) {
         const url = mediaUrlString("media", post.media_path);
         if (!url) throw new Error("The film could not be found");
-        const uri = await brandVideo(post, url, format, paper, memberNo, setStage);
+        const uri = await brandVideo(post, url, format, paper, memberNo, showMemberNo, setStage);
         setStage(null);
         await shareFile(uri, "video");
       } else {
@@ -194,7 +197,15 @@ export default function Export() {
       <View style={[styles.previewBox, { height: boxHeight }]}>
         {post ? (
           <View style={styles.previewShadow}>
-            <ExportCard post={post} source={source} format={format} paper={paper} width={previewWidth} memberNo={memberNo} />
+            <ExportCard
+              post={post}
+              source={source}
+              format={format}
+              paper={paper}
+              width={previewWidth}
+              memberNo={memberNo}
+              showMemberNo={showMemberNo}
+            />
           </View>
         ) : readState(postQ) === "failed" ? (
           // The photograph could not be read: said, with a way to try again, not an empty frame.
@@ -215,6 +226,7 @@ export default function Export() {
               paper={paper}
               width={fullWidth}
               memberNo={memberNo}
+              showMemberNo={showMemberNo}
               onReady={() => setReady(true)}
             />
           </View>
