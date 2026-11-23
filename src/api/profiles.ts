@@ -4,6 +4,17 @@ import * as demo from "@/demo/store";
 import { forgetFollowingIds } from "./posts";
 import { readInChunks } from "./batch";
 import { demoKeysetPage, pageAfter, type Cursor } from "./keyset";
+import {
+  NAMES_FROM,
+  SEARCH_LIMIT,
+  SEARCH_MIN_LENGTH,
+  likeEscape,
+  orderMatches,
+  quoted,
+  searchNeedle,
+  usernamePrefix,
+  usernameRange,
+} from "@/utils/memberSearch";
 import type { FollowStatus, ProfileRow } from "@/types/db";
 
 export async function fetchProfileByUsername(username: string): Promise<ProfileRow | null> {
@@ -26,20 +37,61 @@ export async function fetchProfileById(id: string): Promise<ProfileRow | null> {
   return (data as ProfileRow | null) ?? null;
 }
 
-/** Plain prefix/substring search over usernames and names. No suggestions. */
+/**
+ * Members by what was typed, from the first letter (src/utils/memberSearch.ts).
+ *
+ * Up to three reads at once, each of SEARCH_LIMIT at most, put together in
+ * order: usernames that start with it, read as a range of the username
+ * index (so a first letter reads a page, not the club); from the second
+ * letter, names with a word that starts with it, and usernames or names
+ * that contain it. Each is its own read so that none is crowded out of the
+ * page by the others: one read of everything that contains "an", A to Z,
+ * stopped at thirty, could end before the "anna" it was asked for.
+ */
 export async function searchProfiles(q: string): Promise<ProfileRow[]> {
-  const needle = q.trim();
-  if (needle.length < 2) return [];
+  const needle = searchNeedle(q);
+  if (needle.length < SEARCH_MIN_LENGTH) return [];
   if (isDemoMode()) return demo.demoSearchProfiles(needle);
 
-  const escaped = needle.replace(/[%_\\]/g, "\\$&").replace(/,/g, "");
+  const reads: Promise<ProfileRow[]>[] = [];
+  const prefix = usernamePrefix(needle);
+  if (prefix) reads.push(readUsernamesStarting(prefix));
+  if (needle.length >= NAMES_FROM) {
+    const text = likeEscape(needle);
+    reads.push(
+      readApproved(`full_name.ilike.${quoted(`${text}%`)},full_name.ilike.${quoted(`% ${text}%`)}`),
+      readApproved(`username.ilike.${quoted(`%${text}%`)},full_name.ilike.${quoted(`%${text}%`)}`),
+    );
+  }
+  const found = await Promise.all(reads);
+  return orderMatches(needle, found.flat(), SEARCH_LIMIT);
+}
+
+/** Approved members whose username starts with `prefix`: a walk of profiles_username_key between the two ends of usernameRange. */
+async function readUsernamesStarting(prefix: string): Promise<ProfileRow[]> {
+  const { from, to } = usernameRange(prefix);
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
     .eq("status", "approved")
-    .or(`username.ilike.%${escaped}%,full_name.ilike.%${escaped}%`)
+    .gte("username", from)
+    .lte("username", to)
+    .like("username", `${likeEscape(prefix)}%`)
     .order("username")
-    .limit(30);
+    .limit(SEARCH_LIMIT);
+  if (error) throw error;
+  return (data ?? []) as ProfileRow[];
+}
+
+/** Approved members matching any of `or`, A to Z by username, a page at most. */
+async function readApproved(or: string): Promise<ProfileRow[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("status", "approved")
+    .or(or)
+    .order("username")
+    .limit(SEARCH_LIMIT);
   if (error) throw error;
   return (data ?? []) as ProfileRow[];
 }

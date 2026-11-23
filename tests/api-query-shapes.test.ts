@@ -72,7 +72,21 @@ function matches(row: Row, column: string, filter: string): boolean {
   if (op === "gte") return String(cell) >= value;
   if (op === "in") return inList(raw).includes(String(cell));
   if (op === "is") return value === "null" ? cell == null : String(cell) === value;
+  if (op === "like" || op === "ilike") return cell != null && likeRegex(value, op === "ilike").test(String(cell));
   throw new Error(`filter not modelled: ${column}=${filter}`);
+}
+
+/** A LIKE pattern as PostgreSQL reads it, with PostgREST's * for %: % any run, _ any one, \ the next as itself. */
+function likeRegex(pattern: string, caseless: boolean): RegExp {
+  let out = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === "\\" && i + 1 < pattern.length) out += pattern[++i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    else if (ch === "%" || ch === "*") out += "[\\s\\S]*";
+    else if (ch === "_") out += "[\\s\\S]";
+    else out += ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${out}$`, caseless ? "i" : "");
 }
 
 /** Split at the commas of this level: not inside parentheses or double quotes. */
@@ -1355,5 +1369,97 @@ describe("the admin's queues", () => {
     expect(dashboard).toMatch(/queryFn: \(\) => countApplications\("pending"\)/);
     expect(dashboard).toMatch(/queryFn: \(\) => countReports\("open"\)/);
     expect(dashboard).not.toMatch(/fetchApplications|fetchReports|\.length \?\? 0/);
+  });
+});
+
+describe("member search", () => {
+  /** A club of members by username and name; `status` approved unless given. */
+  function club(members: [string, string | null, string?][]) {
+    h.tables.profiles = members.map(([username, full_name, status], i) => ({
+      id: id("5e", i), username, full_name, status: status ?? "approved", avatar_url: null, city: null, bio: "",
+    }));
+  }
+  const names = (rows: { username: string }[]) => rows.map((r) => r.username);
+  const reads = () => h.requests.filter((r) => r.url.pathname === "/rest/v1/profiles");
+
+  it("answers the first letter, with the usernames that start with it, in one bounded read of the username index", async () => {
+    club([
+      ["margot.dubois", "Margot Dubois"],
+      ["mateo", "Mateo Ruiz"],
+      ["emma", "Emma Stone"], // m in the middle: not for one letter
+      ["zed", "Mia Zed"], // a name that starts with m: not for one letter
+      ["mara", "Mara Ito", "applied"], // not a member yet
+    ]);
+    expect(names(await profiles.searchProfiles("M"))).toEqual(["margot.dubois", "mateo"]);
+    expect(reads()).toHaveLength(1);
+    const p = reads()[0].url.searchParams;
+    expect(p.get("status")).toBe("eq.approved");
+    // A range of the username index (usernameRange), and the like that keeps only its prefix.
+    expect(p.getAll("username")).toEqual([`gte.m`, `lte.m${"z".repeat(24)}`, "like.m%"]);
+    expect(p.get("or")).toBeNull();
+    expect(p.get("order")).toBe("username.asc");
+    expect(p.get("limit")).toBe("30");
+  });
+
+  it("from the second letter, also names and the middles of words: usernames first, then names, then the rest", async () => {
+    club([
+      ["emma", "Emma Stone"],
+      ["zed", "Lena Matos"],
+      ["mateo", "Mateo Ruiz"],
+      ["margot.dubois", "Margot Dubois"],
+      ["oscar", null],
+    ]);
+    expect(names(await profiles.searchProfiles("ma"))).toEqual(["margot.dubois", "mateo", "zed", "emma"]);
+    // Three reads at once, each a page at most.
+    expect(reads()).toHaveLength(3);
+    expect(h.maxInFlight).toBe(3);
+    for (const r of reads()) {
+      expect(r.url.searchParams.get("limit")).toBe("30");
+      expect(r.url.searchParams.get("status")).toBe("eq.approved");
+    }
+  });
+
+  it("does not let thirty that contain it crowd out the ones that start with it", async () => {
+    club([
+      ...Array.from({ length: 40 }, (_, i): [string, string | null] => [`aa_an${String(i).padStart(2, "0")}`, null]),
+      ["anna", "Anna Berg"],
+      ["zeta", "Andrea Zeta"],
+    ]);
+    const found = names(await profiles.searchProfiles("an"));
+    expect(found).toHaveLength(30);
+    expect(found.slice(0, 3)).toEqual(["anna", "zeta", "aa_an00"]);
+    // The one read of everything that contains it, A to Z and stopped at thirty, as search used to ask.
+    const contains = reads().find((r) => (r.url.searchParams.get("or") ?? "").startsWith("(username.ilike"));
+    expect(contains).toBeTruthy();
+  });
+
+  it("reads _ and % as letters, and a name's dots and commas as text", async () => {
+    club([
+      ["a_bc", null],
+      ["axbc", null],
+      ["j.smith", "J. Smith, Jr"],
+      ["jxsmith", null],
+      ["film", "100% Film"],
+      ["other", "1000 Films"],
+    ]);
+    expect(names(await profiles.searchProfiles("a_b"))).toEqual(["a_bc"]);
+    h.requests.length = 0;
+    expect(names(await profiles.searchProfiles("j.s"))).toEqual(["j.smith"]);
+    expect(names(await profiles.searchProfiles("smith, jr"))).toEqual(["j.smith"]);
+    expect(names(await profiles.searchProfiles("100%"))).toEqual(["film"]);
+  });
+
+  it("looks for a name with a space in it among names only, since no username has one", async () => {
+    club([["mlopez", "Maria Lopez"], ["maria", "Maria Ruiz"]]);
+    expect(names(await profiles.searchProfiles("  Maria   Lo "))).toEqual(["mlopez"]);
+    expect(reads()).toHaveLength(2);
+    expect(reads().every((r) => r.url.searchParams.getAll("username").length === 0)).toBe(true);
+  });
+
+  it("asks nothing for nothing typed", async () => {
+    club([["anna", null]]);
+    expect(await profiles.searchProfiles("   ")).toEqual([]);
+    expect(await profiles.searchProfiles("*")).toEqual([]);
+    expect(reads()).toHaveLength(0);
   });
 });

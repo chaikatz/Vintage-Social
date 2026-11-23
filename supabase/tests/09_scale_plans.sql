@@ -117,6 +117,29 @@ insert into plans values
   ('searching names', tests.plan_as(:'me',
      'select * from public.profiles where status = ''approved''
         and (username ilike ''%cale_12%'' or full_name ilike ''%cale_12%'') order by username limit 30')),
+  -- Search from the first letter (src/api/profiles.ts, src/utils/memberSearch.ts):
+  -- usernames that start with it, asked as a range of the username index
+  -- (usernameRange: the letters, then the letters and more z's than a
+  -- username has) and the like that keeps only that prefix. Every member
+  -- here is "scale_…", so "s" is the whole club and "q" is nobody.
+  ('searching a first letter', tests.plan_as(:'me', format(
+     'select * from public.profiles where status = ''approved''
+        and username >= %L and username <= %L and username like %L order by username limit 30',
+     's', 's' || repeat('z', 24), 's%'))),
+  ('searching a first letter no username has', tests.plan_as(:'me', format(
+     'select * from public.profiles where status = ''approved''
+        and username >= %L and username <= %L and username like %L order by username limit 30',
+     'q', 'q' || repeat('z', 24), 'q%'))),
+  ('searching the start of a username', tests.plan_as(:'me', format(
+     'select * from public.profiles where status = ''approved''
+        and username >= %L and username <= %L and username like %L order by username limit 30',
+     'scale_7', 'scale_7' || repeat('z', 24), 'scale\_7%'))),
+  -- What the app does not ask: a first letter anywhere in a username or a
+  -- name. No index serves the middle of a word, so it reads the club to
+  -- find a page; names and the middles of words wait for the second letter.
+  ('one letter anywhere, never asked', tests.plan_as(:'me',
+     'select * from public.profiles where status = ''approved''
+        and (username ilike ''%q%'' or full_name ilike ''%q%'') order by username limit 30')),
   -- 0037: the inbox's and the badge's unread counts. The function's own
   -- query, as the member (EXPLAIN of the call shows only "Function Scan").
   ('unread messages', tests.plan_as(:'me',
@@ -233,6 +256,107 @@ from (
     ('a like pushed in the last half hour', 'activity_recipient_idx')
   ) v(label, want) on v.label = k.label
 ) l;
+
+-- Search from the first letter: a walk of the username index between the
+-- two ends of the range, stopped at the page, whatever the size of the
+-- club; a letter no username starts with reads nobody. The members a plan
+-- looked at are the rows it kept and the rows its filter put back.
+create or replace function tests.profiles_looked_at(p_plan json)
+returns numeric
+language sql
+as $fn$
+  with recursive n(j) as (
+    select p_plan -> 0 -> 'Plan'
+    union all
+    select c from n, json_array_elements(coalesce(n.j -> 'Plans', '[]'::json)) c
+  )
+  select coalesce(sum((coalesce((j ->> 'Actual Rows')::numeric, 0) + coalesce((j ->> 'Rows Removed by Filter')::numeric, 0))
+                      * coalesce((j ->> 'Actual Loops')::numeric, 1)), 0)
+  from n where j ->> 'Relation Name' = 'profiles'
+$fn$;
+
+insert into tests.results (name, expected, actual)
+select 'scale: ' || v.label || ' walks profiles_username_key between the ends of its range', 'true',
+       ((select plan::text from plans where label = v.label)
+         ~ '"Index Name": "profiles_username_key"[^}]*"Index Cond": "\(\(username >= [^"]*AND \(username <= ')::text
+from (values ('searching a first letter'), ('searching a first letter no username has'), ('searching the start of a username')) v(label)
+union all
+select 'scale: ' || v.label || ' reads no whole table of profiles', 'false',
+       exists (select 1 from tests.plan_nodes((select plan from plans where label = v.label)) n
+                where n.node = 'Seq Scan' and n.relation = 'profiles')::text
+from (values ('searching a first letter'), ('searching a first letter no username has'), ('searching the start of a username')) v(label);
+
+insert into tests.results (name, expected, actual) values
+  ('scale: a first letter the whole club starts with is a page of thirty', '30',
+   (select plan -> 0 -> 'Plan' ->> 'Actual Rows' from plans where label = 'searching a first letter')),
+  ('scale: and looks at about a page of members to find it, not the club', 'true',
+   (tests.profiles_looked_at((select plan from plans where label = 'searching a first letter')) <= 60)::text),
+  ('scale: a first letter no username starts with looks at nobody', '0',
+   tests.profiles_looked_at((select plan from plans where label = 'searching a first letter no username has'))::text),
+  -- 111 usernames start with "scale_7": the planner may read them all and
+  -- sort them rather than walk the index in order, which is no fault; it
+  -- reads no member whose username does not start with it.
+  ('scale: the start of a username looks at no member it does not find', 'true',
+   (tests.profiles_looked_at((select plan from plans where label = 'searching the start of a username'))
+      <= (select count(*) from public.profiles where username like 'scale\_7%'))::text),
+  -- For the record, why one letter is asked of usernames' starts alone.
+  ('scale: one letter anywhere would look at the whole club', 'true',
+   (tests.profiles_looked_at((select plan from plans where label = 'one letter anywhere, never asked'))
+      >= (select count(*) from public.profiles where id::text like '5ca1e000-%'))::text);
+
+-- The same range in a language's collation, where the server has one
+-- (ICU's root): it still holds every username that starts with the
+-- letters, whatever the punctuation and digits in them, and with the like
+-- beside it finds those and no other; and it is still a walk of the index.
+-- This database sorts in C order, as Supabase's may not.
+do $icu$
+declare
+  v_prefix text;
+  v_found text[];
+  v_truth text[];
+  v_plan json;
+begin
+  if not exists (select 1 from pg_collation where collname = 'und-x-icu') then
+    raise notice 'no ICU collation here: the range is checked in C order only';
+    return;
+  end if;
+  create temp table icu_names (username text collate "und-x-icu" primary key);
+  insert into icu_names select username from public.profiles;
+  insert into icu_names values
+    ('a.b0'), ('a_z9'), ('a0_'), ('az.'), ('azzz'), ('_ab'), ('.ab'), ('9ab'), ('ab_'), ('zz9'), ('bab'),
+    ('m.x'), ('m_x'), ('mzz'), ('mzzzzzzzzzzzzzzzzzzzzzzz'), ('m9z'), ('n__'), ('s.c'), ('sc_')
+  on conflict do nothing;
+  analyze icu_names;
+  foreach v_prefix in array array['a', 'm', 'm.', 'm_', 'mz', 'z', '9', '_', '.', 's', 'sc', 'scale_7', 'scale_99'] loop
+    execute format(
+      'select coalesce(array_agg(username order by username collate "C"), ''{}'') from icu_names
+        where username >= %L and username <= %L and username like %L',
+      v_prefix, v_prefix || repeat('z', 24), replace(replace(v_prefix, '_', '\_'), '%', '\%') || '%')
+      into v_found;
+    select coalesce(array_agg(username order by username collate "C"), '{}') into v_truth
+      from icu_names where starts_with(username, v_prefix);
+    -- Counted, and named only where they differ, so the table stays narrow.
+    insert into tests.results (name, expected, actual)
+    values (format('scale: in ICU order, the range and the like for %L find every username that starts with it, and no other', v_prefix),
+            cardinality(v_truth) || ' found',
+            case when v_found = v_truth then cardinality(v_found) || ' found'
+                 else left(format('missing %s, extra %s',
+                        (select array_agg(u) from unnest(v_truth) u where u <> all (v_found)),
+                        (select array_agg(u) from unnest(v_found) u where u <> all (v_truth))), 80) end);
+  end loop;
+  set local enable_seqscan = off;
+  execute format(
+    'explain (format json) select * from icu_names where username >= %L and username <= %L and username like %L
+      order by username limit 30', 'm', 'm' || repeat('z', 24), 'm%') into v_plan;
+  reset enable_seqscan;
+  insert into tests.results (name, expected, actual)
+  values ('scale: in ICU order, a first letter is still a range of the index', 'true',
+          (v_plan::text ~ '"Index Cond": "\(\(username >= [^"]*AND \(username <= ')::text);
+end
+$icu$;
+select 'plan: the username range checked in ICU order for ' || count(*) filter (where r.name like '%find every username%')
+       || ' prefixes, and ' || count(*) filter (where r.name like '%still a range%') || ' plan' as note
+from tests.results r, plans_start s where r.seq > s.seq and r.name like 'scale: in ICU order%';
 
 -- Keyset, not offset: the followers come out of the index in order, so the
 -- page stops at its thousand rather than sorting all of them first.
@@ -445,7 +569,8 @@ select 'time: feed_page, ' || label || ' ' || ms || ' ms, ' || rows_read || ' ph
 from feed_reads order by label;
 
 -- For the record.
-select 'time: ' || label || ' ' || round((plan -> 0 ->> 'Execution Time')::numeric, 2) || ' ms' as note
+select 'time: ' || label || ' ' || round((plan -> 0 ->> 'Execution Time')::numeric, 2) || ' ms'
+       || case when label ~ 'search|letter' then ', ' || tests.profiles_looked_at(plan) || ' members looked at' else '' end as note
 from plans order by label;
 select 'time: club of ' || count(*) || ' members, ' ||
        (select count(*) from public.posts) || ' photographs, ' ||
