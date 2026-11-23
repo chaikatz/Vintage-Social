@@ -223,15 +223,23 @@ export default function AdminReports() {
             {item.details ? <Text style={styles.details}>“{item.details}”</Text> : null}
             {/* What was reported, so it is never removed or dismissed unseen: the comment's words and who wrote them, the member's name. */}
             {item.comment ? (
-              <Text style={styles.resolution}>
-                {nameOf(item.comment.author?.username)}: “{item.comment.body}”
-                {item.comment.removed_at ? " · removed" : ""}
-              </Text>
+              <View style={styles.resolution}>
+                <Text style={styles.resolutionText}>
+                  {nameOf(item.comment.author?.username)}: “{item.comment.body}”
+                  {item.comment.removed_at ? " · removed" : ""}
+                </Text>
+              </View>
             ) : null}
-            {item.member ? <Text style={styles.resolution}>Member: {nameOf(item.member.username)}</Text> : null}
+            {item.member ? (
+              <View style={styles.resolution}>
+                <Text style={styles.resolutionText}>Member: {nameOf(item.member.username)}</Text>
+              </View>
+            ) : null}
             {tab === "open" && goneSince(item) ? <Text style={styles.details}>{goneSince(item)}</Text> : null}
             {item.resolution_note ? (
-              <Text style={styles.resolution}>Resolution: {item.resolution_note}</Text>
+              <View style={styles.resolution}>
+                <Text style={styles.resolutionText}>Resolution: {item.resolution_note}</Text>
+              </View>
             ) : null}
             {tab === "open" ? (
               <View style={styles.actions}>
@@ -300,14 +308,14 @@ const styles = StyleSheet.create({
   name: { fontWeight: "600", color: colors.ink },
   reason: { fontSize: 15, fontWeight: "600", color: colors.ink, marginTop: spacing.xs },
   details: { ...type.body, fontSize: 13, fontStyle: "italic", color: colors.inkSoft, marginTop: spacing.xs },
+  // The box keeps the padding, the words inside it none: a name link in padded words is tapped a padding away from where it is drawn (tests/name-link-hit-area.test.ts).
   resolution: {
-    fontSize: 12,
-    color: colors.inkSoft,
     marginTop: spacing.sm,
     backgroundColor: colors.paperSunken,
     borderRadius: radii.sm,
     padding: spacing.sm,
   },
+  resolutionText: { fontSize: 12, color: colors.inkSoft },
   actions: { flexDirection: "row", marginTop: spacing.md, gap: spacing.sm },
   action: { flex: 1 },
 });

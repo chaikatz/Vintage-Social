@@ -310,9 +310,9 @@ const styles = StyleSheet.create({
   },
   spacer: { flex: 1 },
   likes: { fontSize: 13, fontWeight: "600", color: colors.ink, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  caption: { ...type.body, fontFamily: type.serif, fontSize: 15, lineHeight: 22, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  caption: { ...type.body, fontFamily: type.serif, fontSize: 15, lineHeight: 22, marginHorizontal: spacing.lg, marginTop: spacing.sm },
   captionAuthor: { fontWeight: "600" },
-  comment: { ...type.body, fontSize: 14, color: colors.ink, paddingHorizontal: spacing.lg, paddingTop: spacing.xs + 2 },
+  comment: { ...type.body, fontSize: 14, color: colors.ink, marginHorizontal: spacing.lg, marginTop: spacing.xs + 2 },
   commentsLink: { ...type.caption, paddingHorizontal: spacing.lg, paddingTop: spacing.xs + 2 },
   night: {
     flexDirection: "row",

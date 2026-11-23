@@ -17,7 +17,8 @@ function code(file: string): string {
 }
 
 const src = code("app/admin/reports.tsx");
-const actions = src.slice(src.indexOf('{tab === "open" ? ('), src.indexOf("</View>\n            ) : null}"));
+const actionsAt = src.indexOf('{tab === "open" ? (\n              <View style={styles.actions}>');
+const actions = src.slice(actionsAt, src.indexOf("</View>\n            ) : null}", actionsAt));
 
 describe("a reported comment", () => {
   it("can be removed from the queue, which removes the comment and then resolves the report", () => {
