@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { showAlert } from "@/utils/alert";
@@ -14,6 +14,7 @@ import { KEYBOARD_DONE } from "@/components/KeyboardDone";
 import { MentionSuggestions } from "@/components/MentionSuggestions";
 import { useMentionField } from "@/hooks/useMentionField";
 import { useSession } from "@/providers/SessionProvider";
+import { useSheetKeyboardLift } from "@/hooks/useSheetKeyboardLift";
 
 // A row that breaks this sheet breaks only this sheet, with the way back on its
 // page: a sheet has no back button (src/navigation/Recover.tsx).
@@ -43,6 +44,10 @@ export default function EditCaption() {
   const unchanged = caption.trim() === (postQ.data?.caption ?? "").trim();
   // An @name in the caption: the members it could be, over Cancel and Save while it is written.
   const captionField = useMentionField(caption, setDraft, MAX_CAPTION_LENGTH);
+  // The sheet rises by as far as the keyboard comes up, so Cancel and Save,
+  // and the members offered over them, sit just above it. KeyboardAvoidingView
+  // measured this sheet from its own top and left all three under the keyboard.
+  const lift = useSheetKeyboardLift();
 
   const save = useMutation({
     mutationFn: () => updateCaption(postId ?? "", caption),
@@ -63,7 +68,7 @@ export default function EditCaption() {
   return (
     <Screen padded={false}>
       <Stack.Screen options={{ title: "Edit caption" }} />
-      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <View style={[styles.root, { paddingBottom: lift }]}>
         <View style={styles.body}>
           <Text style={styles.eyebrow}>Caption</Text>
           <TextInput
@@ -97,7 +102,7 @@ export default function EditCaption() {
             style={styles.half}
           />
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Screen>
   );
 }
@@ -119,6 +124,9 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: colors.ink,
     minHeight: 140,
+    // A long caption scrolls in its own space, the line being written kept
+    // in sight, rather than running on under the names and Save.
+    flexShrink: 1,
     textAlignVertical: "top",
     paddingVertical: spacing.md,
   },

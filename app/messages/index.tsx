@@ -85,12 +85,12 @@ function ConversationRow({
     <Pressable
       style={styles.row}
       onPress={onPress}
-      // To VoiceOver the row is one element: opened, the conversation; their page is its action.
-      accessibilityActions={[{ name: "activate" }, ...nameActions([conversation.peer.username])]}
+      // To VoiceOver the row is one element: a double tap opens the conversation; their page is its action.
+      onAccessibilityTap={onPress}
+      accessibilityActions={nameActions([conversation.peer.username])}
       onAccessibilityAction={(e) => {
         const username = nameFromAction(e.nativeEvent.actionName);
         if (username) onOpenProfile(username);
-        else if (e.nativeEvent.actionName === "activate") onPress();
       }}
     >
       <Pressable

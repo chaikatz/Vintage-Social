@@ -59,6 +59,15 @@ export function MentionSuggestions({
   );
 }
 
+/** A chip's height at the text size most read at. */
+const CHIP_HEIGHT = 40;
+/**
+ * The row's height at that size: a chip and the room above and below it.
+ * Comments' row of quick reactions is as tall, so the field under them
+ * stays put as one row takes the other's place.
+ */
+export const MENTION_ROW_HEIGHT = CHIP_HEIGHT + spacing.xs * 2;
+
 const styles = StyleSheet.create({
   row: { flexGrow: 0 },
   content: { gap: spacing.sm, paddingVertical: spacing.xs },
@@ -66,7 +75,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    minHeight: 40,
+    minHeight: CHIP_HEIGHT,
     paddingLeft: 7,
     paddingRight: spacing.md,
     borderRadius: radii.round,

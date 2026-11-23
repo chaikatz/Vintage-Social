@@ -23,7 +23,7 @@ import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
 import { MentionText, NameLink } from "@/components/MemberText";
-import { MentionSuggestions } from "@/components/MentionSuggestions";
+import { MENTION_ROW_HEIGHT, MentionSuggestions } from "@/components/MentionSuggestions";
 import { colors, spacing, type } from "@/theme";
 import { addComment, fetchComments, fetchPost } from "@/api/posts";
 import { showCommentMenu } from "@/utils/commentMenu";
@@ -199,21 +199,22 @@ const CommentRow = React.memo(function CommentRow({
   // Its age moves on with the app's one clock, not with the typing below.
   const now = new Date(useMinute());
   const hold = () => onLongPress(comment);
-  // To VoiceOver the row is one element: opened, the comment's menu, as
-  // a hold opens it; the names in it are its actions (src/utils/nameActions.ts).
+  // To VoiceOver the row is one element: a double tap opens the comment's
+  // menu, as a hold does, never a name under the middle of the row; the
+  // names in it are its actions (src/utils/nameActions.ts).
   const actions = useMemo(
-    () => [{ name: "activate" }, ...nameActions([comment.author.username, ...mentionedUsernames(comment.body)])],
+    () => nameActions([comment.author.username, ...mentionedUsernames(comment.body)]),
     [comment.author.username, comment.body],
   );
   const onAction = (e: AccessibilityActionEvent) => {
     const username = nameFromAction(e.nativeEvent.actionName);
     if (username) onOpenAuthor(username);
-    else if (e.nativeEvent.actionName === "activate") hold();
   };
   return (
     <Pressable
       style={styles.comment}
       onLongPress={() => onLongPress(comment)}
+      onAccessibilityTap={hold}
       accessibilityActions={actions}
       onAccessibilityAction={onAction}
       accessibilityHint="Opens the comment’s options"
@@ -337,7 +338,9 @@ function Composer({ postId, userId, onPosted }: { postId: string; userId: string
             {send.isPending ? (
               <ActivityIndicator size="small" color={colors.inkSoft} />
             ) : (
-              <Text style={[styles.send, !ready && styles.sendDisabled]}>Post</Text>
+              <Text style={[styles.send, !ready && styles.sendDisabled]} maxFontSizeMultiplier={POST_TYPE_CAP}>
+                Post
+              </Text>
             )}
           </Pressable>
         </View>
@@ -346,7 +349,11 @@ function Composer({ postId, userId, onPosted }: { postId: string; userId: string
   );
 }
 
-/** The quick reactions, edge to edge over the field (src/utils/commentReactions.ts). */
+/**
+ * The quick reactions, edge to edge over the field (src/utils/commentReactions.ts).
+ * They share the row: each as wide as REACTION_MAX at most, narrower on a
+ * phone too small for eight of those, so the last is never cut off.
+ */
 const Reactions = React.memo(function Reactions({ onReact }: { onReact: (emoji: string) => void }) {
   return (
     <View style={styles.reactions}>
@@ -389,6 +396,10 @@ function useKeyboardShown(): boolean {
 
 /** The field's height for a single line: a comfortable thumb's width, past the 44 points iOS asks of a target. */
 const FIELD_HEIGHT = 46;
+/** The widest a reaction's target grows; on a 320-point phone the eight share what is left between the margins. */
+const REACTION_MAX = 44;
+/** How far Post's word grows with the reader's text size: past it the word would outgrow the field. */
+const POST_TYPE_CAP = 1.8;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
@@ -419,13 +430,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     gap: spacing.xs,
   },
+  // As tall as the row of members that takes its place while an @name is
+  // written, so the field does not move under the thumb as one starts or ends.
   reactions: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    minHeight: MENTION_ROW_HEIGHT,
   },
   reaction: {
-    width: 40,
+    flex: 1,
+    maxWidth: REACTION_MAX,
     height: 40,
     borderRadius: 20,
     alignItems: "center",
@@ -459,7 +474,7 @@ const styles = StyleSheet.create({
   },
   post: {
     minWidth: 52,
-    height: FIELD_HEIGHT - 2,
+    minHeight: FIELD_HEIGHT - 2,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.sm,

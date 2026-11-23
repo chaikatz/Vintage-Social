@@ -229,12 +229,13 @@ export default function PostDetail() {
           key={c.id}
           onPress={() => onOpenComments(post)}
           onLongPress={() => onCommentLongPress(c)}
-          // To VoiceOver the line is one element: opened, Comments; its names are its actions (src/utils/nameActions.ts).
-          accessibilityActions={[{ name: "activate" }, ...nameActions([c.author.username, ...mentionedUsernames(c.body)])]}
+          // To VoiceOver the line is one element: a double tap opens Comments, never a name
+          // under the middle of it; its names are its actions (src/utils/nameActions.ts).
+          onAccessibilityTap={() => onOpenComments(post)}
+          accessibilityActions={nameActions([c.author.username, ...mentionedUsernames(c.body)])}
           onAccessibilityAction={(e) => {
             const username = nameFromAction(e.nativeEvent.actionName);
             if (username) openMember(username);
-            else if (e.nativeEvent.actionName === "activate") onOpenComments(post);
           }}
         >
           <Text style={styles.comment} numberOfLines={2}>

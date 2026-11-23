@@ -44,9 +44,9 @@ describe("the names under a photograph", () => {
     const preview = card.match(/\{preview\.map\(\(c\) => \(\s*<Pressable\b[\s\S]*?<\/Pressable>/)?.[0] ?? "";
     expect(preview).toMatch(/<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}/);
     expect(preview).toMatch(/<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}/);
-    // To VoiceOver: opened, Comments; each name an action.
-    expect(preview).toMatch(/accessibilityActions=\{\[\{ name: "activate" \}, \.\.\.nameActions\(\[c\.author\.username, \.\.\.mentionedUsernames\(c\.body\)\]\)\]\}/);
-    expect(preview).toMatch(/if \(username\) onOpenProfile\(username\);\s*else if \(e\.nativeEvent\.actionName === "activate"\) onOpenComments\(post\);/);
+    // To VoiceOver: a double tap opens Comments, never a name under the middle of the line; each name an action.
+    expect(preview).toMatch(/onAccessibilityTap=\{\(\) => onOpenComments\(post\)\}\s*accessibilityActions=\{nameActions\(\[c\.author\.username, \.\.\.mentionedUsernames\(c\.body\)\]\)\}/);
+    expect(preview).toMatch(/const username = nameFromAction\(e\.nativeEvent\.actionName\);\s*if \(username\) onOpenProfile\(username\);\s*\}\}/);
   });
 
   it("on a photograph's own page: the same, the tags, and the one it was opened from gone back to", () => {
@@ -59,6 +59,7 @@ describe("the names under a photograph", () => {
     expect(page).toMatch(/<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{openMember\}\s+onLongPress=\{\(\) => onCommentLongPress\(c\)\}/);
     expect(page).toMatch(/<MentionText text=\{c\.body\} onOpenProfile=\{openMember\} onLongPress=\{\(\) => onCommentLongPress\(c\)\} \/>/);
     expect(page).toMatch(/onPress=\{\(\) => openMember\(t\.member\.username\)\}\s*accessibilityRole="link"/);
+    expect(page).toMatch(/onAccessibilityTap=\{\(\) => onOpenComments\(post\)\}\s*accessibilityActions=\{nameActions\(\[c\.author\.username, \.\.\.mentionedUsernames\(c\.body\)\]\)\}/);
   });
 
   it("on Comments: the caption's name, each comment's face and name, every @name; held, the comment's menu", () => {
@@ -72,7 +73,9 @@ describe("the names under a photograph", () => {
     expect(row).toMatch(/<NameLink username=\{comment\.author\.username\} onOpenProfile=\{onOpenAuthor\} onLongPress=\{hold\} style=\{styles\.author\} \/>/);
     expect(row).toMatch(/<MentionText text=\{comment\.body\} onOpenProfile=\{onOpenAuthor\} onLongPress=\{hold\} \/>/);
     // The row's names for VoiceOver are worked out once per comment, not on every draw.
-    expect(row).toMatch(/const actions = useMemo\(/);
+    expect(row).toMatch(/const actions = useMemo\(\s*\(\) => nameActions\(\[comment\.author\.username, \.\.\.mentionedUsernames\(comment\.body\)\]\),/);
+    // VoiceOver's double tap opens the comment's menu, as a hold does: the row has no press of its own.
+    expect(row).toMatch(/onLongPress=\{\(\) => onLongPress\(comment\)\}\s*onAccessibilityTap=\{hold\}\s*accessibilityActions=\{actions\}\s*onAccessibilityAction=\{onAction\}\s*accessibilityHint="Opens the comment’s options"/);
   });
 
   it("in the Editorial layout's card too, where the build has it: the same names and @names as PostCard", () => {
@@ -88,7 +91,8 @@ describe("the names under a photograph", () => {
     for (const preview of previews) {
       expect(preview).toMatch(/<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}/);
       expect(preview).toMatch(/<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}/);
-      expect(preview).toMatch(/accessibilityActions=\{\[\{ name: "activate" \}, \.\.\.nameActions\(/);
+      expect(preview).toMatch(/onAccessibilityTap=\{\(\) => onOpenComments\(post\)\}\s*accessibilityActions=\{nameActions\(/);
+      expect(preview).not.toMatch(/"activate"/);
     }
   });
 
@@ -100,6 +104,43 @@ describe("the names under a photograph", () => {
   });
 });
 
+describe("a row's names, as VoiceOver reaches them", () => {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir).flatMap((f) => {
+      const p = path.join(dir, f);
+      return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(f) ? [p] : [];
+    });
+  const rows = [...walk(path.join(root, "app")), ...walk(path.join(root, "src"))]
+    .map((p) => path.relative(root, p))
+    .filter((f) => f !== "src/utils/nameActions.ts" && code(f).includes("nameActions("));
+
+  it("are on every row that draws a name inside it", () => {
+    expect(rows.sort()).toEqual([
+      "app/(tabs)/activity.tsx",
+      "app/comments.tsx",
+      "app/messages/[id].tsx",
+      "app/messages/index.tsx",
+      "app/post/[id].tsx",
+      "src/components/PostCard.tsx",
+    ]);
+  });
+
+  it("never as an action named activate, which the new architecture lists as one and never sends on a double tap", () => {
+    for (const f of rows) {
+      expect(code(f), f).not.toMatch(/"activate"/);
+    }
+  });
+
+  it("leave the row's double tap to the row, on each row that offers them", () => {
+    for (const f of rows) {
+      const src = code(f);
+      const offered = (src.match(/accessibilityActions=\{(nameActions\(|actions\})/g) ?? []).length;
+      expect(offered, f).toBeGreaterThan(0);
+      expect((src.match(/onAccessibilityTap=\{/g) ?? []).length, f).toBe(offered);
+    }
+  });
+});
+
 describe("names everywhere else", () => {
   it("a notice's face and name open the member; the rest of it, what it is about", () => {
     const activity = code("app/(tabs)/activity.tsx");
@@ -107,14 +148,14 @@ describe("names everywhere else", () => {
     expect(activity).toMatch(/const openMember = useOpenProfile\(\);/);
     expect(activity).toMatch(/<NameLink username=\{item\.actor\.username\} onOpenProfile=\{openMember\} style=\{styles\.actor\} \/>/);
     expect(activity).toMatch(/onPress=\{\(\) => openMember\(item\.actor!\.username\)\}/);
-    expect(activity).toMatch(/accessibilityActions=\{\[\{ name: "activate" \}, \.\.\.nameActions\(\[isModeration \? null : item\.actor\?\.username\]\)\]\}/);
+    expect(activity).toMatch(/onAccessibilityTap=\{\(\) => open\(item\)\}\s*accessibilityActions=\{nameActions\(\[isModeration \? null : item\.actor\?\.username\]\)\}/);
   });
 
   it("the inbox: their face opens their page, the row the conversation", () => {
     const inbox = code("app/messages/index.tsx");
     expect(inbox).toMatch(/onPress=\{\(\) => onOpenProfile\(conversation\.peer\.username\)\}/);
     expect(inbox).toMatch(/onOpenProfile=\{openMember\}/);
-    expect(inbox).toMatch(/else if \(e\.nativeEvent\.actionName === "activate"\) onPress\(\);/);
+    expect(inbox).toMatch(/onAccessibilityTap=\{onPress\}\s*accessibilityActions=\{nameActions\(\[conversation\.peer\.username\]\)\}/);
   });
 
   it("a thread: its title and a photograph's member, gone back to when the thread was opened from their page", () => {
@@ -122,6 +163,7 @@ describe("names everywhere else", () => {
     expect(thread).not.toMatch(/router\.push\(`\/user\//);
     expect(thread).toMatch(/<NameLink username=\{shared\.author\.username\} onOpenProfile=\{onOpenProfile\} \/>/);
     expect(thread).toMatch(/<Bubble message=\{item\} mine=\{item\.sender_id === userId\} onOpenPost=\{openPost\} onOpenProfile=\{openMember\} \/>/);
+    expect(thread).toMatch(/onAccessibilityTap=\{\(\) => onOpenPost\(shared\.id\)\}\s*accessibilityActions=\{nameActions\(\[shared\.author\?\.username\]\)\}/);
   });
 
   it("the gallery's cards, gone back to their member's page when opened from it", () => {
@@ -170,10 +212,52 @@ describe("the comment field", () => {
     expect(height).toBeGreaterThanOrEqual(44);
     expect(style("field")).toMatch(/minHeight: FIELD_HEIGHT,/);
     expect(style("field")).toMatch(/borderRadius: FIELD_HEIGHT \/ 2,/);
-    // Post: a target as tall as the field's first line, past iOS's 44 points.
-    expect(style("post")).toMatch(/height: FIELD_HEIGHT - 2,/);
+    // Post: a target as tall as the field's first line, past iOS's 44 points, taller if its word needs it.
+    expect(style("post")).toMatch(/minHeight: FIELD_HEIGHT - 2,/);
+    expect(style("post")).not.toMatch(/\n\s*height:/);
     expect(height - 2).toBeGreaterThanOrEqual(44);
     expect(style("send")).toMatch(/color: colors\.accent/);
+    // Its word grows with the reader's text size only so far: at the largest sizes it would outgrow the field.
+    expect(composer).toMatch(/<Text style=\{\[styles\.send, !ready && styles\.sendDisabled\]\} maxFontSizeMultiplier=\{POST_TYPE_CAP\}>/);
+    const cap = Number(comments.match(/const POST_TYPE_CAP = ([\d.]+);/)?.[1]);
+    expect(cap).toBeGreaterThan(1);
+    // A line of 15-point type at that size, about 1.2 of its size tall, still fits the target.
+    expect(15 * cap * 1.2).toBeLessThanOrEqual(height - 2);
+  });
+
+  it("shares the row among the eight reactions, so the last is not cut off on a 320-point phone", () => {
+    const reaction = style("reaction");
+    expect(reaction).toMatch(/flex: 1,/);
+    expect(reaction).toMatch(/maxWidth: REACTION_MAX,/);
+    expect(reaction).not.toMatch(/\n\s*width:/);
+    expect(style("reactions")).toMatch(/justifyContent: "space-between",/);
+    expect(style("composer")).toMatch(/paddingHorizontal: spacing\.md,/);
+    const margins = 2 * 12; // spacing.md either side of the bar
+    const max = Number(comments.match(/const REACTION_MAX = (\d+);/)?.[1]);
+    const each = (screen: number) => Math.min(max, (screen - margins) / QUICK_REACTIONS.length);
+    // The narrowest phone this build runs on (src/components/gate/GateButton.tsx): the eight and the margins fit.
+    expect(each(320) * QUICK_REACTIONS.length + margins).toBeLessThanOrEqual(320);
+    // At a fixed 40 they did not: 344 points on a 320-point screen.
+    expect(40 * QUICK_REACTIONS.length + margins).toBeGreaterThan(320);
+    // Each still holds its emoji, drawn at 24 points and not scaled, about 30 wide.
+    expect(style("reactionText")).toMatch(/fontSize: 24/);
+    expect(comments).toMatch(/<Text style=\{styles\.reactionText\} allowFontScaling=\{false\}>/);
+    expect(each(320)).toBeGreaterThanOrEqual(32);
+    // On a larger phone, a full target each.
+    expect(max).toBeGreaterThanOrEqual(44);
+    expect(each(390)).toBe(max);
+  });
+
+  it("keeps the field still as the reactions and the members offered take each other's place", () => {
+    expect(style("reactions")).toMatch(/minHeight: MENTION_ROW_HEIGHT,/);
+    const chips = code("src/components/MentionSuggestions.tsx");
+    expect(chips).toMatch(/export const MENTION_ROW_HEIGHT = CHIP_HEIGHT \+ spacing\.xs \* 2;/);
+    expect(chips).toMatch(/content: \{ gap: spacing\.sm, paddingVertical: spacing\.xs \},/);
+    expect(chips).toMatch(/minHeight: CHIP_HEIGHT,/);
+    expect(chips).toMatch(/<Avatar path=\{m\.avatar_url\} username=\{m\.username\} size=\{26\} \/>/);
+    const chip = Number(chips.match(/const CHIP_HEIGHT = (\d+);/)?.[1]);
+    // Each reaction's target fits the row it shares with nothing else.
+    expect(Number(style("reaction").match(/height: (\d+),/)?.[1])).toBeLessThanOrEqual(chip + 2 * 4);
   });
 
   it("does all the old field did: the length held, Post only with words and not while sending, our words on failure", () => {
@@ -218,6 +302,43 @@ describe("@names while a caption is written", () => {
       expect(src).toMatch(/<MentionSuggestions\s+mention=\{captionField\.mention\}\s+myId=\{session\?\.user\?\.id \?\? ""\}\s+onPick=\{captionField\.pick\}/);
     });
   }
+});
+
+describe("the members offered while a caption is written, over the keyboard", () => {
+  it("compose: told the header's height, the publish bar and the names over it clear the keyboard, as Comments' bar does", () => {
+    // KeyboardAvoidingView measures the page from under its header and the keyboard from the top of the window.
+    const compose = code("app/compose.tsx");
+    expect(compose).toMatch(/import \{ useHeaderHeight \} from "@react-navigation\/elements";/);
+    expect(compose).toMatch(/const headerHeight = useHeaderHeight\(\);/);
+    expect(compose.indexOf("const headerHeight = useHeaderHeight();")).toBeLessThan(compose.indexOf("return ("));
+    expect(compose).toMatch(/<KeyboardAvoidingView\s+style=\{styles\.root\}\s+behavior=\{Platform\.OS === "ios" \? "padding" : undefined\}\s+keyboardVerticalOffset=\{headerHeight\}\s*>/);
+    expect(compose.match(/<KeyboardAvoidingView\b/g)).toHaveLength(1);
+    // The names are in the bar at the foot, inside the view that rises.
+    const bar = compose.slice(compose.indexOf("<View style={styles.footer}>"), compose.indexOf("</KeyboardAvoidingView>"));
+    expect(bar).toMatch(/<MentionSuggestions\s+mention=\{captionField\.mention\}/);
+  });
+
+  it("Edit caption: the sheet rises by as far as the keyboard comes up, so the names, Cancel and Save sit just above it", () => {
+    // A page sheet's KeyboardAvoidingView measured from the sheet's own top and left its foot under the keyboard.
+    const sheet = code("app/edit-caption.tsx");
+    expect(sheet).not.toMatch(/KeyboardAvoidingView/);
+    expect(sheet).toMatch(/const lift = useSheetKeyboardLift\(\);/);
+    const view = sheet.slice(sheet.indexOf("<View style={[styles.root, { paddingBottom: lift }]}>"));
+    expect(view.length).toBeLessThan(sheet.length);
+    const at = (s: string) => view.indexOf(s);
+    expect(at("<View style={styles.body}>")).toBeGreaterThan(0);
+    expect(at("<MentionSuggestions")).toBeGreaterThan(at("<View style={styles.body}>"));
+    expect(at("<View style={styles.footer}>")).toBeGreaterThan(at("<MentionSuggestions"));
+    // A long caption scrolls in its own space rather than running on under them.
+    expect(sheet).toMatch(/minHeight: 140,\s*flexShrink: 1,/);
+
+    const hook = code("src/hooks/useSheetKeyboardLift.ts");
+    expect(hook).toMatch(/useLayoutEffect\(\(\) => \{\s*if \(Platform\.OS !== "ios"\) return;/);
+    expect(hook).toMatch(/Keyboard\.addListener\("keyboardWillShow", \(e\) =>\s*move\(e, keyboardLift\(e\.endCoordinates\.screenY, Dimensions\.get\("window"\)\.height\)\),\s*\);/);
+    expect(hook).toMatch(/Keyboard\.addListener\("keyboardWillHide", \(e\) => move\(e, 0\)\);/);
+    expect(hook).toMatch(/return \(\) => \{\s*shown\.remove\(\);\s*hidden\.remove\(\);\s*\};\s*\}, \[\]\);/);
+    expect(hook).toMatch(/import \{ keyboardLift \} from "@\/components\/eraSheet";/);
+  });
 });
 
 describe("the members offered", () => {

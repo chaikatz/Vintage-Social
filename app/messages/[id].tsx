@@ -343,12 +343,13 @@ const Bubble = React.memo(function Bubble({
           <Pressable
             style={styles.shared}
             onPress={() => onOpenPost(shared.id)}
-            // To VoiceOver the photograph is one element: opened, the post; its member's page is its action.
-            accessibilityActions={[{ name: "activate" }, ...nameActions([shared.author?.username])]}
+            // To VoiceOver the photograph is one element: a double tap opens the post, never the
+            // name under it; its member's page is its action.
+            onAccessibilityTap={() => onOpenPost(shared.id)}
+            accessibilityActions={nameActions([shared.author?.username])}
             onAccessibilityAction={(e) => {
               const username = nameFromAction(e.nativeEvent.actionName);
               if (username) onOpenProfile(username);
-              else if (e.nativeEvent.actionName === "activate") onOpenPost(shared.id);
             }}
           >
             {thumb ? (

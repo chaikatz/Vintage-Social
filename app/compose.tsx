@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { showAlert } from "@/utils/alert";
 import * as Crypto from "expo-crypto";
 import { File } from "expo-file-system";
@@ -103,6 +104,11 @@ export default function Compose() {
   const router = useRouter();
   const { session, profile } = useSession();
   const navigation = useNavigation();
+  // KeyboardAvoidingView measures the page from under its header and the
+  // keyboard from the top of the window: told the header's height, it lifts
+  // the publish bar, and the names offered over it, clear of the keyboard,
+  // as Comments and a thread do.
+  const headerHeight = useHeaderHeight();
   const params = useLocalSearchParams<{
     uri: string;
     mediaType: "photo" | "video";
@@ -383,6 +389,7 @@ export default function Compose() {
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={headerHeight}
     >
       <ScrollView
         style={styles.root}

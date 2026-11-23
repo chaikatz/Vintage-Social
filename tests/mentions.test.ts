@@ -90,6 +90,25 @@ describe("@names in what members write", () => {
     expect(names("@marta 写真")).toEqual([["@marta", "marta"]]);
   });
 
+  it("starts a name straight after an emoji's picture selector, as after any emoji", () => {
+    // The heart reaction is U+2764 U+FE0F; U+FE0F is a mark, but it belongs to the heart, not to a word.
+    const heart = "\u2764\uFE0F";
+    expect(names(`${heart}@ansel`)).toEqual([["@ansel", "ansel"]]);
+    expect(joined(parseMentions(`${heart}@ansel`))).toBe(`${heart}@ansel`);
+    expect(names(`${heart}${heart}@ansel and @marta`)).toEqual([
+      ["@ansel", "ansel"],
+      ["@marta", "marta"],
+    ]);
+    // A family emoji ends on an emoji, not its joiner; a stray joiner is looked past too.
+    expect(names("\u{1F468}\u200D\u{1F469}\u200D\u{1F467}@ansel")).toEqual([["@ansel", "ansel"]]);
+    expect(names("\u{1F525}\u200D@ansel")).toEqual([["@ansel", "ansel"]]);
+    // A letter under the selector is still a letter: the @ is inside a word.
+    expect(names("a\uFE0F@ansel")).toEqual([]);
+    expect(names("me\uFE0F@example.com")).toEqual([]);
+    // Other marks still join, as an accent on a letter does.
+    expect(names("cafe\u0301@noon")).toEqual([]);
+  });
+
   it("holds a name to the rules every username is held to", () => {
     // Three to twenty-four characters.
     expect(names("@ab")).toEqual([]);
@@ -138,6 +157,14 @@ describe("the name being written", () => {
     expect(activeMention(`@${"a".repeat(25)}`, 26)).toBeNull();
     // A caret before the @ is not in the name.
     expect(activeMention("@ansel", 0)).toBeNull();
+  });
+
+  it("is offered straight after the heart reaction, as after any other", () => {
+    const heart = "\u2764\uFE0F";
+    expect(activeMention(`${heart}@`, 3)).toEqual({ start: 2, end: 3, query: "" });
+    expect(activeMention(`${heart}@to`, 5)).toEqual({ start: 2, end: 5, query: "to" });
+    expect(activeMention("\u{1F525}@to", 5)).toEqual({ start: 2, end: 5, query: "to" });
+    expect(activeMention("a\uFE0F@to", 5)).toBeNull();
   });
 
   it("holds a caret beyond the words to their end", () => {

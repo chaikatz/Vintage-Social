@@ -30,6 +30,15 @@ const JOINS_BEFORE = /[\p{L}\p{N}\p{M}_.@]/u;
  * (`@josé` is not `@jos`), or another @ (`@ansel@example.com`).
  */
 const JOINS_AFTER = /[\p{L}\p{N}\p{M}@]/u;
+/**
+ * What rides on the character before it rather than being one: the
+ * variation selectors that ask for an emoji's picture (the heart reaction
+ * is U+2764 U+FE0F, and Unicode counts U+FE0F as a mark) and the joiner
+ * between an emoji's parts. Looked past to the character they belong to,
+ * so a heart and then `@ansel` names ansel, as a fire and then `@ansel`
+ * does.
+ */
+const RIDES_ON = /[\uFE00-\uFE0F\u200D]/;
 
 /** The longest a username can be (src/utils/validation.ts). */
 export const MENTION_MAX = 24;
@@ -97,7 +106,9 @@ function charAt(text: string, i: number): string {
 
 /** Whether an @ at `at` stands at the start of a word, not inside one. */
 function startsWord(text: string, at: number): boolean {
-  return !JOINS_BEFORE.test(charBefore(text, at));
+  let i = at;
+  while (i > 0 && RIDES_ON.test(text[i - 1])) i--;
+  return !JOINS_BEFORE.test(charBefore(text, i));
 }
 
 /** The name an @ at `at` starts, and where it ends; null when it starts none. */

@@ -71,17 +71,31 @@ describe("the hook every name uses", () => {
 });
 
 describe("names as VoiceOver reaches them in a row", () => {
-  it("one action per member named, each once, in lowercase", () => {
+  it("one action per member named, each once, in lowercase, named by the words VoiceOver speaks", () => {
+    // On the new architecture VoiceOver speaks an action's name and never its label.
     expect(nameActions(["Ansel", "marta", "ansel", null, undefined, " "])).toEqual([
-      { name: "profile:ansel", label: "View ansel’s profile" },
-      { name: "profile:marta", label: "View marta’s profile" },
+      { name: "View ansel’s profile", label: "View ansel’s profile" },
+      { name: "View marta’s profile", label: "View marta’s profile" },
     ]);
     expect(nameActions([])).toEqual([]);
+    expect(nameActions([null])).toEqual([]);
+    for (const a of nameActions(["ansel.adams_1", "x_y.z"])) expect(a.name).toBe(a.label);
   });
 
-  it("tells a name's action from the row's own", () => {
-    expect(nameFromAction("profile:ansel")).toBe("ansel");
+  it("reads the member back from the words handed back", () => {
+    for (const username of ["ansel", "ansel.adams_1", "_x.", "a".repeat(24)]) {
+      const [action] = nameActions([username]);
+      expect(nameFromAction(action.name)).toBe(username);
+    }
+  });
+
+  it("tells a name's action from anything else", () => {
     expect(nameFromAction("activate")).toBeNull();
-    expect(nameFromAction("profile:")).toBeNull();
+    expect(nameFromAction("View ’s profile")).toBeNull();
+    expect(nameFromAction("View ansel's profile")).toBeNull();
+    expect(nameFromAction("View ansel’s profile now")).toBeNull();
+    expect(nameFromAction("View Ansel’s profile")).toBeNull();
+    expect(nameFromAction("profile:ansel")).toBeNull();
+    expect(nameFromAction("")).toBeNull();
   });
 });

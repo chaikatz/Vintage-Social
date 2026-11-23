@@ -118,12 +118,13 @@ export default function Activity() {
             <Pressable
               style={[styles.row, !item.read_at && styles.unread]}
               onPress={() => open(item)}
-              // To VoiceOver the notice is one element: opened, what it is about; the member's page is its action.
-              accessibilityActions={[{ name: "activate" }, ...nameActions([isModeration ? null : item.actor?.username])]}
+              // To VoiceOver the notice is one element: a double tap opens what it is about, never
+              // the name under the middle of it; the member's page is its action.
+              onAccessibilityTap={() => open(item)}
+              accessibilityActions={nameActions([isModeration ? null : item.actor?.username])}
               onAccessibilityAction={(e) => {
                 const username = nameFromAction(e.nativeEvent.actionName);
                 if (username) openMember(username);
-                else if (e.nativeEvent.actionName === "activate") open(item);
               }}
             >
               {isModeration ? (
