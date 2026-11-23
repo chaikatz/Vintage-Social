@@ -38,8 +38,8 @@ describe("the toggle's order", () => {
 describe("a tap on a photograph", () => {
   const all: ProfileView[] = ["posted", "taken", "timeline", "eras", "map", "places"];
 
-  it("opens the gallery from the grids and the eras, the post from the rest", () => {
-    expect(all.filter((v) => opensGallery(v, {}))).toEqual(["posted", "taken", "eras"]);
+  it("opens the gallery from the grids, the eras and the map's place sheet (a grid), the post from the rest", () => {
+    expect(all.filter((v) => opensGallery(v, {}))).toEqual(["posted", "taken", "eras", "map"]);
   });
 
   it("always opens a photograph you were tagged in on its own", () => {

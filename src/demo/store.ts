@@ -729,6 +729,7 @@ export function demoSubmitApplication(input: {
     status: "applied",
     invite_quota: 0,
     member_no: null, // no number until an admin lets them in
+    show_member_no: false, // hidden unless they choose to show it, as the database starts everyone (0041)
     invited_by: null,
     is_private: false,
     post_count: 0,
@@ -899,6 +900,7 @@ export function demoJoinWithInvite(input: {
     status: "approved",
     invite_quota: 5,
     member_no: null, // issued just below, the way redeem_invite does
+    show_member_no: false, // hidden unless they choose to show it, as the database starts everyone (0041)
     invited_by: inviter,
     is_private: false,
     post_count: 0,

@@ -68,8 +68,9 @@ describe("whether a member shows their number", () => {
     expect(showsMemberNumber({ show_member_no: "true" as unknown as boolean })).toBe(false);
   });
 
-  it("starts hidden for every member of the demo club, as the database starts everyone", () => {
-    for (const p of DEMO_PROFILES) expect(showsMemberNumber(p), p.username).toBe(false);
+  it("is hidden for every member of the demo club but the one who chose to show it", () => {
+    const showing = DEMO_PROFILES.filter((p) => showsMemberNumber(p)).map((p) => p.username);
+    expect(showing).toEqual(["tomas.lindqvist"]);
   });
 });
 
