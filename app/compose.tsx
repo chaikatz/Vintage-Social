@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { showAlert } from "@/utils/alert";
 import * as Crypto from "expo-crypto";
 import { File } from "expo-file-system";
@@ -31,6 +32,8 @@ import { cssFilterFor } from "@/filters/cssFilter";
 import { canBakeVideo } from "@/filters/bakeVideo";
 import { prepareImage } from "@/media/nativeMedia";
 import { TagPicker, type Taggable } from "@/components/TagPicker";
+import { MentionSuggestions } from "@/components/MentionSuggestions";
+import { useMentionField } from "@/hooks/useMentionField";
 import { Avatar } from "@/components/Avatar";
 import { PlacePicker, type PlaceChoice } from "@/components/PlacePicker";
 import { placeFields } from "@/api/places";
@@ -101,6 +104,11 @@ export default function Compose() {
   const router = useRouter();
   const { session, profile } = useSession();
   const navigation = useNavigation();
+  // KeyboardAvoidingView measures the page from under its header and the
+  // keyboard from the top of the window: told the header's height, it lifts
+  // the publish bar, and the names offered over it, clear of the keyboard,
+  // as Comments and a thread do.
+  const headerHeight = useHeaderHeight();
   const params = useLocalSearchParams<{
     uri: string;
     mediaType: "photo" | "video";
@@ -122,6 +130,8 @@ export default function Compose() {
   const filter = getFilter(filterId);
   const [stampOn, setStampOn] = useState(dateStampStartsOn(FILTERS[0].id));
   const [caption, setCaption] = useState("");
+  // An @name in the caption: the members it could be, over the Share button while it is written.
+  const captionField = useMentionField(caption, setCaption, MAX_CAPTION_LENGTH);
   // Where it was taken: a place chosen from the map, or words alone.
   const [place, setPlace] = useState<PlaceChoice>(null);
   const [placing, setPlacing] = useState(false);
@@ -379,6 +389,7 @@ export default function Compose() {
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={headerHeight}
     >
       <ScrollView
         style={styles.root}
@@ -619,6 +630,9 @@ export default function Compose() {
             label="Caption"
             value={caption}
             onChangeText={(t) => setCaption(t.slice(0, MAX_CAPTION_LENGTH))}
+            onSelectionChange={captionField.onSelectionChange}
+            onFocus={captionField.onFocus}
+            onBlur={captionField.onBlur}
             editable={!busy}
             multiline
             placeholder="Optional — keep it quiet."
@@ -629,6 +643,13 @@ export default function Compose() {
       {/* The publish bar stays put, so the one thing this screen is for is
           never scrolled off the bottom. */}
       <View style={styles.footer}>
+        {/* Over the keyboard, where it can be seen while the caption is written. */}
+        <MentionSuggestions
+          mention={captionField.mention}
+          myId={session?.user?.id ?? ""}
+          onPick={captionField.pick}
+          style={styles.mentions}
+        />
         <Button title="Share to VINTAGE" onPress={share} loading={busy} />
         {stage ? <Text style={styles.stage}>{stage}</Text> : null}
       </View>
@@ -861,6 +882,7 @@ const styles = StyleSheet.create({
   placeName: { fontSize: 15, color: colors.ink },
   stage: { ...type.caption, fontSize: 12, color: colors.inkFaint, textAlign: "center", marginTop: spacing.sm },
 
+  mentions: { marginBottom: spacing.sm },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

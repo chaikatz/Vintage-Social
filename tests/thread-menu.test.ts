@@ -28,7 +28,9 @@ describe("the thread's header", () => {
     expect(thread).toMatch(/<HeaderTitle tintColor=\{tintColor\} style=\{\[styles\.title,/);
     expect(thread).toMatch(/title: \{ fontFamily: type\.serif, fontSize: 17 \}/);
     expect(read("app/_layout.tsx")).toMatch(/headerTitleStyle: \{ fontFamily: type\.serif, fontSize: 17 \}/);
-    expect(thread).toMatch(/const openProfile = useCallback\(\(\) => \{\s*if \(peer\) router\.push\(`\/user\/\$\{peer\.username\}`\);/);
+    // Their page, as every name opens one: gone back to when the thread was opened from it (src/hooks/useOpenProfile.ts).
+    expect(thread).toMatch(/const openMember = useOpenProfile\(\);/);
+    expect(thread).toMatch(/const openProfile = useCallback\(\(\) => \{\s*if \(peer\) openMember\(peer\.username\);/);
   });
 
   it("offers View profile, Report member and Block member, as the profile's own menu does", () => {
