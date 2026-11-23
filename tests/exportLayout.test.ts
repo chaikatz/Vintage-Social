@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   PRINT_WIDTH,
@@ -121,6 +123,18 @@ describe("the label's words", () => {
   it("prints the number only for a member who chose to show it, and MEMBER either way", () => {
     expect(exportLabelText(post, 1, false).credit).toBe("@chai · MEMBER");
     expect(exportLabelText(post, 1, true).credit).toBe("@chai · MEMBER NO. 00001");
+  });
+
+  it("hides the number when the caller says nothing of the choice, so a two-argument call (the feed's print card) still compiles and still hides it", () => {
+    // tsc type-checks tests/: these two-argument calls are the compile check
+    // for src/components/feed/EditorialPostCard.tsx, which calls
+    // exportLabelText(post, null) and is not on this branch.
+    expect(exportLabelText(post, null).credit).toBe("@chai");
+    expect(exportLabelText(post, 27).credit).toBe("@chai · MEMBER");
+    expect(memberCredit("chai", 27)).toBe("@chai · MEMBER");
+    const src = readFileSync(resolve(__dirname, "../src/utils/exportLayout.ts"), "utf8");
+    expect(src).toMatch(/export function memberCredit\(username: string, memberNo: number \| null \| undefined, shown = false\): string \{/);
+    expect(src).toMatch(/memberNo: number \| null \| undefined,\n\s*\/\*\*[^\n]*\*\/\n\s*shown = false,\n\): ExportLabelText \{/);
   });
 
   it("leaves out what is not there and never invents a number", () => {

@@ -149,27 +149,30 @@ export const PIN_BOX: PinBox = { halfWidth: PIN_PRINT / 2 + REACH, halfHeight: (
 /**
  * The pins worth drawing for the span on screen: those within it, and
  * within half a screen of it every way, so a short pan finds them already
- * there; at most `max`, nearest the middle first. Every place the member
- * photographed made a pin of its own wherever the map was, so a member
- * of two hundred places, looking at one town, had two hundred pins
+ * there; at most `max`, those on screen first and then nearest the
+ * middle (a pin in a corner of the screen is nearer the edge than one
+ * just past a side, and must not be the one left out). Every place the
+ * member photographed made a pin of its own wherever the map was, so a
+ * member of two hundred places, looking at one town, had two hundred pins
  * drawn, each with its picture.
  */
 export function pinsInView<C extends { lat: number; lng: number }>(clusters: readonly C[], region: Region, max = MAX_PINS): C[] {
   // Half the span either way is the screen; as much again is the half screen around it.
   const reachLat = region.latitudeDelta;
   const reachLng = region.longitudeDelta;
-  const near: { c: C; d: number }[] = [];
+  const near: { c: C; off: boolean; d: number }[] = [];
   for (const c of clusters) {
     const dLat = Math.abs(c.lat - region.latitude);
     const dLng = Math.abs(wrapLongitude(c.lng - region.longitude));
     // A span of half the world or more reaches all the way round.
     if (reachLng < 180 && dLng > reachLng) continue;
     if (dLat > reachLat) continue;
-    near.push({ c, d: (dLat / Math.max(reachLat, 1e-9)) ** 2 + (dLng / Math.max(reachLng, 1e-9)) ** 2 });
+    const off = dLat > reachLat / 2 || dLng > reachLng / 2;
+    near.push({ c, off, d: (dLat / Math.max(reachLat, 1e-9)) ** 2 + (dLng / Math.max(reachLng, 1e-9)) ** 2 });
   }
   if (near.length <= max) return near.map((n) => n.c);
   return near
-    .sort((a, b) => a.d - b.d)
+    .sort((a, b) => Number(a.off) - Number(b.off) || a.d - b.d)
     .slice(0, max)
     .map((n) => n.c);
 }

@@ -150,6 +150,20 @@ describe("the switch in Settings", () => {
     expect(settings).toMatch(/const savedShowNumber = useRef\(showsMemberNumber\(profile\)\);/);
   });
 
+  it("refreshes every cached copy of your own profile once saved, not only the session's", () => {
+    const writer = settings.slice(settings.indexOf("const [numberWriter]"), settings.indexOf("const toggleNumber"));
+    const saved = writer.slice(writer.indexOf("onSaved:"), writer.indexOf("onFailed:"));
+    expect(saved).toMatch(/refreshRef\.current\(\)\.catch\(\(\) => undefined\);/);
+    // app/export.tsx and app/gallery.tsx read the author as ["profile-by-id", id]; app/user/[username].tsx as ["profile", username].
+    expect(saved).toMatch(/queryClient\.invalidateQueries\(\{ queryKey: \["profile-by-id", userIdRef\.current\] \}\);/);
+    expect(saved).toMatch(/queryClient\.invalidateQueries\(\{ queryKey: \["profile", usernameRef\.current\] \}\);/);
+    expect(code("app/export.tsx")).toMatch(/queryKey: \["profile-by-id", post\?\.author_id\]/);
+    expect(code("app/gallery.tsx")).toMatch(/queryKey: \["profile-by-id", authorId\]/);
+    expect(code("app/user/[username].tsx")).toMatch(/queryKey: \["profile", username\]/);
+    // The alert is true whichever way the switch was going.
+    expect(writer).not.toMatch(/is shown as it was/);
+  });
+
   it("is named for VoiceOver and says what it does, and Save never sends it", () => {
     const sw = settings.slice(settings.indexOf("Show my member number"));
     expect(sw).toMatch(/accessibilityLabel="Show my member number"/);
@@ -161,7 +175,8 @@ describe("the switch in Settings", () => {
   it("says the app's calm words, not the database's, when the database has no such column yet", () => {
     // What PostgREST answers a write to a column it does not know (a database before 0041).
     const missing = "Could not find the 'show_member_no' column of 'profiles' in the schema cache";
-    const fallback = "Your number is shown as it was. Try again in a moment.";
+    // True whichever way the switch was going: the number is as it was.
+    const fallback = "Your number is as it was. Try again in a moment.";
     const asError = Object.assign(new Error(missing), { name: "PostgrestError", code: "PGRST204", details: null, hint: null });
     expect(errorMessage(asError, fallback)).toBe(fallback);
     expect(errorMessage({ code: "PGRST204", message: missing, details: null, hint: null }, fallback)).toBe(fallback);

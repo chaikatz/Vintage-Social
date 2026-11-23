@@ -169,6 +169,8 @@ export default function Settings() {
   // database before 0041 has no such column and refuses the write: the
   // switch goes back, and says so, like any other refusal.
   const memberNo = profile?.member_no ?? null;
+  const usernameRef = useRef(profile?.username ?? "");
+  usernameRef.current = profile?.username ?? "";
   const savedShowNumber = useRef(showsMemberNumber(profile));
   const [showNumber, setShowNumber] = useState(() => showsMemberNumber(profile));
   const [numberWriter] = useState(() =>
@@ -179,10 +181,14 @@ export default function Settings() {
       },
       onSaved: () => {
         refreshRef.current().catch(() => undefined);
+        // The other copies of your own profile: the print's and the
+        // gallery's author, and your page as others open it.
+        queryClient.invalidateQueries({ queryKey: ["profile-by-id", userIdRef.current] });
+        queryClient.invalidateQueries({ queryKey: ["profile", usernameRef.current] });
       },
       onFailed: (err) => {
         setShowNumber(savedShowNumber.current);
-        showAlert("Couldn’t change that", errorMessage(err, "Your number is shown as it was. Try again in a moment."));
+        showAlert("Couldn’t change that", errorMessage(err, "Your number is as it was. Try again in a moment."));
       },
     }),
   );

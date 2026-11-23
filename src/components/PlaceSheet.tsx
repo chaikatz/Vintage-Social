@@ -61,8 +61,8 @@ export const PlaceSheet = memo(function PlaceSheet({ sheet, onOpenPost, onClose 
         accessibilityLabel="Back to the map"
       />
       <Animated.View style={[styles.sheet, { transform: [{ translateY: lift }] }]}>
+        {/* No grabber: the sheet does not drag, so nothing says it does. The cross, or the map above, puts it away. */}
         <View style={styles.bar}>
-          <View style={styles.grabber} />
           <Pressable
             style={styles.close}
             onPress={onClose}
@@ -125,7 +125,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   bar: { height: 22, alignItems: "center", justifyContent: "center" },
-  grabber: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong },
   close: { position: "absolute", right: spacing.lg, top: spacing.sm },
   content: { gap: GRID_GAP, paddingBottom: spacing.xl * 2 },
   row: { gap: GRID_GAP },

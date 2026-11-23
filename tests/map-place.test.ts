@@ -212,6 +212,22 @@ describe("the pins drawn", () => {
     expect(Math.min(...left.map(far))).toBeGreaterThanOrEqual(kept - 1e-9);
     expect(pinsInView(pins, region, 5)).toHaveLength(5);
   });
+
+  it("keep every pin on screen before any off it, a corner of the screen before just past a side", () => {
+    const region: Region = { latitude: 0, longitude: 0, latitudeDelta: 10, longitudeDelta: 10 };
+    // Inside the screen's corner (4.9, 4.9 of a half span of 5) scores more than
+    // just past its side (0, 5.5) by distance alone: 0.48 to 0.30.
+    const corner = { key: "corner", lat: 4.9, lng: 4.9 };
+    const past = { key: "past", lat: 0, lng: 5.5 };
+    expect(pinsInView([past, corner], region, 1).map((p) => p.key)).toEqual(["corner"]);
+    // Every on-screen pin is drawn before any of the ring around it.
+    const onScreen = Array.from({ length: 6 }, (_, i) => ({ key: `on${i}`, lat: 4.8, lng: -4.8 + i * 1.9 }));
+    const ring = Array.from({ length: 6 }, (_, i) => ({ key: `ring${i}`, lat: 0, lng: i % 2 ? 5.2 + i * 0.1 : -5.2 - i * 0.1 }));
+    const drawn = pinsInView([...ring, ...onScreen], region, 6).map((p) => p.key);
+    expect(drawn.sort()).toEqual(onScreen.map((p) => p.key).sort());
+    // Room for more: the ring follows, nearest first.
+    expect(pinsInView([...ring, ...onScreen], region, 8).filter((p) => p.key.startsWith("ring")).map((p) => p.key)).toEqual(["ring0", "ring1"]);
+  });
 });
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -297,6 +313,11 @@ describe("the place sheet (src/components/PlaceSheet.tsx)", () => {
     expect(sheet).toMatch(/onPress=\{onClose\}[\s\S]*?accessibilityLabel="Back to the map"/);
     expect(sheet).toMatch(/onPress=\{onClose\}[\s\S]*?accessibilityLabel="Close"/);
     expect(sheet).toMatch(/<View accessibilityRole="header">/);
+  });
+
+  it("shows no drag handle, since it does not drag", () => {
+    expect(sheet).not.toMatch(/grabber/);
+    expect(sheet).not.toMatch(/PanResponder|onPanResponder/);
   });
 
   it("uses the Places heading itself, not a copy", () => {
