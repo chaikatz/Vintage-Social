@@ -175,7 +175,7 @@ describe("the camera and the clip", () => {
     expect(tab.match(/<QuietWay\b/g)).toHaveLength(1);
     expect(tab.match(/<BoxedWay\b/g)).toHaveLength(2);
     expect(boxed).toMatch(/<Feather name=\{icon\} size=\{BOX_MARK\} color=\{colors\.ink\} \/>/);
-    expect(boxed).toMatch(/<Text style=\{styles\.boxWord\} maxFontSizeMultiplier=\{TYPE_CAP\}>\s*\{label\}\s*<\/Text>/);
+    expect(boxed).toMatch(/<Text style=\{styles\.boxWord\} maxFontSizeMultiplier=\{BAR_TYPE_CAP\}>\s*\{label\}\s*<\/Text>/);
   });
 
   it("are lettered and marked in ink on the raised paper, ruled in the secondary ink, and darken when pressed", () => {
@@ -210,6 +210,32 @@ describe("the camera and the clip", () => {
     expect(word + mark + 8 + 2 * 8 + 2).toBeLessThanOrEqual(half);
     expect(style(tab, "boxes")).toMatch(/flexDirection: "row", flexWrap: "wrap"/);
     expect(style(tab, "boxWord")).toMatch(/flexShrink: 1/);
+  });
+
+  it("never break a word in two, even at the largest text sizes on a 320 pt phone", () => {
+    // A word wider than its line is broken between two letters ("CAMER / A"), so each word has to fit beside the mark
+    // at the size its letters stop growing. iOS grows the letters but not the tracking between them.
+    const capName = boxed.match(/<Text style=\{styles\.boxWord\} maxFontSizeMultiplier=\{(\w+)\}>/)?.[1];
+    expect(capName).toBeTruthy();
+    const cap = Number(tab.match(new RegExp(`const ${capName} = ([\\d.]+);`))?.[1]);
+    expect(cap).toBeGreaterThan(1);
+    const num = (prop: string) => Number(style(tab, "boxWord").match(new RegExp(`${prop}: ([\\d.]+)`))?.[1]);
+    const COURIER_EM = 0.6; // every Courier New glyph
+    const mark = Number(tab.match(/const BOX_MARK = (\d+);/)?.[1]);
+    expect(style(tab, "box")).toMatch(/paddingHorizontal: spacing\.sm,/);
+    expect(style(tab, "boxInside")).toMatch(/gap: spacing\.sm/);
+    const half = (320 - 2 * 16 - 12) / 2; // the column of a 320 pt phone, less spacing.md, halved
+    const room = half - 2 * 1 - 2 * 8 - mark - 8; // less the rule, the padding, the mark and the gap beside it
+    const labels = [...tab.matchAll(/<BoxedWay\s+icon="\w+"\s+label="([^"]+)"/g)].map((m) => m[1]);
+    expect(labels).toEqual(["Camera", "Short video"]);
+    const words = labels.flatMap((l) => l.split(" "));
+    const longest = words.reduce((a, b) => (b.length > a.length ? b : a), "");
+    expect(longest.toUpperCase()).toBe("CAMERA");
+    const width = (w: string) => w.length * (num("fontSize") * cap * COURIER_EM + num("letterSpacing"));
+    for (const w of words) expect(width(w), w).toBeLessThanOrEqual(room);
+    // At the page's own cap it would not fit: the reason the boxes' letters stop sooner.
+    const pageCap = Number(tab.match(/const TYPE_CAP = ([\d.]+);/)?.[1]);
+    expect(longest.length * (num("fontSize") * pageCap * COURIER_EM + num("letterSpacing"))).toBeGreaterThan(room);
   });
 });
 

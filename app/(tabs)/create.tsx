@@ -156,7 +156,7 @@ type Way = "photo" | "camera" | "video";
 const TYPE_CAP = 2.4;
 /** The serif line stops growing sooner: here "photograph." still fits on one line of a 320 pt phone, so it is never broken in two. */
 const TITLE_CAP = 1.8;
-/** The bars' capitals stop growing here. At the largest sizes a label takes two lines, and its bar grows to hold them. */
+/** The bars' capitals, and the boxes' under them, stop growing here. At the largest sizes a label takes two lines, and its bar grows to hold them. */
 const BAR_TYPE_CAP = 1.8;
 /** GateButton's arrow is 18 wide, 16 in from the edge: the label keeps clear of it on both sides, so it stays centred. */
 const BAR_INSET = 36;
@@ -238,7 +238,10 @@ function MemoryRoomDoor({ held }: { held: boolean }) {
  * camera, takes all of it). While it is the one opening, a small spinner
  * stands where its mark and word were, in a box the same size, so nothing
  * beside it moves. Its word is never held to one line: at the largest
- * text sizes it takes two, and the box grows to hold them.
+ * text sizes it takes two, and the box grows to hold them. Its letters
+ * stop growing where the bars' do (BAR_TYPE_CAP): iOS grows the letters
+ * but not the tracking between them, and at the page's own cap CAMERA is
+ * wider than half the column of a 320 pt phone, and broken in two.
  */
 function BoxedWay({
   icon,
@@ -267,7 +270,7 @@ function BoxedWay({
     >
       <View style={[styles.boxInside, busy && styles.hidden]}>
         <Feather name={icon} size={BOX_MARK} color={colors.ink} />
-        <Text style={styles.boxWord} maxFontSizeMultiplier={TYPE_CAP}>
+        <Text style={styles.boxWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
           {label}
         </Text>
       </View>
