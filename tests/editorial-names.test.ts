@@ -296,14 +296,14 @@ describe("every username the app draws", () => {
   it("on the editorial card is the original card's name, half bold, set in its sheet, since it is drawn only under Editorial", () => {
     const card = code("src/components/feed/EditorialPostCard.tsx");
     const original = code("src/components/PostCard.tsx");
-    // The owner's restyle (24 November): the wordmark's serif in its italic, 14 pt, in the name ink, in the header and before the words alike.
-    // No weight: Georgia has no medium cut, and the phone would draw 500 as its bold.
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.serif, fontStyle: "italic", fontSize: 14, color: colors\.nameInk \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.serif, fontStyle: "italic", fontSize: 14, color: colors\.nameInk \},/);
+    // The owner's restyle (24 November): Cormorant Garamond Medium Italic, 14 pt, in the name ink, in the header and before the words alike.
+    // No weight or style over it: the face is the medium italic itself (tests/editorial-name-font.test.ts).
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: NAME_FACE, fontSize: 14, color: colors\.nameInk \},/);
+    expect(card).toMatch(/\n {2}author: \{ fontFamily: NAME_FACE, fontSize: 14, color: colors\.nameInk \},/);
     // The original card's own, but for the weight.
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
-    // Its own face, size and ink: the serif italic, never the typewriter face or tracking on a name, and the module not read.
+    // Its own face, size and ink: Cormorant's medium italic, never the typewriter face or tracking on a name, and the module not read.
     expect(card).not.toMatch(/nameFace|NAME_INK/);
     for (const name of ["username", "author"]) {
       expect(card.match(new RegExp(`\\n {2}${name}: \\{ [^\\n]* \\},`))?.[0], name).not.toMatch(/letterSpacing|type\.mono|fontWeight/);
@@ -740,6 +740,10 @@ describe("the trial still comes out cleanly", () => {
     expect(out).toMatch(/git rm [^\n]*src\/utils\/nameFace\.ts/);
     expect(out).toMatch(/git rm [^\n]*tests\/editorial-names\.test\.ts/);
     expect(out).toMatch(/git rm [^\n]*src\/components\/feed\/EditorialPostCard\.tsx/);
+    // The card's name face goes with it: the font, its licence and its guards.
+    expect(out).toMatch(/git rm [^\n]*assets\/fonts\/CormorantGaramond-MediumItalic\.ttf/);
+    expect(out).toMatch(/git rm [^\n]*assets\/fonts\/CormorantGaramond-OFL\.txt/);
+    expect(out).toMatch(/git rm [^\n]*tests\/editorial-name-font\.test\.ts/);
     // Exactly the files it touches go back to claude/product-polish's own: no more, no fewer.
     const checkout = out.match(/git checkout claude\/product-polish -- ([^\n]*)/)?.[1] ?? "";
     const named = checkout.split(/\s+/).map((f) => f.replace(/^"|"$/g, ""));
@@ -757,6 +761,8 @@ describe("the trial still comes out cleanly", () => {
         // The editorial card's name ink (the owner's restyle, 24 November).
         "src/theme/index.ts",
         "tests/theme.test.ts",
+        // expo-font's plugin builds the card's name face into the iPhone app.
+        "app.json",
         "e2e/launch-test.mjs",
       ].sort(),
     );

@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import * as Haptics from "expo-haptics";
 import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -296,6 +296,22 @@ const RING_WIDTH = 1;
 const NAME_GAP = "\u2004";
 
 /**
+ * A member's name on this card: Cormorant Garamond Medium Italic (weight
+ * 500), the owner's choice (24 November), at 14 pt. Its file is
+ * assets/fonts/CormorantGaramond-MediumItalic.ttf (SIL Open Font License,
+ * assets/fonts/CormorantGaramond-OFL.txt), built into the iPhone app by
+ * expo-font's plugin in app.json, where it is found by this PostScript
+ * name; the face is the medium italic itself, so no weight or style is set
+ * over it. The web build has no plugin, so there it is loaded once here.
+ */
+const NAME_FACE = "CormorantGaramond-MediumItalic";
+if (Platform.OS === "web") {
+  require("expo-font")
+    .loadAsync({ [NAME_FACE]: require("../../../assets/fonts/CormorantGaramond-MediumItalic.ttf") })
+    .catch(() => {});
+}
+
+/**
  * How far the label's typewriter lines grow with Larger Text. At twice
  * their size the longest date still fits across a 320 pt screen, on a
  * line of its own under the buttons; any larger and it would not.
@@ -365,9 +381,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   // The member's username as the original card sets it, but half bold (medium), as every username is under Editorial (src/utils/nameFace.ts).
-  // The member's name: the wordmark's serif (Georgia), in its italic. Georgia has no
-  // medium cut, and the phone would draw a 500 as its bold, so it is the regular italic.
-  username: { flexShrink: 1, fontFamily: type.serif, fontStyle: "italic", fontSize: 14, color: colors.nameInk },
+  // The member's name: Cormorant Garamond Medium Italic, 14 pt, in the name ink.
+  username: { flexShrink: 1, fontFamily: NAME_FACE, fontSize: 14, color: colors.nameInk },
   // The print alone keeps the print's margins, a share of the width, and
   // the same paper over the picture as under it, before the hairline. The
   // paper itself lets a touch through to the member's row under it.
@@ -447,7 +462,7 @@ const styles = StyleSheet.create({
   },
   // Who wrote it, in the words' own face, size and ink, half bold, as the name over the print is.
   // A name in the caption and the comments: the header's name, as it is drawn there.
-  author: { fontFamily: type.serif, fontStyle: "italic", fontSize: 14, color: colors.nameInk },
+  author: { fontFamily: NAME_FACE, fontSize: 14, color: colors.nameInk },
   nameGap: { fontSize: 12 },
   // The label's typewriter face, a shade fainter than the date, in small letters.
   posted: {

@@ -116,7 +116,7 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 
 | file | what it is |
 |------|------------|
-| `src/components/feed/EditorialPostCard.tsx` | the editorial card (new): its usernames in the wordmark's serif italic, 14 pt, in the name ink, the member's picture in a thin ring, the words at 11 pt (the owner's restyle, 24 November) |
+| `src/components/feed/EditorialPostCard.tsx` | the editorial card (new): its usernames in Cormorant Garamond Medium Italic, 14 pt, in the name ink, the member's picture in a thin ring, the words at 11 pt (the owner's restyle, 24 November) |
 | `src/utils/feedLayout.ts` | the layout preference, kept on the phone (new) |
 | `src/utils/feedPaper.ts` | the paper preference, kept on the phone, and the paper a feed lies on (new) |
 | `src/utils/nameFace.ts` | the usernames' weight while Editorial is chosen, medium, and the title style of a bar titled with one, regular (new) |
@@ -137,6 +137,9 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `tests/member-names.test.ts` | its guards on the names that are links accept the names' face in a link's style |
 | `src/theme/index.ts` | one colour, `nameInk` (#2A2826 on paper, white on black), for the editorial card's names and ring |
 | `tests/theme.test.ts` | lists `nameInk` among the tokens on paper |
+| `assets/fonts/CormorantGaramond-MediumItalic.ttf`, `assets/fonts/CormorantGaramond-OFL.txt` | the editorial card's name face, weight 500 italic, and its SIL Open Font License (new) |
+| `app.json` | expo-font's plugin builds that font into the iPhone app (`fonts`) |
+| `tests/editorial-name-font.test.ts` | the face's guards: the card asks for the file's own PostScript name, the plugin builds it in, the licence travels with it (new) |
 | `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face, weight, colour and spacing on Home, in the comments, in Activity and in the inbox (an unread thread's name semibold, a read one's medium), and a profile's and a gallery's title (the stack's serif, ink and size, regular, beside a bar titled with other words), and that Original sets the names and those titles back to the stack's own weight and otherwise exactly as Editorial drew them |
 
 `src/components/PostCard.tsx` (drawn only under Original, so its names are
@@ -159,8 +162,8 @@ permanent change and none of the experiment.
 From the repository root, on the branch to clean:
 
 ```bash
-git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts EDITORIAL_FEED_PREVIEW.md
-git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx "app/user/[username].tsx" src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/theme/index.ts tests/theme.test.ts tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/thread-menu.test.ts tests/member-names.test.ts e2e/launch-test.mjs
+git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts tests/editorial-name-font.test.ts assets/fonts/CormorantGaramond-MediumItalic.ttf assets/fonts/CormorantGaramond-OFL.txt EDITORIAL_FEED_PREVIEW.md
+git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx "app/user/[username].tsx" src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/theme/index.ts tests/theme.test.ts app.json tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/thread-menu.test.ts tests/member-names.test.ts e2e/launch-test.mjs
 npx tsc --noEmit && npx vitest run
 git commit -m "Remove the Editorial feed preview"
 ```

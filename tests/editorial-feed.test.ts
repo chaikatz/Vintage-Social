@@ -530,11 +530,11 @@ describe("the editorial card", () => {
     // The original card's size for the picture.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    // The owner's restyle (24 November): the name in the wordmark's serif, in its italic, 14 pt, in the name ink (see tests/editorial-names.test.ts).
+    // The owner's restyle (24 November): the name in Cormorant Garamond Medium Italic, 14 pt, in the name ink (see tests/editorial-names.test.ts, tests/editorial-name-font.test.ts).
     // The original card keeps its own.
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.serif, fontStyle: "italic", fontSize: 14, color: colors\.nameInk \},/);
-    expect(sheet!.username).toEqual({ flexShrink: 1, fontFamily: type.serif, fontStyle: "italic", fontSize: 14, color: colors.nameInk });
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: NAME_FACE, fontSize: 14, color: colors\.nameInk \},/);
+    expect(sheet!.username).toEqual({ flexShrink: 1, fontFamily: "CormorantGaramond-MediumItalic", fontSize: 14, color: colors.nameInk });
     expect(sheet!.username).not.toHaveProperty("fontWeight");
     expect(sheet!.username).not.toHaveProperty("letterSpacing");
     // Only the name: the place and the date are on the label.
@@ -583,13 +583,13 @@ describe("the editorial card", () => {
     expect(body).toMatch(
       /<Text style=\{styles\.comment\} numberOfLines=\{2\}>\s*<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s*\/>\s*<\/Text>/,
     );
-    // Who wrote it, as the header draws them: the wordmark's serif in its italic, 14 pt, in the name ink; then 4 pt (a third of an em at 12 pt).
+    // Who wrote it, as the header draws them: Cormorant Garamond Medium Italic, 14 pt, in the name ink; then 4 pt (a third of an em at 12 pt).
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.serif, fontStyle: "italic", fontSize: 14, color: colors\.nameInk \},/);
-    expect(sheet!.author).toEqual({ fontFamily: type.serif, fontStyle: "italic", fontSize: 14, color: colors.nameInk });
+    expect(card).toMatch(/\n {2}author: \{ fontFamily: NAME_FACE, fontSize: 14, color: colors\.nameInk \},/);
+    expect(sheet!.author).toEqual({ fontFamily: "CormorantGaramond-MediumItalic", fontSize: 14, color: colors.nameInk });
     expect(card).toMatch(/const NAME_GAP = "\\u2004";/);
     expect(card).toMatch(/\n {2}nameGap: \{ fontSize: 12 \},/);
-    // No weight on the italic: Georgia has no medium cut, and the phone would draw a 500 as its bold.
+    // No weight or style over the face: it is the medium italic itself, found by its PostScript name.
     expect(style("username")).not.toMatch(/fontWeight/);
     expect(card.match(/\n {2}author: \{[^\n]*\},/)?.[0]).not.toMatch(/fontWeight/);
   });
