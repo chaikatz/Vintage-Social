@@ -2,12 +2,15 @@
 // the door on the Post tab → the first-visit page → On this day, on the
 // app's own page, each plate with its signature line, and CONTENTS a tab
 // with a line under it on a first visit → a page turn → taps on the
-// photograph, either half → set aside → Contents, read as an index, and
-// its years → a year's months → a year chapter → Surprise me → the Set
-// aside chapter → the end of On this day → DEVELOP into the editor, and
-// back to the same print.
+// photograph, either half → PLAY: the replay, its dial, its strip, and
+// back → set aside → Contents, read as an index, and its years → a year's
+// months → a year chapter → Surprise me → the Set aside chapter → the end
+// of On this day, and PLAY IT THROUGH → DEVELOP into the editor, and back
+// to the same print.
 //
 //   npm run build:web && npm run test:darkroom      (SHOT_DIR=… to keep screenshots)
+//
+// E2E_BASE points it at a build served elsewhere (the default is e2e/serve.mjs's).
 //
 // The browser build reads a small bundled demo library (src/darkroom/
 // demoSource.ts): six of its photographs fall on today's date in earlier
@@ -21,7 +24,7 @@
 import { chromium } from "playwright";
 
 const out = process.env.SHOT_DIR ?? null;
-const B = "http://127.0.0.1:8090";
+const B = process.env.E2E_BASE ?? "http://127.0.0.1:8090";
 const W = 393;
 const H = 852;
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
@@ -290,6 +293,77 @@ check("Quick taps turn one page at a time", thirdDate !== secondDate && thirdDat
 await tapPlate(0.15);
 check("…and the left half brings it back", (await dateLabel()) === secondDate, await dateLabel());
 
+// --- PLAY: the replay ----------------------------------------------------------------------
+// From the second print. The demo's six anniversaries are a year each, so
+// no year holds the three a title card needs: the cards are held by
+// tests/darkroom-replay.test.ts. The browser has no momentum events; the
+// strip there takes any offset it did not ask for as a finger's.
+const replayDate = async () => ((await byId("darkroom-replay-date").first().textContent().catch(() => "")) ?? "").trim();
+check("PLAY sits at the foot, beside DEVELOP", await appears("darkroom-play", 3000));
+const playTab = await box("darkroom-play-tab");
+const developWord = await box("darkroom-develop");
+check(
+  "…its tab on the page’s 16 pt gutter, clear of DEVELOP, drawn as CONTENTS is",
+  playTab != null &&
+    Math.abs(playTab.x - 16) <= 1 &&
+    playTab.height >= 30 &&
+    developWord != null &&
+    playTab.right < developWord.x &&
+    (await style("darkroom-play-tab", "borderTopColor")) === "rgb(156, 146, 127)",
+  JSON.stringify({ playTab, developWord }),
+);
+await byId("darkroom-play").first().click();
+const replaying = await appears("darkroom-replay", 3000);
+await wait(300);
+check(
+  "PLAY opens the replay in the room’s own page, with DEVELOP and CONTENTS out of the way",
+  replaying && (await byId("darkroom-develop").count()) === 0 && (await byId("darkroom-contents").count()) === 0 && (await byId("darkroom-back").count()) > 0,
+);
+check("It starts from the print in front", (await replayDate()) === secondDate, await replayDate());
+const gate = await box("darkroom-replay-gate");
+const stripRow = await box("darkroom-replay-strip-row");
+const dial = await box("darkroom-replay-dial");
+check(
+  "The gate, the caption, the strip and the dial, top to bottom",
+  gate != null && stripRow != null && dial != null && gate.bottom < stripRow.y && stripRow.bottom < dial.y && Math.round(dial.width) === 80 && Math.round(stripRow.height) === 68,
+  JSON.stringify({ gate, stripRow, dial }),
+);
+await shot("replay-playing");
+let moved = false;
+for (let t = 0; t < 25 && !moved; t++) {
+  await wait(100);
+  moved = (await replayDate()) !== secondDate;
+}
+check("…and plays on by itself", moved, await replayDate());
+const dialLabelNow = async () => (await byId("darkroom-replay-dial").first().getAttribute("aria-label")) ?? "";
+check("The dial says Pause while it plays", (await dialLabelNow()) === "Pause", await dialLabelNow());
+await byId("darkroom-replay-dial").first().click();
+await wait(200);
+const heldOn = await replayDate();
+await wait(1500);
+check("A press on the dial holds it, and the dial says Play", (await dialLabelNow()) === "Play" && (await replayDate()) === heldOn, `${await dialLabelNow()} ${heldOn}`);
+await shot("replay-held");
+await byId("darkroom-replay-cell-0").first().click();
+await wait(400);
+check("A frame on the strip goes to its photograph", (await replayDate()) === firstDate, await replayDate());
+await page.evaluate(() => {
+  const strip = [...document.querySelectorAll('[data-testid="darkroom-replay-strip"]')].find((e) => e.offsetParent !== null);
+  if (strip) strip.scrollLeft = 72;
+});
+await wait(400);
+check("Gliding the strip two frames on moves the photograph with it", (await replayDate()) === thirdDate, await replayDate());
+check("…and still held", (await dialLabelNow()) === "Play");
+await byId("darkroom-replay-cell-1").first().click();
+await wait(400);
+check("…and a frame brings it back", (await replayDate()) === secondDate, await replayDate());
+await byId("darkroom-back").first().click();
+await wait(900);
+check(
+  "Back closes the replay, the room on the print it stopped on",
+  (await byId("darkroom-replay").count()) === 0 && (await byId("darkroom-develop").count()) > 0 && (await dateLabel()) === secondDate,
+  await dateLabel(),
+);
+
 // --- set aside ----------------------------------------------------------------------------
 // Set aside, the word turns from faint to the room's full ink, beside the dot in the accent. The
 // browser shows the light print, as the rest of the app does there: the ink is the paper's #2B2620.
@@ -407,6 +481,16 @@ const ended = await toEnd();
 check("On this day ends on its end page", ended && /That is everything from this (day|week|time of year)/.test(await text()));
 check("The end page hands on to another way in", /Surprise me/i.test(await text()) && /Choose a year/i.test(await text()));
 await shot("end");
+const endWords = await seen(page.locator('[data-testid^="darkroom-word-"]')).evaluateAll((els) =>
+  els.map((e) => ({ id: e.getAttribute("data-testid"), text: (e.textContent ?? "").trim() })),
+);
+check("Its first, ruled word plays the day through", endWords[0]?.id === "darkroom-word-play" && /Play it through/i.test(endWords[0]?.text ?? ""), JSON.stringify(endWords));
+await byId("darkroom-word-play").first().click();
+check("PLAY IT THROUGH opens the replay at the first print", (await appears("darkroom-replay", 3000)) && (await replayDate()) === firstDate, await replayDate());
+await byId("darkroom-back").first().click();
+await wait(900);
+check("…and Back returns to the room", (await byId("darkroom-replay").count()) === 0 && (await dateLabel()) !== "");
+await toEnd();
 
 // --- DEVELOP into the editor, and back --------------------------------------------------------------------
 await turn(-1);
