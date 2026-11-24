@@ -238,14 +238,33 @@ describe("a bar titled with a username", () => {
     expect(own).toEqual({ fontFamily: type.serif, fontSize: 17, color: colors.ink });
     expect({ ...own, ...nameTitleStyle("original") }).toEqual(own);
     // Under Editorial, the face; its line is taller than the serif's, so the difference is given back to the bar's
-    // padding above and below, and the bar is as tall on the Profile tab as on the others.
-    expect(tabs).toMatch(/const nameTitle = titleStyle\.fontSize !== styles\.headerTitle\.fontSize \? styles\.nameTitle : undefined;/);
-    expect(rule("app/(tabs)/_layout.tsx", "nameTitle")).toEqual({ marginVertical: -4.25 });
+    // padding above and below, and the bar is as tall on the Profile tab as on the others, at the reader's text size.
+    expect(tabs).toMatch(/const \{ fontScale \} = useWindowDimensions\(\);/);
+    expect(tabs).toMatch(
+      /const nameTitle = titleStyle\.fontSize !== styles\.headerTitle\.fontSize \? \{ marginVertical: styles\.nameTitle\.marginVertical \* fontScale \} : undefined;/,
+    );
+    expect(rule("app/(tabs)/_layout.tsx", "nameTitle")).toEqual({ marginVertical: -4.34 });
     expect(nameTitleStyle("original").fontSize).toBe(own.fontSize);
     expect(nameTitleStyle("editorial").fontSize).not.toBe(own.fontSize);
-    // The face's title line, less the serif's (Georgia's 1.136 of 17 pt on the iPhone), halved: within a quarter point.
-    const georgia = 1.136 * 17;
-    expect(Math.abs((nameTitleStyle("editorial").lineHeight! - georgia) / 2 - 4.25)).toBeLessThan(0.25);
+    // The face's title line, less the serif's (Georgia's 1.136 of 17 pt on the iPhone), halved: to the hundredth.
+    const georgia = (2327 / 2048) * 17;
+    const line = nameTitleStyle("editorial").lineHeight!;
+    expect(Math.abs((line - georgia) / 2 - 4.34)).toBeLessThan(0.005);
+    // The phone scales a set line height by the text size, as it scales the serif's own line (React Native's
+    // RCTAttributedTextUtils), and fontScale is that same multiplier: so the bar's height is the others' at every
+    // size of text, from the smallest to the largest of Larger Text, to a fiftieth of a point.
+    const native = readFileSync(
+      path.join(root, "node_modules/react-native/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTAttributedTextUtils.mm"),
+      "utf8",
+    );
+    expect(native).toMatch(/CGFloat lineHeight = textAttributes\.lineHeight \* RCTEffectiveFontSizeMultiplierFromTextAttributes\(textAttributes\);/);
+    const info = readFileSync(path.join(root, "node_modules/react-native/React/CoreModules/RCTDeviceInfo.mm"), "utf8");
+    expect(info).toMatch(/CGFloat fontScale = accessibilityManager \? accessibilityManager\.multiplier : 1\.0;/);
+    const give = rule("app/(tabs)/_layout.tsx", "nameTitle").marginVertical as number;
+    for (const fontScale of [0.823, 1, 1.353, 1.786, 2.143, 2.643, 3.143, 3.571]) {
+      const profile = line * fontScale + 2 * give * fontScale;
+      expect(Math.abs(profile - georgia * fontScale), String(fontScale)).toBeLessThan(0.02);
+    }
   });
 });
 

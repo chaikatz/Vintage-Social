@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Redirect, useRouter, useSegments } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -155,9 +155,11 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
   // Editorial (Preview): the Profile tab's title, the member's username, in the names' face, as every bar titled
   // with a username is; any other title, and the tab's before the username is known, keeps the serif. The face's
   // line is taller than the serif's, so the title gives the difference back to the bar's padding, and the bar keeps
-  // the height it has on every other tab.
+  // the height it has on every other tab. Both lines grow with the reader's text size (the phone scales a set line
+  // height by it, as it scales the serif's own line), so what is given back grows with it, at any size of text.
   const titleStyle = useNameTitleStyle(tab === "profile" && username != null);
-  const nameTitle = titleStyle.fontSize !== styles.headerTitle.fontSize ? styles.nameTitle : undefined;
+  const { fontScale } = useWindowDimensions();
+  const nameTitle = titleStyle.fontSize !== styles.headerTitle.fontSize ? { marginVertical: styles.nameTitle.marginVertical * fontScale } : undefined;
 
   // Messages hang off the feed, the way a letter tray sits beside a desk —
   // not a tab of their own, since they aren't a place you browse.
@@ -210,8 +212,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontFamily: type.serif, fontSize: 17, color: colors.ink },
   // Editorial (Preview): half the difference between the line the names' face is set on in a title (28) and the
-  // serif's at 17 (19.3, Georgia's 1.136 of it, on the iPhone; 19.5 on the web), above and below.
-  nameTitle: { marginVertical: -4.25 },
+  // serif's at 17 (19.32, Georgia's 1.136 of it, on the iPhone), above and below, at the default size of text;
+  // TabHeader scales it with the reader's. (On the web, whose serif line is 19.5 and whose text keeps its size,
+  // the Profile tab's bar is a fifth of a point shorter than the others.)
+  nameTitle: { marginVertical: -4.34 },
   bar: {
     backgroundColor: colors.paper,
     borderTopWidth: 1,
