@@ -265,13 +265,16 @@ export function useReplay(o: ReplayOptions) {
     },
     [flush],
   );
-  const scrubEnd = useCallback(() => {
-    if (frame.current != null) {
-      cancelAnimationFrame(frame.current);
-      flush();
-    }
-    dispatch({ type: "scrubEnd" });
-  }, [flush]);
+  const scrubEnd = useCallback(
+    (by: "strip" | "dial") => {
+      if (frame.current != null) {
+        cancelAnimationFrame(frame.current);
+        flush();
+      }
+      dispatch({ type: "scrubEnd", by });
+    },
+    [flush],
+  );
   useEffect(
     () => () => {
       if (frame.current != null) cancelAnimationFrame(frame.current);

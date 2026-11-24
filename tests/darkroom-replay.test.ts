@@ -406,9 +406,22 @@ describe("the replay’s states", () => {
     const s = run(waiting, ctx, { type: "scrubStart", by: "dial" }, { type: "scrubTo", index: 99, by: "dial" });
     expect(s).toMatchObject({ index: 7, source: "dial", centre: waiting.centre });
     expect(replayReducer(s, { type: "scrubTo", index: -4, by: "dial" }, ctx).index).toBe(0);
-    expect(replayReducer(s, { type: "scrubEnd" }, ctx).scrubbing).toBeNull();
+    expect(replayReducer(s, { type: "scrubEnd", by: "dial" }, ctx).scrubbing).toBeNull();
     // The photographs held ready follow once the finger has come to rest.
     expect(replayReducer(s, { type: "rest" }, ctx).centre).toBe(7);
+  });
+
+  it("lets go of a scrub only for the control that is moving it", () => {
+    const ctx = context(8, {});
+    // A flick of the strip, then the dial turned before the glide has come to rest.
+    const turning = run(replayInit(1, ctx), ctx, { type: "scrubStart", by: "strip" }, { type: "scrubStart", by: "dial" });
+    expect(turning.scrubbing).toBe("dial");
+    // The glide's late end leaves the turn alone; the dial's own release ends it.
+    expect(replayReducer(turning, { type: "scrubEnd", by: "strip" }, ctx)).toBe(turning);
+    expect(replayReducer(turning, { type: "scrubEnd", by: "dial" }, ctx).scrubbing).toBeNull();
+    const gliding = replayReducer(replayInit(1, ctx), { type: "scrubStart", by: "strip" }, ctx);
+    expect(replayReducer(gliding, { type: "scrubEnd", by: "dial" }, ctx)).toBe(gliding);
+    expect(replayReducer(gliding, { type: "scrubEnd", by: "strip" }, ctx)).toMatchObject({ phase: "held", scrubbing: null });
   });
 
   it("steps one print at a time, held, clamped, past the gone", () => {
@@ -598,7 +611,8 @@ describe("the replay, in its source", () => {
   /** Without its comments, so prose that names what is not done is not taken as doing it. */
   const code = (file: string) =>
     read(file)
-      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+      // A JSX comment, whole: never from one comment's opening to a later one's close, across the code between.
+      .replace(/\{\s*\/\*(?:(?!\*\/)[\s\S])*\*\/\s*\}/g, "")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/.*$/gm, "$1");
   const dir = "src/components/darkroom";
@@ -697,6 +711,16 @@ describe("the replay, in its source", () => {
     expect(close.match(/onClose\(/g)).toHaveLength(1);
     const room = code("app/darkroom.tsx");
     expect(room).toMatch(/const closeReplay = useEvent\(\(id: string\) => \{\s*if \(!replay\) return;/);
+  });
+
+  it("ends a glide of the member's whenever the replay moves the strip for something else, and tells each scrub's end by its control", () => {
+    const strip = code(`${dir}/ReplayStrip.tsx`);
+    expect(strip).toMatch(/scrollTo\(index: number, animated: boolean\) \{\s*end\(\);/);
+    const replay = code(`${dir}/Replay.tsx`);
+    expect(replay).toMatch(/const stripScrubEnd = useEvent\(\(\) => r\.scrubEnd\("strip"\)\);/);
+    expect(replay).toMatch(/const turnEnd = useEvent\(\(\) => r\.scrubEnd\("dial"\)\);/);
+    expect(replay).toMatch(/onScrubEnd=\{stripScrubEnd\}/);
+    expect(replay).toMatch(/onTurnEnd=\{turnEnd\}/);
   });
 
   it("holds as the app leaves the foreground", () => {

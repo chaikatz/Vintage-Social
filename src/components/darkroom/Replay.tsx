@@ -167,12 +167,14 @@ export const Replay = forwardRef<ReplayHandle, ReplayProps>(function Replay(prop
   const marks = useMemo(() => edgeMarks(prints, r.plan, mode, now), [prints, r.plan, mode, now]);
   const stripScrubStart = useEvent(() => r.scrubStart("strip"));
   const stripScrubTo = useEvent((i: number) => r.scrubTo(i, "strip"));
+  const stripScrubEnd = useEvent(() => r.scrubEnd("strip"));
 
   // --- the dial --------------------------------------------------------------------
 
   const startFraction = useEvent(() => (n > 0 ? r.live.current.index / n : 0));
   const turnStart = useEvent(() => r.scrubStart("dial"));
   const turnTo = useEvent((i: number) => r.scrubTo(i, "dial"));
+  const turnEnd = useEvent(() => r.scrubEnd("dial"));
   const dialStyle = useMemo(() => ({ marginTop: DIAL_GAP, marginBottom: Math.max(bottomInset, 16) + 8 }), [bottomInset]);
 
   // --- the gate ----------------------------------------------------------------------
@@ -256,7 +258,7 @@ export const Replay = forwardRef<ReplayHandle, ReplayProps>(function Replay(prop
           width={width}
           onScrubStart={stripScrubStart}
           onScrubTo={stripScrubTo}
-          onScrubEnd={r.scrubEnd}
+          onScrubEnd={stripScrubEnd}
           onCell={r.goTo}
         />
       </View>
@@ -268,7 +270,7 @@ export const Replay = forwardRef<ReplayHandle, ReplayProps>(function Replay(prop
         onToggle={r.toggle}
         onTurnStart={turnStart}
         onTurn={turnTo}
-        onTurnEnd={r.scrubEnd}
+        onTurnEnd={turnEnd}
         style={dialStyle}
       />
     </Animated.View>

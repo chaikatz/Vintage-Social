@@ -293,7 +293,7 @@ export type ReplayEvent =
   | { type: "waitedOut" }
   | { type: "scrubStart"; by: "strip" | "dial" }
   | { type: "scrubTo"; index: number; by: ReplaySource }
-  | { type: "scrubEnd" }
+  | { type: "scrubEnd"; by: "strip" | "dial" }
   | { type: "step"; by: -1 | 1; source: "tap" | "vo" }
   | { type: "rest" }
   | { type: "away" };
@@ -405,7 +405,8 @@ export function replayReducer(s: ReplayState, e: ReplayEvent, ctx: ReducerContex
       return index === s.index ? held : { ...held, index, source: e.by, shown: s.shown + 1 };
     }
     case "scrubEnd":
-      return s.scrubbing == null ? s : { ...s, scrubbing: null };
+      // Only the control that is moving it lets go: a strip's glide coming to rest never ends a turn of the dial.
+      return s.scrubbing === e.by ? { ...s, scrubbing: null } : s;
     case "step": {
       let to = s.index;
       for (let j = s.index + e.by; j >= 0 && j < ctx.n; j += e.by) {

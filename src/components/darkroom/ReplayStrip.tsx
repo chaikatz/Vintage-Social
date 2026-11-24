@@ -83,18 +83,6 @@ export const ReplayStrip = memo(
     };
     useEffect(() => clear, []);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        scrollTo(index: number, animated: boolean) {
-          const offset = Math.max(0, Math.min(n - 1, index)) * STRIP.pitch;
-          asked.current = offset;
-          list.current?.scrollToOffset({ offset, animated });
-        },
-      }),
-      [n],
-    );
-
     // Read when called, so the list's handlers never change.
     const on = useRef({ onScrubStart, onScrubTo, onScrubEnd });
     on.current = { onScrubStart, onScrubTo, onScrubEnd };
@@ -110,6 +98,23 @@ export const ReplayStrip = memo(
       driving.current = true;
       on.current.onScrubStart();
     };
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollTo(index: number, animated: boolean) {
+          // The replay moves the strip for something else (the clock, the dial, a frame or a step): a glide of the
+          // member's is over. A set offset can stop UIKit's deceleration with no momentum end to say so, and a glide
+          // left driving would take the replay's own next glide for a finger's.
+          end();
+          const offset = Math.max(0, Math.min(n - 1, index)) * STRIP.pitch;
+          asked.current = offset;
+          list.current?.scrollToOffset({ offset, animated });
+        },
+      }),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [n],
+    );
 
     const onScroll = useMemo(
       () =>
