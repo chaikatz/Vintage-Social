@@ -153,7 +153,11 @@ export function useReplay(o: ReplayOptions) {
     };
     if (state.phase === "ended") return to(1, HOLD_EASE_MS, Easing.out(Easing.quad));
     if (state.phase === "held") return to(i / n, HOLD_EASE_MS, Easing.out(Easing.quad));
-    if (state.wait != null) {
+    // A card stands at its photograph's place, as a held photograph does: after AGAIN the leader eases back from the
+    // end to the first print's place while the first card shows, rather than staying whole and then snapping to it.
+    if (state.wait === "card") return to(i / n, HOLD_EASE_MS, Easing.out(Easing.quad));
+    // Waiting for the next photograph to arrive, it stops where its sweep reached.
+    if (state.wait === "image") {
       leader.stopAnimation();
       return;
     }

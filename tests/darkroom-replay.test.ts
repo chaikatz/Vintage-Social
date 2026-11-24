@@ -727,6 +727,22 @@ describe("the replay, in its source", () => {
     expect(effect).toMatch(/const glide = useCallback\(\(x: number\) => leader\.setValue\(leaderAt\(x, n, latest\.current\.reduceMotion\)\), \[leader, n\]\);/);
   });
 
+  it("eases the leader to a card's photograph as to a held one (AGAIN never leaves it whole and then snaps), and stops it only while a photograph is awaited", () => {
+    const hook = code(`${dir}/useReplay.ts`);
+    const effect = hook.slice(hook.indexOf("const leader = useRef("), hook.indexOf("const glide = useCallback("));
+    const held = 'if (state.phase === "held") return to(i / n, HOLD_EASE_MS, Easing.out(Easing.quad));';
+    const card = 'if (state.wait === "card") return to(i / n, HOLD_EASE_MS, Easing.out(Easing.quad));';
+    expect(effect).toContain(held);
+    expect(effect).toContain(card);
+    expect(effect.indexOf(card)).toBeGreaterThan(effect.indexOf(held));
+    expect(effect).toMatch(/if \(state\.wait === "image"\) \{\s*leader\.stopAnimation\(\);\s*return;\s*\}\s*leader\.setValue\(i \/ n\);/);
+    expect(effect).not.toMatch(/state\.wait != null/);
+    // AGAIN from the end of a chapter that opens on a card: playing, on the first print, waiting on its card.
+    const ctx = context(4, { card: (i) => i === 0 });
+    const ended: ReplayState = { ...replayInit(3, ctx), phase: "ended" };
+    expect(replayReducer(ended, { type: "toggle" }, ctx)).toMatchObject({ phase: "playing", index: 0, wait: "card" });
+  });
+
   it("draws the leader on the native driver, moving no layout, and keeps it from touch and VoiceOver", () => {
     const leader = code(`${dir}/ReplayLeader.tsx`);
     const drawn = leader.slice(leader.indexOf("const drawn = useMemo("), leader.indexOf("return ("));
