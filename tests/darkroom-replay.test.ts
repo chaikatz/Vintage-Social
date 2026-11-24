@@ -639,7 +639,7 @@ describe("the replay, in its source", () => {
     expect(image).toMatch(/recyclingKey=\{id\}/);
     // The one thing that differs between the slot in front and the rest.
     expect(slot.match(/current \?/g)).toHaveLength(1);
-    expect(slot).toMatch(/style=\{\[styles\.box, box, \{ opacity: current \? 1 : 0 \}\]\}/);
+    expect(slot).toMatch(/style=\{\[styles\.box, \{ left, top, width, height, opacity: current \? 1 : 0 \}\]\}/);
     // Nothing drawn before the gate has a size.
     expect(gate).toMatch(/const box = size\.width > 0 && size\.height > 0 \? boxFor\(current\) : null;/);
   });

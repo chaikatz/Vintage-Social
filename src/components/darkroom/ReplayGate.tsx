@@ -180,19 +180,25 @@ export function ReplayGate(props: GateProps) {
         <>
           <View pointerEvents="none" style={[styles.box, box, { backgroundColor: look.room.well }]} />
           {!developed.has(current.id) ? <ScrubProof print={current} box={box} /> : null}
-          {tray.map((p) => (
-            <Slot
-              key={p.id}
-              print={p}
-              box={boxFor(p)}
-              current={p.id === current.id}
-              onLoad={onLoad}
-              onDeveloped={onDeveloped}
-              onError={onError}
-              onProgress={onProgress}
-              onUnmount={onUnmount}
-            />
-          ))}
+          {tray.map((p) => {
+            const b = boxFor(p);
+            return (
+              <Slot
+                key={p.id}
+                print={p}
+                left={b.left}
+                top={b.top}
+                width={b.width}
+                height={b.height}
+                current={p.id === current.id}
+                onLoad={onLoad}
+                onDeveloped={onDeveloped}
+                onError={onError}
+                onProgress={onProgress}
+                onUnmount={onUnmount}
+              />
+            );
+          })}
           <View pointerEvents="none" style={[styles.box, box, styles.hairline, { borderColor: line }]} />
           {words ? (
             <View pointerEvents="none" style={[styles.box, box, styles.placeholder, { backgroundColor: look.room.well }]}>
@@ -223,7 +229,10 @@ export function ReplayGate(props: GateProps) {
  */
 const Slot = memo(function Slot({
   print,
-  box,
+  left,
+  top,
+  width,
+  height,
   current,
   onLoad,
   onDeveloped,
@@ -232,7 +241,11 @@ const Slot = memo(function Slot({
   onUnmount,
 }: {
   print: Print;
-  box: Box;
+  /** Its box in the gate, as numbers, so the slot draws again only when its box or its place in front changes. */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
   current: boolean;
   onLoad: (id: string) => void;
   onDeveloped: (id: string) => void;
@@ -266,7 +279,7 @@ const Slot = memo(function Slot({
     }, ms);
   };
   return (
-    <View pointerEvents="none" style={[styles.box, box, { opacity: current ? 1 : 0 }]}>
+    <View pointerEvents="none" style={[styles.box, { left, top, width, height, opacity: current ? 1 : 0 }]}>
       {source != null ? (
         <Image
           source={source}
