@@ -146,6 +146,27 @@ export function plateBox(
   return { width: toPixel(w, pixelRatio), height: toPixel(w / r, pixelRatio) };
 }
 
+/**
+ * A photograph in the replay's gate: the largest box of its own shape
+ * inside the gate, centred left to right and standing on the gate's
+ * bottom edge, rounded to the screen's pixels. Standing on the bottom, the
+ * frames of a burst register exactly, and every photograph sits the same
+ * distance above the signature line under the gate; a landscape print on
+ * a tall phone leaves paper above it, never below.
+ */
+export function replayBox(
+  ratio: number,
+  gateW: number,
+  gateH: number,
+  pixelRatio = 1,
+): { left: number; top: number; width: number; height: number } {
+  const r = ratio > 0 && Number.isFinite(ratio) ? ratio : 1;
+  const w0 = Math.max(0, Math.min(gateW, gateH * r));
+  const width = Math.min(toPixel(w0, pixelRatio), Math.max(0, gateW));
+  const height = Math.min(toPixel(w0 / r, pixelRatio), Math.max(0, gateH));
+  return { left: toPixel((gateW - width) / 2, pixelRatio), top: Math.max(0, gateH - height), width, height };
+}
+
 /** The paper between a photograph and its signature line, for a label (and line) this wide. */
 export function signatureGap(labelWidth: number, pixelRatio = 1): number {
   return toPixel(Math.max(0, labelWidth) * SIGNATURE_SHARE, pixelRatio);
