@@ -6,19 +6,33 @@ import { Signature } from "./Caption";
 import { CAPTION_GAP, signatureGap } from "./geometry";
 import { motion, useLook } from "./look";
 import { edgeMarks, REPLAY_IN_MS, replayEnding, ROOM_OUT_MS } from "./replay";
-import { ReplayDial } from "./ReplayDial";
 import { ReplayGate } from "./ReplayGate";
+import { ReplayLeader } from "./ReplayLeader";
 import { ReplayStrip, type StripHandle } from "./ReplayStrip";
 import { tapTurn } from "./turn";
 import { RoomText } from "./Type";
 import { useReplay } from "./useReplay";
-import { dialLabel, replayEndSaid, replayValue } from "./words";
+import { Word } from "./Word";
+import { PLAY_HINT, replayEndSaid, replayValue, replayWord } from "./words";
 
 /** iCloud's progress along the signature line follows each step over this, as the plate's does. */
 const CLOUD_STEP_MS = 120;
-/** The strip stands this far under the caption, and the dial this far under the strip. */
+/**
+ * The page under the gate, top to bottom: the caption; the strip, this far
+ * under it; the leader, this far under the strip; and the word, this far
+ * under the leader, in DEVELOP's own slot (48 pt, with the room's bottom
+ * margin under it), so HOLD stands exactly where DEVELOP stood. The gate
+ * has the rest: on the reference phone (393 × 852) it runs from 111 to
+ * 587, a 3:4 portrait 357 × 476, the strip 677 to 745, the leader at 753
+ * and the word 762 to 810; on an SE (375 × 667), 72 to 421, a portrait
+ * 262 × 349, and the word 595 to 643.
+ */
 const STRIP_GAP = 16;
-const DIAL_GAP = 12;
+const LEADER_GAP = 8;
+const WORD_GAP = 8;
+/** DEVELOP's slot, and its word's least width (Develop.tsx). */
+const WORD_SLOT = 48;
+const WORD_MIN_WIDTH = 116;
 
 export interface ReplayHandle {
   /** The room is going out of view: held, if it was playing. */
@@ -49,7 +63,7 @@ export interface ReplayProps {
 
 /**
  * A handler whose identity never changes but which always runs the latest
- * code, so the strip and the dial it is handed to never draw again for it.
+ * code, so the strip it is handed to never draws again for it.
  */
 function useEvent<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
   const latest = useRef(fn);
@@ -77,8 +91,12 @@ function focusOn(view: unknown): void {
  * Top to bottom: the gate, where the photographs stand as hard cuts at
  * Retro's pace (`ReplayGate`); the caption hung under it, as a print's
  * is, which changes only when its words do, so a burst plays under a
- * caption that stays still; the glide strip (`ReplayStrip`); and the dial
- * (`ReplayDial`). One index drives them all, kept by `useReplay`.
+ * caption that stays still; the glide strip (`ReplayStrip`), Photos'
+ * scrubber; the leader under it (`ReplayLeader`), a hairline drawn out in
+ * the accent as the replay goes, one length for the whole of it; and at
+ * the foot, where DEVELOP stands in the room, the room's own ruled word:
+ * HOLD while it plays, PLAY when held, AGAIN at the end. One index drives
+ * them all, kept by `useReplay`.
  *
  * It plays the prints the room already holds, and asks the library
  * nothing. Every photograph is asked for at its view's size and kept by
@@ -160,22 +178,25 @@ export const Replay = forwardRef<ReplayHandle, ReplayProps>(function Replay(prop
     if (followed.current === state.index) return;
     followed.current = state.index;
     if (state.source === "strip") return;
-    // A glide by UIKit's own ease while it plays or a frame is chosen; under a turning dial, a cut, as in the browser.
-    strip.current?.scrollTo(state.index, state.source !== "dial" && !look.reduceMotion && Platform.OS !== "web");
+    // A glide by UIKit's own ease while it plays or a frame is chosen; a cut in the browser, and under Reduce Motion.
+    strip.current?.scrollTo(state.index, !look.reduceMotion && Platform.OS !== "web");
   }, [state.index, state.source, look.reduceMotion]);
 
   const marks = useMemo(() => edgeMarks(prints, r.plan, mode, now), [prints, r.plan, mode, now]);
-  const stripScrubStart = useEvent(() => r.scrubStart("strip"));
-  const stripScrubTo = useEvent((i: number) => r.scrubTo(i, "strip"));
-  const stripScrubEnd = useEvent(() => r.scrubEnd("strip"));
 
-  // --- the dial --------------------------------------------------------------------
+  // --- the word ----------------------------------------------------------------------
 
-  const startFraction = useEvent(() => (n > 0 ? r.live.current.index / n : 0));
-  const turnStart = useEvent(() => r.scrubStart("dial"));
-  const turnTo = useEvent((i: number) => r.scrubTo(i, "dial"));
-  const turnEnd = useEvent(() => r.scrubEnd("dial"));
-  const dialStyle = useMemo(() => ({ marginTop: DIAL_GAP, marginBottom: Math.max(bottomInset, 16) + 8 }), [bottomInset]);
+  const word = replayWord(state.phase, r.restarts);
+  /**
+   * The word pressed. A glide of the strip still coming to rest stops
+   * where it is first, on the photograph in front: PLAY is never held
+   * again by a flick's last frames.
+   */
+  const press = useEvent(() => {
+    strip.current?.settle();
+    r.toggle();
+  });
+  const foot = useMemo(() => ({ marginTop: WORD_GAP, marginBottom: Math.max(bottomInset, 16) + 8 }), [bottomInset]);
 
   // --- the gate ----------------------------------------------------------------------
 
@@ -232,7 +253,7 @@ export const Replay = forwardRef<ReplayHandle, ReplayProps>(function Replay(prop
         online={online}
         limited={limited}
         value={replayValue(current.takenAt, words.line, state.phase)}
-        actionLabel={dialLabel(state.phase)}
+        actionLabel={word.said}
         onTap={onTap}
         onStep={r.step}
         onToggle={r.toggle}
@@ -256,23 +277,30 @@ export const Replay = forwardRef<ReplayHandle, ReplayProps>(function Replay(prop
           start={start}
           marks={marks}
           width={width}
-          onScrubStart={stripScrubStart}
-          onScrubTo={stripScrubTo}
-          onScrubEnd={stripScrubEnd}
+          onScrubStart={r.scrubStart}
+          onScrubTo={r.scrubTo}
+          onScrubEnd={r.scrubEnd}
+          onGlide={r.glide}
           onCell={r.goTo}
         />
       </View>
-      <ReplayDial
-        phase={state.phase}
-        hand={r.hand}
-        count={n}
-        startFraction={startFraction}
-        onToggle={r.toggle}
-        onTurnStart={turnStart}
-        onTurn={turnTo}
-        onTurnEnd={turnEnd}
-        style={dialStyle}
-      />
+      <View style={styles.leaderGap}>
+        <ReplayLeader fraction={r.leader} width={width} />
+      </View>
+      <View style={[styles.foot, foot]}>
+        <Word
+          label={word.label}
+          primary
+          accessibilityLabel={word.said}
+          accessibilityHint={state.phase === "playing" ? undefined : PLAY_HINT}
+          onPress={press}
+          maxFontSizeMultiplier={1.5}
+          minHeight={WORD_SLOT}
+          paddingHorizontal={24}
+          style={styles.word}
+          testID="darkroom-replay-word"
+        />
+      </View>
     </Animated.View>
   );
 });
@@ -332,4 +360,8 @@ const styles = StyleSheet.create({
   time: { marginLeft: 12 },
   line: { marginTop: 6 },
   stripGap: { marginTop: STRIP_GAP },
+  leaderGap: { marginTop: LEADER_GAP },
+  // DEVELOP's own block and slot (Develop.tsx): the word stands where DEVELOP stood.
+  foot: { alignItems: "center", justifyContent: "flex-end", minHeight: WORD_SLOT },
+  word: { minWidth: WORD_MIN_WIDTH },
 });

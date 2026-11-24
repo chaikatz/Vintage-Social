@@ -26,6 +26,8 @@ const MARK_GAP = 2;
 export interface StripHandle {
   /** The frame under the box: glided to, or a cut. */
   scrollTo(index: number, animated: boolean): void;
+  /** A member's glide still coming to rest stops, at once, on the frame it has reached, and its scrub ends. */
+  settle(): void;
 }
 
 /**
@@ -40,10 +42,12 @@ export interface StripHandle {
  * It is a list that never draws again per photograph: what it shows moves
  * by its own scroll, through `scrollTo`. A finger on it holds the replay
  * and moves the photograph in front with it (`onScrubTo`, at most once a
- * frame), until the glide comes to rest. The replay's own moves never
- * count as the member's: on the phone they never begin with a drag, and
- * in the browser, where there are no drag events, the strip's own moves
- * are cuts to an offset it knows, so any other is the member's.
+ * frame), and the leader under it with every scroll (`onGlide`), until
+ * the glide comes to rest. It is the replay's one scrubber: the leader
+ * only follows it. The replay's own moves never count as the member's:
+ * on the phone they never begin with a drag, and in the browser, where
+ * there are no drag events, the strip's own moves are cuts to an offset
+ * it knows, so any other is the member's.
  *
  * It glides silently, with no haptics, and is hidden from VoiceOver: the
  * photograph's own adjustable element steps through the replay instead.
@@ -60,16 +64,20 @@ export const ReplayStrip = memo(
       onScrubStart: () => void;
       onScrubTo: (index: number) => void;
       onScrubEnd: () => void;
+      /** A finger's glide, at this scroll offset: the leader follows it. */
+      onGlide: (x: number) => void;
       /** A frame tapped: held, and straight to it. */
       onCell: (index: number) => void;
     }
-  >(function ReplayStrip({ prints, start, marks, width, onScrubStart, onScrubTo, onScrubEnd, onCell }, ref) {
+  >(function ReplayStrip({ prints, start, marks, width, onScrubStart, onScrubTo, onScrubEnd, onGlide, onCell }, ref) {
     const look = useLook();
     const list = useRef<FlatList<Print>>(null);
     const n = prints.length;
     const scrollX = useRef(new Animated.Value(start * STRIP.pitch)).current;
     /** Where the replay last asked the strip to be. */
     const asked = useRef(start * STRIP.pitch);
+    /** Where a member's glide last had it. */
+    const glidedTo = useRef(start * STRIP.pitch);
     /** A finger is gliding it, or its glide is still coming to rest. */
     const driving = useRef(false);
     const endTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,8 +92,8 @@ export const ReplayStrip = memo(
     useEffect(() => clear, []);
 
     // Read when called, so the list's handlers never change.
-    const on = useRef({ onScrubStart, onScrubTo, onScrubEnd });
-    on.current = { onScrubStart, onScrubTo, onScrubEnd };
+    const on = useRef({ onScrubStart, onScrubTo, onScrubEnd, onGlide });
+    on.current = { onScrubStart, onScrubTo, onScrubEnd, onGlide };
     const end = () => {
       clear();
       if (!driving.current) return;
@@ -103,13 +111,21 @@ export const ReplayStrip = memo(
       ref,
       () => ({
         scrollTo(index: number, animated: boolean) {
-          // The replay moves the strip for something else (the clock, the dial, a frame or a step): a glide of the
+          // The replay moves the strip for something else (the clock, a frame or a step): a glide of the
           // member's is over. A set offset can stop UIKit's deceleration with no momentum end to say so, and a glide
           // left driving would take the replay's own next glide for a finger's.
           end();
           const offset = Math.max(0, Math.min(n - 1, index)) * STRIP.pitch;
           asked.current = offset;
           list.current?.scrollToOffset({ offset, animated });
+        },
+        settle() {
+          if (!driving.current) return;
+          // The frame the glide last read: the one its scrub's end puts in front.
+          const offset = stripIndex(glidedTo.current, n) * STRIP.pitch;
+          end();
+          asked.current = offset;
+          list.current?.scrollToOffset({ offset, animated: false });
         },
       }),
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,7 +142,9 @@ export const ReplayStrip = memo(
               // Not where the replay put it: the member moved it.
               if (!driving.current && Math.abs(x - asked.current) < 1) return;
               begin();
+              glidedTo.current = x;
               on.current.onScrubTo(stripIndex(x, n));
+              on.current.onGlide(x);
               webTimer.current = setTimeout(() => {
                 webTimer.current = null;
                 const offset = stripIndex(x, n) * STRIP.pitch;
@@ -137,7 +155,10 @@ export const ReplayStrip = memo(
               return;
             }
             // Only a finger's glide reads the frame: the replay's own glides are already where it wants them.
-            if (driving.current) on.current.onScrubTo(stripIndex(x, n));
+            if (!driving.current) return;
+            glidedTo.current = x;
+            on.current.onScrubTo(stripIndex(x, n));
+            on.current.onGlide(x);
           },
         }),
       // eslint-disable-next-line react-hooks/exhaustive-deps

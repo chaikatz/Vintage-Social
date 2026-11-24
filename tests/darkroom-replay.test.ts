@@ -4,12 +4,12 @@ import { describe, expect, it } from "vitest";
 import {
   BURST_GAP_MS,
   CARD_MIN,
-  DIAL,
-  dialIndex,
   dwellAt,
   edgeMarks,
+  leaderAt,
   MARK_SPACING,
   PACE,
+  playRestarts,
   REPLAY_MIN,
   replayable,
   replayEnding,
@@ -19,9 +19,7 @@ import {
   replayStart,
   STRIP,
   stripIndex,
-  tickOf,
   trayRange,
-  turnDelta,
   type ReducerContext,
   type ReplayEvent,
   type ReplayState,
@@ -29,7 +27,6 @@ import {
 import { replayBox } from "@/components/darkroom/geometry";
 import { DISSOLVE, gateRequest } from "@/components/darkroom/plateImage";
 import {
-  dialLabel,
   edgeMarkWords,
   endPage,
   PLAY_HINT,
@@ -39,6 +36,7 @@ import {
   replayCardWords,
   replayEndSaid,
   replayValue,
+  replayWord,
   stageActions,
   stateWords,
   withPlayThrough,
@@ -52,7 +50,7 @@ import { mulberry32 } from "@/utils/shuffle";
  * PLAY in the Memory Room: the rules that need no screen. Which chapters
  * can be played and where a replay starts; how long each photograph stays,
  * where its years or days begin and which have a title card; the marks
- * along the strip; the strip's and the dial's arithmetic; the replay's
+ * along the strip; the strip's and the leader's arithmetic; the replay's
  * states; and its words. The room itself is walked in the browser
  * (`e2e/darkroom-test.mjs`).
  */
@@ -358,6 +356,25 @@ describe("the replay’s states", () => {
     expect(replayReducer({ ...replayInit(3, ctx2), phase: "held" }, { type: "play" }, ctx2)).toMatchObject({ index: 0 });
   });
 
+  it("says AGAIN exactly where a press goes back to the first print, and PLAY where it plays on from here", () => {
+    const ctx = context(5, { gone: [0, 4] });
+    const held = (index: number): ReplayState => ({ ...replayInit(index, ctx), phase: "held" });
+    for (let i = 0; i < 5; i++) {
+      for (const s of [held(i), { ...held(i), phase: "ended" as const }]) {
+        const restarts = playRestarts(s, ctx);
+        const next = replayReducer(s, { type: "play" }, ctx);
+        // Back to the first print still there (1), or on from the photograph in front.
+        expect(restarts, `${s.phase} ${i}`).toBe(next.index === 1 && (s.index !== 1 || s.phase === "ended"));
+        expect(replayWord(s.phase, restarts).label, `${s.phase} ${i}`).toBe(restarts ? "Again" : "Play");
+        if (!restarts) expect(next.index).toBe(i);
+      }
+    }
+    // Held on the last print, or on one whose followers are all gone: AGAIN, named Play again.
+    expect(replayWord("held", playRestarts(held(4), context(5)))).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("held", playRestarts(held(3), ctx))).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("held", playRestarts(held(2), ctx))).toEqual({ label: "Play", said: "Play" });
+  });
+
   it("moves on when its time is up: to a ready print, or waits for it online, or goes on offline", () => {
     const ctx = context(5, { ready: [2] });
     const s = replayInit(1, ctx);
@@ -395,33 +412,32 @@ describe("the replay’s states", () => {
     expect(replayReducer(waiting, { type: "gone", index: 1 }, c2)).toMatchObject({ index: 2, wait: null });
   });
 
-  it("holds from any phase as a finger comes down on the strip or the dial, and clears the waits", () => {
+  it("holds from any phase as a finger comes down on the strip, and clears the waits", () => {
     const ctx = context(8, {});
     const waiting = run(replayInit(1, ctx), ctx, { type: "due" });
     expect(waiting.wait).toBe("image");
     for (const from of [waiting, { ...waiting, phase: "held" as const, wait: null }, { ...waiting, phase: "ended" as const, wait: null }]) {
-      const s = replayReducer(from, { type: "scrubStart", by: "strip" }, ctx);
-      expect(s).toMatchObject({ phase: "held", wait: null, pending: null, scrubbing: "strip" });
+      const s = replayReducer(from, { type: "scrubStart" }, ctx);
+      expect(s).toMatchObject({ phase: "held", wait: null, pending: null, scrubbing: true });
     }
-    const s = run(waiting, ctx, { type: "scrubStart", by: "dial" }, { type: "scrubTo", index: 99, by: "dial" });
-    expect(s).toMatchObject({ index: 7, source: "dial", centre: waiting.centre });
-    expect(replayReducer(s, { type: "scrubTo", index: -4, by: "dial" }, ctx).index).toBe(0);
-    expect(replayReducer(s, { type: "scrubEnd", by: "dial" }, ctx).scrubbing).toBeNull();
+    const s = run(waiting, ctx, { type: "scrubStart" }, { type: "scrubTo", index: 99, by: "strip" });
+    expect(s).toMatchObject({ index: 7, source: "strip", centre: waiting.centre });
+    expect(replayReducer(s, { type: "scrubTo", index: -4, by: "strip" }, ctx).index).toBe(0);
+    expect(replayReducer(s, { type: "scrubEnd" }, ctx).scrubbing).toBe(false);
     // The photographs held ready follow once the finger has come to rest.
     expect(replayReducer(s, { type: "rest" }, ctx).centre).toBe(7);
   });
 
-  it("lets go of a scrub only for the control that is moving it", () => {
+  it("lets go of a glide as it comes to rest, still held, and a late end changes nothing", () => {
     const ctx = context(8, {});
-    // A flick of the strip, then the dial turned before the glide has come to rest.
-    const turning = run(replayInit(1, ctx), ctx, { type: "scrubStart", by: "strip" }, { type: "scrubStart", by: "dial" });
-    expect(turning.scrubbing).toBe("dial");
-    // The glide's late end leaves the turn alone; the dial's own release ends it.
-    expect(replayReducer(turning, { type: "scrubEnd", by: "strip" }, ctx)).toBe(turning);
-    expect(replayReducer(turning, { type: "scrubEnd", by: "dial" }, ctx).scrubbing).toBeNull();
-    const gliding = replayReducer(replayInit(1, ctx), { type: "scrubStart", by: "strip" }, ctx);
-    expect(replayReducer(gliding, { type: "scrubEnd", by: "dial" }, ctx)).toBe(gliding);
-    expect(replayReducer(gliding, { type: "scrubEnd", by: "strip" }, ctx)).toMatchObject({ phase: "held", scrubbing: null });
+    expect(replayInit(1, ctx).scrubbing).toBe(false);
+    const gliding = replayReducer(replayInit(1, ctx), { type: "scrubStart" }, ctx);
+    const rested = replayReducer(gliding, { type: "scrubEnd" }, ctx);
+    expect(rested).toMatchObject({ phase: "held", scrubbing: false });
+    // Releasing never plays: only the word does.
+    expect(replayReducer(rested, { type: "scrubEnd" }, ctx)).toBe(rested);
+    // The word pressed mid-glide plays, and the glide is over.
+    expect(replayReducer(gliding, { type: "toggle" }, ctx)).toMatchObject({ phase: "playing", scrubbing: false });
   });
 
   it("steps one print at a time, held, clamped, past the gone", () => {
@@ -452,7 +468,7 @@ describe("the replay’s states", () => {
 
 // ---------------------------------------------------------------------------
 
-describe("the gate, the strip and the dial", () => {
+describe("the gate, the strip and the leader", () => {
   it("holds at most five photographs ready while playing and three while held, never out of range", () => {
     for (let n = 1; n < 12; n++) {
       for (let i = 0; i < n; i++) {
@@ -471,10 +487,10 @@ describe("the gate, the strip and the dial", () => {
   });
 
   it("stands each photograph in the gate at its own shape, on the bottom, centred, on the pixels", () => {
-    // The reference phone's gate, about 361 × 450, at 3×; an SE's at 2×.
+    // The reference phone's gate, about 361 × 476, at 3×; an SE's, about 343 × 349, at 2× (Replay.tsx's layout).
     for (const [w, h, pr] of [
-      [361, 450, 3],
-      [343, 322, 2],
+      [361, 476, 3],
+      [343, 349, 2],
     ] as const) {
       for (const ratio of [3 / 4, 1, 4 / 3, 16 / 9, 9 / 16, 1 / 3, 3]) {
         const b = replayBox(ratio, w, h, pr);
@@ -487,8 +503,8 @@ describe("the gate, the strip and the dial", () => {
         for (const v of [b.width, b.height, b.left]) expect(Math.abs(v * pr - Math.round(v * pr))).toBeLessThan(1e-6);
       }
     }
-    expect(Math.round(replayBox(3 / 4, 361, 450, 3).width)).toBe(338);
-    expect(Math.round(replayBox(3 / 4, 343, 322, 2).width)).toBe(242);
+    expect(Math.round(replayBox(3 / 4, 361, 476, 3).width)).toBe(357);
+    expect(Math.round(replayBox(3 / 4, 343, 349, 2).width)).toBe(262);
   });
 
   it("reads the strip’s frame under the box, rounded and clamped", () => {
@@ -501,31 +517,38 @@ describe("the gate, the strip and the dial", () => {
     expect(stripIndex(-80, 10)).toBe(0);
   });
 
-  it("turns the dial the short way across 12 o’clock and 6", () => {
-    expect(turnDelta(170, -170)).toBe(20);
-    expect(turnDelta(-170, 170)).toBe(-20);
-    expect(turnDelta(350, 10)).toBe(20);
-    expect(turnDelta(10, 350)).toBe(-20);
-    expect(turnDelta(0, 90)).toBe(90);
-    expect(turnDelta(90, 0)).toBe(-90);
-    expect(Math.abs(turnDelta(0, 180))).toBe(180);
-  });
-
-  it("never lands the dial past the last photograph", () => {
-    for (const n of [3, 7, 60, 1000]) {
-      expect(dialIndex((n - 1) / n, n)).toBe(n - 1);
-      expect(dialIndex(0.9999, n)).toBeLessThan(n);
-      expect(dialIndex(1, n)).toBe(n - 1);
-      expect(dialIndex(0, n)).toBe(0);
+  it("draws the leader to each frame's own place in the whole replay, as it stands when that photograph is shown", () => {
+    for (const n of [3, 6, 60, 1000]) {
+      for (const i of [0, 1, Math.floor(n / 2), n - 1]) {
+        expect(leaderAt(i * STRIP.pitch, n, false)).toBeCloseTo(i / n, 12);
+        expect(leaderAt(i * STRIP.pitch, n, true)).toBeCloseTo(i / n, 12);
+      }
+      // A finger's glide past either end (the strip bounces) waits there: never past the last photograph's place.
+      expect(leaderAt(-80, n, false)).toBe(0);
+      expect(leaderAt((n + 4) * STRIP.pitch, n, false)).toBeCloseTo((n - 1) / n, 12);
+      expect(leaderAt((n + 4) * STRIP.pitch, n, true)).toBeCloseTo((n - 1) / n, 12);
     }
+    expect(leaderAt(Number.NaN, 6, false)).toBe(0);
+    expect(leaderAt(100, 0, false)).toBe(0);
   });
 
-  it("has sixty ticks", () => {
-    const ticks = new Set(Array.from({ length: 6000 }, (_, k) => tickOf(k / 6000)));
-    expect(ticks.size).toBe(DIAL.ticks);
-    expect(Math.min(...ticks)).toBe(0);
-    expect(Math.max(...ticks)).toBe(59);
-    expect(tickOf(1)).toBe(59);
+  it("follows a glide frame by frame, and under Reduce Motion a photograph at a time", () => {
+    const n = 6;
+    // Half a frame on, it has come half a photograph's share.
+    expect(leaderAt(1.5 * STRIP.pitch, n, false)).toBeCloseTo(1.5 / n, 12);
+    // Stepped, it stands on the frame under the box, as the photograph in front does.
+    expect(leaderAt(1.4 * STRIP.pitch, n, true)).toBeCloseTo(1 / n, 12);
+    expect(leaderAt(1.6 * STRIP.pitch, n, true)).toBeCloseTo(2 / n, 12);
+    let last = -1;
+    const stepped = new Set<number>();
+    for (let x = -40; x <= n * STRIP.pitch + 40; x += 3) {
+      const f = leaderAt(x, n, false);
+      expect(f).toBeGreaterThanOrEqual(last);
+      last = f;
+      stepped.add(leaderAt(x, n, true));
+      expect(leaderAt(x, n, true)).toBeCloseTo(stripIndex(x, n) / n, 12);
+    }
+    expect(stepped.size).toBe(n);
   });
 });
 
@@ -539,10 +562,14 @@ describe("the replay’s words", () => {
     expect(clockTime(at(2022, 11, 4, 9, 7))).toBe("9:07 AM");
   });
 
-  it("names the dial by what a press does, and gives the photograph its value, never a count", () => {
-    expect(dialLabel("playing")).toBe("Pause");
-    expect(dialLabel("held")).toBe("Play");
-    expect(dialLabel("ended")).toBe("Play again");
+  it("sets the word by what a press does, names it so to VoiceOver, and gives the photograph its value, never a count", () => {
+    expect(replayWord("playing", false)).toEqual({ label: "Hold", said: "Hold" });
+    expect(replayWord("playing", true)).toEqual({ label: "Hold", said: "Hold" });
+    expect(replayWord("held", false)).toEqual({ label: "Play", said: "Play" });
+    // Held where a press starts again from the first print, the word says so.
+    expect(replayWord("held", true)).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("ended", true)).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("ended", false)).toEqual({ label: "Again", said: "Play again" });
     const t = at(2022, 11, 4, 16, 12);
     expect(replayValue(t, "A Sunday", "playing")).toBe("December 4, 2022. A Sunday. Playing.");
     expect(replayValue(t, "A Sunday", "held")).toBe("December 4, 2022. A Sunday.");
@@ -622,7 +649,7 @@ describe("the replay, in its source", () => {
   const replayFiles = [...views, `${dir}/replay.ts`, `${dir}/useReplay.ts`, `${dir}/awake.ts`, `${dir}/PlayTab.tsx`];
 
   it("covers the replay's files", () => {
-    expect(views.map((f) => path.basename(f)).sort()).toEqual(["Replay.tsx", "ReplayDial.tsx", "ReplayGate.tsx", "ReplayStrip.tsx"]);
+    expect(views.map((f) => path.basename(f)).sort()).toEqual(["Replay.tsx", "ReplayGate.tsx", "ReplayLeader.tsx", "ReplayStrip.tsx"]);
   });
 
   it("keeps every photograph by its view alone: never the shared memory cache, never the disk", () => {
@@ -689,19 +716,76 @@ describe("the replay, in its source", () => {
     expect(hook).toMatch(/useEffect\(\(\) => \(\) => stayAwake\(false\), \[\]\);/);
   });
 
-  it("steps the hand onto each photograph's place under Reduce Motion, never a photograph ahead", () => {
+  it("steps the leader onto each photograph's place under Reduce Motion, never a photograph ahead", () => {
     const hook = code(`${dir}/useReplay.ts`);
-    const effect = hook.slice(hook.indexOf("const hand = useRef("), hook.indexOf("AppState.addEventListener"));
-    // Playing, the hand is set on the photograph in front; only with motion does it then sweep on to the next.
-    expect(effect).toMatch(/hand\.setValue\(i \/ n\);\s*if \(reduceMotion\) return;\s*const left = [^;]+;\s*return to\(\(i \+ 1\) \/ n, /);
+    const effect = hook.slice(hook.indexOf("const leader = useRef("), hook.indexOf("AppState.addEventListener"));
+    // Playing, the leader is set on the photograph in front; only with motion does it then sweep on to the next.
+    expect(effect).toMatch(/leader\.setValue\(i \/ n\);\s*if \(reduceMotion\) return;\s*const left = [^;]+;\s*return to\(\(i \+ 1\) \/ n, /);
     expect(effect.match(/\(i \+ 1\) \/ n/g)).toHaveLength(1);
+    // A finger's glide draws it instead, stepped under Reduce Motion.
+    expect(effect).toMatch(/if \(n === 0 \|\| state\.scrubbing\) return;/);
+    expect(effect).toMatch(/const glide = useCallback\(\(x: number\) => leader\.setValue\(leaderAt\(x, n, latest\.current\.reduceMotion\)\), \[leader, n\]\);/);
   });
 
-  it("takes VoiceOver's double-tap on the dial as the toggle itself, with no stray action and no touch for the pan", () => {
-    const dial = code(`${dir}/ReplayDial.tsx`);
-    expect(dial).toMatch(/onAccessibilityTap=\{onToggle\}/);
-    // On the new architecture every entry here is offered as a custom action by its name: "activate" would be one.
-    expect(dial).not.toMatch(/accessibilityActions|onAccessibilityAction\b/);
+  it("draws the leader on the native driver, moving no layout, and keeps it from touch and VoiceOver", () => {
+    const leader = code(`${dir}/ReplayLeader.tsx`);
+    const drawn = leader.slice(leader.indexOf("const drawn = useMemo("), leader.indexOf("return ("));
+    expect(drawn).toMatch(/\{ translateX: fraction\.interpolate\(\{ inputRange: \[0, 1\], outputRange: \[-width \/ 2, 0\], extrapolate: "clamp" \}\) \}/);
+    expect(drawn).toMatch(/\{ scaleX: fraction\.interpolate\(\{ inputRange: \[0, 1\], outputRange: \[0\.0001, 1\], extrapolate: "clamp" \}\) \}/);
+    // Nothing but the transform is animated: no width, left or right follows the fraction.
+    expect(leader.match(/fraction\.interpolate\(/g)).toHaveLength(2);
+    expect(leader).not.toMatch(/(width|left|right|flex)\s*:\s*fraction/);
+    expect(leader).toMatch(/const inks = signatureInks\(look\.room, look\.contrast, true\);/);
+    expect(leader).toMatch(/pointerEvents="none"\s*accessible=\{false\}\s*accessibilityElementsHidden\s*importantForAccessibility="no-hide-descendants"/);
+    // Every timing of it, in the hook, on the native driver.
+    const hook = code(`${dir}/useReplay.ts`);
+    expect(hook).toMatch(/Animated\.timing\(leader, \{ toValue: value, duration, easing, useNativeDriver: true \}\)/);
+    expect(hook.match(/Animated\.timing\(/g)).toHaveLength(1);
+    // Under the strip, the width of it.
+    const replay = code(`${dir}/Replay.tsx`);
+    expect(replay).toMatch(/<\/View>\s*<View style=\{styles\.leaderGap\}>\s*<ReplayLeader fraction=\{r\.leader\} width=\{width\} \/>\s*<\/View>/);
+    expect(replay).toMatch(/<ReplayStrip\b[\s\S]*?width=\{width\}[\s\S]*?\/>\s*<\/View>\s*<View style=\{styles\.leaderGap\}>/);
+  });
+
+  it("sets the word as DEVELOP is set: the page's one ruled word, a button named by what it does, in DEVELOP's slot", () => {
+    const replay = code(`${dir}/Replay.tsx`);
+    const word = replay.slice(replay.indexOf("<Word"), replay.indexOf("/>", replay.indexOf("<Word")));
+    expect(word).toMatch(/label=\{word\.label\}\s*primary\s*accessibilityLabel=\{word\.said\}/);
+    expect(word).toMatch(/accessibilityHint=\{state\.phase === "playing" \? undefined : PLAY_HINT\}/);
+    expect(word).toMatch(/onPress=\{press\}/);
+    // A glide still coming to rest stops first, so PLAY is not held again by its last frames.
+    expect(replay).toMatch(/const press = useEvent\(\(\) => \{\s*strip\.current\?\.settle\(\);\s*r\.toggle\(\);\s*\}\);/);
+    const strip = code(`${dir}/ReplayStrip.tsx`);
+    expect(strip).toMatch(
+      /settle\(\) \{\s*if \(!driving\.current\) return;\s*const offset = stripIndex\(glidedTo\.current, n\) \* STRIP\.pitch;\s*end\(\);\s*asked\.current = offset;\s*list\.current\?\.scrollToOffset\(\{ offset, animated: false \}\);/,
+    );
+    expect(strip.match(/glidedTo\.current = x;\s*on\.current\.onScrubTo\(stripIndex\(x, n\)\);/g)).toHaveLength(2);
+    expect(word).toMatch(/minHeight=\{WORD_SLOT\}\s*paddingHorizontal=\{24\}/);
+    expect(word).toMatch(/testID="darkroom-replay-word"/);
+    expect(replay).toMatch(/const word = replayWord\(state\.phase, r\.restarts\);/);
+    // AGAIN exactly where a press starts again: the reducer's own rule, worked out as the hook draws.
+    expect(code(`${dir}/useReplay.ts`)).toMatch(/const restarts = playRestarts\(state, ctx\.current\);/);
+    expect(code(`${dir}/replay.ts`)).toMatch(/function play\(s: ReplayState, ctx: ReducerContext\): ReplayState \{\s*if \(s\.phase === "playing"\) return s;\s*if \(playRestarts\(s, ctx\)\) \{/);
+    // DEVELOP's own slot and least width, and the room's bottom margin under it, so it stands where DEVELOP stood.
+    expect(replay).toMatch(/const WORD_SLOT = 48;/);
+    expect(replay).toMatch(/const WORD_MIN_WIDTH = 116;/);
+    expect(replay).toMatch(/marginBottom: Math\.max\(bottomInset, 16\) \+ 8/);
+    const develop = code(`${dir}/Develop.tsx`);
+    expect(develop).toMatch(/minHeight=\{48\}\s*paddingHorizontal=\{24\}/);
+    expect(develop).toMatch(/word: \{ minWidth: 116 \}/);
+    // VoiceOver's Hold or Play on the photograph says what the word says.
+    expect(replay).toMatch(/actionLabel=\{word\.said\}/);
+    // The room's word: no glyph, no ring, no ticks, nothing turned.
+    for (const file of views) {
+      const src = code(file);
+      expect(src, file).not.toMatch(/@expo\/vector-icons|Feather/);
+      expect(src, file).not.toMatch(/rotate|PanResponder\.create\([\s\S]*?measureInWindow/);
+    }
+    // Word sets a primary word in the room's typewriter capitals, with the short rule under it.
+    const w = code(`${dir}/Word.tsx`);
+    expect(w).toMatch(/kind=\{primary \? "wordPrimary" : "word"\}/);
+    expect(w).toMatch(/<Rule width=\{ruleWidth\(label\)\} scaleX=\{ruleScale\} \/>/);
+    expect(w).toMatch(/accessibilityRole="button"/);
   });
 
   it("hands the room its photograph only when the fade out finishes, and only while the replay is still up", () => {
@@ -713,14 +797,15 @@ describe("the replay, in its source", () => {
     expect(room).toMatch(/const closeReplay = useEvent\(\(id: string\) => \{\s*if \(!replay\) return;/);
   });
 
-  it("ends a glide of the member's whenever the replay moves the strip for something else, and tells each scrub's end by its control", () => {
+  it("ends a glide of the member's whenever the replay moves the strip for something else, and has the leader follow only a finger's glide", () => {
     const strip = code(`${dir}/ReplayStrip.tsx`);
     expect(strip).toMatch(/scrollTo\(index: number, animated: boolean\) \{\s*end\(\);/);
+    // On the phone, only while a finger drives it; in the browser, once a move not its own has begun one.
+    expect(strip).toMatch(/if \(!driving\.current\) return;\s*glidedTo\.current = x;\s*on\.current\.onScrubTo\(stripIndex\(x, n\)\);\s*on\.current\.onGlide\(x\);/);
+    expect(strip).toMatch(/begin\(\);\s*glidedTo\.current = x;\s*on\.current\.onScrubTo\(stripIndex\(x, n\)\);\s*on\.current\.onGlide\(x\);/);
+    expect(strip.match(/onGlide\(x\)/g)).toHaveLength(2);
     const replay = code(`${dir}/Replay.tsx`);
-    expect(replay).toMatch(/const stripScrubEnd = useEvent\(\(\) => r\.scrubEnd\("strip"\)\);/);
-    expect(replay).toMatch(/const turnEnd = useEvent\(\(\) => r\.scrubEnd\("dial"\)\);/);
-    expect(replay).toMatch(/onScrubEnd=\{stripScrubEnd\}/);
-    expect(replay).toMatch(/onTurnEnd=\{turnEnd\}/);
+    expect(replay).toMatch(/onScrubStart=\{r\.scrubStart\}\s*onScrubTo=\{r\.scrubTo\}\s*onScrubEnd=\{r\.scrubEnd\}\s*onGlide=\{r\.glide\}/);
   });
 
   it("starts only if PLAY still could as the room's fade ends, and opens held if the app has left the foreground", () => {
@@ -740,21 +825,11 @@ describe("the replay, in its source", () => {
     expect(hook).toMatch(/AppState\.addEventListener\("change", \(next\) => \{\s*if \(next !== "active"\) dispatch\(\{ type: "away" \}\);/);
   });
 
-  it("feels the dial's ticks, and nothing else", () => {
+  it("is never felt: not its word, not its strip, not its leader", () => {
     const haptics = code(`${dir}/haptics.ts`);
-    expect(haptics).toMatch(/detent: \(\) => quietly\(Haptics\.selectionAsync\(\)\),/);
-    const callers: string[] = [];
-    const walk = (d: string) => {
-      for (const e of readdirSync(path.join(root, d), { withFileTypes: true })) {
-        const f = `${d}/${e.name}`;
-        if (e.isDirectory()) walk(f);
-        else if (/\.tsx?$/.test(e.name) && /haptics\.detent\(/.test(code(f))) callers.push(f);
-      }
-    };
-    walk("src");
-    walk("app");
-    expect(callers).toEqual([`${dir}/ReplayDial.tsx`]);
-    for (const file of [`${dir}/ReplayStrip.tsx`, `${dir}/ReplayGate.tsx`, `${dir}/Replay.tsx`, `${dir}/PlayTab.tsx`]) {
+    expect(haptics).not.toMatch(/detent/);
+    expect([...haptics.matchAll(/^ {2}(\w+): \(\) => quietly\(/gm)].map((m) => m[1])).toEqual(["develop", "setAside", "putBack", "chosen"]);
+    for (const file of [...views, `${dir}/useReplay.ts`, `${dir}/PlayTab.tsx`]) {
       expect(code(file), file).not.toMatch(/haptics|expo-haptics/);
     }
   });

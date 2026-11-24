@@ -6,7 +6,9 @@ import { stayAwake } from "./awake";
 import {
   dwellAt,
   HOLD_EASE_MS,
+  leaderAt,
   PACE,
+  playRestarts,
   READY_WAIT_MS,
   REST_MS,
   replayInit,
@@ -31,11 +33,12 @@ import { replayCardSaid } from "./words";
  * drift never adds up; `cardOver` after a title card's second; and
  * `waitedOut` after `READY_WAIT_MS` waiting on an image that has not come.
  *
- * It owns the dial's hand: a linear sweep through the photograph's share
- * of the circle while it plays, still on a card or a wait, eased back
- * onto the photograph's place when held, and round to 12 o'clock at the
- * end; stepped, not swept, under Reduce Motion. A turn of the dial drives
- * the hand itself.
+ * It owns the leader, how far the replay has come as one length for the
+ * whole of it (0 to 1): a linear sweep through the photograph's share of
+ * it while it plays, still on a card or a wait, eased back onto the
+ * photograph's place when held, and drawn whole at the end; stepped, not
+ * swept, under Reduce Motion. A finger gliding the strip draws it itself
+ * (`glide`), so it follows the strip, frame by frame.
  *
  * And the rest: the photographs the gate holds ready (`tray`), re-centred
  * once the member has come to rest; which have drawn (`ready`); the
@@ -132,39 +135,41 @@ export function useReplay(o: ReplayOptions) {
     return () => clearTimeout(t);
   }, [state.phase, state.index, state.centre]);
 
-  // --- the hand --------------------------------------------------------------
+  // --- the leader ------------------------------------------------------------
 
-  const hand = useRef(new Animated.Value(n > 0 ? o.start / n : 0)).current;
+  const leader = useRef(new Animated.Value(n > 0 ? o.start / n : 0)).current;
   useEffect(() => {
-    if (n === 0 || state.scrubbing === "dial") return;
+    // While a finger glides the strip, the glide draws the leader (`glide`).
+    if (n === 0 || state.scrubbing) return;
     const i = state.index;
     const to = (value: number, duration: number, easing: (t: number) => number) => {
       if (reduceMotion || duration <= 0) {
-        hand.setValue(value);
+        leader.setValue(value);
         return undefined;
       }
-      const a = Animated.timing(hand, { toValue: value, duration, easing, useNativeDriver: true });
+      const a = Animated.timing(leader, { toValue: value, duration, easing, useNativeDriver: true });
       a.start();
       return () => a.stop();
     };
     if (state.phase === "ended") return to(1, HOLD_EASE_MS, Easing.out(Easing.quad));
-    if (state.phase === "held") {
-      if (state.scrubbing === "strip") {
-        hand.setValue(i / n);
-        return;
-      }
-      return to(i / n, HOLD_EASE_MS, Easing.out(Easing.quad));
-    }
+    if (state.phase === "held") return to(i / n, HOLD_EASE_MS, Easing.out(Easing.quad));
     if (state.wait != null) {
-      hand.stopAnimation();
+      leader.stopAnimation();
       return;
     }
-    hand.setValue(i / n);
-    // Under Reduce Motion the hand steps onto each photograph's place, and stays there: it never sweeps ahead.
+    leader.setValue(i / n);
+    // Under Reduce Motion the leader steps onto each photograph's place, and stays there: it never sweeps ahead.
     if (reduceMotion) return;
     const left = dwellAt(plan, i, state.fresh) - (Date.now() - shownAt.current);
     return to((i + 1) / n, Math.max(0, left), Easing.linear);
-  }, [state.phase, state.wait, state.shown, state.index, state.scrubbing, state.fresh, plan, n, reduceMotion, hand]);
+  }, [state.phase, state.wait, state.shown, state.index, state.scrubbing, state.fresh, plan, n, reduceMotion, leader]);
+
+  /**
+   * A finger's glide of the strip, at scroll offset `x` (the strip says so
+   * only while a finger drives it): the leader follows it, frame by frame,
+   * and a photograph at a time under Reduce Motion.
+   */
+  const glide = useCallback((x: number) => leader.setValue(leaderAt(x, n, latest.current.reduceMotion)), [leader, n]);
 
   // --- away, awake, said, seen -------------------------------------------------
 
@@ -201,7 +206,7 @@ export function useReplay(o: ReplayOptions) {
   const [drawTick, setDrawTick] = useState(0);
   const currentId = prints[state.index]?.id ?? null;
   useEffect(() => {
-    if (state.phase === "playing" || state.scrubbing != null || mode === "set-aside" || currentId == null) return;
+    if (state.phase === "playing" || state.scrubbing || mode === "set-aside" || currentId == null) return;
     if (!drewIds.current.has(currentId)) return;
     // Held in front, drawn, as long as the room takes to call a print seen. A glimpse while playing is not a look.
     const t = setTimeout(() => markSeen(currentId), SEEN_AFTER_MS);
@@ -254,33 +259,30 @@ export function useReplay(o: ReplayOptions) {
   /** Held, and straight to a photograph: a frame tapped on the strip. */
   const goTo = useCallback((index: number) => dispatch({ type: "scrubTo", index, by: "tap" }), []);
 
-  // A finger on the strip or the dial moves the photograph at most once a frame, the latest index winning.
-  const pendingScrub = useRef<{ index: number; by: "strip" | "dial" } | null>(null);
+  // A finger on the strip moves the photograph at most once a frame, the latest index winning.
+  const pendingScrub = useRef<number | null>(null);
   const frame = useRef<number | null>(null);
   const flush = useCallback(() => {
     frame.current = null;
-    const p = pendingScrub.current;
+    const index = pendingScrub.current;
     pendingScrub.current = null;
-    if (p) dispatch({ type: "scrubTo", index: p.index, by: p.by });
+    if (index != null) dispatch({ type: "scrubTo", index, by: "strip" });
   }, []);
-  const scrubStart = useCallback((by: "strip" | "dial") => dispatch({ type: "scrubStart", by }), []);
+  const scrubStart = useCallback(() => dispatch({ type: "scrubStart" }), []);
   const scrubTo = useCallback(
-    (index: number, by: "strip" | "dial") => {
-      pendingScrub.current = { index, by };
+    (index: number) => {
+      pendingScrub.current = index;
       if (frame.current == null) frame.current = requestAnimationFrame(flush);
     },
     [flush],
   );
-  const scrubEnd = useCallback(
-    (by: "strip" | "dial") => {
-      if (frame.current != null) {
-        cancelAnimationFrame(frame.current);
-        flush();
-      }
-      dispatch({ type: "scrubEnd", by });
-    },
-    [flush],
-  );
+  const scrubEnd = useCallback(() => {
+    if (frame.current != null) {
+      cancelAnimationFrame(frame.current);
+      flush();
+    }
+    dispatch({ type: "scrubEnd" });
+  }, [flush]);
   useEffect(
     () => () => {
       if (frame.current != null) cancelAnimationFrame(frame.current);
@@ -290,10 +292,13 @@ export function useReplay(o: ReplayOptions) {
 
   const source: ReplaySource = state.source;
   const rest = state.phase !== "playing" && state.centre === state.index;
+  /** A press of play would start again from the first print, so the word says AGAIN (`playRestarts`). */
+  const restarts = playRestarts(state, ctx.current);
   return {
     state,
+    restarts,
     plan,
-    hand,
+    leader,
     tray,
     rest,
     source,
@@ -308,6 +313,7 @@ export function useReplay(o: ReplayOptions) {
     scrubStart,
     scrubTo,
     scrubEnd,
+    glide,
     drawn,
     forget,
     gone,

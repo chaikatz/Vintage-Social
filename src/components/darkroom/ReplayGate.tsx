@@ -48,7 +48,7 @@ const SWIPE = 40;
  * steps on and on the left half back, as a tap turns the room's pages
  * (`tapTurn`), and a swipe across steps either way. VoiceOver sees one
  * adjustable element, the room's "Photograph": swiping up or down steps,
- * and Play or Pause is its action; its own double-tap is not a tap here.
+ * and Hold or Play is its action; its own double-tap is not a tap here.
  */
 export interface GateProps {
   tray: readonly Print[];
@@ -61,7 +61,7 @@ export interface GateProps {
   limited: boolean;
   /** The photograph's value for VoiceOver (`replayValue`). */
   value: string;
-  /** VoiceOver's action: "Pause", "Play" or "Play again" (`dialLabel`). */
+  /** VoiceOver's action, as the word at the foot says it: "Hold", "Play" or "Play again" (`replayWord`). */
   actionLabel: string;
   viewRef?: React.RefObject<View | null>;
   /** A tap, `x` across the page. */

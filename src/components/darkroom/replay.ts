@@ -8,13 +8,14 @@ export type { ReplayCard, ReplayPhase } from "./words";
 /**
  * PLAY: the chapter in front of the member played through, a photograph at
  * a time, in the gate of the Memory Room's own page — Retro's measured
- * pace, Photos' sliding strip under it, and a dial to hold, play and turn.
+ * pace, Photos' sliding strip under it, the leader along the strip's foot
+ * for how far it has come, and the room's own word to hold and play.
  *
  * Everything here needs no screen, so the tests can hold it to its word:
  * which chapters can be played, how long each photograph stays (`replayPlan`,
  * worked out once per replay, in one pass), where its groups begin and
  * which have a title card, the marks printed along the strip's edge, the
- * strip's and the dial's arithmetic, and the replay's own states
+ * strip's and the leader's arithmetic, and the replay's own states
  * (`replayReducer`), which never read the clock: `useReplay` keeps the
  * time.
  *
@@ -45,7 +46,7 @@ export const SAME_SHAPE = 0.02;
 export const READY_WAIT_MS = 1500;
 /** Held, the photographs kept ready move to where the member is once nothing has changed for this long. */
 export const REST_MS = 150;
-/** Held, the dial's hand eases back onto the photograph's place over this. */
+/** Held, the leader eases back onto the photograph's place over this. */
 export const HOLD_EASE_MS = 120;
 /** The room goes out over this as the replay opens, and the replay as it closes. */
 export const ROOM_OUT_MS = 160;
@@ -65,8 +66,6 @@ export const PROOF_WIDTH = 48;
 export const STRIP = { cellW: 28, cellH: 40, gap: 8, pitch: 36, centreScale: 1.2, boxW: 40, boxH: 54, marks: 12 } as const;
 /** Edge marks closer than this many frames to the last one kept are left out. */
 export const MARK_SPACING = 3;
-/** The dial: its size, its ticks, how far its press reaches, how far a finger moves before it turns, and the least time between two detents. */
-export const DIAL = { size: 80, ticks: 60, slop: 12, turnAfter: 8, detentMs: 40 } as const;
 
 // ---------------------------------------------------------------------------
 // Where it starts
@@ -209,7 +208,7 @@ export function edgeMarks(prints: readonly Print[], plan: ReplayPlan, mode: Dark
 }
 
 // ---------------------------------------------------------------------------
-// The gate, the strip and the dial
+// The gate, the strip and the leader
 // ---------------------------------------------------------------------------
 
 /**
@@ -229,30 +228,26 @@ export function stripIndex(x: number, n: number): number {
   return Math.max(0, Math.min(n - 1, Math.round(x / STRIP.pitch)));
 }
 
-/** The shortest signed turn from one angle to another, in degrees, so a turn through 12 o'clock does not jump. */
-export function turnDelta(prevDeg: number, nextDeg: number): number {
-  const d = (((nextDeg - prevDeg) % 360) + 360) % 360;
-  return d > 180 ? d - 360 : d;
-}
-
-/** The photograph a fraction of the dial's turn lands on. Never past the last. */
-export function dialIndex(fraction: number, n: number): number {
-  if (n <= 0 || !Number.isFinite(fraction)) return 0;
-  return Math.max(0, Math.min(n - 1, Math.round(fraction * n)));
-}
-
-/** Which of the dial's sixty ticks a fraction of the turn is in. */
-export function tickOf(fraction: number): number {
-  if (!Number.isFinite(fraction)) return 0;
-  return Math.max(0, Math.min(DIAL.ticks - 1, Math.floor(fraction * DIAL.ticks + 1e-9)));
+/**
+ * How far along the leader is drawn, 0 to 1, with the strip at scroll
+ * offset `x`: one length for the whole replay, the photograph under the
+ * box at its own place (`i / n`), as the leader stands when that
+ * photograph is shown. It follows a finger's glide frame by frame;
+ * `stepped` (Reduce Motion), a photograph at a time. Never past the last
+ * photograph's place: only the end draws it whole.
+ */
+export function leaderAt(x: number, n: number, stepped: boolean): number {
+  if (n <= 0 || !Number.isFinite(x)) return 0;
+  const frame = stepped ? stripIndex(x, n) : Math.max(0, Math.min(n - 1, x / STRIP.pitch));
+  return frame / n;
 }
 
 // ---------------------------------------------------------------------------
 // The replay's states
 // ---------------------------------------------------------------------------
 
-/** What last changed the photograph in front: the clock, a finger on the strip or the dial, a tap, or VoiceOver. */
-export type ReplaySource = "clock" | "strip" | "dial" | "tap" | "vo";
+/** What last changed the photograph in front: the clock, a finger on the strip, a tap, or VoiceOver. */
+export type ReplaySource = "clock" | "strip" | "tap" | "vo";
 
 export interface ReplayState {
   /** The photograph in front (or the one its card is for). */
@@ -262,8 +257,8 @@ export interface ReplayState {
   wait: null | "card" | "image";
   /** The photograph waited for. */
   pending: number | null;
-  /** A finger is on the strip or turning the dial. */
-  scrubbing: null | "strip" | "dial";
+  /** A finger is gliding the strip, or its glide is still coming to rest. */
+  scrubbing: boolean;
   /** The first photograph shown since PLAY: it stays at least `PACE.first`. */
   fresh: boolean;
   source: ReplaySource;
@@ -291,9 +286,9 @@ export type ReplayEvent =
   | { type: "drawn"; index: number }
   | { type: "gone"; index: number }
   | { type: "waitedOut" }
-  | { type: "scrubStart"; by: "strip" | "dial" }
+  | { type: "scrubStart" }
   | { type: "scrubTo"; index: number; by: ReplaySource }
-  | { type: "scrubEnd"; by: "strip" | "dial" }
+  | { type: "scrubEnd" }
   | { type: "step"; by: -1 | 1; source: "tap" | "vo" }
   | { type: "rest" }
   | { type: "away" };
@@ -317,7 +312,7 @@ export function replayInit(start: number, ctx: ReducerContext): ReplayState {
     phase: "playing",
     wait: ctx.card(index) ? "card" : null,
     pending: null,
-    scrubbing: null,
+    scrubbing: false,
     fresh: true,
     source: "clock",
     shown: 0,
@@ -343,11 +338,20 @@ function due(s: ReplayState, ctx: ReducerContext): ReplayState {
   return { ...s, wait: "image", pending: next };
 }
 
-/** Where a press of play goes: on from here, or from the first print again at the end. */
+/**
+ * Whether a press of play starts again from the first print: at the end,
+ * or held on the last print still there (glided to, tapped, or stepped
+ * onto), with nothing after it to play on to. The word says AGAIN exactly
+ * then (`replayWord`).
+ */
+export function playRestarts(s: ReplayState, ctx: ReducerContext): boolean {
+  return s.phase === "ended" || nextShown(s.index, ctx) == null;
+}
+
+/** Where a press of play goes: on from here, or from the first print again at the end (`playRestarts`). */
 function play(s: ReplayState, ctx: ReducerContext): ReplayState {
   if (s.phase === "playing") return s;
-  const atEnd = s.phase === "ended" || nextShown(s.index, ctx) == null;
-  if (atEnd) {
+  if (playRestarts(s, ctx)) {
     const first = firstShown(ctx);
     if (first == null) return s;
     return {
@@ -356,14 +360,14 @@ function play(s: ReplayState, ctx: ReducerContext): ReplayState {
       phase: "playing",
       wait: ctx.card(first) ? "card" : null,
       pending: null,
-      scrubbing: null,
+      scrubbing: false,
       fresh: true,
       source: "clock",
       shown: s.shown + 1,
       centre: first,
     };
   }
-  return { ...s, phase: "playing", wait: null, pending: null, scrubbing: null, fresh: true, shown: s.shown + 1, centre: s.index };
+  return { ...s, phase: "playing", wait: null, pending: null, scrubbing: false, fresh: true, shown: s.shown + 1, centre: s.index };
 }
 
 /**
@@ -372,10 +376,10 @@ function play(s: ReplayState, ctx: ReducerContext): ReplayState {
  * title card first where its group has one, onto the next print if its
  * image has drawn (or failed, or the phone is offline, so nothing is
  * coming), or waits for it (`drawn`, or `waitedOut` after
- * `READY_WAIT_MS`). Any touch on the gate, the strip or the dial, a
- * VoiceOver step, and the app or the room going out of view hold it; only
- * the dial's centre, or VoiceOver's Play, plays. Played from the last
- * print, or after the end, it starts again from the first.
+ * `READY_WAIT_MS`). Any touch on the gate or the strip, the word while it
+ * says HOLD, a VoiceOver step, and the app or the room going out of view
+ * hold it; only the word (PLAY, AGAIN), or VoiceOver's Play, plays. Played
+ * from the last print, or after the end, it starts again from the first.
  */
 export function replayReducer(s: ReplayState, e: ReplayEvent, ctx: ReducerContext): ReplayState {
   switch (e.type) {
@@ -397,7 +401,7 @@ export function replayReducer(s: ReplayState, e: ReplayEvent, ctx: ReducerContex
     case "waitedOut":
       return s.phase === "playing" && s.wait === "image" && s.pending != null ? advance(s, s.pending, null) : s;
     case "scrubStart":
-      return { ...s, phase: "held", wait: null, pending: null, scrubbing: e.by };
+      return { ...s, phase: "held", wait: null, pending: null, scrubbing: true };
     case "scrubTo": {
       const index = Math.max(0, Math.min(ctx.n - 1, Math.round(e.index)));
       const held = s.phase === "held" ? s : heldFrom(s);
@@ -405,8 +409,7 @@ export function replayReducer(s: ReplayState, e: ReplayEvent, ctx: ReducerContex
       return index === s.index ? held : { ...held, index, source: e.by, shown: s.shown + 1 };
     }
     case "scrubEnd":
-      // Only the control that is moving it lets go: a strip's glide coming to rest never ends a turn of the dial.
-      return s.scrubbing === e.by ? { ...s, scrubbing: null } : s;
+      return s.scrubbing ? { ...s, scrubbing: false } : s;
     case "step": {
       let to = s.index;
       for (let j = s.index + e.by; j >= 0 && j < ctx.n; j += e.by) {
