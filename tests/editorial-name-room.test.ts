@@ -358,9 +358,23 @@ describe("a bar titled with a username", () => {
     expect(drawn.type).toBe(NameTitle);
     expect(drawn.props).toMatchObject({ style: title, children: "june.nakamura", tintColor: "#000" });
     // The thread's title was at most the screen less 150 pt, and never under 120: the name is, the room beyond it.
+    // On the iPhone the room stays inside what the bar holds, the negative margin left off: the bar's header subview
+    // is as wide as the title's margins make it (react-native-screens lays its subviews in a row, each its content's
+    // width), and the picture it fades when the screen is popped shows only what lies inside that.
     const text = NameTitle({ children: "june.nakamura", style: title }) as ReactElement<{ style: unknown[] }>;
     expect(text.type).toBe("HeaderTitle");
-    expect(text.props.style).toEqual([title, { maxWidth: 240 + 8 }]);
+    expect(text.props.style).toEqual([title, { maxWidth: 240 + 8, marginHorizontal: 0 }]);
+    const screens = (file: string) => readFileSync(path.join(root, "node_modules/react-native-screens", file), "utf8");
+    expect(screens("src/components/ScreenStackHeaderConfig.tsx")).toMatch(
+      /headerSubviewCenter: \{\s*flexDirection: 'row',\s*alignItems: 'center',\s*justifyContent: 'center',\s*flexShrink: 1,\s*\},\s*headerConfig: \{\s*position: 'absolute',\s*width: '100%',\s*flexDirection: 'row',/,
+    );
+    expect(screens("ios/RNSScreenStackHeaderSubview.mm")).toMatch(/self\.bounds = CGRect\{CGPointZero, frame\.size\};/);
+    expect(screens("ios/RNSScreenStackHeaderConfig.mm")).toMatch(
+      /UIView \*snapshot = \[childComponentView snapshotViewAfterScreenUpdates:NO\];[\s\S]{0,400}?case RNSScreenStackHeaderSubviewTypeCenter:[\s\S]{0,80}?navitem\.titleView = snapshot;/,
+    );
+    // The bar centres that view on the iPhone, so the letters stay where they were. Elsewhere (the web, where the bar
+    // sets its title at its start) the negative margin stays and keeps them there.
+    expect(code("src/components/NameTitle.tsx")).toMatch(/room > 0 && Platform\.OS === "ios" \? \{ \.\.\.box, marginHorizontal: 0 \} : box/);
     // Under Original, and over an era's gallery: the bar's own title, exactly as it was.
     expect(nameHeaderTitle(nameTitleStyle("original"))).toBeUndefined();
     expect((NameTitle({ children: "june.nakamura", style: nameTitleStyle("original") }) as ReactElement<{ style: unknown[] }>).props.style).toEqual([

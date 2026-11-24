@@ -116,8 +116,8 @@ describe("the names' face", () => {
     // And none, on the web alone, for the narrow space before a name that begins a line (tests/editorial-name-room.test.ts).
     expect(source.match(/lineHeight: [^,;} ]+/g)).toEqual(["lineHeight: 0", "lineHeight: TITLE_LINE"]);
     expect(source).toMatch(/\nconst EDGE_LINE = Platform\.OS === "web" \? \{ lineHeight: 0 \} : undefined;\n/);
-    // The weight is the cut's own on the phone, which draws the family's cut nearest the weight asked for, and regular
-    // on the web, where the cut is a family of its own registered at the regular weight (a heavier one would be faked).
+    // The weight is the cut's own on the phone, which finds the cut by its PostScript name (tests/editorial-name-font.test.ts),
+    // and regular on the web, where the cut is a family of its own registered at the regular weight (a heavier one would be faked).
     expect(source).toMatch(/\nconst FAMILY = "CormorantGaramond-BoldItalic";\n/);
     expect(source).toMatch(/\nconst WEIGHT = Platform\.OS === "web" \? "400" : "700";\n/);
   });

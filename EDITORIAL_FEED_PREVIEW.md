@@ -128,9 +128,15 @@ under Editorial only:
   `HeaderTitle` with the room), since the bar's own label draws only within
   its letters' widths. It is the same size, centred by the bar as its own
   title is, and as wide at most as the thread's title always was (the
-  screen less 150 pt, never under 120 pt), the room beyond that. Under
-  Original the bar draws its own title exactly as before (the thread's,
-  a link, was always the app's own and still is).
+  screen less 150 pt, never under 120 pt), the room beyond that. On the
+  iPhone it keeps the room inside what the bar holds (no negative margin):
+  the bar holds the title in a view as wide as the title's margins make it
+  (react-native-screens' header subview), and when the screen is popped it
+  fades a picture of that view, which shows only what lies inside it; the
+  bar centres the view, so the letters stay where they were. On the web,
+  where the bar sets its title at its start, the negative margin keeps them
+  there. Under Original the bar draws its own title exactly as before (the
+  thread's, a link, was always the app's own and still is).
 
 A bar titled with a username (a member's profile opened from anywhere, the
 gallery of their photographs, a message thread, and the Profile tab, which
@@ -163,10 +169,14 @@ holds (`face(15)`, `face(15, "alone")`): under Editorial it is the face,
 alone, and under Original nothing at all. It is laid last over a name's
 own style, after the place's and any state's, so its family, size and
 weight are the name's and the place's colour stays. The weight is the one
-that lands on the cut: on the iPhone its own, 700, since React Native
-takes a PostScript name to its family and draws the family's cut nearest
-the weight asked for, as italic as the named one, so it is the bold italic
-itself and never a bold faked over it; on the web regular, since there the
+that lands on the cut: on the iPhone its own, 700. There the PostScript
+name finds the cut (React Native's new architecture,
+`RCTFontWithFontProperties` in `RCTFontUtils.mm`, knows no family by that
+name, so it opens the font of that name, and then looks through its family
+only among cuts as italic as the style asks for; no style is set, the
+family's one cut is italic, so the named cut stays), and the weight would
+matter only if a style ever asked for italic, when the cut nearest 700 is
+this one too: the bold italic itself, never a bold faked over it; on the web regular, since there the
 cut is a family of its own, registered at the regular weight, and a
 heavier one would be faked. `nameStyle(size, alone)` is the face itself,
 which the editorial card sets in its sheet. `nameRoom(size)` is the room

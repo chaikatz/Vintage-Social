@@ -11,8 +11,10 @@ import { describe, expect, it } from "vitest";
  * name it cannot find falls back to the system font without a word, so the
  * name the cut is asked for by is read here from the font file itself. The
  * file is built in by expo-font's plugin in app.json (UIAppFonts), and
- * travels with its licence. The phone draws the cut of the family nearest
- * the weight asked for, so the weight it is asked for at is the file's own.
+ * travels with its licence. The phone finds it by that name, whatever
+ * weight is asked for; the weight it is asked for at is the file's own all
+ * the same, the one the phone would weigh the family's cuts by were italic
+ * ever asked for (React Native's RCTFontUtils, read below).
  */
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -79,14 +81,37 @@ describe("the names' face", () => {
     expect(selection).toBe(0xa1);
     // head: bold and italic (macStyle bits 0 and 1).
     expect(font.readUInt16BE(table(font, "head") + 44) & 3).toBe(3);
-    // Asked for at its own weight on the phone, whose RCTFont draws the family's cut nearest the weight asked for, and
-    // as italic as the named one; at the regular weight on the web, where the cut is a family of its own registered
-    // without a weight. Never a style over it.
+    // Asked for at its own weight on the phone, at the regular weight on the web, where the cut is a family of its own
+    // registered without a weight. Never a style over it.
     expect(module).toMatch(/\nconst WEIGHT = Platform\.OS === "web" \? "400" : "700";\n/);
-    const rctFont = readFileSync(path.join(root, "node_modules/react-native/React/Views/RCTFont.mm"), "utf8");
-    expect(rctFont).toMatch(/font = \[UIFont fontWithName:familyName size:fontSize\];\s*if \(font\) \{[\s\S]*?familyName = font\.familyName;\s*fontWeight = weight \? fontWeight : RCTGetFontWeight\(font\);\s*isItalic = style \? isItalic : isItalicFont\(font\);/);
-    expect(rctFont).toMatch(/if \(isItalic == isItalicFont\(match\) && isCondensed == isCondensedFont\(match\)\) \{\s*CGFloat testWeight = RCTGetFontWeight\(match\);\s*if \(ABS\(testWeight - fontWeight\) < ABS\(closestWeight - fontWeight\)\)/);
     expect(module).not.toMatch(/fontStyle/);
+  });
+
+  it("is found on the phone by its PostScript name, by the code the new architecture finds a Text's font with", () => {
+    // The new architecture is on: React Native 0.81's default, which app.json never turns off.
+    const app = JSON.parse(readFileSync(path.join(root, "app.json"), "utf8"));
+    expect(app.expo.newArchEnabled ?? true).toBe(true);
+    expect(app.expo.ios?.newArchEnabled ?? true).toBe(true);
+    // A Text's font is RCTFontWithFontProperties' (RCTAttributedTextUtils.mm), never the old RCTFont's.
+    const ios = "node_modules/react-native/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager";
+    const attributed = readFileSync(path.join(root, ios, "RCTAttributedTextUtils.mm"), "utf8");
+    expect(attributed).toMatch(/fontProperties\.family = fontFamily;[\s\S]{0,800}?return RCTFontWithFontProperties\(fontProperties\);/);
+    const utils = readFileSync(path.join(root, ios, "RCTFontUtils.mm"), "utf8");
+    // A style that sets none asks for an upright font.
+    expect(utils).toMatch(/defaultFontProperties\.style = RCTFontStyleNormal;/);
+    expect(utils).toMatch(/fontProperties\.style =\s*fontProperties\.style != RCTFontStyleUndefined \? fontProperties\.style : baseFontProperties\.style;/);
+    // No family is named "CormorantGaramond-BoldItalic", so the font of that name is opened: the cut itself. Its
+    // family's cuts are then looked through, and the weight asked for is the one weighed.
+    expect(utils).toMatch(
+      /if \(fontNames\.count == 0\) \{[\s\S]{0,300}?font = \[UIFont fontWithName:fontProperties\.family size:effectiveFontSize\];\s*if \(font\) \{\s*fontNames = \[UIFont fontNamesForFamilyName:font\.familyName\];\s*fontWeight = fontWeight \?: RCTGetFontWeight\(font\);/,
+    );
+    // Only the cuts as italic as the style asks for are weighed. None is asked for, and the family's one cut is
+    // italic, so none is, and the named cut is drawn; were italic asked for, the cut nearest the weight would be,
+    // this one. Either way the bold italic, with nothing faked over it.
+    expect(utils).toMatch(
+      /for \(NSString \*name in fontNames\) \{\s*UIFont \*fontMatch = \[UIFont fontWithName:name size:effectiveFontSize\];\s*if \(RCTGetFontStyle\(fontMatch\) != fontProperties\.style\) \{\s*continue;\s*\}\s*CGFloat testWeight = RCTGetFontWeight\(fontMatch\);\s*if \(ABS\(testWeight - fontWeight\) < ABS\(closestWeight - fontWeight\)\) \{\s*font = fontMatch;/,
+    );
+    expect(utils).toMatch(/if \(!font\) \{[\s\S]{0,300}?font = \[UIFont fontWithName:fontNames\[0\] size:effectiveFontSize\];/);
   });
 
   it("is built into the iPhone app by expo-font's plugin, that file alone, and carries its licence", () => {

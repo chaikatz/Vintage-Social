@@ -60,9 +60,15 @@ export function nameSize(size: number): number {
  * whatever weight the place's own style had (a semibold username, an unread
  * thread's, a regular one), so that weight never picks another font or a
  * faked bold:
- * - on the iPhone, the cut's own, 700. The phone takes a PostScript name to
- *   its family and draws the family's cut nearest the weight asked for, as
- *   italic as the named one (React Native's RCTFont): the bold italic itself.
+ * - on the iPhone, the cut's own, 700. It is the PostScript name that finds
+ *   the cut: the phone (React Native's new architecture, RCTFontUtils'
+ *   RCTFontWithFontProperties) knows no family by that name, so it opens the
+ *   font of that name, the bold italic itself, and then looks through its
+ *   family only among the cuts as italic as the style asks for. No style is
+ *   ever set, so none is asked for; the family's one cut is italic, so none
+ *   is found, and the named cut is drawn. The weight would matter only if a
+ *   style asked for italic one day: then the family's cut nearest it would
+ *   be drawn, and at 700 that is this one too.
  * - on the web, regular. There the cut is a family of its own, registered
  *   without a weight, that is, regular; a heavier weight would be faked over it.
  */
