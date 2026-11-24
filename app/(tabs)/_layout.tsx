@@ -213,8 +213,8 @@ const styles = StyleSheet.create({
   headerTitle: { fontFamily: type.serif, fontSize: 17, color: colors.ink },
   // Editorial (Preview): half the difference between the line the names' face is set on in a title (28) and the
   // serif's at 17 (19.32, Georgia's 1.136 of it, on the iPhone), above and below, at the default size of text;
-  // TabHeader scales it with the reader's. (On the web, whose serif line is 19.5 and whose text keeps its size,
-  // the Profile tab's bar is a fifth of a point shorter than the others.)
+  // TabHeader scales it with the reader's. (On the web, where the serif's line is the browser's own serif's, 19.5
+  // to 20 pt, the Profile tab's bar is up to two thirds of a point shorter than the others.)
   nameTitle: { marginVertical: -4.34 },
   bar: {
     backgroundColor: colors.paper,
