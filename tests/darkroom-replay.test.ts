@@ -645,7 +645,8 @@ describe("the replay, in its source", () => {
   });
 
   it("asks the library nothing: no reader, no source, no page or count", () => {
-    const forbidden = /^(@\/darkroom\/(source|discovery|nativeSource|nativeLibrary|demoSource|develop|localFile|access|eligibility)|\.\/(visit|dealer|chapter))$/;
+    // useDarkroom too: it holds the room's readers, so importing anything from it would bring them all in with it.
+    const forbidden = /^(@\/darkroom\/(source|discovery|nativeSource|nativeLibrary|demoSource|develop|localFile|access|eligibility|useDarkroom)|\.\/(visit|dealer|chapter))$/;
     for (const file of replayFiles) {
       const src = code(file);
       const from = [...src.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
@@ -655,8 +656,9 @@ describe("the replay, in its source", () => {
     }
     // The one thing taken from the occasions: how a day is counted.
     expect(code(`${dir}/replay.ts`)).toMatch(/^import \{ occasionDay \} from "@\/darkroom\/occasions";$/m);
-    // The room's own rule for a print seen, and nothing else of the room's state.
-    expect(code(`${dir}/useReplay.ts`)).toMatch(/^import \{ SEEN_AFTER_MS \} from "@\/darkroom\/useDarkroom";$/m);
+    // The room's own rule for a print seen, from the history's leaf module, and nothing else of the room's state.
+    expect(code(`${dir}/useReplay.ts`)).toMatch(/^import \{ markSeen, SEEN_AFTER_MS \} from "@\/darkroom\/history";$/m);
+    expect(code("src/darkroom/useDarkroom.ts")).not.toMatch(/export const SEEN_AFTER_MS/);
   });
 
   it("keeps the screen awake only through a guarded call to Expo's own keep-awake", () => {

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, AppState, Easing } from "react-native";
-import { markSeen } from "@/darkroom/history";
+import { markSeen, SEEN_AFTER_MS } from "@/darkroom/history";
 import type { DarkroomMode, DayReach, Print } from "@/darkroom/types";
-import { SEEN_AFTER_MS } from "@/darkroom/useDarkroom";
 import { stayAwake } from "./awake";
 import {
   dwellAt,
