@@ -139,12 +139,15 @@ export const Replay = forwardRef<ReplayHandle, ReplayProps>(function Replay(prop
     closing.current = true;
     r.hold();
     const id = prints[r.live.current.index]?.id ?? prints[0]?.id ?? "";
+    // Stopped, not finished, only as the replay unmounts under its fade: the room has closed it already, and lands nowhere.
     Animated.timing(opacity, {
       toValue: 0,
       duration: motion(look, ROOM_OUT_MS),
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
-    }).start(() => props.onClose(id));
+    }).start(({ finished }) => {
+      if (finished) props.onClose(id);
+    });
   });
   const away = r.away;
   useImperativeHandle(ref, () => ({ hold: () => away(), close }), [away, close]);

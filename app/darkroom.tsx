@@ -480,6 +480,8 @@ export default function Darkroom() {
 
   /** The replay has gone: the room lands on the print it stopped on, and comes back. */
   const closeReplay = useEvent((id: string) => {
+    // Already gone, closed at once under its fade: nothing to land on.
+    if (!replay) return;
     const i = chapter ? chapter.prints.findIndex((p) => p.id === id) : -1;
     if (i >= 0) onSettle(i);
     setReplay(null);

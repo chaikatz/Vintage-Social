@@ -690,6 +690,15 @@ describe("the replay, in its source", () => {
     expect(dial).not.toMatch(/accessibilityActions|onAccessibilityAction\b/);
   });
 
+  it("hands the room its photograph only when the fade out finishes, and only while the replay is still up", () => {
+    const replay = code(`${dir}/Replay.tsx`);
+    const close = replay.slice(replay.indexOf("const close = useEvent("), replay.indexOf("useImperativeHandle("));
+    expect(close).toMatch(/\.start\(\(\{ finished \}\) => \{\s*if \(finished\) props\.onClose\(id\);\s*\}\);/);
+    expect(close.match(/onClose\(/g)).toHaveLength(1);
+    const room = code("app/darkroom.tsx");
+    expect(room).toMatch(/const closeReplay = useEvent\(\(id: string\) => \{\s*if \(!replay\) return;/);
+  });
+
   it("holds as the app leaves the foreground", () => {
     const hook = code(`${dir}/useReplay.ts`);
     expect(hook).toMatch(/AppState\.addEventListener\("change", \(next\) => \{\s*if \(next !== "active"\) dispatch\(\{ type: "away" \}\);/);
