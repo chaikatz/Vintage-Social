@@ -12,7 +12,7 @@ import { mentionedUsernames } from "@/utils/mentions";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { nameStyle } from "@/utils/nameFace";
 import { Avatar } from "../Avatar";
-import { MentionText, NameLink } from "../MemberText";
+import { MentionText, NameEdge, NameLink } from "../MemberText";
 import { INLINE_COMMENTS, PostCard } from "../PostCard";
 import { PostMedia } from "../PostMedia";
 import { authorShown, withAuthors } from "../hiddenAuthors";
@@ -180,7 +180,8 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
 
       {post.caption ? (
         <Text style={styles.caption}>
-          {/* The name and every @name in the words open their member's page. */}
+          {/* The name and every @name in the words open their member's page; before the name, the room its first letter reaches into. */}
+          <NameEdge name={post.author.username} size={WORDS} />
           <NameLink username={post.author.username} onOpenProfile={onOpenProfile} style={styles.author} />
           <Text style={styles.nameGap}>{NAME_GAP}</Text>
           <MentionText text={post.caption} onOpenProfile={onOpenProfile} size={WORDS} />
@@ -204,6 +205,7 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
         >
           <Text style={styles.comment} numberOfLines={2}>
             {/* A name, or an @name, opens its member's page; held, the comment's menu, as the rest of the line. */}
+            <NameEdge name={c.author.username} size={WORDS} />
             <NameLink
               username={c.author.username}
               onOpenProfile={onOpenProfile}
@@ -299,10 +301,11 @@ const NAME_GAP = "\u2004";
 
 /**
  * The caption's and the comments' words, 12.5 pt, and with them the
- * members' names, in Cormorant Garamond Medium Italic at the size that
+ * members' names, in Cormorant Garamond Bold Italic at the size that
  * matches them, 16 pt (nameStyle in src/utils/nameFace.ts, which every
  * username the app draws under Editorial follows): the owner's restyle (24
- * November), set a size up from 11 and 14 the same day.
+ * November), set a size up from 11 and 14 the same day, in the bold once
+ * the owner had seen build 56.
  */
 const WORDS = 12.5;
 const NAME = nameStyle(WORDS);
@@ -376,8 +379,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // The member's name: Cormorant Garamond Medium Italic, 16 pt, in the name ink.
-  username: { flexShrink: 1, ...NAME, color: colors.nameInk },
+  // The member's name: Cormorant Garamond Bold Italic, 16 pt, in the name ink, with the room its letters reach into.
+  username: { flexShrink: 1, ...nameStyle(WORDS, "alone"), color: colors.nameInk },
   // The print alone keeps the print's margins, a share of the width, and
   // the same paper over the picture as under it, before the hairline. The
   // paper itself lets a touch through to the member's row under it.

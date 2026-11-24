@@ -36,7 +36,7 @@ export function UserRow({ username, avatarPath, title, subtitle, onPress, right 
       >
         <Avatar path={avatarPath} username={username} size={44} />
         <View style={styles.text}>
-          <Text style={[styles.username, face(14)]}>{username}</Text>
+          <Text style={[styles.username, face(14, "alone")]}>{username}</Text>
           {title ? <Text style={styles.title}>{title}</Text> : null}
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>

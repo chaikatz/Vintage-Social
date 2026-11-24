@@ -113,7 +113,10 @@ describe("what a report shows the admin", () => {
   const card = src.slice(src.indexOf("renderItem={({ item }) => ("), src.indexOf("{tab === \"open\" ? (\n              <View style={styles.actions}>"));
 
   it("a reported comment: its words and who wrote them, and whether it is removed already", () => {
-    expect(card).toMatch(/\{item\.comment \? \(\s*<View style=\{styles\.resolution\}>\s*<Text style=\{styles\.resolutionText\}>\s*\{nameOf\(item\.comment\.author\?\.username\)\}: “\{item\.comment\.body\}”\s*\{item\.comment\.removed_at \? " · removed" : ""\}/);
+    // Where the build has the Editorial layout's names, the room before a name that begins the line (tests/editorial-name-room.test.ts).
+    expect(card).toMatch(
+      /\{item\.comment \? \(\s*<View style=\{styles\.resolution\}>\s*<Text style=\{styles\.resolutionText\}>\s*(?:<NameEdge name=\{item\.comment\.author\?\.username\} size=\{12\} \/>\s*)?\{nameOf\(item\.comment\.author\?\.username\)\}: “\{item\.comment\.body\}”\s*\{item\.comment\.removed_at \? " · removed" : ""\}/,
+    );
   });
 
   it("a reported member: their name", () => {

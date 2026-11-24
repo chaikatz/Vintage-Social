@@ -7,7 +7,7 @@ import { useNameFace } from "@/utils/nameFace";
 import { discardPost, holdPost, retryPost, type PendingPost } from "@/uploads";
 import { overallProgress, stateLine } from "@/uploads/words";
 import { Avatar } from "./Avatar";
-import { MentionText, NameLink } from "./MemberText";
+import { MentionText, NameEdge, NameLink } from "./MemberText";
 import { Byline } from "./PostCard";
 import { PostMedia } from "./PostMedia";
 import { announcement, clipMayPlay, offersDiscard, offersRetry, statusAccessibility } from "./pendingCardWords";
@@ -121,7 +121,7 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
           disabled={!onOpenProfile}
           accessibilityRole={onOpenProfile ? "button" : undefined}
         >
-          <Text style={[styles.username, face(14)]} numberOfLines={1}>
+          <Text style={[styles.username, face(14, "alone")]} numberOfLines={1}>
             {draft.author.username}
           </Text>
           <Byline post={{ taken_at: draft.takenAt, created_at: createdAt, location: draft.location }} />
@@ -181,11 +181,13 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
           {/* As it will read once posted: the name and every @name open their member's page. */}
           {onOpenProfile ? (
             <>
+              <NameEdge name={draft.author.username} size={14} />
               <NameLink username={draft.author.username} onOpenProfile={onOpenProfile} style={[styles.captionAuthor, face(14)]} />{" "}
               <MentionText text={draft.caption.trim()} onOpenProfile={onOpenProfile} size={14} />
             </>
           ) : (
             <>
+              <NameEdge name={draft.author.username} size={14} />
               <Text style={[styles.captionAuthor, face(14)]}>{draft.author.username}</Text> {draft.caption.trim()}
             </>
           )}

@@ -108,7 +108,7 @@ export default function Requests() {
             >
               <Avatar path={item.avatar_url} username={item.username} size={44} />
               <View style={styles.personText}>
-                <Text style={[styles.username, face(15)]}>{item.username}</Text>
+                <Text style={[styles.username, face(15, "alone")]}>{item.username}</Text>
                 {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
               </View>
             </Pressable>

@@ -25,7 +25,7 @@ import { removalTarget, sameTarget } from "@/components/reportTargets";
 import { errorMessage } from "@/utils/errorMessage";
 import { postAge } from "@/utils/time";
 import { useOpenProfile } from "@/hooks/useOpenProfile";
-import { NameLink } from "@/components/MemberText";
+import { NameEdge, NameLink } from "@/components/MemberText";
 import { useNameFace } from "@/utils/nameFace";
 import type { ReportStatus } from "@/types/db";
 
@@ -228,6 +228,7 @@ export default function AdminReports() {
             {item.comment ? (
               <View style={styles.resolution}>
                 <Text style={styles.resolutionText}>
+                  <NameEdge name={item.comment.author?.username} size={12} />
                   {nameOf(item.comment.author?.username)}: “{item.comment.body}”
                   {item.comment.removed_at ? " · removed" : ""}
                 </Text>

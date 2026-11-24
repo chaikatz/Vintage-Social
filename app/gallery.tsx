@@ -39,6 +39,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { useFeedLayout } from "@/utils/feedLayout";
 import { useFeedBackground } from "@/utils/feedPaper";
 import { useNameTitleStyle } from "@/utils/nameFace";
+import { nameHeaderTitle } from "@/components/NameTitle";
 import type { PostWithAuthor } from "@/types/db";
 
 // A row that breaks this screen breaks only this screen, with the way back on its
@@ -342,13 +343,14 @@ export default function Gallery() {
   // card, on the paper chosen with it, under a bar on that paper too.
   const FeedCard = useFeedLayout() === "editorial" ? EditorialPostCard : PostCard;
   const paper = useFeedBackground();
-  // Editorial (Preview): the title, when it is the author's username, in the names' face; an era's keeps the stack's own.
+  // Editorial (Preview): the title, when it is the author's username, in the names' face, drawn by the app so its
+  // letters have room (nameHeaderTitle); an era's keeps the stack's own.
   const titleStyle = useNameTitleStyle(!shown.era);
 
   return (
     <Screen padded={false} style={paper}>
       {/* An era's gallery is titled with the era; every card still names its author. */}
-      <Stack.Screen options={{ title: shown.era ?? authorQ.data?.username ?? "", headerStyle: paper as { backgroundColor: string }, headerTitleStyle: titleStyle }} />
+      <Stack.Screen options={{ title: shown.era ?? authorQ.data?.username ?? "", headerStyle: paper as { backgroundColor: string }, headerTitle: nameHeaderTitle(titleStyle), headerTitleStyle: titleStyle }} />
       <FlatList
         ref={list}
         data={posts}

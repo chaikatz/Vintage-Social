@@ -20,7 +20,7 @@ import { fetchPostTags, removeTag } from "@/api/tags";
 import { libraryGranted, photosFromSameNight } from "@/utils/library";
 import { usePostActions } from "@/hooks/usePostActions";
 import { useOpenProfile } from "@/hooks/useOpenProfile";
-import { MentionText, NameLink } from "@/components/MemberText";
+import { MentionText, NameEdge, NameLink } from "@/components/MemberText";
 import { mentionedUsernames } from "@/utils/mentions";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { useSession } from "@/providers/SessionProvider";
@@ -142,7 +142,7 @@ export default function PostDetail() {
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
         </Pressable>
         <Pressable style={styles.headerText} onPress={openProfile} accessibilityRole="button">
-          <Text style={[styles.username, face(14)]} numberOfLines={1}>
+          <Text style={[styles.username, face(14, "alone")]} numberOfLines={1}>
             {post.author.username}
           </Text>
           <Byline post={post} />
@@ -214,6 +214,7 @@ export default function PostDetail() {
         // serif (15 pt).
         <Text style={styles.caption}>
           {/* The name and every @name in the words open their member's page. */}
+          <NameEdge name={post.author.username} size={15} />
           <NameLink username={post.author.username} onOpenProfile={openMember} style={[styles.captionAuthor, face(15)]} />{" "}
           <MentionText text={post.caption} onOpenProfile={openMember} size={15} />
         </Text>
@@ -245,6 +246,7 @@ export default function PostDetail() {
         >
           <Text style={styles.comment} numberOfLines={2}>
             {/* A name, or an @name, opens its member's page; held, the comment's menu, as the rest of the line. */}
+            <NameEdge name={c.author.username} size={14} />
             <NameLink
               username={c.author.username}
               onOpenProfile={openMember}

@@ -8,9 +8,9 @@ import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
  * While the feed is Editorial, every username the app draws (a row in a
  * list, the name before a caption, a comment or a notice, an @name in what
  * a member wrote, a chip, a sheet, a bar titled with one) is set in
- * Cormorant Garamond Medium Italic, the face the owner chose for the names
- * on the editorial card (24 November), in the place's own colour. Under
- * Original nothing changes at all.
+ * Cormorant Garamond Bold Italic, the face the owner chose for the names
+ * (24 November; in its bold once the owner had seen build 56), in the
+ * place's own colour. Under Original nothing changes at all.
  *
  * Its size follows one rule. Cormorant's small letters are short (its
  * x-height is 0.386 of its size), so a name set at the size of the words
@@ -20,38 +20,30 @@ import { useFeedLayout, type FeedLayout } from "@/utils/feedLayout";
  * the 12.5 pt words of the editorial card, the owner's pairing (24
  * November), wherever a name is drawn.
  *
- * Where a place marks a name heavier for a state (an unread thread's name),
- * the name is drawn in the face's heavier cut, Cormorant Garamond SemiBold
- * Italic, rather than a weight laid over the medium.
+ * Every name is in the one cut: a place that marks a name heavier for a
+ * state (an unread thread's) marks it there by other means, its ink and
+ * what is around it.
  *
  * Part of the trial, and meant to come out with it: EDITORIAL_FEED_PREVIEW.md
  * lists every place that reads it.
  */
 
 /**
- * The two cuts, each a font file of its own in assets/fonts (SIL Open Font
- * License, assets/fonts/CormorantGaramond-OFL.txt), built into the iPhone
- * app by expo-font's plugin in app.json and found there by its PostScript
- * name; each is italic in itself, so no style is ever set over it.
+ * The cut, a font file of its own in assets/fonts (SIL Open Font License,
+ * assets/fonts/CormorantGaramond-OFL.txt), built into the iPhone app by
+ * expo-font's plugin in app.json and found there by its PostScript name. It
+ * is bold and italic in itself, so no style is ever set over it.
  */
-const CUTS = {
-  medium: { family: "CormorantGaramond-MediumItalic", weight: "500" },
-  semibold: { family: "CormorantGaramond-SemiBoldItalic", weight: "600" },
-} as const;
-
-export type NameCut = keyof typeof CUTS;
+const FAMILY = "CormorantGaramond-BoldItalic";
 
 /**
- * The web build has no plugin, so there both cuts are loaded once, here,
- * the first time anything that draws a name is loaded; a failure is let go
- * (the browser draws its own serif until the file arrives).
+ * The web build has no plugin, so there the cut is loaded once, here, the
+ * first time anything that draws a name is loaded; a failure is let go (the
+ * browser draws its own serif until the file arrives).
  */
 if (Platform.OS === "web") {
   require("expo-font")
-    .loadAsync({
-      [CUTS.medium.family]: require("../../assets/fonts/CormorantGaramond-MediumItalic.ttf"),
-      [CUTS.semibold.family]: require("../../assets/fonts/CormorantGaramond-SemiBoldItalic.ttf"),
-    })
+    .loadAsync({ [FAMILY]: require("../../assets/fonts/CormorantGaramond-BoldItalic.ttf") })
     .catch(() => {});
 }
 
@@ -63,37 +55,85 @@ export function nameSize(size: number): number {
   return Math.round(size * NAME_SCALE * 2) / 2;
 }
 
-/** A name's face: the cut, its size, and the weight that lands on that cut. */
-export type NameStyle = { fontFamily: string; fontSize: number; fontWeight: "400" | "500" | "600" };
+/**
+ * The weight a name is drawn at is the one that lands on the cut, laid over
+ * whatever weight the place's own style had (a semibold username, an unread
+ * thread's, a regular one), so that weight never picks another font or a
+ * faked bold:
+ * - on the iPhone, the cut's own, 700. The phone takes a PostScript name to
+ *   its family and draws the family's cut nearest the weight asked for, as
+ *   italic as the named one (React Native's RCTFont): the bold italic itself.
+ * - on the web, regular. There the cut is a family of its own, registered
+ *   without a weight, that is, regular; a heavier weight would be faked over it.
+ */
+const WEIGHT = Platform.OS === "web" ? "400" : "700";
 
 /**
- * The weight a name is drawn at is the one that lands on its cut, laid over
- * whatever weight the place's own style had (a semibold username, a regular
- * one), so that weight never picks another cut or a faked bold:
- * - on the iPhone, the cut's own weight. The phone draws the cut of the
- *   family nearest the weight asked for (React Native's RCTFont), so the
- *   medium is asked for at 500 and the semibold at 600: each is itself.
- * - on the web, regular. There each cut is a family of its own, registered
- *   without a weight, that is, regular; a heavier weight would be faked
- *   over it by the browser.
+ * How far the face's ink reaches past the width each character a username
+ * can hold (a-z, 0-9, "." and "_": USERNAME_RE) is set in, in thousandths
+ * of its size, where it reaches a hundredth of it or more: to the left of
+ * where the character begins, and to the right of where the next one does.
+ * An italic leans out of its letters' widths: the f's and the j's tails
+ * reach in under the letter before, the f's hook out over the one after.
+ * On the iPhone a Text draws nothing outside its own box, and its box is as
+ * wide as its letters' widths and starts where the first one does (React
+ * Native's RCTTextLayoutManager sets a line with no margin of its own), so
+ * what reaches past a name's first or last letter is cut off there unless
+ * the box is given room for it. tests/editorial-name-room.test.ts reads
+ * every figure here from the font file, and what reaches less (the 2's
+ * thousandth, the l's) from it too.
  */
-function weightOf(cut: NameCut): NameStyle["fontWeight"] {
-  return Platform.OS === "web" ? "400" : CUTS[cut].weight;
+const REACH: Record<"left" | "right", Readonly<Record<string, number>>> = {
+  left: { f: 128, j: 114, y: 78, p: 73, g: 51, "3": 42, "5": 32, "9": 28, "7": 20, x: 13, z: 13, "4": 13, _: 12 },
+  right: { f: 149, "6": 30, d: 26, z: 17, k: 14, r: 13, g: 12, t: 11 },
+};
+
+/** The farthest any of them reaches, either way: the f's hook. */
+const FARTHEST = Math.max(...Object.values(REACH.left), ...Object.values(REACH.right));
+
+/**
+ * The room a name that stands alone in its Text is given on each side, in
+ * points, beside words of `size`: the farthest any letter reaches at the
+ * name's size, to the whole point above, so the box's edges, and the name
+ * inside it, stay on the pixels they were on.
+ */
+export function nameRoom(size: number): number {
+  return Math.ceil((nameSize(size) * FARTHEST) / 1000);
 }
+
+/**
+ * A name's face: the cut, its size, and the weight that lands on that cut;
+ * and, for a name that stands alone in its Text (a row's, a chip's, a
+ * header's, a title), the room its letters reach into: the box grows by
+ * nameRoom on each side, as padding, and gives the same back as a negative
+ * margin, so the letters, and everything around the Text, stay exactly
+ * where they were while the tails are drawn inside it.
+ */
+export type NameStyle = {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: "400" | "700";
+  paddingHorizontal?: number;
+  marginHorizontal?: number;
+  lineHeight?: number;
+};
 
 const STYLES = new Map<string, NameStyle>();
 
 /**
- * A name beside words of `size` points, in the given cut: always the face,
- * whatever the layout (the editorial card, drawn only under Editorial, sets
- * its names with it). The same object for the same size and cut, so nothing
- * redraws for it alone.
+ * A name beside words of `size` points, standing alone in its Text or not:
+ * always the face, whatever the layout (the editorial card, drawn only under
+ * Editorial, sets its names with it). The same object for the same size, so
+ * nothing redraws for it alone.
  */
-export function nameStyle(size: number, cut: NameCut = "medium"): NameStyle {
-  const key = `${cut} ${size}`;
+export function nameStyle(size: number, alone?: "alone"): NameStyle {
+  const key = `${size}${alone ? " alone" : ""}`;
   let style = STYLES.get(key);
   if (style == null) {
-    style = { fontFamily: CUTS[cut].family, fontSize: nameSize(size), fontWeight: weightOf(cut) };
+    const room = nameRoom(size);
+    style = alone
+      ? { ...nameStyle(size), paddingHorizontal: room, marginHorizontal: -room }
+      : { fontFamily: FAMILY, fontSize: nameSize(size), fontWeight: WEIGHT };
     STYLES.set(key, style);
   }
   return style;
@@ -101,15 +141,15 @@ export function nameStyle(size: number, cut: NameCut = "medium"): NameStyle {
 
 /**
  * The face of the names a place draws: given the size of the words a name
- * sits beside (or stands in for), and the cut a state of the place asks
- * for, the style laid last over the name's own, after the place's and any
+ * sits beside (or stands in for), and "alone" where the name is all its Text
+ * holds, the style laid last over the name's own, after the place's and any
  * state's, so that its family, size and weight are the name's and the
  * place's colour stays. Under Original it is nothing at all, so a style
  * array is exactly what it was.
  */
-export type NameFace = (size: number, cut?: NameCut) => NameStyle | undefined;
+export type NameFace = (size: number, alone?: "alone") => NameStyle | undefined;
 
-const EDITORIAL: NameFace = (size, cut) => nameStyle(size, cut);
+const EDITORIAL: NameFace = (size, alone) => nameStyle(size, alone);
 const ORIGINAL: NameFace = () => undefined;
 
 /** The face of the names for a layout. */
@@ -123,22 +163,74 @@ export function useNameFace(): NameFace {
 }
 
 /**
+ * A name inside a line of words cannot be given room by its box: the line
+ * is the box, and a line that holds a link to a member is never padded
+ * (tests/name-link-hit-area.test.ts). Where such a name begins the line (a
+ * caption's, a comment's or a notice's author, a sentence that starts with
+ * the name), its first letter's reach is made room for by NAME_EDGE, a
+ * no-break narrow space, laid before it in the face at the size that makes
+ * it exactly as wide as the letter reaches: the name moves over by that,
+ * and no more, and its tail is drawn inside the line. The same after a name
+ * that ends a Text sized to its words, for its last letter's reach to the
+ * right. Nothing where the letter does not reach out, as most do not.
+ */
+export const NAME_EDGE = " ";
+
+/** NAME_EDGE's width in the face, in thousandths of its size (the test reads it from the file). */
+const EDGE_WIDTH = 200;
+
+/**
+ * Its line, on the web, none: there a line's set height is handed down to
+ * each span in it, and a span in a smaller face sits lower in that height
+ * than the name beside it, so a line led by NAME_EDGE would grow a pixel.
+ * The iPhone sets a line's height for the paragraph as a whole, by its
+ * largest face (React Native's RCTApplyBaselineOffset), so nothing is set
+ * there.
+ */
+const EDGE_LINE = Platform.OS === "web" ? { lineHeight: 0 } : undefined;
+
+const EDGES = new Map<string, NameStyle | undefined>();
+
+/**
+ * What NAME_EDGE is drawn in, on the `side` of a name beside words of
+ * `size`, or nothing where the letter on that side does not reach out.
+ */
+export function nameEdge(size: number, name: string, side: "left" | "right"): NameStyle | undefined {
+  const letter = (side === "left" ? name[0] : name[name.length - 1]) ?? "";
+  const key = `${side} ${letter} ${size}`;
+  if (!EDGES.has(key)) {
+    const reach = REACH[side][letter];
+    EDGES.set(key, reach ? { fontFamily: FAMILY, fontSize: (nameSize(size) * reach) / EDGE_WIDTH, fontWeight: WEIGHT, ...EDGE_LINE } : undefined);
+  }
+  return EDGES.get(key);
+}
+
+/**
  * A bar's title, where the title is a username (a pushed profile, an
- * author's gallery, a message thread).
+ * author's gallery, a message thread, the Profile tab).
  *
  * Under Original it is the stack's own style, exactly app/_layout.tsx's
  * (the serif at 17 pt, which the stack lays over its own title face, bold
  * on the iPhone), so the title is drawn as it always was. Under Editorial
  * the username is in the names' face at the size that matches that title,
  * nameStyle(17), whose weight also replaces the stack's bold underneath, on
- * a line of TITLE_LINE.
+ * a line of TITLE_LINE, standing alone: with the room its letters reach
+ * into, which the app draws itself (NameTitle, in
+ * src/components/NameTitle.tsx), since the bar's own label would cut it.
  *
  * It is handed over under Original too, never left out: a screen's options
  * are merged into the ones it set before, so a title left without one after
  * Settings turns Editorial off would keep Editorial's face (and one handed
  * `undefined` would lose the stack's serif).
  */
-export type TitleStyle = { fontFamily: string; fontSize: number; fontWeight?: NameStyle["fontWeight"]; lineHeight?: number };
+export type TitleStyle = {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight?: NameStyle["fontWeight"];
+  lineHeight?: number;
+  paddingHorizontal?: number;
+  marginHorizontal?: number;
+};
 
 /** The size of every bar's title (app/_layout.tsx), and of the Profile tab's, which the app draws itself. */
 const TITLE_SIZE = 17;
@@ -153,7 +245,7 @@ const TITLE_LINE = 28;
 
 const TITLES: Record<FeedLayout, TitleStyle> = {
   original: { fontFamily: type.serif, fontSize: TITLE_SIZE },
-  editorial: { ...nameStyle(TITLE_SIZE), lineHeight: TITLE_LINE },
+  editorial: { ...nameStyle(TITLE_SIZE, "alone"), lineHeight: TITLE_LINE },
 };
 
 export function nameTitleStyle(layout: FeedLayout): TitleStyle {

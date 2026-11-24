@@ -22,7 +22,7 @@ import { Screen } from "@/components/Screen";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
-import { MentionText, NameLink } from "@/components/MemberText";
+import { MentionText, NameEdge, NameLink } from "@/components/MemberText";
 import { MENTION_ROW_HEIGHT, MentionSuggestions } from "@/components/MentionSuggestions";
 import { colors, spacing, type } from "@/theme";
 import { addComment, fetchComments, fetchPost } from "@/api/posts";
@@ -167,6 +167,7 @@ export default function Comments() {
               </Pressable>
               <View style={styles.body}>
                 <Text style={styles.text}>
+                  <NameEdge name={post.author.username} size={14} />
                   <NameLink username={post.author.username} onOpenProfile={openAuthor} style={[styles.author, face(14)]} />{" "}
                   <MentionText text={post.caption} onOpenProfile={openAuthor} size={14} />
                 </Text>
@@ -236,6 +237,7 @@ const CommentRow = React.memo(function CommentRow({
       <View style={styles.body}>
         <Text style={styles.text}>
           {/* Held, a name or an @name opens the comment's menu, as the rest of the row does. */}
+          <NameEdge name={comment.author.username} size={14} />
           <NameLink username={comment.author.username} onOpenProfile={onOpenAuthor} onLongPress={hold} style={[styles.author, face(14)]} />{" "}
           <MentionText text={comment.body} onOpenProfile={onOpenAuthor} onLongPress={hold} size={14} />
         </Text>

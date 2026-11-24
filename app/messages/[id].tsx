@@ -9,12 +9,11 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
 } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { HeaderTitle, useHeaderHeight } from "@react-navigation/elements";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { StackActions, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,7 +31,8 @@ import { markedRead, readThread, unreadIds } from "@/utils/threadPoll";
 import { threadOnScreen } from "@/utils/threadOnScreen";
 import { useSession } from "@/providers/SessionProvider";
 import { useOpenProfile } from "@/hooks/useOpenProfile";
-import { NameLink } from "@/components/MemberText";
+import { NameEdge, NameLink } from "@/components/MemberText";
+import { NameTitle } from "@/components/NameTitle";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -159,7 +159,6 @@ export default function Thread() {
   // Guideline 1.2). A member sent something unwelcome had to leave the
   // thread, find the sender in Search and open their profile to do either.
   const peer = peerQ.data ?? null;
-  const { width } = useWindowDimensions();
   const openProfile = useCallback(() => {
     if (peer) openMember(peer.username);
   }, [peer, openMember]);
@@ -255,13 +254,13 @@ export default function Thread() {
         options={{
           title: peerQ.data?.username ?? "",
           // Once they are known: the title drawn as the stack draws it (app/_layout.tsx; in the names' face
-          // under Editorial, as useNameTitleStyle says), and a link.
+          // under Editorial, as useNameTitleStyle says, with the room its letters reach into: NameTitle), and a link.
           headerTitle: peer
             ? ({ children, tintColor }) => (
                 <Pressable onPress={openProfile} hitSlop={8} accessibilityRole="link" accessibilityHint="Opens their profile">
-                  <HeaderTitle tintColor={tintColor} style={[titleStyle, { maxWidth: Math.max(120, width - 150) }]}>
+                  <NameTitle tintColor={tintColor} style={titleStyle}>
                     {children}
-                  </HeaderTitle>
+                  </NameTitle>
                 </Pressable>
               )
             : undefined,
@@ -374,7 +373,9 @@ const Bubble = React.memo(function Bubble({
             {/* A photograph whose author the reader may not see comes without one. */}
             {shared.author ? (
               <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
+                <NameEdge name={shared.author.username} size={11} />
                 <NameLink username={shared.author.username} onOpenProfile={onOpenProfile} style={face(11)} />
+                <NameEdge name={shared.author.username} size={11} side="right" />
               </Text>
             ) : null}
           </Pressable>
