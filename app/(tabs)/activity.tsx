@@ -48,7 +48,7 @@ export default function Activity() {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
-  // Editorial (Preview): who did it, half bold.
+  // Editorial (Preview): who did it, in the names' face, at the size of the line it begins (13 pt).
   const face = useNameFace();
 
   const activity = useQuery({
@@ -147,7 +147,7 @@ export default function Activity() {
                 <Text style={styles.line}>
                   {!isModeration && item.actor ? (
                     <>
-                      <NameLink username={item.actor.username} onOpenProfile={openMember} style={[styles.actor, face]} />{" "}
+                      <NameLink username={item.actor.username} onOpenProfile={openMember} style={[styles.actor, face(13)]} />{" "}
                     </>
                   ) : (
                     <Text style={styles.actor}>VINTAGE </Text>

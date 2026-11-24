@@ -46,7 +46,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
   // files its answers, so either can use the other's.
   const settled = useDebounced(searchNeedle(q), SEARCH_DEBOUNCE_MS);
   const searching = settled.length >= TAG_SEARCH_FROM;
-  // Editorial (Preview): every username in the sheet, half bold.
+  // Editorial (Preview): every username in the sheet, in the names' face.
   const face = useNameFace();
 
   // Fifty at a time as the sheet is scrolled; anyone further is a search away.
@@ -103,7 +103,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
           <View style={styles.chips}>
             {selected.map((p) => (
               <Pressable key={p.id} style={styles.chip} onPress={() => toggle(p)}>
-                <Text style={[styles.chipText, face]}>{p.username}</Text>
+                <Text style={[styles.chipText, face(12)]}>{p.username}</Text>
                 <Feather name="x" size={12} color={colors.inkSoft} />
               </Pressable>
             ))}
@@ -156,7 +156,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
               >
                 <Avatar path={item.avatar_url} username={item.username} size={36} />
                 <View style={styles.rowText}>
-                  <Text style={[styles.username, face]}>{item.username}</Text>
+                  <Text style={[styles.username, face(14)]}>{item.username}</Text>
                   {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
                 </View>
                 <View style={[styles.mark, on && styles.markOn]}>

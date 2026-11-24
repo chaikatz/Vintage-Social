@@ -24,9 +24,17 @@ const BARE_NAME = /<Text style=\{styles\.(captionAuthor|author|actor)\}>\{[^}]*u
 
 /**
  * A link's style: the place's own, or, where the build has the Editorial
- * layout's names (tests/editorial-names.test.ts), that and the names' face.
+ * layout's names (tests/editorial-names.test.ts), that and the names' face
+ * at the size of the words around it.
  */
-const linkStyle = (own: string) => `style=\\{(?:${own}|\\[${own}, face\\])\\}`;
+const linkStyle = (own: string) => `style=\\{(?:${own}|\\[${own}, face\\(\\d+(?:\\.\\d+)?\\)\\])\\}`;
+
+/**
+ * What an @name is drawn beside: nothing, or, where the build has the
+ * Editorial layout's names, the size of the words around it, which the
+ * names' face matches.
+ */
+const SIZE = "(?:\\s+size=\\{[\\w.]+\\})?";
 
 describe("a name in a line of words", () => {
   const text = code("src/components/MemberText.tsx");
@@ -61,9 +69,11 @@ describe("the names under a photograph", () => {
     expect(page).not.toMatch(/router\.push\(`\/user\//);
     expect(page).toMatch(/const openMember = useOpenProfile\(\);/);
     expect(page.indexOf("const openMember = useOpenProfile();")).toBeLessThan(page.indexOf("if (!post || !authorShown(post))"));
-    expect(page).toMatch(/<NameLink username=\{post\.author\.username\} onOpenProfile=\{openMember\} style=\{styles\.captionAuthor\} \/>\{" "\}\s*<MentionText text=\{post\.caption\} onOpenProfile=\{openMember\} \/>/);
+    expect(page).toMatch(
+      new RegExp(`<NameLink username=\\{post\\.author\\.username\\} onOpenProfile=\\{openMember\\} ${linkStyle("styles\\.captionAuthor")} \\/>\\{" "\\}\\s*<MentionText text=\\{post\\.caption\\} onOpenProfile=\\{openMember\\}${SIZE} \\/>`),
+    );
     expect(page).toMatch(/<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{openMember\}\s+onLongPress=\{\(\) => onCommentLongPress\(c\)\}/);
-    expect(page).toMatch(/<MentionText text=\{c\.body\} onOpenProfile=\{openMember\} onLongPress=\{\(\) => onCommentLongPress\(c\)\} \/>/);
+    expect(page).toMatch(new RegExp(`<MentionText text=\\{c\\.body\\} onOpenProfile=\\{openMember\\} onLongPress=\\{\\(\\) => onCommentLongPress\\(c\\)\\}${SIZE} \\/>`));
     expect(page).toMatch(/onPress=\{\(\) => openMember\(t\.member\.username\)\}\s*accessibilityRole="link"/);
     expect(page).toMatch(/onAccessibilityTap=\{\(\) => onOpenComments\(post\)\}\s*accessibilityActions=\{nameActions\(\[c\.author\.username, \.\.\.mentionedUsernames\(c\.body\)\]\)\}/);
   });
@@ -73,13 +83,13 @@ describe("the names under a photograph", () => {
     expect(comments).not.toMatch(BARE_NAME);
     expect(comments).toMatch(/const openAuthor = useOpenProfile\(\);/);
     expect(comments).toMatch(
-      new RegExp(`<NameLink username=\\{post\\.author\\.username\\} onOpenProfile=\\{openAuthor\\} ${linkStyle("styles\\.author")} \\/>\\{" "\\}\\s*<MentionText text=\\{post\\.caption\\} onOpenProfile=\\{openAuthor\\} \\/>`),
+      new RegExp(`<NameLink username=\\{post\\.author\\.username\\} onOpenProfile=\\{openAuthor\\} ${linkStyle("styles\\.author")} \\/>\\{" "\\}\\s*<MentionText text=\\{post\\.caption\\} onOpenProfile=\\{openAuthor\\}${SIZE} \\/>`),
     );
     const row = comments.slice(comments.indexOf("const CommentRow = React.memo("), comments.indexOf("function Composer("));
     expect(row).toMatch(/const hold = \(\) => onLongPress\(comment\);/);
     expect(row).toMatch(/onPress=\{\(\) => onOpenAuthor\(comment\.author\.username\)\}\s*onLongPress=\{hold\}/);
     expect(row).toMatch(new RegExp(`<NameLink username=\\{comment\\.author\\.username\\} onOpenProfile=\\{onOpenAuthor\\} onLongPress=\\{hold\\} ${linkStyle("styles\\.author")} \\/>`));
-    expect(row).toMatch(/<MentionText text=\{comment\.body\} onOpenProfile=\{onOpenAuthor\} onLongPress=\{hold\} \/>/);
+    expect(row).toMatch(new RegExp(`<MentionText text=\\{comment\\.body\\} onOpenProfile=\\{onOpenAuthor\\} onLongPress=\\{hold\\}${SIZE} \\/>`));
     // The row's names for VoiceOver are worked out once per comment, not on every draw.
     expect(row).toMatch(/const actions = useMemo\(\s*\(\) => nameActions\(\[comment\.author\.username, \.\.\.mentionedUsernames\(comment\.body\)\]\),/);
     // VoiceOver's double tap opens the comment's menu, as a hold does: the row has no press of its own.
@@ -93,7 +103,7 @@ describe("the names under a photograph", () => {
     const card = code(file);
     expect(card).not.toMatch(BARE_NAME);
     expect(card).toMatch(/<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\}/);
-    expect(card).toMatch(/<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} \/>/);
+    expect(card).toMatch(new RegExp(`<MentionText text=\\{post\\.caption\\} onOpenProfile=\\{onOpenProfile\\}${SIZE} \\/>`));
     const previews = card.match(/\{preview\.map\(\(c\) => \(\s*<Pressable\b[\s\S]*?<\/Pressable>/g) ?? [];
     expect(previews.length).toBeGreaterThan(0);
     for (const preview of previews) {
@@ -107,7 +117,7 @@ describe("the names under a photograph", () => {
   it("a post still going up, on Home, reads as it will once posted", () => {
     const pending = code("src/components/PendingPostCard.tsx");
     expect(pending).toMatch(new RegExp(`<NameLink username=\\{draft\\.author\\.username\\} onOpenProfile=\\{onOpenProfile\\} ${linkStyle("styles\\.captionAuthor")} \\/>`));
-    expect(pending).toMatch(/<MentionText text=\{draft\.caption\.trim\(\)\} onOpenProfile=\{onOpenProfile\} \/>/);
+    expect(pending).toMatch(new RegExp(`<MentionText text=\\{draft\\.caption\\.trim\\(\\)\\} onOpenProfile=\\{onOpenProfile\\}${SIZE} \\/>`));
     expect(pending).toMatch(/style=\{styles\.headerText\}\s*onPress=\{\(\) => onOpenProfile\?\.\(draft\.author\.username\)\}/);
   });
 });
@@ -171,7 +181,7 @@ describe("names everywhere else", () => {
     const thread = code("app/messages/[id].tsx");
     expect(thread).not.toMatch(/router\.push\(`\/user\//);
     // The line around it sets its type and ink; the name itself has no style of its own but, where the build has it, the names' face.
-    expect(thread).toMatch(/<NameLink username=\{shared\.author\.username\} onOpenProfile=\{onOpenProfile\}(?: style=\{face\})? \/>/);
+    expect(thread).toMatch(/<NameLink username=\{shared\.author\.username\} onOpenProfile=\{onOpenProfile\}(?: style=\{face\(\d+\)\})? \/>/);
     expect(thread).toMatch(/<Bubble message=\{item\} mine=\{item\.sender_id === userId\} onOpenPost=\{openPost\} onOpenProfile=\{openMember\} \/>/);
     expect(thread).toMatch(/onAccessibilityTap=\{\(\) => onOpenPost\(shared\.id\)\}\s*accessibilityActions=\{nameActions\(\[shared\.author\?\.username\]\)\}/);
   });

@@ -134,6 +134,7 @@ export default function Follows() {
                     ? `${username} isn't following anyone yet.`
                     : undefined
               }
+              name={username}
             />
           ) : (
             <View style={styles.skeleton}>

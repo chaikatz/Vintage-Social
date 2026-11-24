@@ -52,62 +52,85 @@ is on `claude/product-polish` too.
 
 ## Usernames
 
-While Editorial is chosen, every username the app draws as a name is drawn
-exactly as under Original, in the app's own face, size, colour and spacing,
-but half bold: medium (500), a step above the words around it, so a name
-stands apart from a caption or a comment, and a step below the semibold it
-is under Original. That holds everywhere a name is drawn: the
-member's name over each print and before its caption and comments, the
-notices in Activity, the Comments screen, a post's own page (its author, its
-comments and the members tagged in it; the name before its caption is left
-as under Original, since that caption is set in the serif, which has no half
-bold, and the phone would draw 500 there as the serif's bold), the card of a post on its way up, every list of members
-(Search and its recent searches, Followers and Following, Likes, the admin's
-Members), Tag people, the members offered while an @name is written, the photograph's author in Send to, the admin's
-Applications, a profile's name where it falls back to the username, and a
-bar's title where it is a username (below), which stays regular. Names
-regular under Original take the medium too (Requests, Blocked members, the
-members to send to, a read thread in the inbox, the author of a photograph
-sent in a message, the chips in Tag people, who was there in New post).
-Where a place marks a name for a state of its own, the state still wins: an
-unread thread's name in the inbox is semibold, as under Original, a step
-above the rest; the
-author of a photograph sent in your own dark bubble keeps the bubble's light
-ink; and a member tagged who has not yet accepted is faint and regular, with
-"(pending)" after the name. Under Original nothing changes.
+While Editorial is chosen, every username the app draws, on every page, is
+set in Cormorant Garamond Medium Italic, the face the owner chose for the
+names on the editorial card (24 November), in the place's own colour. Its
+small letters are short, so a name set at the size of the words around it
+would look a size smaller than them: a name is set at the size of the words
+it sits beside (or, where it stands alone, of the words it stands in for)
+times 16 / 12.5, the card's 16 pt names over its 12.5 pt words, to the half
+point. A name in a 14 pt comment is 18 pt, in a 15 pt row of a list 19 pt,
+in a 13 pt notice 16.5 pt, and before a post's 15 pt serif caption 19 pt.
+
+That holds everywhere a name is drawn: the member's name over each print
+and before its caption and comments; the notices in Activity; the Comments
+screen; a post's own page (its author, the name before its caption, its
+comments and the members tagged in it); every @name in what a member wrote,
+a caption or a comment, still in the accent a link is drawn in; the card of
+a post on its way up; every list of members (Search and its recent
+searches, Followers and Following, Likes, the admin's Members); Requests;
+Blocked members; Tag people (its chips and its list); the members offered
+while an @name is written; who was there in New post; Send to (the
+photograph's author and the members to send it to); the inbox; the author
+of a photograph sent in a message; the admin's Applications and Reports; a
+profile's name where it falls back to the username; the lines the app
+writes around a username (a blocked or private profile's, an empty
+Followers or Following list's, an empty Eras page's); and every bar titled
+with a username (below).
+
+Where a place marks a name for a state of its own, the state still wins:
+an unread thread's name in the inbox, semibold under Original, is drawn in
+the face's heavier cut, Cormorant Garamond SemiBold Italic, a step above a
+read one's medium; the author of a photograph sent in your own dark bubble
+keeps the bubble's light ink; and a member tagged who has not yet accepted
+stays faint, with "(pending)" after the name. Under Original nothing
+changes.
 
 A bar titled with a username (a member's profile opened from anywhere, the
-gallery of their photographs, a message thread) is bold on the iPhone under
-Original: the stack sets every title in its serif at 17 pt, but lays that
-over the system's bold title face on iOS (weight 600), so the bar draws the
-serif's bold cut (on the web the same underlay is the stack's medium
-weight, 500). Under
-Editorial those titles are the same serif at the same size, regular: not
-the names' medium, because the serif has no medium cut and the phone would
-match 500 to its bold. Every
-other bar's title (Settings, Messages, an era's gallery and the rest) is the
-stack's own under both layouts, and so is the Profile tab's, which the app
-draws itself in the same serif and was regular already. So is every sentence
-the app writes a username into (an empty Followers or Following list's, an
-empty Eras page's, a private or blocked profile's lines): each is set regular, so the name in it is too. An admin's
-report draws each name on it as a link in the page's own style, as it is under Original. Display names,
-what a member types into a field, and what members wrote (captions,
-comments, messages) are as they were. A system alert titled with a username
-is drawn by iOS in its own bold and cannot be styled.
+gallery of their photographs, a message thread, and the Profile tab, which
+the app draws itself) is set in the face at 22 pt, the size that matches
+the 17 pt serif the bars' titles are set in, its weight over the stack's
+bold. The Profile tab's bar keeps its height: the face's line is taller
+than the serif's, and the title gives the difference back to the bar's
+padding above and below. Every other bar's title (Settings, Messages, an
+era's gallery and the rest) is the stack's own under both layouts.
 
-`src/utils/nameFace.ts` holds it: `useNameFace()` is `{ fontWeight: "500" }`
-under Editorial and nothing at all under Original, and is added to a name's
-style after the place's own and before any state's. `useNameTitleStyle()` is
-the title style of a bar titled with a username: the stack's own
+Display names, what a member types into a field, and what members wrote
+(captions, comments, messages) are as they were, but for the @names in
+them. A system alert titled with a username is drawn by iOS in its own face
+and cannot be styled, and what VoiceOver says is never drawn. A photograph
+exported as a print keeps the `@name` on its label in the print's
+typewriter face, under either layout: it is the print's own lettering.
+
+`src/utils/nameFace.ts` holds it. `useNameFace()` is a function of the size
+of the words a name sits beside, and of the cut a state asks for
+(`face(15)`, `face(15, unread ? "semibold" : "medium")`): under Editorial
+it is the face, `{ fontFamily, fontSize, fontWeight }`, and under Original
+nothing at all. It is laid last over a name's own style, after the place's
+and any state's, so its family, size and weight are the name's and the
+place's colour stays. The weight is the one that lands on the cut: on the
+iPhone the cut's own (500, 600), since React Native draws the cut of the
+family nearest the weight asked for, so a place's own semibold under it
+does not pick the heavier cut; on the web regular, since there each cut is
+a family of its own, registered at the regular weight, and a heavier one
+would be faked. `nameStyle(size, cut)` is the face itself, which the
+editorial card sets in its sheet. `useNameTitleStyle()` is the title style
+of a bar titled with a username: the stack's own
 (`{ fontFamily: type.serif, fontSize: 17 }`, as `app/_layout.tsx` sets it)
-under Original, and the same with `fontWeight: "400"` under Editorial. It is
-handed to the bar under Original too, because a screen's options are merged
-into the ones it set before: a title left without one would keep
-Editorial's weight after Settings turns Editorial off. The editorial card
-sets its names medium in its own sheet. `tests/editorial-names.test.ts`
-lists every place a username is drawn, every bar titled with one and every
-sentence the app writes one into, so none is dropped and none is added
-without it.
+under Original, and the face at 22 pt under Editorial. It is handed to the
+bar under Original too, because a screen's options are merged into the ones
+it set before: a title left without one would keep Editorial's face after
+Settings turns Editorial off. In `src/components/MemberText.tsx`,
+`MentionText` is handed the size of the words it is drawn in and sets each
+@name in the face, and `NamedWords` draws words the app writes a username
+into, with the name in the face under Editorial and the one string the
+words always were under Original; `EmptyState` hands it its body and the
+username, when the screen gives it one.
+Both cuts are built into the iPhone app by expo-font's plugin in `app.json`
+and loaded once on the web by `nameFace.ts`. `tests/editorial-names.test.ts`
+lists every place a username is drawn, each at its size, every bar titled
+with one and every sentence the app writes one into, so none is dropped and
+none is added without it.
 
 ## Where it lives
 
@@ -116,41 +139,42 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 
 | file | what it is |
 |------|------------|
-| `src/components/feed/EditorialPostCard.tsx` | the editorial card (new): its usernames in Cormorant Garamond Medium Italic, 14 pt, in the name ink, the member's picture in a thin ring, the words at 11 pt (the owner's restyle, 24 November) |
+| `src/components/feed/EditorialPostCard.tsx` | the editorial card (new): its usernames in Cormorant Garamond Medium Italic, 16 pt, in the name ink, the member's picture in a thin ring, the words at 12.5 pt (the owner's restyle, 24 November, a size up the same day) |
 | `src/utils/feedLayout.ts` | the layout preference, kept on the phone (new) |
 | `src/utils/feedPaper.ts` | the paper preference, kept on the phone, and the paper a feed lies on (new) |
-| `src/utils/nameFace.ts` | the usernames' weight while Editorial is chosen, medium, and the title style of a bar titled with one, regular (new) |
+| `src/utils/nameFace.ts` | the usernames' face while Editorial is chosen: Cormorant Garamond at the size that matches the words beside it, its semibold where a state marks a name heavier, the title style of a bar titled with a username, and both cuts loaded on the web (new) |
 | `tests/editorial-feed.test.ts` | its guards (new) |
-| `tests/editorial-names.test.ts` | the usernames' guards: every place one is drawn, every bar titled with one, the states that still win, and who reads the module (new) |
+| `tests/editorial-names.test.ts` | the usernames' guards: every place one is drawn, each at its size, every bar titled with one, every sentence one is written into, the states that still win, and who reads the module (new) |
 | `EDITORIAL_FEED_PREVIEW.md` | this page (new) |
 | `app/(tabs)/index.tsx` | Home's seam: which card it draws, and the paper under it |
-| `app/gallery.tsx` | the gallery's seam: which card it draws, and the paper under it and its bar's; and its title, when it is the author's username, not bold |
-| `app/user/[username].tsx` | a member's profile: its title, their username, not bold (nothing else on it) |
-| `app/(tabs)/_layout.tsx` | Home's wordmark bar and tab bar on the paper |
+| `app/gallery.tsx` | the gallery's seam: which card it draws, and the paper under it and its bar's; and its title, when it is the author's username, in the names' face |
+| `app/user/[username].tsx` | a member's profile: its title, their username, in the names' face, and the lines a blocked or private profile writes around it drawn by `NamedWords` |
+| `app/(tabs)/_layout.tsx` | Home's wordmark bar and tab bar on the paper; the Profile tab's title, the member's username, in the names' face, the bar its height |
 | `app/settings.tsx` | the Feed layout and Paper choices |
-| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx` | the usernames each screen draws, half bold (in `app/messages/index.tsx`, before an unread thread's style, so its name is semibold; in `app/messages/[id].tsx`, on the name alone, inside the line that keeps your own bubble's ink, and the thread's title too; in `app/post/[id].tsx`, before a pending tag's) |
+| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx`, `app/admin/reports.tsx` | the usernames each screen draws, in the names' face at the size of the words beside them (in `app/messages/index.tsx`, after an unread thread's style, which picks the semibold cut; in `app/messages/[id].tsx`, on the name alone, inside the line that keeps your own bubble's ink, and the thread's title too; in `app/post/[id].tsx`, after a pending tag's style, and the name before the caption too) |
 | `src/components/UserRow.tsx`, `src/components/TagPicker.tsx`, `src/components/MentionSuggestions.tsx`, `src/components/PendingPostCard.tsx`, `src/components/ProfileHeader.tsx` | the same, in the parts those screens share (the profile header only where its name falls back to the username) |
+| `src/components/MemberText.tsx` | `MentionText` is handed the size of the words it is drawn in, and sets each @name in the names' face, still in the accent; `NamedWords` (new) sets a username the app writes words around in the names' face, and under Original is the words' one string |
+| `src/components/EmptyState.tsx`, `app/follows.tsx`, `src/components/EraList.tsx` | an empty page's sentence: `EmptyState` hands its body and the username to `NamedWords`, and an empty Followers or Following list and an empty Eras page hand it the one their sentence is written around |
 | `tests/video-playback.test.ts` | the Home and gallery playback guards accept either card |
 | `tests/galleryLanding.test.ts` | its gallery guard reads whichever card the gallery's seam draws |
 | `tests/stableCards.test.ts` | its Home and gallery card-props guard accepts either card |
 | `tests/thread-menu.test.ts` | its guard on the thread's title link accepts the title style as well as the stack's |
-| `tests/member-names.test.ts` | its guards on the names that are links accept the names' face in a link's style |
+| `tests/comment-menu.test.ts` | its Home and gallery guard on a comment's menu accepts either card |
+| `tests/member-names.test.ts` | its guards on the names that are links accept the names' face, at a size, in a link's style, and the size `MentionText` is handed |
+| `tests/admin-queue-pages.test.ts` | its guard on a report's names accepts the names' face in the link's style |
 | `src/theme/index.ts` | one colour, `nameInk` (#2A2826 on paper, white on black), for the editorial card's names and ring |
 | `tests/theme.test.ts` | lists `nameInk` among the tokens on paper |
-| `assets/fonts/CormorantGaramond-MediumItalic.ttf`, `assets/fonts/CormorantGaramond-OFL.txt` | the editorial card's name face, weight 500 italic, and its SIL Open Font License (new) |
-| `app.json` | expo-font's plugin builds that font into the iPhone app (`fonts`) |
-| `tests/editorial-name-font.test.ts` | the face's guards: the card asks for the file's own PostScript name, the plugin builds it in, the licence travels with it (new) |
-| `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face, weight, colour and spacing on Home, in the comments, in Activity and in the inbox (an unread thread's name semibold, a read one's medium), and a profile's and a gallery's title (the stack's serif, ink and size, regular, beside a bar titled with other words), and that Original sets the names and those titles back to the stack's own weight and otherwise exactly as Editorial drew them |
+| `assets/fonts/CormorantGaramond-MediumItalic.ttf`, `assets/fonts/CormorantGaramond-SemiBoldItalic.ttf`, `assets/fonts/CormorantGaramond-OFL.txt` | the names' face, weight 500 italic, its heavier cut, weight 600 italic, and their SIL Open Font License (new) |
+| `app.json` | expo-font's plugin builds both cuts into the iPhone app (`fonts`) |
+| `tests/editorial-name-font.test.ts` | the face's guards: each cut is asked for by its file's own PostScript name, at its own weight, the plugin builds both in, the web loads both, the licence travels with them (new) |
+| `e2e/launch-test.mjs` | the walk switches it on and off, reads a print, tries both papers, opens a gallery, and reads the usernames' face, size and colour on Home, in the comments, in Activity and in the inbox (an unread thread's name in the semibold cut, a read one's in the medium), each at the size that matches the words beside it, and a profile's and a gallery's title (the face at 22 pt, beside a bar titled with other words), and that Original sets the names and those titles back exactly as they were |
 
 `src/components/PostCard.tsx` (drawn only under Original, so its names are
-left as they are), `app/admin/reports.tsx` (its names are links in the page's
-own style), every other bar's title, and the sentences with a
-username in them (regular already: those on `app/user/[username].tsx`,
-whose title alone is touched, and `app/follows.tsx`,
-`src/components/EraList.tsx`,
-`src/components/EmptyState.tsx`, `src/components/eraBook.ts`), `PostMedia`,
-`usePostActions`, uploads, filters, the Memory Room, native modules and
-Supabase are not touched. `PendingPostCard` is touched for the names alone.
+left as they are), `src/components/eraBook.ts` (the words of an empty Eras
+page, which `EraList` hands to `EmptyState` with the username), every other
+bar's title, `PostMedia`, `usePostActions`, uploads, filters, the Memory
+Room, native modules and Supabase are not touched. `PendingPostCard` is
+touched for the names alone.
 
 ## Keeping it out
 
@@ -162,8 +186,8 @@ permanent change and none of the experiment.
 From the repository root, on the branch to clean:
 
 ```bash
-git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts tests/editorial-name-font.test.ts assets/fonts/CormorantGaramond-MediumItalic.ttf assets/fonts/CormorantGaramond-OFL.txt EDITORIAL_FEED_PREVIEW.md
-git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx "app/user/[username].tsx" src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/theme/index.ts tests/theme.test.ts app.json tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/thread-menu.test.ts tests/member-names.test.ts e2e/launch-test.mjs
+git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts tests/editorial-name-font.test.ts assets/fonts/CormorantGaramond-MediumItalic.ttf assets/fonts/CormorantGaramond-SemiBoldItalic.ttf assets/fonts/CormorantGaramond-OFL.txt EDITORIAL_FEED_PREVIEW.md
+git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx app/admin/reports.tsx "app/user/[username].tsx" app/follows.tsx src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/components/MemberText.tsx src/components/EmptyState.tsx src/components/EraList.tsx src/theme/index.ts tests/theme.test.ts app.json tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/comment-menu.test.ts tests/thread-menu.test.ts tests/member-names.test.ts tests/admin-queue-pages.test.ts e2e/launch-test.mjs
 npx tsc --noEmit && npx vitest run
 git commit -m "Remove the Editorial feed preview"
 ```
@@ -185,14 +209,25 @@ and `, headerTitleStyle: titleStyle` in each `Stack.Screen`'s options (in
 title link's `[titleStyle, { maxWidth: … }]`, which goes back to
 `[styles.title, { maxWidth: … }]`). In
 every file the names' face touches, they are the import from
-`@/utils/nameFace` (`useNameFace`), the
-`const face = useNameFace();` line with the comment above it, and each place
-it is used: `[style, face]` goes back to `style` (in `app/messages/index.tsx`,
-`[styles.username, face, unread && styles.unreadText]` and in `app/post/[id].tsx`,
-`[styles.withName, face, t.status === "pending" && styles.withPending]` lose
-only `face`; in `app/messages/[id].tsx` the link to a photograph's author
-loses its `style={face}`; in `src/components/ProfileHeader.tsx` the array with its
-`? face : undefined` goes back to the plain style). Afterwards
+`@/utils/nameFace` (`useNameFace`), the `const face = useNameFace();` line
+with the comment above it, and each place it is used: `[style, face(n)]`
+goes back to `style` (in `app/messages/index.tsx`,
+`[styles.username, unread && styles.unreadText, face(15, unread ? "semibold" : "medium")]`
+and in `app/post/[id].tsx`,
+`[styles.withName, t.status === "pending" && styles.withPending, face(12)]`
+lose only the face; in `app/messages/[id].tsx` the link to a photograph's
+author loses its `style={face(11)}`; in `src/components/ProfileHeader.tsx`
+the array with its `? face(15) : undefined` goes back to the plain style;
+in `app/admin/reports.tsx` `nameOf`'s link goes back to
+`style={styles.name}`), and each `size={…}` handed to `MentionText`. In
+`src/components/MemberText.tsx`, `MentionText`'s `size` prop, its
+`const face` and the face in an @name's style go, and so do `NamedWords`
+and `nameAt`; in `app/user/[username].tsx` each `<NamedWords words={…} …/>`
+goes back to the words it is handed (`You blocked {profile.username}`, and
+the two sentences as strings) and its import goes; in
+`src/components/EmptyState.tsx` the `name` prop and `NamedWords` go, and
+`app/follows.tsx` and `src/components/EraList.tsx` hand it no `name`; in `app/(tabs)/_layout.tsx` the Profile tab's title loses
+`titleStyle` and `nameTitle` (and `styles.nameTitle` goes). Afterwards
 `git diff claude/product-polish -- app src tests e2e`
 should be empty, and
 `git grep -n -e EditorialPostCard -e feedLayout -e feedPaper -e useFeedBackground -e nameFace -e NameFace -- app src tests e2e`

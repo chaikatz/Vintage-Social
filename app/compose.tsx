@@ -140,7 +140,7 @@ export default function Compose() {
   // Who was there. Sent with the post; each of them decides.
   const [tags, setTags] = useState<Taggable[]>([]);
   const [picking, setPicking] = useState(false);
-  // Editorial (Preview): their usernames, half bold.
+  // Editorial (Preview): their usernames, in the names' face.
   const face = useNameFace();
 
   // One post per visit to this screen. The id is the post's from the first
@@ -579,7 +579,7 @@ export default function Compose() {
                 {tags.slice(0, 6).map((t) => (
                   <Avatar key={t.id} path={t.avatar_url} username={t.username} size={24} />
                 ))}
-                <Text style={[styles.tagNames, face]} numberOfLines={1}>
+                <Text style={[styles.tagNames, face(13)]} numberOfLines={1}>
                   {tags.map((t) => t.username).join(", ")}
                 </Text>
               </View>

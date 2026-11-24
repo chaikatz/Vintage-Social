@@ -31,7 +31,7 @@ export default function Requests() {
   const queryClient = useQueryClient();
   const { session, refreshProfile } = useSession();
   const userId = session?.user?.id ?? "";
-  // Editorial (Preview): each member's username, half bold.
+  // Editorial (Preview): each member's username, in the names' face.
   const face = useNameFace();
 
   const requests = useQuery({
@@ -108,7 +108,7 @@ export default function Requests() {
             >
               <Avatar path={item.avatar_url} username={item.username} size={44} />
               <View style={styles.personText}>
-                <Text style={[styles.username, face]}>{item.username}</Text>
+                <Text style={[styles.username, face(15)]}>{item.username}</Text>
                 {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
               </View>
             </Pressable>

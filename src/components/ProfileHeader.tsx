@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function ProfileHeader({ profile, action, onPressStat }: Props) {
-  // Editorial (Preview): where the name falls back to the username, half bold.
+  // Editorial (Preview): where the name falls back to the username, in the names' face.
   const face = useNameFace();
   // MEMBER for every member; the number after it only for one who chose to
   // show it (Settings). The same for your own page as for anyone's.
@@ -40,7 +40,7 @@ export function ProfileHeader({ profile, action, onPressStat }: Props) {
         </View>
       </View>
       <View style={styles.nameRow}>
-        <Text style={[styles.name, profile.full_name == null ? face : undefined]}>{profile.full_name ?? profile.username}</Text>
+        <Text style={[styles.name, profile.full_name == null ? face(15) : undefined]}>{profile.full_name ?? profile.username}</Text>
         {profile.is_private ? (
           <View style={styles.privateChip}>
             <Feather name="lock" size={9} color={colors.inkFaint} />

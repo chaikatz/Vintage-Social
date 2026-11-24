@@ -10,6 +10,7 @@ import { ProfileHeader } from "@/components/ProfileHeader";
 import { PhotoGrid, type GridPost } from "@/components/PhotoGrid";
 import { PostMap } from "@/components/PostMap";
 import { PlaceGroups } from "@/components/PlaceGroups";
+import { NamedWords } from "@/components/MemberText";
 import { EraList } from "@/components/EraList";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
@@ -48,7 +49,7 @@ export default function UserProfile() {
   const myId = session?.user?.id ?? "";
   const [view, setView] = useState<ProfileView>("posted");
   const sort = view === "taken" ? "taken" : "posted";
-  // Editorial (Preview): the title, the member's username, not bold.
+  // Editorial (Preview): the title, the member's username, in the names' face.
   const titleStyle = useNameTitleStyle();
 
   const profileQ = useQuery({
@@ -254,7 +255,10 @@ export default function UserProfile() {
       {blocked ? (
         <View style={styles.locked}>
           <Feather name="slash" size={18} color={colors.inkFaint} />
-          <Text style={styles.lockedTitle}>You blocked {profile.username}</Text>
+          <Text style={styles.lockedTitle}>
+            {/* Editorial (Preview): the username in the names' face, at the line's size; under Original the line as it was. */}
+            <NamedWords words={`You blocked ${profile.username}`} name={profile.username} size={16} />
+          </Text>
           <Text style={styles.lockedBody}>Neither of you sees the other’s photographs. Unblock to change that.</Text>
         </View>
       ) : standingUnread ? (
@@ -264,9 +268,15 @@ export default function UserProfile() {
           <Feather name="lock" size={18} color={colors.inkFaint} />
           <Text style={styles.lockedTitle}>This account is private</Text>
           <Text style={styles.lockedBody}>
-            {status === "pending"
-              ? `${profile.username} has your request. You'll see their photographs once they accept.`
-              : `Ask to follow ${profile.username} to see their photographs.`}
+            <NamedWords
+              words={
+                status === "pending"
+                  ? `${profile.username} has your request. You'll see their photographs once they accept.`
+                  : `Ask to follow ${profile.username} to see their photographs.`
+              }
+              name={profile.username}
+              size={13}
+            />
           </Text>
         </View>
       ) : (postsQ.data ?? []).length > 1 || view !== "posted" ? (

@@ -731,7 +731,7 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
         {loading ? (
           <GridSkeleton />
         ) : empty ? (
-          <EmptyState title={empty.title} body={empty.body} />
+          <EmptyState title={empty.title} body={empty.body} name={member} />
         ) : (
           <>
             {summary.eras.map((era, i) => (

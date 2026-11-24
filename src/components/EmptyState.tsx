@@ -1,17 +1,20 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing, type } from "@/theme";
+import { NamedWords } from "./MemberText";
 
 interface Props {
   title: string;
   body?: string;
+  /** Editorial (Preview): the username the body is written around, if any, set in the names' face (src/utils/nameFace.ts). */
+  name?: string;
 }
 
-export function EmptyState({ title, body }: Props) {
+export function EmptyState({ title, body, name }: Props) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>{title}</Text>
-      {body ? <Text style={styles.body}>{body}</Text> : null}
+      {body ? <Text style={styles.body}>{name ? <NamedWords words={body} name={name} size={13} /> : body}</Text> : null}
     </View>
   );
 }

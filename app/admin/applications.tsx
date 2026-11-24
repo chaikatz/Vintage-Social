@@ -32,7 +32,7 @@ export default function AdminApplications() {
   const { isAdmin, profileLoaded } = useSession();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ApplicationStatus>("pending");
-  // Editorial (Preview): the username each applicant asked for, half bold.
+  // Editorial (Preview): the username each applicant asked for, in the names' face.
   const face = useNameFace();
 
   // Fifty at a time (src/api/moderation.ts), the next fifty as the list
@@ -128,7 +128,7 @@ export default function AdminApplications() {
             <View style={styles.cardHeader}>
               <Avatar path={item.avatar_url} username={item.desired_username} size={44} />
               <View style={styles.cardHeaderText}>
-                <Text style={[styles.username, face]}>{item.desired_username}</Text>
+                <Text style={[styles.username, face(15)]}>{item.desired_username}</Text>
                 <Text style={styles.meta}>
                   {item.full_name}
                   {item.city ? ` · ${item.city}` : ""} · {postAge(item.created_at)}

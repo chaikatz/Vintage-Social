@@ -13,6 +13,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { emitHomeAgain } from "@/utils/homeRefresh";
 import { usePushRegistration } from "@/utils/push";
 import { useFeedBackground } from "@/utils/feedPaper";
+import { useNameTitleStyle } from "@/utils/nameFace";
 
 /**
  * Home / Search / Post / Activity / Profile — nothing else.
@@ -151,6 +152,12 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
   const paper = useFeedBackground();
 
   const title = tab === "profile" ? username ?? "Profile" : TITLES[tab] ?? null;
+  // Editorial (Preview): the Profile tab's title, the member's username, in the names' face, as every bar titled
+  // with a username is; any other title, and the tab's before the username is known, keeps the serif. The face's
+  // line is taller than the serif's, so the title gives the difference back to the bar's padding, and the bar keeps
+  // the height it has on every other tab.
+  const titleStyle = useNameTitleStyle(tab === "profile" && username != null);
+  const nameTitle = titleStyle.fontSize !== styles.headerTitle.fontSize ? styles.nameTitle : undefined;
 
   // Messages hang off the feed, the way a letter tray sits beside a desk —
   // not a tab of their own, since they aren't a place you browse.
@@ -165,7 +172,7 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
       {title === null ? (
         <Text style={styles.wordmark}>VINTAGE</Text>
       ) : (
-        <Text style={styles.headerTitle}>{title}</Text>
+        <Text style={[styles.headerTitle, titleStyle, nameTitle]}>{title}</Text>
       )}
       {tab === "index" ? (
         <Pressable
@@ -202,6 +209,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.badge,
   },
   headerTitle: { fontFamily: type.serif, fontSize: 17, color: colors.ink },
+  // Editorial (Preview): half the difference between the line the names' face is set on in a title (28) and the
+  // serif's at 17 (19.3, Georgia's 1.136 of it, on the iPhone; 19.5 on the web), above and below.
+  nameTitle: { marginVertical: -4.25 },
   bar: {
     backgroundColor: colors.paper,
     borderTopWidth: 1,

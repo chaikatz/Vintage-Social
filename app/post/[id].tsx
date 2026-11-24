@@ -51,7 +51,7 @@ export default function PostDetail() {
   const userId = session?.user?.id ?? "";
   // Comments or a profile pushed on top of this screen pause its video.
   const focused = useIsFocused();
-  // Editorial (Preview): every username on the page, half bold.
+  // Editorial (Preview): every username on the page, and every @name, in the names' face, each at the size of its words.
   const face = useNameFace();
 
   // Who was there, as far as the viewer is allowed to know: accepted tags,
@@ -142,7 +142,7 @@ export default function PostDetail() {
           <Avatar path={post.author.avatar_url} username={post.author.username} size={34} />
         </Pressable>
         <Pressable style={styles.headerText} onPress={openProfile} accessibilityRole="button">
-          <Text style={[styles.username, face]} numberOfLines={1}>
+          <Text style={[styles.username, face(14)]} numberOfLines={1}>
             {post.author.username}
           </Text>
           <Byline post={post} />
@@ -159,7 +159,7 @@ export default function PostDetail() {
             {shownTags.map((t, i) => (
               <Text
                 key={t.user_id}
-                style={[styles.withName, face, t.status === "pending" && styles.withPending]}
+                style={[styles.withName, t.status === "pending" && styles.withPending, face(12)]}
                 onPress={() => openMember(t.member.username)}
                 accessibilityRole="link"
               >
@@ -210,12 +210,12 @@ export default function PostDetail() {
       ) : null}
 
       {post.caption ? (
-        // Editorial (Preview): the caption's author is left as under Original. It takes the caption's serif, which has no
-        // half bold, and the phone would match 500 to the serif's bold.
+        // Editorial (Preview): the caption's author, and every @name in it, in the names' face at the size of the caption's
+        // serif (15 pt).
         <Text style={styles.caption}>
           {/* The name and every @name in the words open their member's page. */}
-          <NameLink username={post.author.username} onOpenProfile={openMember} style={styles.captionAuthor} />{" "}
-          <MentionText text={post.caption} onOpenProfile={openMember} />
+          <NameLink username={post.author.username} onOpenProfile={openMember} style={[styles.captionAuthor, face(15)]} />{" "}
+          <MentionText text={post.caption} onOpenProfile={openMember} size={15} />
         </Text>
       ) : null}
 
@@ -249,9 +249,9 @@ export default function PostDetail() {
               username={c.author.username}
               onOpenProfile={openMember}
               onLongPress={() => onCommentLongPress(c)}
-              style={[styles.captionAuthor, face]}
+              style={[styles.captionAuthor, face(14)]}
             />{" "}
-            <MentionText text={c.body} onOpenProfile={openMember} onLongPress={() => onCommentLongPress(c)} />
+            <MentionText text={c.body} onOpenProfile={openMember} onLongPress={() => onCommentLongPress(c)} size={14} />
           </Text>
         </Pressable>
       ))}

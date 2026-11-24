@@ -530,12 +530,15 @@ describe("the editorial card", () => {
     // The original card's size for the picture.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    // The owner's restyle (24 November): the name in Cormorant Garamond Medium Italic, 14 pt, in the name ink (see tests/editorial-names.test.ts, tests/editorial-name-font.test.ts).
+    // The owner's restyle (24 November, a size up the same day): the name in Cormorant Garamond Medium Italic, 16 pt,
+    // in the name ink, the names' face beside the 12.5 pt words (see tests/editorial-names.test.ts, tests/editorial-name-font.test.ts).
     // The original card keeps its own.
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: NAME_FACE, fontSize: 14, color: colors\.nameInk \},/);
-    expect(sheet!.username).toEqual({ flexShrink: 1, fontFamily: "CormorantGaramond-MediumItalic", fontSize: 14, color: colors.nameInk });
-    expect(sheet!.username).not.toHaveProperty("fontWeight");
+    expect(card).toMatch(/\nconst WORDS = 12\.5;\nconst NAME = nameStyle\(WORDS\);\n/);
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, \.\.\.NAME, color: colors\.nameInk \},/);
+    // The medium cut asked for at its own weight, so the phone lands on it (src/utils/nameFace.ts); no style over the italic.
+    expect(sheet!.username).toEqual({ flexShrink: 1, fontFamily: "CormorantGaramond-MediumItalic", fontSize: 16, fontWeight: "500", color: colors.nameInk });
+    expect(sheet!.username).not.toHaveProperty("fontStyle");
     expect(sheet!.username).not.toHaveProperty("letterSpacing");
     // Only the name: the place and the date are on the label.
     expect(header).not.toMatch(/label\.|Byline|taken_at|location/);
@@ -578,20 +581,21 @@ describe("the editorial card", () => {
   it("writes the caption after the member's name, as a comment is written", () => {
     // The name a link to the member's page, the words after it with every @name a link too (src/components/MemberText.tsx).
     expect(body).toMatch(
-      /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} \/>\s*<\/Text>\s*\) : null\}/,
+      /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} size=\{WORDS\} \/>\s*<\/Text>\s*\) : null\}/,
     );
     expect(body).toMatch(
-      /<Text style=\{styles\.comment\} numberOfLines=\{2\}>\s*<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s*\/>\s*<\/Text>/,
+      /<Text style=\{styles\.comment\} numberOfLines=\{2\}>\s*<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+size=\{WORDS\}\s*\/>\s*<\/Text>/,
     );
-    // Who wrote it, as the header draws them: Cormorant Garamond Medium Italic, 14 pt, in the name ink; then 4 pt (a third of an em at 12 pt).
+    // Who wrote it, as the header draws them: Cormorant Garamond Medium Italic, 16 pt, in the name ink; then 4 pt (a third of an em at 12 pt).
+    // Every @name in their words in the same face, at the words' size (src/components/MemberText.tsx).
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontFamily: NAME_FACE, fontSize: 14, color: colors\.nameInk \},/);
-    expect(sheet!.author).toEqual({ fontFamily: "CormorantGaramond-MediumItalic", fontSize: 14, color: colors.nameInk });
+    expect(card).toMatch(/\n {2}author: \{ \.\.\.NAME, color: colors\.nameInk \},/);
+    expect(sheet!.author).toEqual({ fontFamily: "CormorantGaramond-MediumItalic", fontSize: 16, fontWeight: "500", color: colors.nameInk });
     expect(card).toMatch(/const NAME_GAP = "\\u2004";/);
     expect(card).toMatch(/\n {2}nameGap: \{ fontSize: 12 \},/);
-    // No weight or style over the face: it is the medium italic itself, found by its PostScript name.
-    expect(style("username")).not.toMatch(/fontWeight/);
-    expect(card.match(/\n {2}author: \{[^\n]*\},/)?.[0]).not.toMatch(/fontWeight/);
+    // No weight or style of the card's own over the face: it is the medium italic itself, found by its PostScript name.
+    expect(style("username")).not.toMatch(/fontWeight|fontStyle/);
+    expect(card.match(/\n {2}author: \{[^\n]*\},/)?.[0]).not.toMatch(/fontWeight|fontStyle/);
   });
 
   it("keeps the print's margins for the print alone: the picture inset by the print's share of the width", () => {
@@ -713,8 +717,10 @@ describe("the editorial card", () => {
         .filter((l) => /type\.body|fontSize|fontFamily|lineHeight|color/.test(l))
         .map((l) => l.trim());
     expect(face(style("caption"))).toEqual(face(style("comment")));
-    // 11 pt: the visual height of the 14 pt italic names; the body's own line spacing kept.
-    expect(face(style("caption"))).toContain("fontSize: 11,");
+    // 12.5 pt: the visual height of the 16 pt italic names (the owner's restyle, 24 November, a size up from 11 and 14);
+    // the body's own line spacing kept.
+    expect(face(style("caption"))).toContain("fontSize: WORDS,");
+    expect(card).toMatch(/\nconst WORDS = 12\.5;\n/);
     expect(style("caption")).not.toMatch(/lineHeight/);
     expect(style("caption")).not.toMatch(/type\.(serif|mono)/);
   });
