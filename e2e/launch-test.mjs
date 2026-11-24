@@ -422,7 +422,8 @@ const lines = await editorial.evaluateAll((els) => {
       return r.height > 0 && r.height < 2 && r.width > 200;
     });
     const caption = [...el.querySelectorAll("div")].find(
-      (d) => d.firstElementChild?.tagName === "SPAN" && d.textContent?.startsWith(`${d.firstElementChild.textContent} `),
+      // The name, then the space after it: a word space on the original card, a three-per-em space (NAME_GAP) on this one.
+      (d) => d.firstElementChild?.tagName === "SPAN" && new RegExp(`^${d.firstElementChild.textContent.replace(/[.]/g, "\\.")}[ \u2004]`).test(d.textContent ?? ""),
     );
     const h = heart?.getBoundingClientRect();
     const r = rule?.getBoundingClientRect();
@@ -475,7 +476,7 @@ check("One post follows the next about as closely as on Instagram", gapBetween !
 const captioned = await editorial.first().evaluate(
   (el, name) =>
     [...el.querySelectorAll("div, span")].some(
-      (n) => n.textContent?.startsWith(`${name} `) && n.firstElementChild?.tagName === "SPAN" && n.firstElementChild.textContent === name,
+      (n) => /^[ \u2004]/.test((n.textContent ?? "").slice(name.length)) && n.textContent?.startsWith(name) && n.firstElementChild?.tagName === "SPAN" && n.firstElementChild.textContent === name,
     ),
   head.name,
 );
@@ -580,7 +581,8 @@ const namesOnCards = (cards) =>
       if (head) found.header.push(drawn(head));
       for (const line of el.querySelectorAll("div")) {
         const lead = line.firstElementChild;
-        if (lead?.tagName !== "SPAN" || !line.textContent?.startsWith(`${lead.textContent} `)) continue;
+        // The name, then the space after it: a word space on the original card, a three-per-em space (NAME_GAP) on the editorial one.
+        if (lead?.tagName !== "SPAN" || !line.textContent?.startsWith(lead.textContent) || !/^[ \u2004]/.test(line.textContent.slice(lead.textContent.length))) continue;
         (line.parentElement === el ? found.captions : found.comments).push(drawn(lead));
         found.words.push(drawn(line));
         found.pairs.push([drawn(lead), drawn(line)]);
