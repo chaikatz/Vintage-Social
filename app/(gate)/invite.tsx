@@ -17,6 +17,7 @@ import { GateField } from "@/components/gate/GateField";
 import { GateButton } from "@/components/gate/GateButton";
 import { MarkStage } from "@/components/MarkStage";
 import { Wordmark } from "@/components/Wordmark";
+import { NamedWords } from "@/components/MemberText";
 import { colors, spacing, type } from "@/theme";
 import {
   validateEmail,
@@ -182,13 +183,22 @@ export default function Invite() {
 
           <Text style={styles.eyebrow}>By invitation</Text>
           <Text style={styles.blurb}>
-            {inviter
-              ? closed
-                ? `${inviter} invited you, but every invitation they were given has since been taken up.`
-                : `${inviter} invited you to VINTAGE. Fill this in and you are a member — no queue, no review.`
-              : unknown
-                ? "That invitation isn’t one we know. Check the code against what you were sent — the member may also have replaced their link."
-                : "A member has put your name forward. Enter the invitation they sent and you are in — no queue, no review."}
+            {inviter ? (
+              // Editorial (Preview): the member's full name, or their username where they gave none: that in the names' face.
+              <NamedWords
+                words={
+                  closed
+                    ? (name) => `${name} invited you, but every invitation they were given has since been taken up.`
+                    : (name) => `${name} invited you to VINTAGE. Fill this in and you are a member — no queue, no review.`
+                }
+                name={inviter}
+                size={15}
+              />
+            ) : unknown ? (
+              "That invitation isn’t one we know. Check the code against what you were sent — the member may also have replaced their link."
+            ) : (
+              "A member has put your name forward. Enter the invitation they sent and you are in — no queue, no review."
+            )}
           </Text>
 
           <View style={styles.form}>

@@ -102,7 +102,7 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
   };
 
   const tagged = draft.tagIds.length;
-  // Editorial (Preview): the member's username, half bold.
+  // Editorial (Preview): the member's username, and every @name in the caption, in the names' face.
   const face = useNameFace();
 
   return (
@@ -121,7 +121,7 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
           disabled={!onOpenProfile}
           accessibilityRole={onOpenProfile ? "button" : undefined}
         >
-          <Text style={[styles.username, face]} numberOfLines={1}>
+          <Text style={[styles.username, face(14)]} numberOfLines={1}>
             {draft.author.username}
           </Text>
           <Byline post={{ taken_at: draft.takenAt, created_at: createdAt, location: draft.location }} />
@@ -181,12 +181,12 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
           {/* As it will read once posted: the name and every @name open their member's page. */}
           {onOpenProfile ? (
             <>
-              <NameLink username={draft.author.username} onOpenProfile={onOpenProfile} style={[styles.captionAuthor, face]} />{" "}
-              <MentionText text={draft.caption.trim()} onOpenProfile={onOpenProfile} />
+              <NameLink username={draft.author.username} onOpenProfile={onOpenProfile} style={[styles.captionAuthor, face(14)]} />{" "}
+              <MentionText text={draft.caption.trim()} onOpenProfile={onOpenProfile} size={14} />
             </>
           ) : (
             <>
-              <Text style={[styles.captionAuthor, face]}>{draft.author.username}</Text> {draft.caption.trim()}
+              <Text style={[styles.captionAuthor, face(14)]}>{draft.author.username}</Text> {draft.caption.trim()}
             </>
           )}
         </Text>

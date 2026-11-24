@@ -125,15 +125,10 @@ export default function Follows() {
           list.isFetched ? (
             <EmptyState
               title={followers ? "No followers yet" : "Not following anyone"}
-              body={
-                followers
-                  ? username
-                    ? `Nobody follows ${username} yet.`
-                    : undefined
-                  : username
-                    ? `${username} isn't following anyone yet.`
-                    : undefined
-              }
+              // Editorial (Preview): the sentence handed as what writes it around the username, so EmptyState sets the
+              // name in the names' face where the sentence puts it; drawn once the username is known, as before.
+              body={followers ? (name) => `Nobody follows ${name} yet.` : (name) => `${name} isn't following anyone yet.`}
+              name={username}
             />
           ) : (
             <View style={styles.skeleton}>

@@ -60,7 +60,7 @@ export default function Comments() {
   const { postId } = useLocalSearchParams<{ postId: string }>();
   const userId = session?.user?.id ?? "";
   const headerHeight = useHeaderHeight();
-  // Editorial (Preview): who wrote each line, half bold.
+  // Editorial (Preview): who wrote each line, and every @name in it, in the names' face, at the size of the line (14 pt).
   const face = useNameFace();
 
   const postQ = useQuery({
@@ -167,8 +167,8 @@ export default function Comments() {
               </Pressable>
               <View style={styles.body}>
                 <Text style={styles.text}>
-                  <NameLink username={post.author.username} onOpenProfile={openAuthor} style={[styles.author, face]} />{" "}
-                  <MentionText text={post.caption} onOpenProfile={openAuthor} />
+                  <NameLink username={post.author.username} onOpenProfile={openAuthor} style={[styles.author, face(14)]} />{" "}
+                  <MentionText text={post.caption} onOpenProfile={openAuthor} size={14} />
                 </Text>
                 <Text style={styles.age}>{postAge(post.created_at)}</Text>
               </View>
@@ -197,7 +197,7 @@ const CommentRow = React.memo(function CommentRow({
   onOpenAuthor,
 }: {
   comment: CommentWithAuthor;
-  /** Editorial (Preview): the author's name, half bold (read once, by Comments). */
+  /** Editorial (Preview): the face of the author's name (read once, by Comments). */
   face: ReturnType<typeof useNameFace>;
   onLongPress: (comment: CommentWithAuthor) => void;
   onOpenAuthor: (username: string) => void;
@@ -236,8 +236,8 @@ const CommentRow = React.memo(function CommentRow({
       <View style={styles.body}>
         <Text style={styles.text}>
           {/* Held, a name or an @name opens the comment's menu, as the rest of the row does. */}
-          <NameLink username={comment.author.username} onOpenProfile={onOpenAuthor} onLongPress={hold} style={[styles.author, face]} />{" "}
-          <MentionText text={comment.body} onOpenProfile={onOpenAuthor} onLongPress={hold} />
+          <NameLink username={comment.author.username} onOpenProfile={onOpenAuthor} onLongPress={hold} style={[styles.author, face(14)]} />{" "}
+          <MentionText text={comment.body} onOpenProfile={onOpenAuthor} onLongPress={hold} size={14} />
         </Text>
         <Text style={styles.age}>{postAge(comment.created_at, now)}</Text>
       </View>

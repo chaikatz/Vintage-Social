@@ -422,7 +422,8 @@ const lines = await editorial.evaluateAll((els) => {
       return r.height > 0 && r.height < 2 && r.width > 200;
     });
     const caption = [...el.querySelectorAll("div")].find(
-      (d) => d.firstElementChild?.tagName === "SPAN" && d.textContent?.startsWith(`${d.firstElementChild.textContent} `),
+      // The name, then the space after it: a word space on the original card, a three-per-em space (NAME_GAP) on this one.
+      (d) => d.firstElementChild?.tagName === "SPAN" && new RegExp(`^${d.firstElementChild.textContent.replace(/[.]/g, "\\.")}[ \u2004]`).test(d.textContent ?? ""),
     );
     const h = heart?.getBoundingClientRect();
     const r = rule?.getBoundingClientRect();
@@ -475,7 +476,7 @@ check("One post follows the next about as closely as on Instagram", gapBetween !
 const captioned = await editorial.first().evaluate(
   (el, name) =>
     [...el.querySelectorAll("div, span")].some(
-      (n) => n.textContent?.startsWith(`${name} `) && n.firstElementChild?.tagName === "SPAN" && n.firstElementChild.textContent === name,
+      (n) => /^[ \u2004]/.test((n.textContent ?? "").slice(name.length)) && n.textContent?.startsWith(name) && n.firstElementChild?.tagName === "SPAN" && n.firstElementChild.textContent === name,
     ),
   head.name,
 );
@@ -494,32 +495,41 @@ check(
     ),
   lastLines[0]?.join(" / "),
 );
-// Usernames, all around the app, while Editorial is chosen: in the app's
-// own face, size, colour and spacing, exactly as under Original, but not
-// bold. A state that means something still wins: an unread thread's name
-// is bold. What was written with them, and display names, are as they
-// were. Each is read as "face|weight|colour|tracking|size".
+// Usernames, all around the app, while Editorial is chosen: in Cormorant
+// Garamond Medium Italic, at the size that matches the words beside them
+// (16 / 12.5 of their size, to the half point), in the place's own ink,
+// untracked. A state that means something still wins: an unread thread's
+// name is in the face's SemiBold Italic. What was written with them, and
+// display names, are as they were. Under Original every name is as it
+// always was. Each is read as "face|weight|colour|tracking|size". On the
+// web each cut is a family of its own, registered at the regular weight,
+// so the face is asked for at the regular weight (a heavier one would be
+// faked over it).
 const MONO = /monospace/;
-/** The words' ink (colors.ink, the light paper's): every name read here is in it, under either layout. */
+const MEDIUM = "CormorantGaramond-MediumItalic";
+const SEMIBOLD = "CormorantGaramond-SemiBoldItalic";
+/** The size of a name beside words of `size` pixels: 16 / 12.5 of it, to the half point. */
+const nameSize = (size) => `${Math.round(size * (16 / 12.5) * 2) / 2}px`;
+/** The words' ink (colors.ink, the light paper's): every name read here is in it, under either layout, but the editorial card's. */
 const INK = "rgb(43, 38, 32)";
+/** The editorial card's names' ink (colors.nameInk). */
+const NAME_INK = "rgb(42, 40, 38)";
 const drawnAs = (f) => {
   const [face, weight, color, spacing, size] = (f ?? "").split("|");
   return { face, weight, color, spacing, size };
 };
-/** In the app's own face, not the typewriter's, in the words' ink, untracked, at this weight. */
+/** In the app's own face, not the typewriter's nor the names', in the words' ink, untracked, at this weight. */
 const setAs = (f, weight) => {
   const s = drawnAs(f);
-  return !MONO.test(s.face) && s.weight === weight && s.color === INK && s.spacing === "normal";
+  return !MONO.test(s.face) && !/Cormorant/.test(s.face) && s.weight === weight && s.color === INK && s.spacing === "normal";
 };
 const allSetAs = (faces, weight) => faces.length > 0 && faces.every((f) => setAs(f, weight));
-/** All but the weight: the face, the colour, the tracking and the size. */
-const allButWeight = (f) => {
-  const { face, color, spacing, size } = drawnAs(f);
-  return [face, color, spacing, size].join("|");
+/** In a cut of the names' face, at this size, in this ink, untracked, asked for at the regular weight. */
+const namedAs = (f, cut, size, color = INK) => {
+  const s = drawnAs(f);
+  return s.face === cut && s.weight === "400" && s.size === size && s.color === color && s.spacing === "normal";
 };
-/** The same faces, colours, tracking and sizes in both readings, whatever their weights. */
-const sameButWeight = (a, b) =>
-  a.length > 0 && b.length > 0 && JSON.stringify([...new Set(a.map(allButWeight))].sort()) === JSON.stringify([...new Set(b.map(allButWeight))].sort());
+const allNamedAs = (faces, cut, size, color = INK) => faces.length > 0 && faces.every((f) => namedAs(f, cut, size, color));
 /** Every username drawn on screen, as it is drawn: words that are a username alone (a space after it aside), in an element of their own. */
 const namesOnScreen = () =>
   page.evaluate(() => {
@@ -547,7 +557,7 @@ const titleDrawn = (name) =>
  * A bar's title in the stack's serif, not the typewriter's, in the bar's
  * ink, untracked, whatever its weight. The stack's own weight is its
  * platform's (the web's medium here, the system's bold on iOS); a title
- * that is a username is regular under Editorial.
+ * that is a username is in the names' face under Editorial.
  */
 const serifTitle = (f) => {
   const s = drawnAs(f);
@@ -571,7 +581,8 @@ const namesOnCards = (cards) =>
       if (head) found.header.push(drawn(head));
       for (const line of el.querySelectorAll("div")) {
         const lead = line.firstElementChild;
-        if (lead?.tagName !== "SPAN" || !line.textContent?.startsWith(`${lead.textContent} `)) continue;
+        // The name, then the space after it: a word space on the original card, a three-per-em space (NAME_GAP) on the editorial one.
+        if (lead?.tagName !== "SPAN" || !line.textContent?.startsWith(lead.textContent) || !/^[ \u2004]/.test(line.textContent.slice(lead.textContent.length))) continue;
         (line.parentElement === el ? found.captions : found.comments).push(drawn(lead));
         found.words.push(drawn(line));
         found.pairs.push([drawn(lead), drawn(line)]);
@@ -582,21 +593,20 @@ const namesOnCards = (cards) =>
 const onHome = await namesOnCards(editorial);
 const firstOf = (found) => [found.header[0], found.captions[0], found.comments[0]].join(" / ");
 check(
-  "Editorial: the member's name over each print is in the app's own face and ink, untracked, half bold",
-  allSetAs(onHome.header, "500"),
+  "Editorial: the member's name over each print is in Cormorant Garamond Medium Italic, 16 pt, in the name ink, untracked",
+  allNamedAs(onHome.header, MEDIUM, "16px", NAME_INK),
   `${onHome.header.length}: ${onHome.header[0]}`,
 );
-check("Editorial: so is the name before each caption", allSetAs(onHome.captions, "500"), `${onHome.captions.length}: ${onHome.captions[0]}`);
-check("Editorial: and the name before each comment", allSetAs(onHome.comments, "500"), `${onHome.comments.length}: ${onHome.comments[0]}`);
+check("Editorial: so is the name before each caption", allNamedAs(onHome.captions, MEDIUM, "16px", NAME_INK), `${onHome.captions.length}: ${onHome.captions[0]}`);
+check("Editorial: and the name before each comment", allNamedAs(onHome.comments, MEDIUM, "16px", NAME_INK), `${onHome.comments.length}: ${onHome.comments[0]}`);
 check(
-  "Editorial: the captions and comments themselves are as they were: their own face and ink, regular and untracked",
-  allSetAs(onHome.words, "400"),
+  "Editorial: the captions and comments themselves are in their own face and ink, regular and untracked, at 12.5 pt",
+  allSetAs(onHome.words, "400") && onHome.words.every((f) => drawnAs(f).size === "12.5px"),
   onHome.words[0],
 );
 check(
-  "Editorial: a name before a caption or a comment is in the face, ink and size of the words it leads, a step heavier",
-  onHome.pairs.length > 0 &&
-    onHome.pairs.every(([name, words]) => allButWeight(name) === allButWeight(words) && drawnAs(name).weight === "500" && drawnAs(words).weight === "400"),
+  "Editorial: a name before a caption or a comment is set at the size that matches the words it leads",
+  onHome.pairs.length > 0 && onHome.pairs.every(([name, words]) => drawnAs(name).size === nameSize(parseFloat(drawnAs(words).size))),
   onHome.pairs[0]?.join(" / "),
 );
 const offWhite = await papersOf(editorial, wordmark(), tabBar());
@@ -629,13 +639,14 @@ for (const step of editorialHeartWas ? [1, 2] : []) {
 if (!editorialLike && (await editorialHeart(editorialFirst)) !== editorialHeartWas) editorialLike = `the heart did not come back to ${editorialHeartWas}`;
 check("Like still works on the editorial card, both ways", editorialLike === "", editorialLike || editorialHeartWas);
 
-// The comments on a print, and the Activity tab: every name in the list in its own face, half bold.
+// The comments on a print, and the Activity tab: every name in the list in the names' face, at the size of its line.
 await editorial.first().getByLabel("Comments", { exact: true }).click();
 await wait(2500);
 const inComments = await namesOnScreen();
 check(
-  "Editorial: every name in the comments is in the app's own face and ink, untracked, half bold",
-  /Add a comment/.test((await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "") && allSetAs(facesOf(inComments), "500"),
+  "Editorial: every name in the comments is in Cormorant Garamond Medium Italic, in its ink, at the size that matches its 14 pt line",
+  /Add a comment/.test((await page.locator("textarea, input").last().getAttribute("placeholder")) ?? "") &&
+    allNamedAs(facesOf(inComments), MEDIUM, nameSize(14)),
   `${inComments.length}: ${inComments.slice(0, 3).join(" | ")}`,
 );
 await shot("12e-editorial-comments");
@@ -644,26 +655,25 @@ await tab("activity");
 // An unread notice is marked by its row's paper alone, so its name is set as every name is.
 const inActivity = await namesOnScreen();
 check(
-  "Editorial: every name in Activity is in the app's own face and ink, untracked, half bold, read or not",
-  allSetAs(facesOf(inActivity), "500"),
+  "Editorial: every name in Activity is in Cormorant Garamond Medium Italic, in its ink, at the size that matches its 13 pt line, read or not",
+  allNamedAs(facesOf(inActivity), MEDIUM, nameSize(13)),
   `${inActivity.length}: ${inActivity.slice(0, 3).join(" | ")}`,
 );
 await shot("12f-editorial-activity");
 
-// The inbox: a read thread's name is half bold, as every name is, and an
-// unread one's is semibold, as it always was, its state coming after the face.
-// In the demo only Tomas has written since it was read.
+// The inbox: a read thread's name is in the face's medium cut, as every
+// name is, and an unread one's in its semibold, a step above, as it is
+// semibold under Original. In the demo only Tomas has written since it was read.
 await go("/messages", 2600);
 const inInbox = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), n.slice(n.indexOf(": ") + 2)]));
 const unreadName = inInbox["tomas.lindqvist"];
 const readNames = Object.entries(inInbox).filter(([name]) => name !== "tomas.lindqvist").map(([, f]) => f);
-check("Editorial: an unread thread's name is bold, as under Original, in its own face and ink", unreadName != null && setAs(unreadName, "600"), unreadName);
-check("Editorial: a read thread's name is in its own face and ink, half bold", allSetAs(readNames, "500"), `${readNames.length}: ${readNames[0]}`);
 check(
-  "Editorial: an unread thread's name differs from a read one's only in its weight",
-  unreadName != null && readNames.length > 0 && readNames.every((f) => allButWeight(f) === allButWeight(unreadName)),
-  `${unreadName} / ${readNames[0]}`,
+  "Editorial: an unread thread's name is in Cormorant Garamond SemiBold Italic, in its ink, at the size that matches the 15 pt row",
+  unreadName != null && namedAs(unreadName, SEMIBOLD, nameSize(15)),
+  unreadName,
 );
+check("Editorial: a read thread's name is in the Medium Italic, in its ink, at the same size", allNamedAs(readNames, MEDIUM, nameSize(15)), `${readNames.length}: ${readNames[0]}`);
 // A bar titled with other words: the stack's own title, at the stack's own
 // weight, under either layout. A username's title is compared with it below.
 const wordsTitle = await titleDrawn("Messages");
@@ -684,13 +694,13 @@ const author = editorial.nth(1).locator('[role="button"]').first();
 const member = (await author.getAttribute("aria-label")) ?? "";
 await author.click();
 await wait(2600);
-// Their profile is titled with their username: in the stack's serif, ink
-// and size, as the inbox's title is, but regular. It is compared with a
-// profile's title under Original below.
+// Their profile is titled with their username: in the names' face, at the
+// size that matches the stack's 17 pt serif, in the bar's ink. It is
+// compared with a profile's title under Original below.
 const profileTitle = await titleDrawn(member);
 check(
-  "Editorial: a profile's title, its username, is the stack's serif, ink and size, and regular",
-  serifTitle(profileTitle) && drawnAs(profileTitle).weight === "400" && allButWeight(profileTitle) === allButWeight(wordsTitle),
+  "Editorial: a profile's title, its username, is in Cormorant Garamond Medium Italic at 22 pt, in the bar's ink",
+  namedAs(profileTitle, MEDIUM, nameSize(17)) && drawnAs(wordsTitle).size === "17px",
   `${member}: ${profileTitle} / ${wordsTitle}`,
 );
 await shot("12g-editorial-profile");
@@ -712,8 +722,8 @@ check(
 );
 const galleryTitle = shownInGallery ? await titleDrawn(member) : "";
 check(
-  "Editorial: the gallery's title, its author's username, is drawn as the profile's is: the stack's serif, regular",
-  serifTitle(galleryTitle) && galleryTitle === profileTitle,
+  "Editorial: the gallery's title, its author's username, is drawn as the profile's is, in the names' face",
+  galleryTitle === profileTitle,
   galleryTitle,
 );
 await shot("12d-editorial-gallery");
@@ -730,14 +740,13 @@ check(
 const originalCard = seen(page.getByLabel(/^Posted /)).first().locator("xpath=..");
 const original = [await screenUnder(originalCard), await paperOf(wordmark()), await paperOf(tabBar())];
 check("Original lies on the app’s own paper, whatever paper was chosen", original.every((c) => c === OFF_WHITE), original.join(" | "));
-// And every username back at its own weight, bold where it was bold and
-// regular where it was regular, and otherwise exactly as Editorial drew it:
-// on Home, in Activity and in the inbox; and a profile's title back at the
-// stack's own weight.
+// And every username back as it always was, in the app's own face, bold
+// where it was bold and regular where it was regular: on Home, in Activity
+// and in the inbox; and a profile's title back to the stack's own.
 const homeAgain = await namesOnScreen();
 check(
   "Original: every name on Home is in the app's own face, untracked",
-  homeAgain.length > 0 && facesOf(homeAgain).every((f) => !MONO.test(drawnAs(f).face) && drawnAs(f).spacing === "normal"),
+  homeAgain.length > 0 && facesOf(homeAgain).every((f) => !MONO.test(drawnAs(f).face) && !/Cormorant/.test(drawnAs(f).face) && drawnAs(f).spacing === "normal"),
   homeAgain.slice(0, 3).join(" | "),
 );
 // The name over each picture, before each caption and before each comment: dark and bold, as they always were.
@@ -748,27 +757,24 @@ check(
   [onHomeAgain.header.length, onHomeAgain.captions.length, onHomeAgain.comments.length].join("/") + ": " + firstOf(onHomeAgain),
 );
 check(
-  "Original: those names are in the face, ink, tracking and size Editorial drew them in: only the weight differs",
-  sameButWeight(onHome.header, onHomeAgain.header) && sameButWeight(onHome.captions, onHomeAgain.captions) && sameButWeight(onHome.comments, onHomeAgain.comments),
+  "Original: the name over each picture is at the original card's 14 pt, and a name before words at the words' own size",
+  onHomeAgain.header.every((f) => drawnAs(f).size === "14px") && onHomeAgain.pairs.every(([name, words]) => drawnAs(name).size === drawnAs(words).size),
   `${firstOf(onHome)} | ${firstOf(onHomeAgain)}`,
 );
 await tab("activity");
 const activityAgain = await namesOnScreen();
-check("Original: every name in Activity is bold again, in its own face and ink", allSetAs(facesOf(activityAgain), "600"), activityAgain.slice(0, 3).join(" | "));
 check(
-  "Original: in the face, ink, tracking and size Editorial drew them in: only the weight differs",
-  sameButWeight(facesOf(inActivity), facesOf(activityAgain)),
-  `${facesOf(inActivity)[0]} | ${facesOf(activityAgain)[0]}`,
+  "Original: every name in Activity is bold again, in its own face and ink, at its line's 13 pt",
+  allSetAs(facesOf(activityAgain), "600") && facesOf(activityAgain).every((f) => drawnAs(f).size === "13px"),
+  activityAgain.slice(0, 3).join(" | "),
 );
 await go("/messages", 2600);
 const inboxAgain = Object.fromEntries((await namesOnScreen()).map((n) => [n.slice(0, n.indexOf(": ")), n.slice(n.indexOf(": ") + 2)]));
 check(
-  "Original: the inbox's names are as they always were, an unread one semibold as under Editorial and a read one regular, not half bold",
+  "Original: the inbox's names are as they always were, at 15 pt in the app's own face, an unread one semibold and a read one regular",
   Object.keys(inboxAgain).length > 0 &&
-    inboxAgain["tomas.lindqvist"] === inInbox["tomas.lindqvist"] &&
-    Object.entries(inboxAgain)
-      .filter(([name]) => name !== "tomas.lindqvist")
-      .every(([name, f]) => setAs(f, "400") && allButWeight(f) === allButWeight(inInbox[name])),
+    setAs(inboxAgain["tomas.lindqvist"], "600") &&
+    Object.entries(inboxAgain).every(([name, f]) => drawnAs(f).size === "15px" && (name === "tomas.lindqvist" || setAs(f, "400"))),
   `${inboxAgain["tomas.lindqvist"]} / ${Object.keys(inboxAgain).length}`,
 );
 const wordsTitleAgain = await titleDrawn("Messages");
@@ -782,8 +788,8 @@ check(
   `${tomasTitleDrawn} / ${wordsTitleAgain}`,
 );
 check(
-  "Original: in the serif, ink, tracking and size Editorial drew it in: only the weight differs",
-  allButWeight(tomasTitleDrawn) === allButWeight(profileTitle) && drawnAs(tomasTitleDrawn).weight !== drawnAs(profileTitle).weight,
+  "Original: no longer in the names' face, but in the stack's serif at its 17 pt",
+  !/Cormorant/.test(drawnAs(tomasTitleDrawn).face) && drawnAs(tomasTitleDrawn).size === "17px" && drawnAs(profileTitle).face === MEDIUM,
   `${tomasTitleDrawn} / ${profileTitle}`,
 );
 const tomas = await text();

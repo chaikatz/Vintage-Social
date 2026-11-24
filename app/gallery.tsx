@@ -342,7 +342,7 @@ export default function Gallery() {
   // card, on the paper chosen with it, under a bar on that paper too.
   const FeedCard = useFeedLayout() === "editorial" ? EditorialPostCard : PostCard;
   const paper = useFeedBackground();
-  // Editorial (Preview): the title, when it is the author's username, not bold; an era's keeps the stack's own.
+  // Editorial (Preview): the title, when it is the author's username, in the names' face; an era's keeps the stack's own.
   const titleStyle = useNameTitleStyle(!shown.era);
 
   return (

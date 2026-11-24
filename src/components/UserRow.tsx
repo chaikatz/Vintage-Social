@@ -24,7 +24,7 @@ interface Props {
  * could not be reached at all. The look is as it was.
  */
 export function UserRow({ username, avatarPath, title, subtitle, onPress, right }: Props) {
-  // Editorial (Preview): the username, half bold.
+  // Editorial (Preview): the username, in the names' face.
   const face = useNameFace();
   return (
     <View style={styles.row}>
@@ -36,7 +36,7 @@ export function UserRow({ username, avatarPath, title, subtitle, onPress, right 
       >
         <Avatar path={avatarPath} username={username} size={44} />
         <View style={styles.text}>
-          <Text style={[styles.username, face]}>{username}</Text>
+          <Text style={[styles.username, face(14)]}>{username}</Text>
           {title ? <Text style={styles.title}>{title}</Text> : null}
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>

@@ -1,5 +1,5 @@
 import React from "react";
-import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import * as Haptics from "expo-haptics";
 import Feather from "@expo/vector-icons/Feather";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -10,6 +10,7 @@ import { postedAgo, postedAgoSpoken } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
 import { mentionedUsernames } from "@/utils/mentions";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
+import { nameStyle } from "@/utils/nameFace";
 import { Avatar } from "../Avatar";
 import { MentionText, NameLink } from "../MemberText";
 import { INLINE_COMMENTS, PostCard } from "../PostCard";
@@ -182,7 +183,7 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
           {/* The name and every @name in the words open their member's page. */}
           <NameLink username={post.author.username} onOpenProfile={onOpenProfile} style={styles.author} />
           <Text style={styles.nameGap}>{NAME_GAP}</Text>
-          <MentionText text={post.caption} onOpenProfile={onOpenProfile} />
+          <MentionText text={post.caption} onOpenProfile={onOpenProfile} size={WORDS} />
         </Text>
       ) : null}
 
@@ -214,6 +215,7 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
               text={c.body}
               onOpenProfile={onOpenProfile}
               onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
+              size={WORDS}
             />
           </Text>
         </Pressable>
@@ -296,20 +298,14 @@ const RING_WIDTH = 1;
 const NAME_GAP = "\u2004";
 
 /**
- * A member's name on this card: Cormorant Garamond Medium Italic (weight
- * 500), the owner's choice (24 November), at 14 pt. Its file is
- * assets/fonts/CormorantGaramond-MediumItalic.ttf (SIL Open Font License,
- * assets/fonts/CormorantGaramond-OFL.txt), built into the iPhone app by
- * expo-font's plugin in app.json, where it is found by this PostScript
- * name; the face is the medium italic itself, so no weight or style is set
- * over it. The web build has no plugin, so there it is loaded once here.
+ * The caption's and the comments' words, 12.5 pt, and with them the
+ * members' names, in Cormorant Garamond Medium Italic at the size that
+ * matches them, 16 pt (nameStyle in src/utils/nameFace.ts, which every
+ * username the app draws under Editorial follows): the owner's restyle (24
+ * November), set a size up from 11 and 14 the same day.
  */
-const NAME_FACE = "CormorantGaramond-MediumItalic";
-if (Platform.OS === "web") {
-  require("expo-font")
-    .loadAsync({ [NAME_FACE]: require("../../../assets/fonts/CormorantGaramond-MediumItalic.ttf") })
-    .catch(() => {});
-}
+const WORDS = 12.5;
+const NAME = nameStyle(WORDS);
 
 /**
  * How far the label's typewriter lines grow with Larger Text. At twice
@@ -380,9 +376,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // The member's username as the original card sets it, but half bold (medium), as every username is under Editorial (src/utils/nameFace.ts).
-  // The member's name: Cormorant Garamond Medium Italic, 14 pt, in the name ink.
-  username: { flexShrink: 1, fontFamily: NAME_FACE, fontSize: 14, color: colors.nameInk },
+  // The member's name: Cormorant Garamond Medium Italic, 16 pt, in the name ink.
+  username: { flexShrink: 1, ...NAME, color: colors.nameInk },
   // The print alone keeps the print's margins, a share of the width, and
   // the same paper over the picture as under it, before the hairline. The
   // paper itself lets a touch through to the member's row under it.
@@ -445,24 +440,22 @@ const styles = StyleSheet.create({
     // The dots, not their target, end at the edge.
     marginRight: -(TARGET - DOTS * 0.75) / 2,
   },
-  // The member's words in the comments' own type, after their name, so the text under a picture reads as one.
-  // The words in the app's sans at 11 pt, the visual height of the 14 pt italic names; the same line spacing.
+  // The words in the app's sans at 12.5 pt, the visual height of the 16 pt italic names; the same line spacing.
   caption: {
     ...type.body,
-    fontSize: 11,
+    fontSize: WORDS,
     color: colors.ink,
     marginHorizontal: EDGE,
   },
   comment: {
     ...type.body,
-    fontSize: 11,
+    fontSize: WORDS,
     color: colors.ink,
     marginHorizontal: EDGE,
     marginTop: spacing.xs,
   },
-  // Who wrote it, in the words' own face, size and ink, half bold, as the name over the print is.
   // A name in the caption and the comments: the header's name, as it is drawn there.
-  author: { fontFamily: NAME_FACE, fontSize: 14, color: colors.nameInk },
+  author: { ...NAME, color: colors.nameInk },
   nameGap: { fontSize: 12 },
   // The label's typewriter face, a shade fainter than the date, in small letters.
   posted: {

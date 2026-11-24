@@ -122,8 +122,9 @@ describe("what a report shows the admin", () => {
 
   it("a reporter who has left: unknown (0031 keeps the report)", () => {
     expect(card).toContain("reported by {nameOf(item.reporter?.username)}");
-    // Each name a link to the member's page; one who has left, "unknown".
-    expect(src).toMatch(/const nameOf = \(username: string \| null \| undefined\) =>\s*username \? <NameLink username=\{username\} onOpenProfile=\{openName\} style=\{styles\.name\} \/> : "unknown";/);
+    // Each name a link to the member's page; one who has left, "unknown". Where the build has the Editorial layout's
+    // names (tests/editorial-names.test.ts), the link's style is the page's own and then the names' face.
+    expect(src).toMatch(/const nameOf = \(username: string \| null \| undefined\) =>\s*username \? <NameLink username=\{username\} onOpenProfile=\{openName\} style=\{(?:styles\.name|\[styles\.name, face\(12\)\])\} \/> : "unknown";/);
   });
 
   it("what has been deleted since, on the open list, with what can be done", () => {

@@ -26,6 +26,7 @@ import { errorMessage } from "@/utils/errorMessage";
 import { postAge } from "@/utils/time";
 import { useOpenProfile } from "@/hooks/useOpenProfile";
 import { NameLink } from "@/components/MemberText";
+import { useNameFace } from "@/utils/nameFace";
 import type { ReportStatus } from "@/types/db";
 
 // A row that breaks this page breaks only this page, with the way back on
@@ -66,8 +67,10 @@ export default function AdminReports() {
   const [tab, setTab] = useState<ReportStatus>("open");
   // Every name on a report opens its member's page; one who has left reads "unknown".
   const openName = useOpenProfile();
+  // Editorial (Preview): every name on a report, in the names' face at the size of the lines it is written in (12 pt each).
+  const face = useNameFace();
   const nameOf = (username: string | null | undefined) =>
-    username ? <NameLink username={username} onOpenProfile={openName} style={styles.name} /> : "unknown";
+    username ? <NameLink username={username} onOpenProfile={openName} style={[styles.name, face(12)]} /> : "unknown";
 
   // Fifty at a time, the next fifty as the list nears its end: one read of
   // fifty used to be all the screen ever showed (src/api/moderation.ts).

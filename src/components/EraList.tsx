@@ -731,7 +731,9 @@ export function EraList({ posts, edits, editor, onOpenPost, header, member, load
         {loading ? (
           <GridSkeleton />
         ) : empty ? (
-          <EmptyState title={empty.title} body={empty.body} />
+          // Editorial (Preview): a member's sentence handed as what writes it around their username (the same words),
+          // so EmptyState sets the name in the names' face where the sentence puts it.
+          <EmptyState title={empty.title} body={member ? (name) => erasEmpty(summary, name)!.body : empty.body} name={member} />
         ) : (
           <>
             {summary.eras.map((era, i) => (

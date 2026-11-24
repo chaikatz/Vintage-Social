@@ -30,7 +30,7 @@ export function MentionSuggestions({
   style?: StyleProp<ViewStyle>;
 }) {
   const members = useMentionSuggestions(mention, myId);
-  // Editorial (Preview): each member's username, half bold.
+  // Editorial (Preview): each member's username, in the names' face.
   const face = useNameFace();
   if (members.length === 0) return fallback;
   return (
@@ -53,7 +53,7 @@ export function MentionSuggestions({
           accessibilityHint="Adds their name"
         >
           <Avatar path={m.avatar_url} username={m.username} size={26} />
-          <Text style={[styles.username, face]} numberOfLines={1}>
+          <Text style={[styles.username, face(14)]} numberOfLines={1}>
             {m.username}
           </Text>
         </Pressable>

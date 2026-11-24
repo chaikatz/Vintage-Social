@@ -24,7 +24,7 @@ export default function Blocked() {
   const queryClient = useQueryClient();
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
-  // Editorial (Preview): each member's username, half bold.
+  // Editorial (Preview): each member's username, in the names' face.
   const face = useNameFace();
   // Face and name open the member's page, as in every list of members; Unblock stands beside them.
   const openMember = useOpenProfile();
@@ -77,7 +77,7 @@ export default function Blocked() {
             >
               <Avatar path={item.avatar_url} username={item.username} size={40} />
               <View style={styles.rowText}>
-                <Text style={[styles.username, face]}>{item.username}</Text>
+                <Text style={[styles.username, face(15)]}>{item.username}</Text>
                 {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
               </View>
             </Pressable>

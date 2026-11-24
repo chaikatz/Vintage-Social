@@ -69,7 +69,7 @@ export default function Thread() {
   const insets = useSafeAreaInsets();
   const keyboardShown = useKeyboardShown();
   const focused = useIsFocused();
-  // Editorial (Preview): the title, who it is with, not bold (the serif has no half).
+  // Editorial (Preview): the title, who it is with, in the names' face.
   const titleStyle = useNameTitleStyle();
 
   const peerQ = useQuery({
@@ -254,8 +254,8 @@ export default function Thread() {
       <Stack.Screen
         options={{
           title: peerQ.data?.username ?? "",
-          // Once they are known: the title drawn as the stack draws it (app/_layout.tsx; regular under
-          // Editorial, as useNameTitleStyle says), and a link.
+          // Once they are known: the title drawn as the stack draws it (app/_layout.tsx; in the names' face
+          // under Editorial, as useNameTitleStyle says), and a link.
           headerTitle: peer
             ? ({ children, tintColor }) => (
                 <Pressable onPress={openProfile} hitSlop={8} accessibilityRole="link" accessibilityHint="Opens their profile">
@@ -338,7 +338,7 @@ const Bubble = React.memo(function Bubble({
   const thumb = shared
     ? mediaUrl("thumbnails", shared.thumb_path) ?? mediaUrl("media", shared.media_path)
     : null;
-  // Editorial (Preview): whose photograph it is, half bold. Your own dark bubble's light ink comes after it.
+  // Editorial (Preview): whose photograph it is, in the names' face at the line's size (11 pt); the line keeps your own dark bubble's light ink.
   const face = useNameFace();
   // A photograph that fails to load is asked for again (src/media/imageRetry.ts).
   const retry = useImageRetry(thumb);
@@ -374,7 +374,7 @@ const Bubble = React.memo(function Bubble({
             {/* A photograph whose author the reader may not see comes without one. */}
             {shared.author ? (
               <Text style={[styles.sharedCaption, mine && styles.textMine]} numberOfLines={1}>
-                <NameLink username={shared.author.username} onOpenProfile={onOpenProfile} style={face} />
+                <NameLink username={shared.author.username} onOpenProfile={onOpenProfile} style={face(11)} />
               </Text>
             ) : null}
           </Pressable>
