@@ -157,6 +157,8 @@ export function useReplay(o: ReplayOptions) {
       return;
     }
     hand.setValue(i / n);
+    // Under Reduce Motion the hand steps onto each photograph's place, and stays there: it never sweeps ahead.
+    if (reduceMotion) return;
     const left = dwellAt(plan, i, state.fresh) - (Date.now() - shownAt.current);
     return to((i + 1) / n, Math.max(0, left), Easing.linear);
   }, [state.phase, state.wait, state.shown, state.index, state.scrubbing, state.fresh, plan, n, reduceMotion, hand]);

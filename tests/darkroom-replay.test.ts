@@ -673,6 +673,14 @@ describe("the replay, in its source", () => {
     expect(hook).toMatch(/useEffect\(\(\) => \(\) => stayAwake\(false\), \[\]\);/);
   });
 
+  it("steps the hand onto each photograph's place under Reduce Motion, never a photograph ahead", () => {
+    const hook = code(`${dir}/useReplay.ts`);
+    const effect = hook.slice(hook.indexOf("const hand = useRef("), hook.indexOf("AppState.addEventListener"));
+    // Playing, the hand is set on the photograph in front; only with motion does it then sweep on to the next.
+    expect(effect).toMatch(/hand\.setValue\(i \/ n\);\s*if \(reduceMotion\) return;\s*const left = [^;]+;\s*return to\(\(i \+ 1\) \/ n, /);
+    expect(effect.match(/\(i \+ 1\) \/ n/g)).toHaveLength(1);
+  });
+
   it("holds as the app leaves the foreground", () => {
     const hook = code(`${dir}/useReplay.ts`);
     expect(hook).toMatch(/AppState\.addEventListener\("change", \(next\) => \{\s*if \(next !== "active"\) dispatch\(\{ type: "away" \}\);/);
