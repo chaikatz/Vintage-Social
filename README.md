@@ -499,41 +499,43 @@ on, its left half back, by the pager's own scroll
 (`src/components/darkroom/turn.ts` decides). Not while the print is
 zoomed in, while a develop state is showing, or under VoiceOver, which
 turns the page with its own swipes up and down; quick taps turn one page
-at a time. The running head, the captions and DEVELOP are always on the
-page: nothing hides them.
+at a time. The running head, the captions, the glide strip and DEVELOP
+are always on the page: nothing hides them.
 
-PLAY, a tab at the foot of the page beside DEVELOP (and the first word on
-the end page, PLAY IT THROUGH, and the stage's VoiceOver action), plays
-On this day, a stretch or the shelf through in the room's own page,
-Retro-style: the photographs cut one to the next at 500 ms, a burst of the
-same shape seconds apart at 340 (never more than three changes a second;
-800 under Reduce Motion), a short title card before each year or day that
-holds three or more. Under the photograph hang its caption (the date, the
-time, the line), Photos' glide strip set as a contact sheet's frames with a
-grease-pencil box over the one in front, and along the strip's foot the
-leader: a hairline the strip's width, drawn out in the accent from the left
-as the replay plays, one length for the whole of it (a photograph at a time
-under Reduce Motion). The strip is the scrubber, and the leader follows it.
-At the foot, where DEVELOP stands in the room, the room's own ruled word:
-HOLD while it plays, PLAY when held, AGAIN at the end (or held on the last
-photograph), which plays from the first photograph; VoiceOver hears a button
-named Hold, Play or Play again. No icon, no ring, no dial. A touch anywhere
-holds it; only the word (or VoiceOver's Play on the photograph) plays.
-Back lands the room on the photograph it stopped on. The rules are
-pure, in `src/components/darkroom/replay.ts`. It plays the chapter's prints
-the room already holds, and asks the library nothing; every image is drawn
-at its view's size and kept by its view alone (never the shared cache,
-never the disk), at most five at the gate's size; the screen stays awake
-only while it plays (through Expo's own keep-awake); and it keeps nothing:
-no file, no setting, no history beyond what the room already marks seen.
+Under the caption, on every page of every chapter, is the glide strip:
+Photos' sliding bar, set as a strip cut from a contact sheet. Every
+photograph of the chapter is a small frame, in the chapter's order, with a
+blank frame after the last for the end page; a grease-pencil box in the
+accent is fixed over the middle, and the frame of the photograph in front
+sits in it. Along its top edge, as film is edge-printed, the year in On
+this day, the day in a stretch, the month in a year; none in Surprise me or
+on the shelf. Sliding across it is how a chapter is played through: the
+page follows the frame under the box at the finger's pace — soft at once,
+sharp the moment the finger slows on it — and a flick glides on and comes
+to rest on one. Letting go turns the room to that photograph as a page turn
+would, and DEVELOP, SET ASIDE and the caption are its; only the photograph
+landed on counts as looked at. A frame tapped goes straight to it. Swipes
+and taps on the photograph turn the pages as before, and the strip follows
+each turn. In a chapter still being dealt — a roll of Surprise me, a year —
+the strip ends on its blank frame, and gliding toward it deals the next
+few, as nearing the end of the pages does. It is silent, hidden from
+VoiceOver (whose swipes up and down turn the pages, and the strip follows),
+and it waits with the pages while a develop or a chapter is under way. It
+asks the library nothing: each frame, and the photograph shown while
+gliding, is drawn at its view's size and kept by its view alone, never in
+the shared cache or on disk, one sharp at a time, and a photograph still in
+iCloud is never fetched for a glide. The rules are pure, in
+`src/components/darkroom/glide.ts` and `replay.ts`.
 
 To review it in a browser, the web demo reads a small bundled library
 (`src/darkroom/demoSource.ts`) with six photographs on today's date in
 earlier years, so On this day always opens.
 `npm run build:web && npm run test:darkroom` walks it end to end: the
-first-visit page, entering, a page turn, set aside, a year in Contents,
-develop into the editor and back, and an end page. The unit tests are
-`tests/darkroom*.test.ts`.
+first-visit page, entering, the strip under the caption, a page turn and
+the strip following it, taps, a frame tapped, a glide landing, set aside,
+a year with its month marks, Surprise me dealing on as the strip nears its
+end, the shelf, an end page, develop into the editor and back, and a
+320-point phone. The unit tests are `tests/darkroom*.test.ts`.
 
 ## Media pipeline
 

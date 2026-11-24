@@ -68,18 +68,6 @@ export function weekday(ms: number): string {
 }
 
 /**
- * "4:12 PM", "12:05 AM", "12:00 PM": when the shutter fired, on a twelve-hour
- * clock. Set by hand, as `countLabel` is, rather than through
- * `toLocaleTimeString`, which depends on how much of Intl the engine has.
- */
-export function clockTime(ms: number): string {
-  const d = new Date(ms);
-  const h = d.getHours();
-  const m = d.getMinutes();
-  return `${h % 12 === 0 ? 12 : h % 12}:${m < 10 ? `0${m}` : m} ${h < 12 ? "AM" : "PM"}`;
-}
-
-/**
  * "1,204". Grouped by hand rather than through `toLocaleString`, which
  * depends on how much of Intl the JavaScript engine was built with.
  */

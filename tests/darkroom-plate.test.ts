@@ -198,7 +198,7 @@ describe("the caption's presses (§11.6)", () => {
   });
 
   it("keeps SET ASIDE's reach on the stage when it has a row of its own under the caption", () => {
-    for (const stage of [531, 659]) {
+    for (const stage of [356, 455, 531, 583, 659]) {
       for (const ratio of [1 / 3, 9 / 16, 3 / 4, 1, 4 / 3, 3]) {
         for (const caption of [captionHeight(1, 1) + 17, captionHeight(1, 2) + 17, captionHeight(2, 2) + 25]) {
           const plate = plateBox(ratio, 393, stage, caption, 3);

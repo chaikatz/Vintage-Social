@@ -4,12 +4,13 @@
  * single pixel of it arrives and nothing moves when they do.
  *
  * On the reference phone (393 × 852, insets 59/34) the running head runs
- * from 59 to 103, DEVELOP's block from 762 to 810, and the stage between
- * them is 659 high; on an SE (375 × 667, insets 20/0) it is 531. Until
- * Contents is first opened the running head carries a second line, about
- * 23 more, and the stage is that much shorter. The screen lays these out
- * with flex and measures the stage; the numbers here are what it is
- * measured against.
+ * from 59 to 103, the photograph's area (the stage) from 103 to 686, 583
+ * high, the glide strip from 686 to 754, and DEVELOP's block from 762 to
+ * 810; on an SE (375 × 667, insets 20/0) the stage runs from 64 to 519,
+ * 455 high. Until Contents is first opened the running head carries a
+ * second line, about 23 more, and the stage is that much shorter. The
+ * screen lays these out with flex and measures the stage; the numbers here
+ * are what it is measured against.
  *
  * Under each plate is its label, as a VINTAGE print has one: paper, then
  * the signature line — the print's hairline rule — and the caption hung
@@ -36,6 +37,15 @@ export const DEVELOP_LIFT = 8;
 export const MIN_BOTTOM_INSET = 16;
 /** The plate keeps this far from each side of the page. */
 export const PLATE_GUTTER = 16;
+/**
+ * The glide strip's slot between the stage and DEVELOP, on every page:
+ * the marks' row, 2 pt, and the grease-pencil box's row (`STRIP` in
+ * replay.ts, which the tests hold this to). Then a gap over DEVELOP, and
+ * the strip's own gutters at either side, the plate's.
+ */
+export const GLIDE_HEIGHT = 68;
+export const GLIDE_GAP = 8;
+export const GLIDE_INSET = 16;
 
 /** A square print, as it is exported: the paper under its photograph, measured. */
 const PRINT = exportLayout(1, "print", PRINT_WIDTH);
@@ -58,10 +68,10 @@ const MIN_TOP = 8;
 /** A caption is never narrower than this, even under a narrow print. */
 export const MIN_CAPTION_WIDTH = 240;
 
-/** The stage between the running head and DEVELOP, for a window and its insets. */
+/** The stage between the running head and the glide strip over DEVELOP, for a window and its insets. */
 export function stageFrame(height: number, insets: { top: number; bottom: number }): { top: number; height: number } {
   const top = insets.top + HEAD_HEIGHT;
-  const bottom = height - Math.max(insets.bottom, MIN_BOTTOM_INSET) - DEVELOP_LIFT - DEVELOP_HEIGHT;
+  const bottom = height - Math.max(insets.bottom, MIN_BOTTOM_INSET) - DEVELOP_LIFT - DEVELOP_HEIGHT - GLIDE_HEIGHT - GLIDE_GAP;
   return { top, height: Math.max(0, bottom - top) };
 }
 
@@ -146,27 +156,6 @@ export function plateBox(
   return { width: toPixel(w, pixelRatio), height: toPixel(w / r, pixelRatio) };
 }
 
-/**
- * A photograph in the replay's gate: the largest box of its own shape
- * inside the gate, centred left to right and standing on the gate's
- * bottom edge, rounded to the screen's pixels. Standing on the bottom, the
- * frames of a burst register exactly, and every photograph sits the same
- * distance above the signature line under the gate; a landscape print on
- * a tall phone leaves paper above it, never below.
- */
-export function replayBox(
-  ratio: number,
-  gateW: number,
-  gateH: number,
-  pixelRatio = 1,
-): { left: number; top: number; width: number; height: number } {
-  const r = ratio > 0 && Number.isFinite(ratio) ? ratio : 1;
-  const w0 = Math.max(0, Math.min(gateW, gateH * r));
-  const width = Math.min(toPixel(w0, pixelRatio), Math.max(0, gateW));
-  const height = Math.min(toPixel(w0 / r, pixelRatio), Math.max(0, gateH));
-  return { left: toPixel((gateW - width) / 2, pixelRatio), top: Math.max(0, gateH - height), width, height };
-}
-
 /** The paper between a photograph and its signature line, for a label (and line) this wide. */
 export function signatureGap(labelWidth: number, pixelRatio = 1): number {
   return toPixel(Math.max(0, labelWidth) * SIGNATURE_SHARE, pixelRatio);
@@ -185,6 +174,27 @@ export function groupTop(stageHeight: number, plateHeight: number, under: number
 /** The caption and its signature line run flush with the plate's edges, and never narrower than 240. */
 export function captionWidth(plateWidth: number): number {
   return Math.max(plateWidth, MIN_CAPTION_WIDTH);
+}
+
+/**
+ * Where a print's plate and its caption stand on a page, as `PrintPage`
+ * lays them out: the plate's box, its top and left edges on the page, the
+ * caption's width and left edge, and the paper between the photograph and
+ * the signature line. The glide strip's preview is drawn here, so it sits
+ * exactly on the plate it stands in for.
+ */
+export function plateFrame(
+  ratio: number,
+  pageWidth: number,
+  stageHeight: number,
+  caption: number,
+  pixelRatio = 1,
+): { box: { width: number; height: number }; top: number; left: number; captionW: number; captionLeft: number; gap: number } {
+  const box = plateBox(ratio, pageWidth, stageHeight, caption, pixelRatio);
+  const captionW = captionWidth(box.width);
+  const gap = signatureGap(captionW, pixelRatio);
+  const top = groupTop(stageHeight, box.height, underPlate(box.width, caption, pixelRatio));
+  return { box, top, left: (pageWidth - box.width) / 2, captionW, captionLeft: (pageWidth - captionW) / 2, gap };
 }
 
 /**
