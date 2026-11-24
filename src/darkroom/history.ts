@@ -26,6 +26,8 @@ const FILE = "darkroom-history.json";
 const KEY = "vintage.darkroom-history";
 const IN_CACHE: DiskCacheOptions = { dir: "cache" };
 
+/** A print settled on, with its image drawn, for this long counts as seen: in the room, and held in its replay. */
+export const SEEN_AFTER_MS = 1200;
 /** How many looked-at photographs are remembered; the oldest are let go first. */
 export const SEEN_LIMIT = 3000;
 export const DEVELOPED_LIMIT = 1000;

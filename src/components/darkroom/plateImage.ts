@@ -166,6 +166,33 @@ export function closerRequest(reduceMotion: boolean): CloserRequest {
   };
 }
 
+export interface GateRequest {
+  cachePolicy: "none";
+  priority: "normal";
+  allowDownscaling: false;
+  transition: typeof DISSOLVE | 0;
+}
+
+/**
+ * What a photograph in the replay's gate asks for, worked out once as its
+ * view is made and never changed while it lives (a change would load it
+ * again, as for a plate). Kept by its view alone, never in the shared
+ * memory cache, which has no limit and which the replay must not fill:
+ * moving the tray or closing the replay lets the bitmap go, and cancels
+ * whatever was still coming. One mounted already in front of the member
+ * (after a glide, a turn or a step) dissolves in over its proof; one
+ * mounted ahead while the replay plays cuts in, which is what makes a
+ * burst read as stop-motion.
+ */
+export function gateRequest(dissolve: boolean, reduceMotion: boolean): GateRequest {
+  return {
+    cachePolicy: "none",
+    priority: "normal",
+    allowDownscaling: false,
+    transition: dissolve && !reduceMotion ? DISSOLVE : 0,
+  };
+}
+
 /** Where the closer photograph lies in a plate `box`: `PLATE_ZOOM` times its size, drawn at its scale, over it exactly. */
 export function closerBox(box: { width: number; height: number }): {
   left: number;

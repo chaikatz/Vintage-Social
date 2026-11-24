@@ -1,5 +1,16 @@
 import type { YearCount } from "@/darkroom/discovery";
-import { captionFor, countLabel, fullDate, monthDay, monthName, monthYearWords, shortDay, yearsInWords } from "@/darkroom/labels";
+import {
+  anniversaryYear,
+  captionFor,
+  countLabel,
+  fullDate,
+  monthDay,
+  monthName,
+  monthYearWords,
+  shortDay,
+  weekday,
+  yearsInWords,
+} from "@/darkroom/labels";
 import type { DarkroomMode, DayReach, Span } from "@/darkroom/types";
 
 /**
@@ -22,6 +33,10 @@ export const STAGE_LABEL = "Photograph";
 export const STAGE_HINT = "Swipe up or down for the next or previous photograph.";
 export const CONTENTS_HINT = "Choose a way in, an occasion, a year or a month.";
 export const CHAPTER_HINT = "Opens the contents.";
+/** PLAY, the stage's action of the same name, and the replay's dial while it is not playing. */
+export const PLAY_HINT = "Plays this chapter through, a photograph at a time.";
+/** Back, while the replay is up: it closes the replay, not the room. */
+export const REPLAY_BACK_HINT = "Stops playing, and keeps this photograph in front of you.";
 /** Under CONTENTS, until it has first been opened on this phone: what is in it. */
 export const CONTENTS_INVITE = "Every way in is here: this day, a roll, any year.";
 
@@ -298,7 +313,7 @@ export function captionWords(p: {
 
 /** One of the stage's custom actions: what the room calls it, and what VoiceOver says. */
 export interface StageAction {
-  name: "develop" | RightAct | "more" | "contents";
+  name: "develop" | RightAct | "more" | "play" | "contents";
   label: string;
 }
 
@@ -311,7 +326,9 @@ export interface StageAction {
  * only way out then, §6.3), REMOVE for a print gone from the shelf. Off
  * VoiceOver SET ASIDE carries a dot in the accent; here it says PUT BACK instead.
  * With no print in front of the member — the next batch still being
- * dealt — only Contents is left.
+ * dealt — only Contents is left. `play`, where the chapter can be played
+ * through (PLAY at the foot of the page), offers Play just before
+ * Contents, and never while a develop is working or downloading.
  */
 export function stageActions(
   takenAt: number | null,
@@ -323,6 +340,7 @@ export function stageActions(
     /** Working or downloading, which holds the pages and Contents too. */
     busy: boolean;
   },
+  play = false,
 ): StageAction[] {
   const contents: StageAction[] = state?.busy ? [] : [{ name: "contents", label: "Contents" }];
   if (takenAt == null) return contents;
@@ -332,6 +350,7 @@ export function stageActions(
   if (bottom.act !== "none") out.push({ name: "develop", label: bottom.label });
   if (right && !right.inert) out.push({ name: right.act, label: right.act === "toggle" ? (setAside ? "Put back" : "Set aside") : right.label });
   if (!state?.stated) out.push({ name: "more", label: `More from ${new Date(takenAt).getFullYear()}` });
+  if (play && !state?.busy) out.push({ name: "play", label: "Play" });
   return [...out, ...contents];
 }
 
@@ -390,7 +409,8 @@ export type PageAct =
   | "anotherRoll"
   | "moreFrom"
   | "year"
-  | "fromJanuary";
+  | "fromJanuary"
+  | "play";
 
 export interface PageWord {
   label: string;
@@ -678,4 +698,77 @@ export function prunedNote(n: number): string | null {
   if (!(n > 0)) return null;
   if (n === 1) return "One you set aside is no longer in your library.";
   return `${yearsInWords(n)} you set aside are no longer in your library.`;
+}
+
+// ---------------------------------------------------------------------------
+// The replay
+// ---------------------------------------------------------------------------
+
+/** Where a replay is: playing, held on a photograph, or ended on the last. */
+export type ReplayPhase = "playing" | "held" | "ended";
+
+/** The end page's first word, where the chapter can be played through. */
+export const PLAY_THROUGH: PageWord = { label: "Play it through", act: "play" };
+
+/**
+ * An end page with PLAY IT THROUGH put first, so it is the page's one ruled
+ * word: at the end of On this day, of a stretch and of the shelf, while the
+ * chapter can be played. Laid over `endPage`, whose own words stay as
+ * they are.
+ */
+export function withPlayThrough(page: PageWords, ending: Ending | null, playable: boolean): PageWords {
+  if (!playable || ending == null) return page;
+  if (ending.kind !== "day" && ending.kind !== "span" && ending.kind !== "shelf") return page;
+  return { ...page, words: [PLAY_THROUGH, ...page.words.filter((w) => w.act !== "play")] };
+}
+
+/** The dial's word for VoiceOver, and the centre's glyph in words: what a press does next. */
+export function dialLabel(phase: ReplayPhase): string {
+  if (phase === "playing") return "Pause";
+  return phase === "ended" ? "Play again" : "Play";
+}
+
+/** The photograph's value in the replay: "December 4, 2022. A Sunday. Playing." Never a count. */
+export function replayValue(takenAt: number, line: string, phase: ReplayPhase): string {
+  const value = `${fullDate(takenAt)}. ${line}.`;
+  return phase === "playing" ? `${value} Playing.` : value;
+}
+
+/** A title card in the replay, before a year or a day that holds a few photographs. */
+export interface ReplayCard {
+  eyebrow: string;
+  title: string;
+  /** The title is a year, set in old-style figures. */
+  year: boolean;
+}
+
+/**
+ * The card before a group of the replay, from its first print: in On this
+ * day, the line under that print ("Seven years ago today") over the year
+ * of its anniversary ("2019"); in a stretch, the weekday over the date
+ * ("Sunday" over "December 4"). Set aside has none.
+ */
+export function replayCardWords(mode: DarkroomMode, first: number, now: number, reach: DayReach | null): ReplayCard | null {
+  if (mode === "on-this-day") {
+    return { eyebrow: captionFor(first, now, mode, reach, null).line, title: String(anniversaryYear(first, now)), year: true };
+  }
+  if (mode === "span") return { eyebrow: weekday(first), title: monthDay(first), year: false };
+  return null;
+}
+
+/** A card said aloud as it comes up: "2019. Seven years ago today." · "Sunday, December 4." */
+export function replayCardSaid(card: ReplayCard): string {
+  return card.year ? `${card.title}. ${card.eyebrow}.` : `${card.eyebrow}, ${card.title}.`;
+}
+
+/** Said as the replay ends: the chapter's own end title. */
+export function replayEndSaid(ending: Ending, ctx: { now: number; limited: boolean; years: readonly YearCount[] | null }): string {
+  return endPage(ending, ctx).title;
+}
+
+/** The mark along the strip's top edge over a group's first frame, as film is edge-printed: "2019", or "DEC 4". */
+export function edgeMarkWords(mode: DarkroomMode, first: number, now: number): string | null {
+  if (mode === "on-this-day") return String(anniversaryYear(first, now));
+  if (mode === "span") return shortDay(first);
+  return null;
 }

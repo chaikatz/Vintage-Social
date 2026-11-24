@@ -29,7 +29,7 @@ import type { DayState, EmptyWhy } from "@/components/darkroom/words";
 import { readAccess, requestAccess, type LibraryAccess } from "./access";
 import { REDISCOVERY_AGE_DAYS, type DayResult, type YearCount } from "./discovery";
 import type { OccasionsView } from "./occasions";
-import { dayFinished, finishDay, flushHistory, localDay, markSeen } from "./history";
+import { dayFinished, finishDay, flushHistory, localDay, markSeen, SEEN_AFTER_MS } from "./history";
 import {
   chapterKey,
   flushPlace,
@@ -93,8 +93,6 @@ import type { DarkroomMode, DayReach, Print, Span } from "./types";
 /** Dealt at a time, and kept at least this far ahead of the member. */
 const BATCH = { surprise: 3, year: 12 } as const;
 const AHEAD = { surprise: 3, year: 4 } as const;
-/** A print settled on, with its image drawn, for this long counts as seen. */
-export const SEEN_AFTER_MS = 1200;
 /** Photos reports a change, then often several more: they are taken together after this. */
 export const LIBRARY_SETTLE_MS = 2000;
 const DAY_MS = 86_400_000;
@@ -941,6 +939,17 @@ export function useDarkroom(params: RoomParams) {
     [patch],
   );
 
+  /**
+   * The replay has taken the stage's place, and the plates with it: the
+   * photographs they decoded leave the shared memory cache now, rather
+   * than at the next letting-go, and come back from Photos, dissolving in
+   * again, when the room does.
+   */
+  const releaseImages = useCallback(() => {
+    loaded.current.released([]);
+    releaseDrawn();
+  }, []);
+
   // Settled on long enough, with its image drawn: seen. Not on the shelf,
   // which the member browses on purpose.
   const currentId = chapter ? chapter.prints[chapter.index]?.id ?? null : null;
@@ -1108,6 +1117,7 @@ export function useDarkroom(params: RoomParams) {
     imageLoaded,
     imageGone,
     hasLoaded,
+    releaseImages,
     blur,
     focus,
   };

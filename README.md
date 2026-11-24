@@ -502,6 +502,26 @@ turns the page with its own swipes up and down; quick taps turn one page
 at a time. The running head, the captions and DEVELOP are always on the
 page: nothing hides them.
 
+PLAY, a tab at the foot of the page beside DEVELOP (and the first word on
+the end page, PLAY IT THROUGH, and the stage's VoiceOver action), plays
+On this day, a stretch or the shelf through in the room's own page,
+Retro-style: the photographs cut one to the next at 500 ms, a burst of the
+same shape seconds apart at 340 (never more than three changes a second;
+800 under Reduce Motion), a short title card before each year or day that
+holds three or more. Under the photograph hang its caption (the date, the
+time, the line), Photos' glide strip set as a contact sheet's frames with a
+grease-pencil box over the one in front, and Retro's dial: sixty ticks, a
+hand that goes once round for the whole replay, and play, pause or play
+again at its centre; turned by a finger it moves through the chapter, a
+tick felt per tick. A touch anywhere holds it; only the dial's centre
+plays. Back lands the room on the photograph it stopped on. The rules are
+pure, in `src/components/darkroom/replay.ts`. It plays the chapter's prints
+the room already holds, and asks the library nothing; every image is drawn
+at its view's size and kept by its view alone (never the shared cache,
+never the disk), at most five at the gate's size; the screen stays awake
+only while it plays (through Expo's own keep-awake); and it keeps nothing:
+no file, no setting, no history beyond what the room already marks seen.
+
 To review it in a browser, the web demo reads a small bundled library
 (`src/darkroom/demoSource.ts`) with six photographs on today's date in
 earlier years, so On this day always opens.

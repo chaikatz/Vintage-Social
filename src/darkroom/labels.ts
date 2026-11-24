@@ -68,6 +68,18 @@ export function weekday(ms: number): string {
 }
 
 /**
+ * "4:12 PM", "12:05 AM", "12:00 PM": when the shutter fired, on a twelve-hour
+ * clock. Set by hand, as `countLabel` is, rather than through
+ * `toLocaleTimeString`, which depends on how much of Intl the engine has.
+ */
+export function clockTime(ms: number): string {
+  const d = new Date(ms);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  return `${h % 12 === 0 ? 12 : h % 12}:${m < 10 ? `0${m}` : m} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/**
  * "1,204". Grouped by hand rather than through `toLocaleString`, which
  * depends on how much of Intl the JavaScript engine was built with.
  */
@@ -137,6 +149,15 @@ function nearestAnniversary(ms: number, now: number): { year: number; days: numb
     if (days < best.days) best = { year, days };
   }
   return best;
+}
+
+/**
+ * The year of the anniversary a print was found near, which On this day
+ * counts it under: a photograph from the 30th of December 2019, found on
+ * the 2nd of January, is 2020's.
+ */
+export function anniversaryYear(ms: number, now: number): number {
+  return nearestAnniversary(ms, now).year;
 }
 
 /**

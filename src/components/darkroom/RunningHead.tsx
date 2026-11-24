@@ -27,6 +27,7 @@ export function RunningHead({
   contents,
   invite = false,
   held = false,
+  backHint,
   onBack,
   onContents,
 }: {
@@ -40,6 +41,8 @@ export function RunningHead({
   invite?: boolean;
   /** A develop is under way: CONTENTS and the chapter name wait, and say so. */
   held?: boolean;
+  /** What Back does, for VoiceOver, where it is not leaving the room (the replay's REPLAY_BACK_HINT). */
+  backHint?: string;
   onBack: () => void;
   onContents: () => void;
 }) {
@@ -54,6 +57,7 @@ export function RunningHead({
             style={({ pressed }) => [styles.back, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel="Back"
+            accessibilityHint={backHint}
             testID="darkroom-back"
           >
             <Feather name="chevron-left" size={24} color={room.ink} />
