@@ -189,7 +189,7 @@ function CaptionRight({
  * line, so Increase Contrast never makes how far fainter than that
  * (`signatureInks` in room.ts).
  */
-function Signature({
+export function Signature({
   width,
   progress,
   testID,

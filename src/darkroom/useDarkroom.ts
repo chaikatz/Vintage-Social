@@ -941,6 +941,17 @@ export function useDarkroom(params: RoomParams) {
     [patch],
   );
 
+  /**
+   * The replay has taken the stage's place, and the plates with it: the
+   * photographs they decoded leave the shared memory cache now, rather
+   * than at the next letting-go, and come back from Photos, dissolving in
+   * again, when the room does.
+   */
+  const releaseImages = useCallback(() => {
+    loaded.current.released([]);
+    releaseDrawn();
+  }, []);
+
   // Settled on long enough, with its image drawn: seen. Not on the shelf,
   // which the member browses on purpose.
   const currentId = chapter ? chapter.prints[chapter.index]?.id ?? null : null;
@@ -1108,6 +1119,7 @@ export function useDarkroom(params: RoomParams) {
     imageLoaded,
     imageGone,
     hasLoaded,
+    releaseImages,
     blur,
     focus,
   };

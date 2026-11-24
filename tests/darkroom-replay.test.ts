@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BURST_GAP_MS,
@@ -585,5 +587,123 @@ describe("the replay’s words", () => {
     expect(gateRequest(true, false)).toEqual({ cachePolicy: "none", priority: "normal", allowDownscaling: false, transition: DISSOLVE });
     expect(gateRequest(true, true).transition).toBe(0);
     expect(gateRequest(false, false).transition).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("the replay, in its source", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  const read = (file: string) => readFileSync(path.join(root, file), "utf8");
+  /** Without its comments, so prose that names what is not done is not taken as doing it. */
+  const code = (file: string) =>
+    read(file)
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const dir = "src/components/darkroom";
+  const views = readdirSync(path.join(root, dir))
+    .filter((f) => /^Replay.*\.tsx$/.test(f))
+    .map((f) => `${dir}/${f}`);
+  const replayFiles = [...views, `${dir}/replay.ts`, `${dir}/useReplay.ts`, `${dir}/awake.ts`, `${dir}/PlayTab.tsx`];
+
+  it("covers the replay's files", () => {
+    expect(views.map((f) => path.basename(f)).sort()).toEqual(["Replay.tsx", "ReplayDial.tsx", "ReplayGate.tsx", "ReplayStrip.tsx"]);
+  });
+
+  it("keeps every photograph by its view alone: never the shared memory cache, never the disk", () => {
+    let images = 0;
+    for (const file of views) {
+      const src = code(file);
+      for (const m of src.matchAll(/<Image\b[\s\S]*?\/>/g)) {
+        images += 1;
+        expect(m[0], file).toMatch(/cachePolicy="none"|cachePolicy=\{request\.cachePolicy\}/);
+      }
+      expect(src, file).not.toMatch(/"(memory|disk|memory-disk)"/);
+      expect(src, file).not.toMatch(/prefetch/i);
+    }
+    // The gate's photograph and its proof, and the strip's frame.
+    expect(images).toBe(3);
+    const gate = code(`${dir}/ReplayGate.tsx`);
+    expect(gate).toMatch(/import \{ gateRequest, progressOf, proofHoldMs \} from "\.\/plateImage";/);
+  });
+
+  it("fixes each gate photograph's request as its view is made, and shows it by its wrapper's opacity alone", () => {
+    const gate = code(`${dir}/ReplayGate.tsx`);
+    const slot = gate.slice(gate.indexOf("const Slot = memo("), gate.indexOf("function ScrubProof("));
+    expect(slot).toMatch(/const \[request\] = useState\(\(\) => gateRequest\(current, look\.reduceMotion\)\);/);
+    expect(slot).toMatch(/const \[source\] = useState\(\(\) => printSource\(print\.uri\)\);/);
+    const image = slot.slice(slot.indexOf("<Image"));
+    expect(image).not.toMatch(/\bcurrent\b/);
+    for (const prop of ["cachePolicy", "priority", "allowDownscaling", "transition"]) expect(image).toMatch(new RegExp(`${prop}=\\{request\\.${prop}\\}`));
+    expect(image).toMatch(/recyclingKey=\{id\}/);
+    // The one thing that differs between the slot in front and the rest.
+    expect(slot.match(/current \?/g)).toHaveLength(1);
+    expect(slot).toMatch(/style=\{\[styles\.box, box, \{ opacity: current \? 1 : 0 \}\]\}/);
+    // Nothing drawn before the gate has a size.
+    expect(gate).toMatch(/const box = size\.width > 0 && size\.height > 0 \? boxFor\(current\) : null;/);
+  });
+
+  it("asks the library nothing: no reader, no source, no page or count", () => {
+    const forbidden = /^(@\/darkroom\/(source|discovery|nativeSource|nativeLibrary|demoSource|develop|localFile|access|eligibility)|\.\/(visit|dealer|chapter))$/;
+    for (const file of replayFiles) {
+      const src = code(file);
+      const from = [...src.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
+      for (const spec of from) expect(forbidden.test(spec), `${file} imports ${spec}`).toBe(false);
+      expect(src, file).not.toMatch(/\.(page|count|oldest)\(/);
+      if (file !== `${dir}/replay.ts`) expect(src, file).not.toMatch(/@\/darkroom\/occasions/);
+    }
+    // The one thing taken from the occasions: how a day is counted.
+    expect(code(`${dir}/replay.ts`)).toMatch(/^import \{ occasionDay \} from "@\/darkroom\/occasions";$/m);
+    // The room's own rule for a print seen, and nothing else of the room's state.
+    expect(code(`${dir}/useReplay.ts`)).toMatch(/^import \{ SEEN_AFTER_MS \} from "@\/darkroom\/useDarkroom";$/m);
+  });
+
+  it("keeps the screen awake only through a guarded call to Expo's own keep-awake", () => {
+    const awake = code(`${dir}/awake.ts`);
+    expect(awake).toMatch(/export const KEEP_AWAKE_TAG = "vintage-replay";/);
+    expect(awake).toMatch(/try \{\s*loaded = require\("expo-keep-awake"\) as KeepAwake;\s*\} catch \{/);
+    const guarded = awake.slice(awake.indexOf("export function stayAwake"));
+    expect(guarded).toMatch(
+      /try \{[\s\S]*?activateKeepAwakeAsync\(KEEP_AWAKE_TAG\)\.catch\(\(\) => undefined\);[\s\S]*?deactivateKeepAwake\(KEEP_AWAKE_TAG\)\.catch\(\(\) => undefined\);[\s\S]*?\} catch \{/,
+    );
+    // Only while it plays, and let go as it closes.
+    const hook = code(`${dir}/useReplay.ts`);
+    expect(hook).toMatch(/stayAwake\(state\.phase === "playing"\);/);
+    expect(hook).toMatch(/useEffect\(\(\) => \(\) => stayAwake\(false\), \[\]\);/);
+  });
+
+  it("holds as the app leaves the foreground", () => {
+    const hook = code(`${dir}/useReplay.ts`);
+    expect(hook).toMatch(/AppState\.addEventListener\("change", \(next\) => \{\s*if \(next !== "active"\) dispatch\(\{ type: "away" \}\);/);
+  });
+
+  it("feels the dial's ticks, and nothing else", () => {
+    const haptics = code(`${dir}/haptics.ts`);
+    expect(haptics).toMatch(/detent: \(\) => quietly\(Haptics\.selectionAsync\(\)\),/);
+    const callers: string[] = [];
+    const walk = (d: string) => {
+      for (const e of readdirSync(path.join(root, d), { withFileTypes: true })) {
+        const f = `${d}/${e.name}`;
+        if (e.isDirectory()) walk(f);
+        else if (/\.tsx?$/.test(e.name) && /haptics\.detent\(/.test(code(f))) callers.push(f);
+      }
+    };
+    walk("src");
+    walk("app");
+    expect(callers).toEqual([`${dir}/ReplayDial.tsx`]);
+    for (const file of [`${dir}/ReplayStrip.tsx`, `${dir}/ReplayGate.tsx`, `${dir}/Replay.tsx`, `${dir}/PlayTab.tsx`]) {
+      expect(code(file), file).not.toMatch(/haptics|expo-haptics/);
+    }
+  });
+
+  it("draws PLAY as CONTENTS is drawn, and never in the accent", () => {
+    const tab = code(`${dir}/PlayTab.tsx`);
+    expect(tab).toMatch(/<Feather name="play" size=\{14\} color=\{room\.ink\} accessible=\{false\} \/>/);
+    expect(tab).toMatch(/<RoomText kind="tab" numberOfLines=\{1\} maxFontSizeMultiplier=\{1\.15\}>\s*Play\s*<\/RoomText>/);
+    expect(tab).toMatch(/borderColor: contrast \? room\.soft : room\.lineFirm/);
+    expect(tab).not.toMatch(/accent/);
+    expect(tab).toMatch(/accessibilityHint=\{PLAY_HINT\}/);
+    expect(tab).toMatch(/testID="darkroom-play"/);
   });
 });
