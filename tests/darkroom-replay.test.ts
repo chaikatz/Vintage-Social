@@ -706,4 +706,28 @@ describe("the replay, in its source", () => {
     expect(tab).toMatch(/accessibilityHint=\{PLAY_HINT\}/);
     expect(tab).toMatch(/testID="darkroom-play"/);
   });
+  it("is a mode of the room's own page: the back swipe off, CONTENTS out of the head, Back closing it", () => {
+    const room = code("app/darkroom.tsx");
+    expect(room).toMatch(/<Stack\.Screen options=\{\{ headerShown: false, gestureEnabled: replay == null \}\} \/>/);
+    expect(room).toMatch(/<RunningHead\s+top=\{insets\.top\}[\s\S]*?contents=\{inside && replay == null\}[\s\S]*?backHint=\{replay \? REPLAY_BACK_HINT : undefined\}[\s\S]*?onBack=\{replay \? \(\) => replayRef\.current\?\.close\(\) : back\}/);
+    expect(room).toMatch(/onAccessibilityEscape=\{\(\) => \(replay \? replayRef\.current\?\.close\(\) : sheet\.open \? sheet\.close\(\) : back\(\)\)\}/);
+    // Held as the room goes out of view, as the app leaving the foreground holds it.
+    expect(room).toMatch(/onBlur\.current = \(\) => \{\s*replayRef\.current\?\.hold\("away"\);/);
+    // In the stage's place, and the bottom row's, which fade out together.
+    expect(room).toMatch(/\{replay && chapter \? \(\s*<Replay\b[\s\S]*?\) : \(\s*<Animated\.View style=\{\[styles\.room, \{ opacity: roomFade \}\]\}>/);
+    // Its three ways in: PLAY, the end page's first word, and VoiceOver's action.
+    expect(room).toMatch(/<PlayTab\s+opacity=\{developOpacity\}\s+interactive=\{showsPlay && !atTail && !dragging\}/);
+    expect(room).toMatch(/const showsPlay = canPlay && showsDevelop && currentState\.kind === "idle";/);
+    expect(room).toMatch(/withPlayThrough\(endPage\(darkroom\.ending, \{ now, limited, years: state\.years \}\), darkroom\.ending, canPlay\)/);
+    expect(room).toMatch(/case "play":\s*return startReplay\(null\);/);
+    expect(room).toMatch(/stageActions\([^;]*?, canPlay && !atTail\)/);
+    expect(room).toMatch(/if \(name === "play"\) return startReplay\(current\.id\);/);
+    // It plays a snapshot of the chapter, all but the prints known to be gone, and lands the room on the one it stopped on.
+    expect(room).toMatch(/chapterPrints\.filter\(\(p\) => !state\.missing\.has\(p\.id\)\)/);
+    expect(room).toMatch(/const i = chapter \? chapter\.prints\.findIndex\(\(p\) => p\.id === id\) : -1;\s*if \(i >= 0\) onSettle\(i\);/);
+    // Closed at once if the chapter is dealt again, or goes, under it.
+    expect(room).toMatch(/chapter\?\.generation !== replay\.generation \|\| state\.view\.kind !== "prints" \|\| state\.loading != null/);
+    // Still the one tap handed to the pager.
+    expect(room.match(/onTap=/g)).toHaveLength(1);
+  });
 });

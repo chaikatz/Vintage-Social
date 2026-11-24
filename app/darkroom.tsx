@@ -30,7 +30,10 @@ import { haptics } from "@/components/darkroom/haptics";
 import { LookContext, motion, type Look } from "@/components/darkroom/look";
 import { Plate } from "@/components/darkroom/Plate";
 import { wantsPhotograph, wantsProof } from "@/components/darkroom/plateImage";
+import { PlayTab } from "@/components/darkroom/PlayTab";
 import { PrintPage } from "@/components/darkroom/PrintPage";
+import { Replay, type ReplayHandle } from "@/components/darkroom/Replay";
+import { REPLAY_IN_MS, replayable, replayStart, ROOM_OUT_MS } from "@/components/darkroom/replay";
 import { rooms, useScheme } from "@/components/darkroom/room";
 import { RunningHead } from "@/components/darkroom/RunningHead";
 import { Stage, type StageHandle } from "@/components/darkroom/Stage";
@@ -48,11 +51,13 @@ import {
   firstVisitPage,
   captionWords,
   LOOKING,
+  REPLAY_BACK_HINT,
   shelfSaid,
   stageActions,
   stageValue,
   stateWords,
   titleCardWords,
+  withPlayThrough,
   type BottomAct,
   type DevelopState,
   type PageWord,
@@ -77,7 +82,9 @@ export { RecoverRoom as ErrorBoundary } from "@/navigation/Recover";
  * a chapter.
  * Swipe for the next, or tap the photograph: its right half turns on, its
  * left half back. DEVELOP takes the print into the ordinary editor
- * to post; SET ASIDE keeps it on this phone to come back to. Printed on
+ * to post; SET ASIDE keeps it on this phone to come back to. PLAY, beside
+ * DEVELOP, plays On this day, a stretch or the shelf through in the
+ * room's own page, a photograph at a time (`Replay`). Printed on
  * the app's own page, light or dark as the appearance is, and changing
  * with it (`useScheme` in room.ts); the status bar is the app's own,
  * which follows the appearance in the same way.
@@ -154,6 +161,17 @@ export default function Darkroom() {
   const [stageHeight, setStageHeight] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [shelfFull, setShelfFull] = useState<string | null>(null);
+  /**
+   * The replay, while it is up: the chapter's prints as they were when
+   * PLAY was pressed, where it started, and which deal of the chapter it
+   * plays (a library change that deals the chapter again closes it).
+   */
+  const [replay, setReplay] = useState<{ prints: Print[]; start: number; generation: number; key: number } | null>(null);
+  const replayRef = useRef<ReplayHandle>(null);
+  /** The stage and the bottom row, which go out as the replay comes in, and come back as it goes. */
+  const roomFade = useRef(new Animated.Value(1)).current;
+  /** PLAY pressed and the room on its way out: a second press does nothing. */
+  const starting = useRef(false);
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -191,6 +209,7 @@ export default function Darkroom() {
     develop.returned();
   };
   onBlur.current = () => {
+    replayRef.current?.hold("away");
     develop.left();
     darkroom.blur();
   };
@@ -362,6 +381,8 @@ export default function Darkroom() {
         return darkroom.moreFrom();
       case "fromJanuary":
         return darkroom.fromJanuary();
+      case "play":
+        return startReplay(null);
     }
   };
 
@@ -416,6 +437,78 @@ export default function Darkroom() {
   useEffect(() => {
     clear();
   }, [generation, clear]);
+
+  // --- PLAY ------------------------------------------------------------------------
+
+  /** The chapter's prints that can be played: all but those known to be gone. */
+  const chapterPrints = chapter?.prints;
+  const playable = useMemo(() => (chapterPrints ? chapterPrints.filter((p) => !state.missing.has(p.id)) : []), [chapterPrints, state.missing]);
+  /**
+   * On this day, a stretch or the shelf, shown whole with three or more to
+   * play, and nothing else under way: no chapter on its way or its title
+   * card, no develop state, no Contents, no replay already up.
+   */
+  const canPlay =
+    state.view.kind === "prints" &&
+    chapter != null &&
+    replayable(chapter.mode, chapter.more, chapter.failed, playable.length) &&
+    !state.loading &&
+    !fades.card &&
+    develop.id == null &&
+    !develop.busy &&
+    !sheet.open &&
+    replay == null;
+
+  /** The room goes out, and the replay comes in in its place, from this print (or the first). */
+  const startReplay = (fromId: string | null) => {
+    if (!canPlay || !chapter || starting.current) return;
+    starting.current = true;
+    const prints = playable;
+    const start = replayStart(prints, fromId);
+    const generation = chapter.generation;
+    Animated.timing(roomFade, {
+      toValue: 0,
+      duration: motion(look, ROOM_OUT_MS),
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => {
+      starting.current = false;
+      if (!mounted.current) return;
+      setReplay({ prints, start, generation, key: Date.now() });
+    });
+  };
+
+  /** The replay has gone: the room lands on the print it stopped on, and comes back. */
+  const closeReplay = useEvent((id: string) => {
+    const i = chapter ? chapter.prints.findIndex((p) => p.id === id) : -1;
+    if (i >= 0) onSettle(i);
+    setReplay(null);
+    Animated.timing(roomFade, {
+      toValue: 1,
+      duration: motion(look, REPLAY_IN_MS),
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+    setTimeout(() => {
+      if (mounted.current) stage.current?.focus();
+    }, 120);
+  });
+
+  // The replay has taken the stage's place: the plates' photographs leave the shared memory cache.
+  const { releaseImages } = darkroom;
+  const replayKey = replay?.key;
+  useEffect(() => {
+    if (replayKey != null) releaseImages();
+  }, [replayKey, releaseImages]);
+
+  // Closed at once, with no fade and no settle, if the chapter changes under it.
+  useEffect(() => {
+    if (!replay) return;
+    if (chapter?.generation !== replay.generation || state.view.kind !== "prints" || state.loading != null) {
+      setReplay(null);
+      roomFade.setValue(1);
+    }
+  }, [replay, chapter?.generation, state.view.kind, state.loading, roomFade]);
 
   /** A tap on a photograph, handed to the pager, which knows which page is settled. */
   const onPlateTap = useCallback((x: number, zoomed: boolean) => stage.current?.tap(x, zoomed), []);
@@ -476,7 +569,8 @@ export default function Darkroom() {
       const card = titleCardWords(chapter.mode, chapter.year, chapter.month, now, chapter.span);
       return card ? <TitleCard eyebrow={card.eyebrow} title={card.title} year={card.year} waiting /> : <View />;
     }
-    const page = darkroom.ending ? endPage(darkroom.ending, { now, limited, years: state.years }) : null;
+    // PLAY IT THROUGH first, where the chapter can be played; endPage's own words are left as they are.
+    const page = darkroom.ending ? withPlayThrough(endPage(darkroom.ending, { now, limited, years: state.years }), darkroom.ending, canPlay) : null;
     return page ? <Plate ref={tailTitle} page={page} onWord={onWord} testID="darkroom-end" /> : <View />;
   };
 
@@ -491,10 +585,11 @@ export default function Darkroom() {
   const accessibility = {
     single: state.view.kind === "prints" && (!atTail || waiting),
     value: current ? stageValue(current.takenAt, baseLine, aside, developedAt(current.id), words) : waiting ? LOOKING : "",
-    actions: stageActions(current?.takenAt ?? null, aside, { words, stated: develop.id != null, busy: develop.busy }),
+    actions: stageActions(current?.takenAt ?? null, aside, { words, stated: develop.id != null, busy: develop.busy }, canPlay && !atTail),
     onAction: (name: StageAction["name"]) => {
       if (name === "contents") return showContents();
       if (!current) return;
+      if (name === "play") return startReplay(current.id);
       if (name === "develop") onBottom(words.bottom.act);
       else if (name === "more") onDate(current);
       // The caption's own word: SET ASIDE or PUT BACK, NOT NOW, STOP, REMOVE.
@@ -525,6 +620,8 @@ export default function Darkroom() {
     [scrollX, n, width],
   );
   const showsDevelop = state.view.kind === "prints" && current != null;
+  // A develop state's longer words (DOWNLOAD AND DEVELOP) always have the row to themselves.
+  const showsPlay = canPlay && showsDevelop && currentState.kind === "idle";
 
   return (
     <LookContext.Provider value={look}>
@@ -536,79 +633,112 @@ export default function Darkroom() {
         // React sends, and there is no way round that from here. DEVELOP is
         // reached instead as the stage's first custom action, by its words.
         onMagicTap={() => {
-          if (showsDevelop) onBottom(words.bottom.act);
+          if (showsDevelop && !replay) onBottom(words.bottom.act);
         }}
-        onAccessibilityEscape={() => (sheet.open ? sheet.close() : back())}
+        onAccessibilityEscape={() => (replay ? replayRef.current?.close() : sheet.open ? sheet.close() : back())}
         testID="darkroom"
       >
-        <Stack.Screen options={{ headerShown: false }} />
+        {/* The left-edge swipe back is off while the replay is up: its strip runs edge to edge. */}
+        <Stack.Screen options={{ headerShown: false, gestureEnabled: replay == null }} />
         <RunningHead
           top={insets.top}
           name={headName}
-          contents={inside}
+          contents={inside && replay == null}
           invite={!found}
           held={develop.busy}
-          onBack={back}
+          backHint={replay ? REPLAY_BACK_HINT : undefined}
+          onBack={replay ? () => replayRef.current?.close() : back}
           onContents={() => showContents()}
         />
 
-        <View style={styles.stage} onLayout={(e) => setStageHeight(e.nativeEvent.layout.height)}>
-          <Animated.View
-            style={[StyleSheet.absoluteFill, { opacity: fades.stage }]}
-            pointerEvents={state.loading ? "none" : "auto"}
-          >
-            {page ? (
-              <Plate
-                page={page}
-                onWord={onWord}
-                opacity={state.view.kind === "firstVisit" ? threshold : undefined}
-                testID={`darkroom-page-${state.view.kind}`}
-              />
-            ) : chapter && stageHeight > 0 && state.view.kind === "prints" ? (
-              <Stage
-                ref={stage}
-                prints={chapter.prints}
-                generation={chapter.generation}
-                index={chapter.index}
-                rebase={chapter.rebase}
-                width={width}
-                height={stageHeight}
-                scrollX={scrollX}
-                scrollEnabled={!develop.busy && !state.loading}
-                renderPrint={renderPrint}
-                renderTail={renderTail}
-                onSettle={onSettle}
-                onDragging={setDragging}
-                // A state showing holds the plate's taps; so do a chapter on its way and its title card.
-                taps={{ locked: develop.id != null || state.loading != null || fades.card != null, screenReader, reduceMotion }}
-                accessibility={accessibility}
-                tailTitle={tailTitle}
-              />
-            ) : null}
-          </Animated.View>
-          {fades.card ? (
-            <Animated.View style={[StyleSheet.absoluteFill, { opacity: fades.cardOpacity }]} pointerEvents="none">
-              <TitleCard
-                eyebrow={fades.card.eyebrow}
-                title={fades.card.title}
-                year={fades.card.year}
-                waiting={state.loading != null}
-                since={fades.card.since}
-              />
-            </Animated.View>
-          ) : null}
-        </View>
-
-        <View style={{ marginBottom: Math.max(insets.bottom, 16) + 8 }}>
-          <Develop
-            words={words.bottom}
-            opacity={showsDevelop && !fades.card ? developOpacity : ZERO}
-            interactive={showsDevelop && !atTail && !state.loading && !fades.card}
-            dragging={dragging}
-            drawing={develop.drawing && develop.id === current?.id}
-            onPress={onBottom}
+        {replay && chapter ? (
+          <Replay
+            ref={replayRef}
+            key={replay.key}
+            prints={replay.prints}
+            start={replay.start}
+            mode={chapter.mode}
+            reach={chapter.reach}
+            span={chapter.span ?? null}
+            now={now}
+            online={online}
+            limited={limited}
+            missing={state.missing}
+            width={width}
+            pixelRatio={pixelRatio}
+            bottomInset={insets.bottom}
+            screenReader={screenReader}
+            onImageGone={imageGone}
+            onClose={closeReplay}
           />
-        </View>
+        ) : (
+          <Animated.View style={[styles.room, { opacity: roomFade }]}>
+            <View style={styles.stage} onLayout={(e) => setStageHeight(e.nativeEvent.layout.height)}>
+              <Animated.View
+                style={[StyleSheet.absoluteFill, { opacity: fades.stage }]}
+                pointerEvents={state.loading ? "none" : "auto"}
+              >
+                {page ? (
+                  <Plate
+                    page={page}
+                    onWord={onWord}
+                    opacity={state.view.kind === "firstVisit" ? threshold : undefined}
+                    testID={`darkroom-page-${state.view.kind}`}
+                  />
+                ) : chapter && stageHeight > 0 && state.view.kind === "prints" ? (
+                  <Stage
+                    ref={stage}
+                    prints={chapter.prints}
+                    generation={chapter.generation}
+                    index={chapter.index}
+                    rebase={chapter.rebase}
+                    width={width}
+                    height={stageHeight}
+                    scrollX={scrollX}
+                    scrollEnabled={!develop.busy && !state.loading}
+                    renderPrint={renderPrint}
+                    renderTail={renderTail}
+                    onSettle={onSettle}
+                    onDragging={setDragging}
+                    // A state showing holds the plate's taps; so do a chapter on its way and its title card.
+                    taps={{ locked: develop.id != null || state.loading != null || fades.card != null, screenReader, reduceMotion }}
+                    accessibility={accessibility}
+                    tailTitle={tailTitle}
+                  />
+                ) : null}
+              </Animated.View>
+              {fades.card ? (
+                <Animated.View style={[StyleSheet.absoluteFill, { opacity: fades.cardOpacity }]} pointerEvents="none">
+                  <TitleCard
+                    eyebrow={fades.card.eyebrow}
+                    title={fades.card.title}
+                    year={fades.card.year}
+                    waiting={state.loading != null}
+                    since={fades.card.since}
+                  />
+                </Animated.View>
+              ) : null}
+            </View>
+
+            <View style={{ marginBottom: Math.max(insets.bottom, 16) + 8 }}>
+              {showsPlay ? (
+                <PlayTab
+                  opacity={developOpacity}
+                  interactive={showsPlay && !atTail && !dragging}
+                  onPress={() => startReplay(current?.id ?? null)}
+                />
+              ) : null}
+              <Develop
+                words={words.bottom}
+                opacity={showsDevelop && !fades.card ? developOpacity : ZERO}
+                interactive={showsDevelop && !atTail && !state.loading && !fades.card}
+                dragging={dragging}
+                drawing={develop.drawing && develop.id === current?.id}
+                onPress={onBottom}
+              />
+            </View>
+          </Animated.View>
+        )}
 
         <Contents
           visible={sheet.open}
@@ -647,5 +777,6 @@ const ZERO = new Animated.Value(0);
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  room: { flex: 1 },
   stage: { flex: 1 },
 });
