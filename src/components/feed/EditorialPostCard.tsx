@@ -92,7 +92,10 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
           accessibilityLabel={post.author.username}
           accessibilityHint="Opens their profile"
         >
-          <Avatar path={post.author.avatar_url} username={post.author.username} size={AVATAR} />
+          {/* Their picture in a thin ring, the card's paper showing between the two. */}
+          <View style={styles.ring}>
+            <Avatar path={post.author.avatar_url} username={post.author.username} size={FACE} />
+          </View>
           <Text style={styles.username} numberOfLines={1}>
             {post.author.username}
           </Text>
@@ -177,7 +180,8 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
       {post.caption ? (
         <Text style={styles.caption}>
           {/* The name and every @name in the words open their member's page. */}
-          <NameLink username={post.author.username} onOpenProfile={onOpenProfile} style={styles.author} />{" "}
+          <NameLink username={post.author.username} onOpenProfile={onOpenProfile} style={styles.author} />
+          <Text style={styles.nameGap}>{NAME_GAP}</Text>
           <MentionText text={post.caption} onOpenProfile={onOpenProfile} />
         </Text>
       ) : null}
@@ -204,7 +208,8 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
               onOpenProfile={onOpenProfile}
               onLongPress={onCommentLongPress ? () => onCommentLongPress(c) : undefined}
               style={styles.author}
-            />{" "}
+            />
+            <Text style={styles.nameGap}>{NAME_GAP}</Text>
             <MentionText
               text={c.body}
               onOpenProfile={onOpenProfile}
@@ -277,6 +282,20 @@ const DOTS = 18;
 const AVATAR = 34;
 
 /**
+ * The member's picture inside AVATAR: a 28 pt circle, then 2 pt of the
+ * card's paper, then a 1 pt ring in nameInk (34 = 28 + 2 * 2 + 2 * 1), so
+ * the row is the height it was.
+ */
+const FACE = 28;
+const RING_WIDTH = 1;
+
+/**
+ * Between a name and the words after it in the caption and the comments,
+ * 4 pt: a three-per-em space (a third of an em) set at 12 pt.
+ */
+const NAME_GAP = "\u2004";
+
+/**
  * How far the label's typewriter lines grow with Larger Text. At twice
  * their size the longest date still fits across a 320 pt screen, on a
  * line of its own under the buttons; any larger and it would not.
@@ -333,11 +352,22 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: 13,
     minHeight: TARGET,
   },
+  ring: {
+    width: AVATAR,
+    height: AVATAR,
+    borderRadius: AVATAR / 2,
+    borderWidth: RING_WIDTH,
+    borderColor: colors.nameInk,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   // The member's username as the original card sets it, but half bold (medium), as every username is under Editorial (src/utils/nameFace.ts).
-  username: { flexShrink: 1, fontSize: 14, fontWeight: "500", color: colors.ink },
+  // The member's name: the wordmark's serif (Georgia), in its italic. Georgia has no
+  // medium cut, and the phone would draw a 500 as its bold, so it is the regular italic.
+  username: { flexShrink: 1, fontFamily: type.serif, fontStyle: "italic", fontSize: 14, color: colors.nameInk },
   // The print alone keeps the print's margins, a share of the width, and
   // the same paper over the picture as under it, before the hairline. The
   // paper itself lets a touch through to the member's row under it.
@@ -401,21 +431,24 @@ const styles = StyleSheet.create({
     marginRight: -(TARGET - DOTS * 0.75) / 2,
   },
   // The member's words in the comments' own type, after their name, so the text under a picture reads as one.
+  // The words in the app's sans at 11 pt, the visual height of the 14 pt italic names; the same line spacing.
   caption: {
     ...type.body,
-    fontSize: 14,
+    fontSize: 11,
     color: colors.ink,
     marginHorizontal: EDGE,
   },
   comment: {
     ...type.body,
-    fontSize: 14,
+    fontSize: 11,
     color: colors.ink,
     marginHorizontal: EDGE,
     marginTop: spacing.xs,
   },
   // Who wrote it, in the words' own face, size and ink, half bold, as the name over the print is.
-  author: { fontWeight: "500" },
+  // A name in the caption and the comments: the header's name, as it is drawn there.
+  author: { fontFamily: type.serif, fontStyle: "italic", fontSize: 14, color: colors.nameInk },
+  nameGap: { fontSize: 12 },
   // The label's typewriter face, a shade fainter than the date, in small letters.
   posted: {
     ...line(PRINT.byline),

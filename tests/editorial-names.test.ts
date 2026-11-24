@@ -296,25 +296,27 @@ describe("every username the app draws", () => {
   it("on the editorial card is the original card's name, half bold, set in its sheet, since it is drawn only under Editorial", () => {
     const card = code("src/components/feed/EditorialPostCard.tsx");
     const original = code("src/components/PostCard.tsx");
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "500", color: colors\.ink \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontWeight: "500" \},/);
+    // The owner's restyle (24 November): the wordmark's serif in its italic, 14 pt, in the name ink, in the header and before the words alike.
+    // No weight: Georgia has no medium cut, and the phone would draw 500 as its bold.
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.serif, fontStyle: "italic", fontSize: 14, color: colors\.nameInk \},/);
+    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.serif, fontStyle: "italic", fontSize: 14, color: colors\.nameInk \},/);
     // The original card's own, but for the weight.
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
-    // Its own face, size and ink: neither the typewriter face nor tracking on a name, and the module not read.
+    // Its own face, size and ink: the serif italic, never the typewriter face or tracking on a name, and the module not read.
     expect(card).not.toMatch(/nameFace|NAME_INK/);
     for (const name of ["username", "author"]) {
-      expect(card.match(new RegExp(`\\n {2}${name}: \\{ [^\\n]* \\},`))?.[0], name).not.toMatch(/fontFamily|letterSpacing|type\.mono/);
+      expect(card.match(new RegExp(`\\n {2}${name}: \\{ [^\\n]* \\},`))?.[0], name).not.toMatch(/letterSpacing|type\.mono|fontWeight/);
     }
     expect(card).toMatch(/<Text style=\{styles\.username\} numberOfLines=\{1\}>\s*\{post\.author\.username\}/);
     // Before the caption and each comment, the name is a link to the member's page, in that same sheet's style; the words after it are theirs.
-    expect(card).toMatch(/<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\{" "\}\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} \/>/);
+    expect(card).toMatch(/<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} \/>/);
     expect(card).toMatch(
-      /<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\{" "\}\s*<MentionText\s+text=\{c\.body\}/,
+      /<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText\s+text=\{c\.body\}/,
     );
     expect(card.match(/<NameLink\b(?:=>|[^>])*\/>/g)?.map((link) => link.match(/style=\{[^}]*\}/)?.[0])).toEqual(["style={styles.author}", "style={styles.author}"]);
     // The caption and the comments themselves keep the comments' own type.
-    expect(card).toMatch(/\n {2}comment: \{\s*\.\.\.type\.body,\s*fontSize: 14,/);
+    expect(card).toMatch(/\n {2}comment: \{\s*\.\.\.type\.body,\s*fontSize: 11,/);
   });
 
   it("is none of them left out: a Text or a link that draws a username has the face, or a reason not to", () => {
@@ -752,6 +754,9 @@ describe("the trial still comes out cleanly", () => {
         "tests/stableCards.test.ts",
         "tests/thread-menu.test.ts",
         "tests/member-names.test.ts",
+        // The editorial card's name ink (the owner's restyle, 24 November).
+        "src/theme/index.ts",
+        "tests/theme.test.ts",
         "e2e/launch-test.mjs",
       ].sort(),
     );

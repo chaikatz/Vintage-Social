@@ -94,8 +94,7 @@ const {
   __resetFeedPaperForTest,
   __subscribeToPaperForTest,
 } = await import("@/utils/feedPaper");
-const { colors, dark, light } = await import("@/theme");
-const { nameFace } = await import("@/utils/nameFace");
+const { colors, dark, light, type } = await import("@/theme");
 await import("@/components/feed/EditorialPostCard");
 
 const FILE = "document/feed-layout.json";
@@ -517,16 +516,26 @@ describe("the editorial card", () => {
     const member = /<Pressable\s*style=\{styles\.member\}[\s\S]*?<\/Pressable>/.exec(header)?.[0] ?? "";
     expect(member).toMatch(/onPress=\{\(\) => onOpenProfile\(post\.author\.username\)\}/);
     expect(member).toMatch(/accessibilityRole="button"\s*accessibilityLabel=\{post\.author\.username\}/);
-    expect(member).toMatch(/<Avatar path=\{post\.author\.avatar_url\} username=\{post\.author\.username\} size=\{AVATAR\} \/>/);
+    // Their picture, 28 pt, in a 1 pt ring with 2 pt of the card's paper between: 34 pt in all, the original card's size.
+    expect(member).toMatch(/<View style=\{styles\.ring\}>\s*<Avatar path=\{post\.author\.avatar_url\} username=\{post\.author\.username\} size=\{FACE\} \/>\s*<\/View>/);
+    expect(card).toMatch(/const FACE = 28;/);
+    expect(card).toMatch(/const RING_WIDTH = 1;/);
+    expect(style("ring")).toMatch(/width: AVATAR,\s*height: AVATAR,\s*borderRadius: AVATAR \/ 2,\s*borderWidth: RING_WIDTH,\s*borderColor: colors\.nameInk,/);
+    expect(style("ring")).not.toMatch(/backgroundColor|padding/);
+    // 28 + 2 * 2 + 2 * 1.
+    expect(28 + 2 * 2 + 2 * 1).toBe(34);
+    // 13 pt between the ring and the name.
+    expect(style("member")).toMatch(/gap: 13,/);
     expect(member).toMatch(/\{post\.author\.username\}\s*<\/Text>/);
     // The original card's size for the picture.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    // The original card's face, size and ink for the name, half bold, as every name is under Editorial (see tests/editorial-names.test.ts).
+    // The owner's restyle (24 November): the name in the wordmark's serif, in its italic, 14 pt, in the name ink (see tests/editorial-names.test.ts).
+    // The original card keeps its own.
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontSize: 14, fontWeight: "500", color: colors\.ink \},/);
-    expect(sheet!.username).toEqual({ flexShrink: 1, fontSize: 14, color: colors.ink, ...nameFace("editorial") });
-    expect(sheet!.username).not.toHaveProperty("fontFamily");
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, fontFamily: type\.serif, fontStyle: "italic", fontSize: 14, color: colors\.nameInk \},/);
+    expect(sheet!.username).toEqual({ flexShrink: 1, fontFamily: type.serif, fontStyle: "italic", fontSize: 14, color: colors.nameInk });
+    expect(sheet!.username).not.toHaveProperty("fontWeight");
     expect(sheet!.username).not.toHaveProperty("letterSpacing");
     // Only the name: the place and the date are on the label.
     expect(header).not.toMatch(/label\.|Byline|taken_at|location/);
@@ -569,16 +578,20 @@ describe("the editorial card", () => {
   it("writes the caption after the member's name, as a comment is written", () => {
     // The name a link to the member's page, the words after it with every @name a link too (src/components/MemberText.tsx).
     expect(body).toMatch(
-      /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\{" "\}\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} \/>\s*<\/Text>\s*\) : null\}/,
+      /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} \/>\s*<\/Text>\s*\) : null\}/,
     );
     expect(body).toMatch(
-      /<Text style=\{styles\.comment\} numberOfLines=\{2\}>\s*<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\{" "\}\s*<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s*\/>\s*<\/Text>/,
+      /<Text style=\{styles\.comment\} numberOfLines=\{2\}>\s*<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s*\/>\s*<\/Text>/,
     );
-    // Who wrote it, in the words' own face, size and ink, half bold: exactly the face every name takes under Editorial.
+    // Who wrote it, as the header draws them: the wordmark's serif in its italic, 14 pt, in the name ink; then 4 pt (a third of an em at 12 pt).
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
-    expect(card).toMatch(/\n {2}author: \{ fontWeight: "500" \},/);
-    expect(sheet!.author).toEqual(nameFace("editorial"));
-    expect(sheet!.author).toEqual({ fontWeight: "500" });
+    expect(card).toMatch(/\n {2}author: \{ fontFamily: type\.serif, fontStyle: "italic", fontSize: 14, color: colors\.nameInk \},/);
+    expect(sheet!.author).toEqual({ fontFamily: type.serif, fontStyle: "italic", fontSize: 14, color: colors.nameInk });
+    expect(card).toMatch(/const NAME_GAP = "\\u2004";/);
+    expect(card).toMatch(/\n {2}nameGap: \{ fontSize: 12 \},/);
+    // No weight on the italic: Georgia has no medium cut, and the phone would draw a 500 as its bold.
+    expect(style("username")).not.toMatch(/fontWeight/);
+    expect(card.match(/\n {2}author: \{[^\n]*\},/)?.[0]).not.toMatch(/fontWeight/);
   });
 
   it("keeps the print's margins for the print alone: the picture inset by the print's share of the width", () => {
@@ -631,7 +644,10 @@ describe("the editorial card", () => {
     expect(card).toMatch(/import \{ paperStyle, useFeedPaper \} from "@\/utils\/feedPaper";/);
     // No colour of its own, no strip of another paper, no frame and no shadow.
     expect(style("card")).not.toMatch(/backgroundColor|border/);
-    expect(card).not.toMatch(/paperSunken|paperRaised|borderBottom|shadow|elevation|borderRadius/);
+    expect(card).not.toMatch(/paperSunken|paperRaised|borderBottom|shadow|elevation/);
+    // The one rounded thing on the card is the ring round the member's picture.
+    expect(card.match(/borderRadius/g)).toHaveLength(1);
+    expect(style("ring")).toMatch(/borderRadius: AVATAR \/ 2,/);
   });
 
   it("leaves about Instagram's gap between one post and the next, the same on any phone", () => {
@@ -697,7 +713,9 @@ describe("the editorial card", () => {
         .filter((l) => /type\.body|fontSize|fontFamily|lineHeight|color/.test(l))
         .map((l) => l.trim());
     expect(face(style("caption"))).toEqual(face(style("comment")));
-    expect(face(style("caption"))).toContain("fontSize: 14,");
+    // 11 pt: the visual height of the 14 pt italic names; the body's own line spacing kept.
+    expect(face(style("caption"))).toContain("fontSize: 11,");
+    expect(style("caption")).not.toMatch(/lineHeight/);
     expect(style("caption")).not.toMatch(/type\.(serif|mono)/);
   });
 

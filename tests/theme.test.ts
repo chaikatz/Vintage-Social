@@ -63,6 +63,8 @@ describe("the light print", () => {
     expect(onPaper).toEqual({
       ...light,
       wash: light.paperSunken,
+      // A member's name and the ring round their picture on the Editorial card: the owner's warm near-black.
+      nameInk: "#2A2826",
       like: "#B3402E",
       danger: "#A03B2E",
       success: "#5C7048",

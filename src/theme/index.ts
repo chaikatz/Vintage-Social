@@ -59,6 +59,9 @@ export const colors = {
   ink: dyn(light.ink, dark.ink), // primary text
   inkSoft: dyn(light.inkSoft, dark.inkSoft), // secondary text
   inkFaint: dyn(light.inkFaint, dark.inkFaint), // tertiary text, placeholders
+  // A member's name on the Editorial card, and the ring round their picture: a
+  // warm near-black on paper (the owner's mock), white on black as the ink is.
+  nameInk: dyn("#2A2826", dark.ink),
 
   // Lines
   border: dyn(light.border, dark.border), // hairline borders
