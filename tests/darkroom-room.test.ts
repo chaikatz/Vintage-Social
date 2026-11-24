@@ -266,8 +266,8 @@ describe("the room's page", () => {
 
 describe("geometry", () => {
   it("gives the reference phone and the SE their stages", () => {
-    expect(stageFrame(852, { top: 59, bottom: 34 })).toEqual({ top: 103, height: 659 });
-    expect(stageFrame(667, { top: 20, bottom: 0 })).toEqual({ top: 64, height: 531 });
+    expect(stageFrame(852, { top: 59, bottom: 34 })).toEqual({ top: 103, height: 583 });
+    expect(stageFrame(667, { top: 20, bottom: 0 })).toEqual({ top: 64, height: 455 });
   });
 
   it("measures the caption from the signature line as 50 at the default size, capped by line", () => {

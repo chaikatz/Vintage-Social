@@ -1,16 +1,23 @@
 // The Darkroom, walked through the real interface in the demo web build:
 // the door on the Post tab → the first-visit page → On this day, on the
-// app's own page, each plate with its signature line, and CONTENTS a tab
-// with a line under it on a first visit → a page turn → taps on the
-// photograph, either half → PLAY: the replay, its strip, its leader and
-// its word (HOLD, PLAY, AGAIN), to its end and again, and back → set aside → Contents, read as an index, and its years → a year's
-// months → a year chapter → Surprise me → the Set aside chapter → the end
-// of On this day, and PLAY IT THROUGH → DEVELOP into the editor, and back
-// to the same print.
+// app's own page, each plate with its signature line, CONTENTS a tab with
+// a line under it on a first visit, and the glide strip under the caption,
+// over DEVELOP, with nothing pressed → a page turn, and the strip
+// following it → taps on the photograph, either half → a frame tapped →
+// a glide across the strip, the page following it and landing where it
+// comes to rest, the photograph and its caption just where the preview
+// stood them → a scrub paused on a frame, drawn sharp → set aside →
+// Contents, read as an index, and its years → a year's months → a year
+// chapter, its months along the strip → Surprise me, dealt on as the strip
+// nears its end → the Set aside chapter → the end of On this day, its
+// blank frame under the box → DEVELOP into the editor, and back to the
+// same print → the room on a 320-point phone, and a glide landing there
+// just where its preview stood, its caption's word on a line of its own.
 //
 //   npm run build:web && npm run test:darkroom      (SHOT_DIR=… to keep screenshots)
 //
-// E2E_BASE points it at a build served elsewhere (the default is e2e/serve.mjs's).
+// E2E_BASE points it at a build served elsewhere (the default is e2e/serve.mjs's);
+// E2E_W and E2E_H set the phone (393 × 852 by default).
 //
 // The browser build reads a small bundled demo library (src/darkroom/
 // demoSource.ts): six of its photographs fall on today's date in earlier
@@ -20,31 +27,37 @@
 //
 // The browser has no momentum scrolling to wait for, so a page turn here
 // scrolls the pager by one page width, as a swipe that lands would; the
-// room reads the page it settled on from the scroll position.
+// room reads the page it settled on from the scroll position. A glide sets
+// the strip's scroll the same way: the strip takes any offset it did not
+// ask for as a finger's, and one left still for a moment as let go.
 import { chromium } from "playwright";
 
 const out = process.env.SHOT_DIR ?? null;
 const B = process.env.E2E_BASE ?? "http://127.0.0.1:8090";
-const W = 393;
-const H = 852;
+const W = Number(process.env.E2E_W ?? 393);
+const H = Number(process.env.E2E_H ?? 852);
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
-// The browser asks for its dark scheme: the app, and so the room, still show the light print there.
-const ctx = await browser.newContext({
-  viewport: { width: W, height: H },
-  deviceScaleFactor: out ? 3 : 1,
-  isMobile: true,
-  hasTouch: true,
-  colorScheme: "dark",
-});
-const page = await ctx.newPage();
-
 const errors = [];
-page.on("pageerror", (e) => errors.push(e.message));
-page.on("console", (m) => {
-  if (m.type() === "error" && !/ERR_|Failed to load resource|no supported source/.test(m.text())) errors.push("console: " + m.text());
-});
-// showAlert falls back to window.confirm on web; the room raises none, but sign-in might.
-page.on("dialog", (d) => d.accept());
+/** A phone of this size, as the browser draws it. */
+const phone = async (width, height) => {
+  // The browser asks for its dark scheme: the app, and so the room, still show the light print there.
+  const context = await browser.newContext({
+    viewport: { width, height },
+    deviceScaleFactor: out ? 2 : 1,
+    isMobile: true,
+    hasTouch: true,
+    colorScheme: "dark",
+  });
+  const p = await context.newPage();
+  p.on("pageerror", (e) => errors.push(e.message));
+  p.on("console", (m) => {
+    if (m.type() === "error" && !/ERR_|Failed to load resource|no supported source/.test(m.text())) errors.push("console: " + m.text());
+  });
+  // showAlert falls back to window.confirm on web; the room raises none, but sign-in might.
+  p.on("dialog", (d) => d.accept());
+  return p;
+};
+const page = await phone(W, H);
 
 const results = [];
 const check = (name, ok, detail = "") => {
@@ -106,16 +119,97 @@ const openContents = async () => {
   return appears("darkroom-contents-sheet", 5000);
 };
 
+// The glide strip: the browser's scroll of its list is the finger.
+/** Where the strip has been scrolled to, in points; a frame is 36. */
+const stripLeft = () =>
+  page.evaluate(() => {
+    const el = [...document.querySelectorAll('[data-testid="darkroom-glide-strip"]')].find((e) => e.offsetParent !== null);
+    return el ? Math.round(el.scrollLeft * 10) / 10 : -1;
+  });
+/** A finger's glide, as the browser has it: the strip scrolled to `x`. */
+const glideOn = (p, x) =>
+  p.evaluate((left) => {
+    const el = [...document.querySelectorAll('[data-testid="darkroom-glide-strip"]')].find((e) => e.offsetParent !== null);
+    if (el) el.scrollLeft = left;
+  }, x);
+const glideTo = (x) => glideOn(page, x);
+/** How many frames the strip holds, the blank one included, read from its length rather than the frames drawn. */
+const stripFrames = () =>
+  page.evaluate(() => {
+    const el = [...document.querySelectorAll('[data-testid="darkroom-glide-strip"]')].find((e) => e.offsetParent !== null);
+    return el ? Math.round((el.scrollWidth - (el.clientWidth - 36)) / 36) : -1;
+  });
+/** Waits until `fn` says so, up to `ms`; whether it did. */
+const until = async (fn, ms, step = 25) => {
+  for (let t = 0; t <= ms; t += step) {
+    if (await fn()) return true;
+    await wait(step);
+  }
+  return false;
+};
+/** A view's opacity as the eye sees it: its own and every one around it. */
+const seenOpacityOn = (p, id) =>
+  p.evaluate((testId) => {
+    const el = [...document.querySelectorAll(`[data-testid="${testId}"]`)].find((e) => e.getBoundingClientRect().width > 0);
+    if (!el) return -1;
+    let o = 1;
+    for (let e = el; e; e = e.parentElement) o *= Number(getComputedStyle(e).opacity || 1);
+    return Math.round(o * 100) / 100;
+  }, id);
+const seenOpacity = (id) => seenOpacityOn(page, id);
+/** Where a view stands on the phone: the one on screen, left to right. */
+const boxOn = (p, id) =>
+  p.evaluate((testId) => {
+    const el = [...document.querySelectorAll(`[data-testid="${testId}"]`)].find((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.left >= -1 && r.left < window.innerWidth;
+    });
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
+  }, id);
+/** The preview's plate and date while gliding, and the page's own once landed. */
+const previewOn = async (p) => ({ plate: await boxOn(p, "darkroom-glide-plate"), date: await boxOn(p, "darkroom-glide-caption-date") });
+const pageOn = async (p) => ({ plate: await boxOn(p, "darkroom-plate"), date: await boxOn(p, "darkroom-caption-date") });
+/** Within a point of each other: the plate's every edge, and where the date stands. */
+const standsAlike = (a, b) =>
+  a.plate != null &&
+  b.plate != null &&
+  a.date != null &&
+  b.date != null &&
+  ["x", "y", "width", "height"].every((k) => Math.abs(a.plate[k] - b.plate[k]) <= 1) &&
+  Math.abs(a.date.x - b.date.x) <= 1 &&
+  Math.abs(a.date.y - b.date.y) <= 1;
+/** The date in the preview over the page while gliding. */
+const sheetDate = async () => ((await byId("darkroom-glide-caption-date").first().textContent().catch(() => "")) ?? "").trim();
+const marksShown = () => seen(page.locator('[data-testid^="darkroom-glide-mark-"]')).count();
+
+/** Signed in as a demo member. */
+const signIn = async (p) => {
+  await p.goto(B + "/", { waitUntil: "networkidle" });
+  await p.waitForTimeout(1500);
+  await seen(p.getByText("Sign in", { exact: true })).first().click();
+  await p.waitForTimeout(1500);
+  const f = seen(p.locator("input"));
+  await f.nth(0).fill("elena@vintage.club");
+  await f.nth(1).fill("vintage-demo");
+  await seen(p.getByText("Sign in", { exact: true })).last().click();
+  await p.waitForTimeout(3000);
+};
+/** Through the Post tab's door and the first-visit page, into On this day. */
+const enterRoom = async (p) => {
+  await p.goto(B + "/create", { waitUntil: "networkidle" });
+  await p.waitForTimeout(2200);
+  const bar = seen(p.getByRole("button", { name: /^Enter the Memory Room/i })).first();
+  if (await bar.count()) await bar.click();
+  else await p.goto(B + "/darkroom", { waitUntil: "networkidle" });
+  await seen(p.locator('[data-testid="darkroom-word-enter"]')).first().click({ timeout: 10000 });
+  await seen(p.locator('[data-testid="darkroom-caption-date"]')).first().waitFor({ state: "visible", timeout: 10000 });
+  await p.waitForTimeout(900);
+};
+
 // --- signed in as a demo member ---------------------------------------------------
-await page.goto(B + "/", { waitUntil: "networkidle" });
-await wait(1500);
-await byText("Sign in").first().click();
-await wait(1500);
-const f = seen(page.locator("input"));
-await f.nth(0).fill("elena@vintage.club");
-await f.nth(1).fill("vintage-demo");
-await byText("Sign in").last().click();
-await wait(3000);
+await signIn(page);
 
 // --- the door on the Post tab -----------------------------------------------------
 await page.goto(B + "/create", { waitUntil: "networkidle" });
@@ -162,16 +256,7 @@ const style = (id, prop) =>
     },
     [id, prop],
   );
-const box = (id) =>
-  page.evaluate((testId) => {
-    const el = [...document.querySelectorAll(`[data-testid="${testId}"]`)].find((e) => {
-      const r = e.getBoundingClientRect();
-      return r.width > 0 && r.left >= -1 && r.left < window.innerWidth;
-    });
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return { x: r.left, y: r.top, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
-  }, id);
+const box = (id) => boxOn(page, id);
 const roomPage = await style("darkroom", "backgroundColor");
 const dateInk = await page.evaluate(() => {
   const date = [...document.querySelectorAll('[data-testid="darkroom-caption-date"]')].find((e) => e.offsetParent !== null);
@@ -232,10 +317,53 @@ const plateBelow = await box("darkroom-plate");
 check("The line keeps off the photograph", invite != null && plateBelow != null && invite.bottom <= plateBelow.y, JSON.stringify(plateBelow));
 await shot("contents-tab");
 
+// --- the glide strip ---------------------------------------------------------------------
+// Under the caption on every page, over DEVELOP, with nothing to press to reach it.
+check("The glide strip comes onto the page by itself", await appears("darkroom-glide-strip-row", 3000));
+await wait(400);
+const stripRow = await box("darkroom-glide-strip-row");
+const stripBox = await box("darkroom-glide-box");
+const caption0 = await box("darkroom-caption");
+const develop0 = await box("darkroom-develop");
+check(
+  "The strip runs the page's width less its gutters, 68 pt high, under the caption and over DEVELOP",
+  stripRow != null &&
+    caption0 != null &&
+    develop0 != null &&
+    Math.abs(stripRow.x - 16) <= 1 &&
+    Math.abs(stripRow.width - (W - 32)) <= 1 &&
+    Math.abs(stripRow.height - 68) <= 1 &&
+    caption0.bottom <= stripRow.y &&
+    stripRow.bottom <= develop0.y &&
+    develop0.y <= stripRow.bottom + 9,
+  JSON.stringify({ stripRow, caption0, develop0 }),
+);
+check(
+  "…its grease-pencil box fixed over the middle",
+  stripBox != null && Math.abs(stripBox.x + stripBox.width / 2 - W / 2) <= 1,
+  JSON.stringify(stripBox),
+);
+const frameIds = ["darkroom-glide-cell-0", "darkroom-glide-cell-1", "darkroom-glide-cell-2", "darkroom-glide-cell-3", "darkroom-glide-cell-4", "darkroom-glide-cell-5", "darkroom-glide-tail"];
+const framesThere = await page.evaluate((ids) => ids.every((id) => document.querySelector(`[data-testid="${id}"]`) != null), frameIds);
+check("A frame for each of the day's six photographs, and a blank frame after them", framesThere && (await stripFrames()) === 7, String(await stripFrames()));
+const playLeft = await page.evaluate(
+  () => ["darkroom-play", "darkroom-play-tab", "darkroom-replay", "darkroom-word-play"].filter((id) => document.querySelector(`[data-testid="${id}"]`) != null),
+);
+check("There is no play button, and no replay", playLeft.length === 0, playLeft.join(" "));
+check("The year is printed along the strip's edge", /^\d{4}$/.test(((await byId("darkroom-glide-mark-0").first().textContent().catch(() => "")) ?? "").trim()));
+await shot("strip");
+
 // --- a page turn -----------------------------------------------------------------------
-await turn(1);
+await page.evaluate(() => {
+  const lists = [...document.querySelectorAll('[data-testid="darkroom-pager"]')].filter((e) => e.offsetParent !== null);
+  const list = lists[lists.length - 1];
+  if (list) list.scrollBy({ left: list.clientWidth, behavior: "instant" });
+});
+const followed = await until(async () => Math.abs((await stripLeft()) - 36) <= 1, 600);
+await wait(500);
 const secondDate = await dateLabel();
 check("A page turn moves to the next year’s photograph", secondDate !== "" && secondDate !== firstDate, `${firstDate} → ${secondDate}`);
+check("…and the strip follows it, a frame on", followed, String(await stripLeft()));
 await shot("on-this-day");
 
 // --- a tap on the photograph ---------------------------------------------------------------
@@ -292,182 +420,68 @@ const thirdDate = await dateLabel();
 check("Quick taps turn one page at a time", thirdDate !== secondDate && thirdDate !== "" && (await pagerPage()) === 2, thirdDate);
 await tapPlate(0.15);
 check("…and the left half brings it back", (await dateLabel()) === secondDate, await dateLabel());
+check("The strip follows the taps too", Math.abs((await stripLeft()) - (await pagerPage()) * 36) <= 1, `${await stripLeft()} · page ${await pagerPage()}`);
 
-// --- PLAY: the replay ----------------------------------------------------------------------
-// From the second print. The demo's six anniversaries are a year each, so
-// no year holds the three a title card needs: the cards are held by
-// tests/darkroom-replay.test.ts. The browser has no momentum events; the
-// strip there takes any offset it did not ask for as a finger's.
-const replayDate = async () => ((await byId("darkroom-replay-date").first().textContent().catch(() => "")) ?? "").trim();
-check("PLAY sits at the foot, beside DEVELOP", await appears("darkroom-play", 3000));
-const playTab = await box("darkroom-play-tab");
-const developWord = await box("darkroom-develop");
-check(
-  "…its tab on the page’s 16 pt gutter, clear of DEVELOP, drawn as CONTENTS is",
-  playTab != null &&
-    Math.abs(playTab.x - 16) <= 1 &&
-    playTab.height >= 30 &&
-    developWord != null &&
-    playTab.right < developWord.x &&
-    (await style("darkroom-play-tab", "borderTopColor")) === "rgb(156, 146, 127)",
-  JSON.stringify({ playTab, developWord }),
-);
-await byId("darkroom-play").first().click();
-const replaying = await appears("darkroom-replay", 3000);
-await wait(300);
-check(
-  "PLAY opens the replay in the room’s own page, with DEVELOP and CONTENTS out of the way",
-  replaying && (await byId("darkroom-develop").count()) === 0 && (await byId("darkroom-contents").count()) === 0 && (await byId("darkroom-back").count()) > 0,
-);
-check("It starts from the print in front", (await replayDate()) === secondDate, await replayDate());
-const gate = await box("darkroom-replay-gate");
-const stripRow = await box("darkroom-replay-strip-row");
-const leaderLine = await box("darkroom-replay-leader");
-const replayWordBox = await box("darkroom-replay-word");
-check(
-  "The gate, the caption, the strip, the leader and the word, top to bottom, and no dial",
-  gate != null &&
-    stripRow != null &&
-    leaderLine != null &&
-    replayWordBox != null &&
-    gate.bottom < stripRow.y &&
-    stripRow.bottom < leaderLine.y &&
-    leaderLine.bottom < replayWordBox.y &&
-    Math.round(stripRow.height) === 68 &&
-    (await page.locator('[data-testid="darkroom-replay-dial"]').count()) === 0,
-  JSON.stringify({ gate, stripRow, leaderLine, replayWordBox }),
-);
-check(
-  "The leader is a hairline the strip’s width, just under its frames",
-  leaderLine != null &&
-    stripRow != null &&
-    Math.abs(leaderLine.width - stripRow.width) <= 1 &&
-    Math.abs(leaderLine.x - stripRow.x) <= 1 &&
-    leaderLine.height >= 0.9 &&
-    leaderLine.height <= 1.5 &&
-    leaderLine.y - stripRow.bottom <= 12,
-  JSON.stringify({ leaderLine, stripRow }),
-);
-check(
-  "The word stands centred where DEVELOP stood, its press at least 44 pt",
-  replayWordBox != null &&
-    developWord != null &&
-    replayWordBox.height >= 44 &&
-    replayWordBox.width >= 44 &&
-    Math.abs(replayWordBox.x + replayWordBox.width / 2 - W / 2) <= 1 &&
-    Math.abs(replayWordBox.bottom - developWord.bottom) <= 1,
-  JSON.stringify({ replayWordBox, developWord }),
-);
-await shot("replay-playing");
-let moved = false;
-for (let t = 0; t < 25 && !moved; t++) {
-  await wait(100);
-  moved = (await replayDate()) !== secondDate;
-}
-check("…and plays on by itself", moved, await replayDate());
-/** What the word is named for VoiceOver, and what it shows. */
-const wordSaid = async () => (await byId("darkroom-replay-word").first().getAttribute("aria-label")) ?? "";
-const wordShown = async () => ((await byId("darkroom-replay-word").first().innerText().catch(() => "")) ?? "").trim();
-/** How far the leader is drawn, 0 to 1, as the eye sees it. */
-const leaderDrawn = () =>
-  page.evaluate(() => {
-    const visible = (id) =>
-      [...document.querySelectorAll(`[data-testid="${id}"]`)].find((e) => e.getBoundingClientRect().width > 0 || e.offsetParent !== null);
-    const line = visible("darkroom-replay-leader");
-    const drawn = line?.querySelector('[data-testid="darkroom-replay-leader-drawn"]');
-    if (!line || !drawn) return -1;
-    const l = line.getBoundingClientRect();
-    const d = drawn.getBoundingClientRect();
-    // Drawn from the line's left end, whatever its length.
-    if (d.width > 0.5 && Math.abs(d.left - l.left) > 1) return -2;
-    return Math.round((d.width / l.width) * 1000) / 1000;
-  });
-check("The word says HOLD while it plays, and is named Hold", (await wordShown()) === "HOLD" && (await wordSaid()) === "Hold", `${await wordShown()} ${await wordSaid()}`);
-const drawnEarly = await leaderDrawn();
+// --- a frame tapped --------------------------------------------------------------------------
+await byId("darkroom-glide-cell-2").first().click();
 await wait(700);
-const drawnLater = await leaderDrawn();
-check("The leader draws out from the left as it plays", drawnEarly >= 0 && drawnLater > drawnEarly && drawnLater < 1, `${drawnEarly} → ${drawnLater}`);
-await byId("darkroom-replay-word").first().click();
-await wait(300);
-const heldOn = await replayDate();
-const heldDrawn = await leaderDrawn();
+check(
+  "A frame tapped goes straight to its photograph, and the strip with it",
+  (await dateLabel()) === thirdDate && (await pagerPage()) === 2 && Math.abs((await stripLeft()) - 72) <= 1,
+  `${await dateLabel()} · page ${await pagerPage()} · strip ${await stripLeft()}`,
+);
+await byId("darkroom-glide-cell-1").first().click();
+await wait(700);
+check("…and back", (await dateLabel()) === secondDate && (await pagerPage()) === 1, await dateLabel());
+
+// --- a glide --------------------------------------------------------------------------------
+// Slid a frame on: the page follows the frame under the box at once, as a preview over the photograph, while
+// the pager itself waits. Let go, the room lands there as a page turn would.
+await glideTo(72);
+const previewing = await until(async () => (await seenOpacity("darkroom-glide-sheet")) > 0.99 && (await sheetDate()) === thirdDate, 100, 10);
+// Read before the strip has been still long enough to count as let go.
+const underPreview = { date: await dateLabel(), page: await pagerPage() };
+const previewStood = await previewOn(page);
+await shot("gliding");
+check("Gliding a frame on, the page follows it at once", previewing, `${previewing} ${await sheetDate()}`);
+check("…while the pager itself has not moved", underPreview.date === secondDate && underPreview.page === 1, JSON.stringify(underPreview));
+await wait(1500);
+const developDisabled = async () => (await byId("darkroom-develop").first().getAttribute("aria-disabled").catch(() => null)) === "true";
+check(
+  "Let go, the room lands on that photograph, as a page turn would",
+  (await byId("darkroom-glide-sheet").count()) === 0 && (await dateLabel()) === thirdDate && (await pagerPage()) === 2 && !(await developDisabled()),
+  `${await dateLabel()} · page ${await pagerPage()} · sheet ${await byId("darkroom-glide-sheet").count()}`,
+);
+const landedStood = await pageOn(page);
+check("…its photograph and caption just where the preview stood them", standsAlike(previewStood, landedStood), JSON.stringify({ previewStood, landedStood }));
+
+// --- a scrub, paused on a frame ----------------------------------------------------------------
+// Slid on two frames and held there, the finger still on the strip: the photograph comes sharp.
+await glideTo(108);
+await wait(50);
+await glideTo(144);
+for (let t = 0; t < 8; t++) {
+  await wait(50);
+  await glideTo(t % 2 === 0 ? 143 : 144);
+}
+const pausedOn = await sheetDate();
+const sharp = (await page.locator('[data-testid="darkroom-glide-sharp"]').count()) > 0;
+await shot("glide-paused");
+check(
+  "Paused on a frame mid-glide, its photograph is drawn sharp, and the pager still waits",
+  pausedOn !== "" && ![firstDate, secondDate, thirdDate].includes(pausedOn) && sharp && (await pagerPage()) === 2,
+  `${pausedOn} sharp=${sharp} page ${await pagerPage()}`,
+);
 await wait(1500);
 check(
-  "A press on the word holds it, the word says PLAY, and the leader waits",
-  (await wordShown()) === "PLAY" && (await wordSaid()) === "Play" && (await replayDate()) === heldOn && Math.abs((await leaderDrawn()) - heldDrawn) < 0.005,
-  `${await wordShown()} ${heldOn} ${heldDrawn} ${await leaderDrawn()}`,
+  "…and let go there, the room lands on it",
+  (await pagerPage()) === 4 && (await dateLabel()) === pausedOn && (await byId("darkroom-glide-sheet").count()) === 0,
+  `${await dateLabel()} · page ${await pagerPage()}`,
 );
-await shot("replay-held");
-await byId("darkroom-replay-cell-0").first().click();
-await wait(400);
-check("A frame on the strip goes to its photograph", (await replayDate()) === firstDate, await replayDate());
-check("…and the leader goes back to the start with it", (await leaderDrawn()) < 0.01, String(await leaderDrawn()));
-await page.evaluate(() => {
-  const strip = [...document.querySelectorAll('[data-testid="darkroom-replay-strip"]')].find((e) => e.offsetParent !== null);
-  if (strip) strip.scrollLeft = 72;
-});
-await wait(400);
-check("Gliding the strip two frames on moves the photograph with it", (await replayDate()) === thirdDate, await replayDate());
-check("…and the leader follows the strip, two photographs of six along", Math.abs((await leaderDrawn()) - 2 / 6) < 0.01, String(await leaderDrawn()));
-check("…and still held", (await wordSaid()) === "Play");
-// A glide one frame on, and PLAY pressed before it has come to rest: it plays on from the frame the
-// glide reached, and is not held again by it. Then on to the end: AGAIN, and the leader drawn whole.
-await page.evaluate(() => {
-  const strip = [...document.querySelectorAll('[data-testid="darkroom-replay-strip"]')].find((e) => e.offsetParent !== null);
-  if (strip) strip.scrollLeft = 108;
-});
-await wait(40);
-await byId("darkroom-replay-word").first().click();
-await wait(500);
-check(
-  "PLAY pressed as a glide comes to rest plays on from the frame it reached, and stays playing",
-  (await wordSaid()) === "Hold" && (await replayDate()) !== thirdDate && (await leaderDrawn()) >= 3 / 6 - 0.01,
-  `${await wordSaid()} ${await replayDate()} ${await leaderDrawn()}`,
-);
-let over = false;
-for (let t = 0; t < 120 && !over; t++) {
-  await wait(100);
-  over = (await wordSaid()) === "Play again";
-}
-await wait(300);
-check(
-  "Played on, it ends on the last photograph: the word says AGAIN, named Play again, and the leader is drawn whole",
-  over && (await wordShown()) === "AGAIN" && (await leaderDrawn()) > 0.99,
-  `${await wordShown()} ${await wordSaid()} ${await leaderDrawn()} ${await replayDate()}`,
-);
-await shot("replay-ended");
-await byId("darkroom-replay-word").first().click();
-await wait(300);
-check("AGAIN plays from the first photograph", (await replayDate()) === firstDate && (await wordSaid()) === "Hold", `${await replayDate()} ${await wordSaid()}`);
-await byId("darkroom-replay-word").first().click();
-await wait(200);
-await byId("darkroom-replay-cell-1").first().click();
-await wait(400);
-check("…and a frame brings it back", (await replayDate()) === secondDate && (await wordSaid()) === "Play", await replayDate());
-// Held on the last photograph there is nothing to play on to: the word says AGAIN, as a press there
-// plays from the first.
-await byId("darkroom-replay-cell-5").first().click();
-await wait(400);
-check(
-  "Held on the last photograph, the word says AGAIN, named Play again",
-  (await wordShown()) === "AGAIN" && (await wordSaid()) === "Play again",
-  `${await wordShown()} ${await wordSaid()} ${await replayDate()}`,
-);
-await byId("darkroom-replay-word").first().click();
-await wait(300);
-check("…and it plays from the first photograph", (await replayDate()) === firstDate && (await wordSaid()) === "Hold", `${await replayDate()} ${await wordSaid()}`);
-await byId("darkroom-replay-word").first().click();
-await wait(200);
-await byId("darkroom-replay-cell-1").first().click();
-await wait(400);
-check("…held again on a frame that has more after it, the word says PLAY", (await wordShown()) === "PLAY" && (await replayDate()) === secondDate, `${await wordShown()} ${await replayDate()}`);
-await byId("darkroom-back").first().click();
-await wait(900);
-check(
-  "Back closes the replay, the room on the print it stopped on",
-  (await byId("darkroom-replay").count()) === 0 && (await byId("darkroom-develop").count()) > 0 && (await dateLabel()) === secondDate,
-  await dateLabel(),
-);
+// Back to the second print, which the set-aside section reads.
+await byId("darkroom-glide-cell-1").first().click();
+await wait(800);
+check("A frame tapped brings it back to the second print", (await dateLabel()) === secondDate && Math.abs((await stripLeft()) - 36) <= 1, await dateLabel());
 
 // --- set aside ----------------------------------------------------------------------------
 // Set aside, the word turns from faint to the room's full ink, beside the dot in the accent. The
@@ -532,6 +546,7 @@ const chosenYear = yearTitles[Math.min(2, yearTitles.length - 1)];
 await yearLines.nth(Math.min(2, yearCount - 1)).click();
 await wait(2600);
 check("A year opens as a chapter", (await chapterHead()) === String(chosenYear), await chapterHead());
+await shot("year-chapter");
 // light.inkFaint, #9C927F: the print's firm line.
 check(
   "Once Contents has been opened, the line under CONTENTS is put away, and the tab ruled in the firm line",
@@ -556,6 +571,18 @@ check("Months with photographs can be chosen; empty ones cannot", filledCount > 
 await filled.nth(filledCount - 1).click();
 await wait(2600);
 check("A month opens the year from that month", (await chapterHead()) === String(chosenYear) && (await dateLabel()) !== "");
+const yearFrames = await stripFrames();
+const yearPages = await page.evaluate(() => {
+  const lists = [...document.querySelectorAll('[data-testid="darkroom-pager"]')].filter((e) => e.offsetParent !== null);
+  const list = lists[lists.length - 1];
+  return list ? Math.round(list.scrollWidth / list.clientWidth) : -1;
+});
+const monthMark = ((await byId("darkroom-glide-mark-0").first().textContent().catch(() => "")) ?? "").trim();
+check(
+  "A year has the strip too: a frame for each photograph dealt and the blank one, its months along the edge",
+  (await appears("darkroom-glide-strip-row", 2000)) && yearFrames === yearPages && yearFrames >= 2 && /^[A-Z]{3}$/.test(monthMark),
+  `${yearFrames} frames · ${yearPages} pages · ${monthMark}`,
+);
 await shot("year");
 
 // --- Surprise me -----------------------------------------------------------------------------------
@@ -565,7 +592,23 @@ await byId("darkroom-contents-surprise-me").first().click();
 await wait(2800);
 const surprise = await text();
 check("Surprise me deals an older photograph", /surprise me/i.test(await chapterHead()) && /(years ago|Last year)/.test(surprise));
+check("Surprise me has the strip, with nothing printed along it", (await appears("darkroom-glide-strip-row", 2000)) && (await marksShown()) === 0);
 await shot("surprise");
+// Glided onto the blank frame at the end of what has been dealt: the next few are dealt meanwhile, and the room
+// comes to rest on a photograph or on the roll's waiting card — never stuck.
+const dealt0 = await stripFrames();
+await glideTo((dealt0 - 1) * 36);
+const dealtOn = await until(async () => (await stripFrames()) > dealt0, 4000, 50);
+await wait(1500);
+const restsOn = (await dateLabel()) !== "" || /Looking through your library/.test(await text());
+check(
+  "Gliding toward the end of a roll deals on, and the room comes to rest",
+  dealtOn && restsOn && (await byId("darkroom-glide-sheet").count()) === 0,
+  `${dealt0} → ${await stripFrames()} frames · ${await dateLabel()}`,
+);
+await shot("surprise-dealt");
+await byId("darkroom-glide-cell-0").first().click();
+await wait(800);
 
 // --- Set aside ---------------------------------------------------------------------------------------
 await openContents();
@@ -574,6 +617,7 @@ await byId("darkroom-contents-set-aside").first().click();
 await wait(2200);
 const shelfWord = ((await byId("darkroom-caption-word").first().textContent().catch(() => "")) ?? "").trim();
 check("The shelf opens as its own chapter, with PUT BACK", /set aside/i.test(await chapterHead()) && /put back/i.test(shelfWord), shelfWord);
+check("The shelf has the strip, with nothing printed along it", (await appears("darkroom-glide-strip-row", 2000)) && (await marksShown()) === 0);
 await shot("set-aside");
 
 // --- the end of On this day ---------------------------------------------------------------------------
@@ -585,16 +629,20 @@ check("On this day comes back to the print it was left on", (await dateLabel()) 
 const ended = await toEnd();
 check("On this day ends on its end page", ended && /That is everything from this (day|week|time of year)/.test(await text()));
 check("The end page hands on to another way in", /Surprise me/i.test(await text()) && /Choose a year/i.test(await text()));
+await wait(300);
 await shot("end");
 const endWords = await seen(page.locator('[data-testid^="darkroom-word-"]')).evaluateAll((els) =>
   els.map((e) => ({ id: e.getAttribute("data-testid"), text: (e.textContent ?? "").trim() })),
 );
-check("Its first, ruled word plays the day through", endWords[0]?.id === "darkroom-word-play" && /Play it through/i.test(endWords[0]?.text ?? ""), JSON.stringify(endWords));
-await byId("darkroom-word-play").first().click();
-check("PLAY IT THROUGH opens the replay at the first print", (await appears("darkroom-replay", 3000)) && (await replayDate()) === firstDate, await replayDate());
-await byId("darkroom-back").first().click();
-await wait(900);
-check("…and Back returns to the room", (await byId("darkroom-replay").count()) === 0 && (await dateLabel()) !== "");
+check("Its first word hands on, and nothing says play", endWords.length > 0 && endWords[0]?.id !== "darkroom-word-play" && !/play/i.test(JSON.stringify(endWords)), JSON.stringify(endWords));
+check(
+  "On the end page the strip stays, its blank frame under the box, and DEVELOP has gone",
+  Math.abs((await stripLeft()) - 216) <= 1 && (await seenOpacity("darkroom-glide-box")) === 1 && (await seenOpacity("darkroom-develop")) === 0,
+  `${await stripLeft()} · box ${await seenOpacity("darkroom-glide-box")} · develop ${await seenOpacity("darkroom-develop")}`,
+);
+await byId("darkroom-glide-cell-0").first().click();
+await wait(800);
+check("A frame from the end page goes back to the first photograph", (await dateLabel()) === firstDate, await dateLabel());
 await toEnd();
 
 // --- DEVELOP into the editor, and back --------------------------------------------------------------------
@@ -609,6 +657,73 @@ await shot("editor");
 await page.goBack();
 await wait(2200);
 check("Back from the editor, the room is as it was", (await dateLabel()) === developed && (await byId("darkroom-develop").count()) > 0, developed);
+
+// --- a 320-point phone ----------------------------------------------------------------------------------
+const small = await phone(320, 568);
+await signIn(small);
+await enterRoom(small);
+await small.waitForTimeout(800);
+const smallBoxes = await small.evaluate(() => {
+  const boxOf = (id) => {
+    const el = [...document.querySelectorAll(`[data-testid="${id}"]`)].find((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.left >= -1 && r.left < window.innerWidth;
+    });
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, right: r.right, bottom: r.bottom };
+  };
+  return {
+    strip: boxOf("darkroom-glide-strip-row"),
+    caption: boxOf("darkroom-caption"),
+    develop: boxOf("darkroom-develop"),
+    scrollWidth: document.documentElement.scrollWidth,
+  };
+});
+const sb = smallBoxes;
+check(
+  "On a 320-point phone the strip, the caption and DEVELOP keep clear of each other, and nothing runs off the page",
+  sb.strip != null &&
+    sb.caption != null &&
+    sb.develop != null &&
+    sb.caption.bottom <= sb.strip.y &&
+    sb.strip.bottom <= sb.develop.y &&
+    sb.strip.x >= 15.5 &&
+    sb.strip.right <= 304.5 &&
+    sb.scrollWidth <= 320,
+  JSON.stringify(sb),
+);
+if (out) await small.screenshot({ path: `${out}/darkroom-${String(++shots).padStart(2, "0")}-phone-320.png` });
+// Glided to the third photograph, upright, under which SET ASIDE has no room beside the date and takes a line of
+// its own: the preview stands it as its page will, so the landing does not shrink it.
+const thirdOn320 = await boxOn(small, "darkroom-glide-cell-2");
+await glideOn(small, 72);
+const smallPreviewing = await (async () => {
+  for (let t = 0; t <= 120; t += 10) {
+    if ((await seenOpacityOn(small, "darkroom-glide-sheet")) > 0.99) return true;
+    await small.waitForTimeout(10);
+  }
+  return false;
+})();
+await small.waitForTimeout(40);
+const smallPreview = await previewOn(small);
+const ownRow = await small.evaluate(() => {
+  const date = [...document.querySelectorAll('[data-testid="darkroom-glide-caption-date"]')].find((e) => e.getBoundingClientRect().width > 0);
+  const word = [...document.querySelectorAll('[data-testid="darkroom-glide-caption-word"]')].find((e) => e.getBoundingClientRect().width > 0);
+  // Each press reaches over the space around it, so the rows are told apart by their middles.
+  const mid = (e) => {
+    const r = e.getBoundingClientRect();
+    return r.top + r.height / 2;
+  };
+  return date && word ? mid(word) > mid(date) + 8 : null;
+});
+await small.waitForTimeout(1500);
+const smallLanded = await pageOn(small);
+check(
+  "On a 320-point phone a glide lands just where its preview stood the photograph and caption",
+  thirdOn320 != null && smallPreviewing && ownRow === true && standsAlike(smallPreview, smallLanded),
+  JSON.stringify({ smallPreviewing, ownRow, smallPreview, smallLanded }),
+);
 
 console.log("\nJS errors:", errors.length ? errors.slice(0, 10) : "none");
 check("No page errors", errors.length === 0);

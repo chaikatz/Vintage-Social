@@ -812,6 +812,21 @@ export function useDarkroom(params: RoomParams) {
     if (chapter.index >= chapter.prints.length - AHEAD[kind]) void d.read(BATCH[kind]);
   }, [chapter, state.view.kind, state.years]);
 
+  /**
+   * A finger gliding the strip has come to frame `index`: close to the end
+   * of what has been dealt, deal on, by the same rule as nearing the end of
+   * the pages — one read at a time, the same batches — so a glide toward
+   * the end never waits on the next roll for long.
+   */
+  const dealAhead = useCallback((index: number) => {
+    const s = live.current;
+    const c = s.chapter;
+    const d = dealer.current;
+    if (!c || !d || !c.more || c.failed || d.reading || s.view.kind !== "prints" || s.loading) return;
+    const kind = c.mode === "surprise" ? "surprise" : "year";
+    if (index >= c.prints.length - AHEAD[kind]) void d.read(BATCH[kind]);
+  }, []);
+
   /** The trailing page's TRY AGAIN: deal on, or start the chapter again if its reader could not be built. */
   const readOn = useCallback(() => {
     const c = live.current.chapter;
@@ -938,17 +953,6 @@ export function useDarkroom(params: RoomParams) {
     },
     [patch],
   );
-
-  /**
-   * The replay has taken the stage's place, and the plates with it: the
-   * photographs they decoded leave the shared memory cache now, rather
-   * than at the next letting-go, and come back from Photos, dissolving in
-   * again, when the room does.
-   */
-  const releaseImages = useCallback(() => {
-    loaded.current.released([]);
-    releaseDrawn();
-  }, []);
 
   // Settled on long enough, with its image drawn: seen. Not on the shelf,
   // which the member browses on purpose.
@@ -1108,6 +1112,7 @@ export function useDarkroom(params: RoomParams) {
     fromJanuary,
     anotherRoll,
     settle,
+    dealAhead,
     readOn,
     retry,
     loadYears,
@@ -1117,7 +1122,6 @@ export function useDarkroom(params: RoomParams) {
     imageLoaded,
     imageGone,
     hasLoaded,
-    releaseImages,
     blur,
     focus,
   };

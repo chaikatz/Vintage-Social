@@ -26,14 +26,14 @@ import { putBack, toggleSetAside, useSetAside } from "@/darkroom/setAside";
 import type { DarkroomMode, Print, Span } from "@/darkroom/types";
 import { Contents } from "@/components/darkroom/Contents";
 import { Develop } from "@/components/darkroom/Develop";
+import { GLIDE_GAP, GLIDE_HEIGHT } from "@/components/darkroom/geometry";
+import { GlideSheet, type GlideSheetHandle, type GlideWords } from "@/components/darkroom/GlideSheet";
+import { GlideStrip } from "@/components/darkroom/GlideStrip";
 import { haptics } from "@/components/darkroom/haptics";
 import { LookContext, motion, type Look } from "@/components/darkroom/look";
 import { Plate } from "@/components/darkroom/Plate";
 import { wantsPhotograph, wantsProof } from "@/components/darkroom/plateImage";
-import { PlayTab } from "@/components/darkroom/PlayTab";
 import { PrintPage } from "@/components/darkroom/PrintPage";
-import { Replay, type ReplayHandle } from "@/components/darkroom/Replay";
-import { REPLAY_IN_MS, replayable, replayStart, ROOM_OUT_MS } from "@/components/darkroom/replay";
 import { rooms, useScheme } from "@/components/darkroom/room";
 import { RunningHead } from "@/components/darkroom/RunningHead";
 import { Stage, type StageHandle } from "@/components/darkroom/Stage";
@@ -51,13 +51,11 @@ import {
   firstVisitPage,
   captionWords,
   LOOKING,
-  REPLAY_BACK_HINT,
   shelfSaid,
   stageActions,
   stageValue,
   stateWords,
   titleCardWords,
-  withPlayThrough,
   type BottomAct,
   type DevelopState,
   type PageWord,
@@ -82,16 +80,19 @@ export { RecoverRoom as ErrorBoundary } from "@/navigation/Recover";
  * a chapter.
  * Swipe for the next, or tap the photograph: its right half turns on, its
  * left half back. DEVELOP takes the print into the ordinary editor
- * to post; SET ASIDE keeps it on this phone to come back to. PLAY, beside
- * DEVELOP, plays On this day, a stretch or the shelf through in the
- * room's own page, a photograph at a time (`Replay`). Printed on
+ * to post; SET ASIDE keeps it on this phone to come back to. Under the
+ * caption, on every page, the glide strip: every photograph of the
+ * chapter as a small frame, and sliding across it plays the chapter
+ * through, the page following the finger (`GlideStrip`, `GlideSheet`)
+ * until it lets go, and the room turns there. Printed on
  * the app's own page, light or dark as the appearance is, and changing
  * with it (`useScheme` in room.ts); the status bar is the app's own,
  * which follows the appearance in the same way.
  *
  * This file puts the room together. The chapters and where the member is
  * are `useDarkroom`; develop is `useDevelop`; the pager is `Stage`, each
- * print `PrintPage`, every word the room says `words.ts`.
+ * print `PrintPage`, the strip `GlideStrip`, every word the room says
+ * `words.ts`.
  *
  * Everything is read on the phone. Nothing here uploads or publishes —
  * the editor's "Share to VINTAGE" is still the only way out.
@@ -161,17 +162,12 @@ export default function Darkroom() {
   const [stageHeight, setStageHeight] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [shelfFull, setShelfFull] = useState<string | null>(null);
-  /**
-   * The replay, while it is up: the chapter's prints as they were when
-   * PLAY was pressed, where it started, and which deal of the chapter it
-   * plays (a library change that deals the chapter again closes it).
-   */
-  const [replay, setReplay] = useState<{ prints: Print[]; start: number; generation: number; key: number } | null>(null);
-  const replayRef = useRef<ReplayHandle>(null);
-  /** The stage and the bottom row, which go out as the replay comes in, and come back as it goes. */
-  const roomFade = useRef(new Animated.Value(1)).current;
-  /** PLAY pressed and the room on its way out: a second press does nothing. */
-  const starting = useRef(false);
+  /** The preview over the stage while a finger glides the strip (`sheet` is Contents). */
+  const glide = useRef<GlideSheetHandle>(null);
+  /** A finger is gliding the strip: the pager waits, and DEVELOP with it. */
+  const [gliding, setGliding] = useState(false);
+  /** The same, as of now, for handlers that run between renders. */
+  const glidingNow = useRef(false);
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -209,7 +205,7 @@ export default function Darkroom() {
     develop.returned();
   };
   onBlur.current = () => {
-    replayRef.current?.hold("away");
+    endGlide();
     develop.left();
     darkroom.blur();
   };
@@ -381,8 +377,6 @@ export default function Darkroom() {
         return darkroom.moreFrom();
       case "fromJanuary":
         return darkroom.fromJanuary();
-      case "play":
-        return startReplay(null);
     }
   };
 
@@ -396,6 +390,7 @@ export default function Darkroom() {
   };
 
   const onRight = useEvent((print: Print) => {
+    if (glidingNow.current) return;
     const right = stateWords(stateOf(print.id), { setAside: shelfIds.has(print.id), shelfChapter, limited }).right;
     const act: RightAct | undefined = right?.act;
     if (act === "toggle") toggleShelf(print);
@@ -410,7 +405,7 @@ export default function Darkroom() {
 
   /** The caption thread: in a year, the month strip; anywhere else, this print's year, at its month. */
   const onDate = useEvent((print: Print) => {
-    if (develop.id != null) return;
+    if (glidingNow.current || develop.id != null) return;
     if (where?.mode === "year") return showContents(true);
     const year = new Date(print.takenAt).getFullYear();
     pendingAnnouncement.current = chapterAnnouncement("year", year, now);
@@ -438,92 +433,88 @@ export default function Darkroom() {
     clear();
   }, [generation, clear]);
 
-  // --- PLAY ------------------------------------------------------------------------
+  // --- the glide strip -----------------------------------------------------------------
 
-  /** The chapter's prints that can be played: all but those known to be gone. */
-  const chapterPrints = chapter?.prints;
-  const playable = useMemo(() => (chapterPrints ? chapterPrints.filter((p) => !state.missing.has(p.id)) : []), [chapterPrints, state.missing]);
-  /**
-   * On this day, a stretch or the shelf, shown whole with three or more to
-   * play, and nothing else under way: no chapter on its way or its title
-   * card, no develop state, no Contents, no replay already up.
-   */
-  const canPlay =
-    state.view.kind === "prints" &&
-    chapter != null &&
-    replayable(chapter.mode, chapter.more, chapter.failed, playable.length) &&
-    !state.loading &&
-    !fades.card &&
-    develop.id == null &&
-    !develop.busy &&
-    !sheet.open &&
-    replay == null;
-  /**
-   * The deal of the chapter PLAY could start on now, in view; null when it
-   * could not. Read as the room's fade out ends, since the member may have
-   * gone on meanwhile: DEVELOP pressed, the room left, the chapter dealt
-   * again.
-   */
-  const playsNow = useRef<number | null>(null);
-  playsNow.current = canPlay && focused && chapter ? chapter.generation : null;
-
-  /** The room goes out, and the replay comes in in its place, from this print (or the first). */
-  const startReplay = (fromId: string | null) => {
-    if (!canPlay || !chapter || starting.current) return;
-    starting.current = true;
-    const prints = playable;
-    const start = replayStart(prints, fromId);
-    const generation = chapter.generation;
-    Animated.timing(roomFade, {
-      toValue: 0,
-      duration: motion(look, ROOM_OUT_MS),
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start(() => {
-      starting.current = false;
-      if (!mounted.current) return;
-      // Gone on while it faded: no replay behind the editor, playing with the screen kept awake. The room comes back.
-      if (playsNow.current !== generation) {
-        roomFade.setValue(1);
-        return;
-      }
-      setReplay({ prints, start, generation, key: Date.now() });
-    });
+  /** A glide is over without landing: the pager is freed, and the preview goes at once. */
+  const endGlide = () => {
+    if (!glidingNow.current) return;
+    glidingNow.current = false;
+    setGliding(false);
+    glide.current?.reset();
   };
+  // A chapter dealt again, gone, or on its way under a glide: it ends there, so the pager is never left held.
+  useEffect(() => {
+    endGlide();
+    // Only as the chapter or the view changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generation, state.view.kind, state.loading != null]);
 
-  /** The replay has gone: the room lands on the print it stopped on, and comes back. */
-  const closeReplay = useEvent((id: string) => {
-    // Already gone, closed at once under its fade: nothing to land on.
-    if (!replay) return;
-    const i = chapter ? chapter.prints.findIndex((p) => p.id === id) : -1;
-    if (i >= 0) onSettle(i);
-    setReplay(null);
-    Animated.timing(roomFade, {
-      toValue: 1,
-      duration: motion(look, REPLAY_IN_MS),
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start();
-    setTimeout(() => {
-      if (mounted.current) stage.current?.focus();
-    }, 120);
+  /** A finger down on the strip: the pager waits, and the page follows the strip instead. */
+  const onGlideStart = useEvent(() => {
+    if (!chapter) return;
+    glidingNow.current = true;
+    setGliding(true);
+    glide.current?.start(chapter.index);
   });
 
-  // The replay has taken the stage's place: the plates' photographs leave the shared memory cache.
-  const { releaseImages } = darkroom;
-  const replayKey = replay?.key;
-  useEffect(() => {
-    if (replayKey != null) releaseImages();
-  }, [replayKey, releaseImages]);
+  /** The frame under the box, each time it changes: shown, and the next few dealt if it nears the end of what is dealt. */
+  const onGlideTo = useEvent((i: number) => {
+    if (!glidingNow.current) return;
+    glide.current?.to(i);
+    darkroom.dealAhead(i);
+  });
 
-  // Closed at once, with no fade and no settle, if the chapter changes under it.
-  useEffect(() => {
-    if (!replay) return;
-    if (chapter?.generation !== replay.generation || state.view.kind !== "prints" || state.loading != null) {
-      setReplay(null);
-      roomFade.setValue(1);
-    }
-  }, [replay, chapter?.generation, state.view.kind, state.loading, roomFade]);
+  /**
+   * The glide has come to rest on frame `i`: the room turns there at once,
+   * as a page turn would, and settles there by the room's own rules.
+   * True when the room lands there (or is there already).
+   */
+  const onGlideEnd = useEvent((i: number): boolean => {
+    if (!glidingNow.current || !chapter) return false;
+    glidingNow.current = false;
+    setGliding(false);
+    const turns = i !== chapter.index;
+    const p = chapter.prints[i] ?? null;
+    glide.current?.to(i);
+    glide.current?.end(turns && p ? p.id : null, p != null && darkroom.hasLoaded(p.id));
+    if (turns) stage.current?.goTo(i);
+    return true;
+  });
+
+  /** A frame tapped: straight to its page. */
+  const onFrame = useEvent((i: number) => {
+    if (!chapter || develop.busy || state.loading || i === chapter.index) return;
+    stage.current?.goTo(i);
+  });
+
+  /** A plate's photograph has drawn: the room counts it, and a glide landed there hands over to it. */
+  const onPlateLoad = useEvent((id: string) => {
+    imageLoaded(id);
+    glide.current?.drawn(id);
+  });
+
+  /** The words a print's page sets under it, its right-hand word too, for the preview of it while gliding. */
+  const glideWords = useEvent((p: Print): GlideWords => {
+    const said = captionWords({
+      takenAt: p.takenAt,
+      now,
+      mode: chapter?.mode ?? "surprise",
+      reach: chapter?.reach ?? null,
+      postedAt: developedAt(p.id),
+      state: stateOf(p.id),
+      setAside: shelfIds.has(p.id),
+      shelfChapter,
+      limited,
+      shelfFull: false,
+    });
+    return {
+      label: said.label,
+      line: said.line,
+      long: said.long,
+      gone: state.missing.has(p.id),
+      word: said.word ? { label: said.word.label, on: said.word.on } : null,
+    };
+  });
 
   /** A tap on a photograph, handed to the pager, which knows which page is settled. */
   const onPlateTap = useCallback((x: number, zoomed: boolean) => stage.current?.tap(x, zoomed), []);
@@ -572,22 +563,30 @@ export default function Darkroom() {
         onTap={onPlateTap}
         onDate={onDate}
         onWord={onRight}
-        onLoad={imageLoaded}
+        onLoad={onPlateLoad}
         onGone={imageGone}
       />
     );
   };
 
-  const renderTail = () => {
+  /** The page after the last print: the title card while more is dealt, or the end page. */
+  const tailPage = (preview: boolean) => {
     if (!chapter) return <View />;
     if (chapter.more) {
       const card = titleCardWords(chapter.mode, chapter.year, chapter.month, now, chapter.span);
       return card ? <TitleCard eyebrow={card.eyebrow} title={card.title} year={card.year} waiting /> : <View />;
     }
-    // PLAY IT THROUGH first, where the chapter can be played; endPage's own words are left as they are.
-    const page = darkroom.ending ? withPlayThrough(endPage(darkroom.ending, { now, limited, years: state.years }), darkroom.ending, canPlay) : null;
-    return page ? <Plate ref={tailTitle} page={page} onWord={onWord} testID="darkroom-end" /> : <View />;
+    const page = darkroom.ending ? endPage(darkroom.ending, { now, limited, years: state.years }) : null;
+    if (!page) return <View />;
+    // The preview of it while gliding is for the eye: no focus, no words to press.
+    return preview ? (
+      <Plate page={page} onWord={noWord} testID="darkroom-glide-end" />
+    ) : (
+      <Plate ref={tailTitle} page={page} onWord={onWord} testID="darkroom-end" />
+    );
   };
+  const renderTail = () => tailPage(false);
+  const renderTailPreview = useEvent(() => tailPage(true));
 
   // --- VoiceOver's one element over the stage ----------------------------------------
 
@@ -600,11 +599,10 @@ export default function Darkroom() {
   const accessibility = {
     single: state.view.kind === "prints" && (!atTail || waiting),
     value: current ? stageValue(current.takenAt, baseLine, aside, developedAt(current.id), words) : waiting ? LOOKING : "",
-    actions: stageActions(current?.takenAt ?? null, aside, { words, stated: develop.id != null, busy: develop.busy }, canPlay && !atTail),
+    actions: stageActions(current?.takenAt ?? null, aside, { words, stated: develop.id != null, busy: develop.busy }),
     onAction: (name: StageAction["name"]) => {
       if (name === "contents") return showContents();
       if (!current) return;
-      if (name === "play") return startReplay(current.id);
       if (name === "develop") onBottom(words.bottom.act);
       else if (name === "more") onDate(current);
       // The caption's own word: SET ASIDE or PUT BACK, NOT NOW, STOP, REMOVE.
@@ -635,8 +633,6 @@ export default function Darkroom() {
     [scrollX, n, width],
   );
   const showsDevelop = state.view.kind === "prints" && current != null;
-  // A develop state's longer words (DOWNLOAD AND DEVELOP) always have the row to themselves.
-  const showsPlay = canPlay && showsDevelop && currentState.kind === "idle";
 
   return (
     <LookContext.Provider value={look}>
@@ -648,112 +644,117 @@ export default function Darkroom() {
         // React sends, and there is no way round that from here. DEVELOP is
         // reached instead as the stage's first custom action, by its words.
         onMagicTap={() => {
-          if (showsDevelop && !replay) onBottom(words.bottom.act);
+          if (showsDevelop) onBottom(words.bottom.act);
         }}
-        onAccessibilityEscape={() => (replay ? replayRef.current?.close() : sheet.open ? sheet.close() : back())}
+        onAccessibilityEscape={() => (sheet.open ? sheet.close() : back())}
         testID="darkroom"
       >
-        {/* The left-edge swipe back is off while the replay is up: its strip runs edge to edge. */}
-        <Stack.Screen options={{ headerShown: false, gestureEnabled: replay == null }} />
+        <Stack.Screen options={{ headerShown: false }} />
         <RunningHead
           top={insets.top}
           name={headName}
-          contents={inside && replay == null}
+          contents={inside}
           invite={!found}
           held={develop.busy}
-          backHint={replay ? REPLAY_BACK_HINT : undefined}
-          onBack={replay ? () => replayRef.current?.close() : back}
+          onBack={back}
           onContents={() => showContents()}
         />
 
-        {replay && chapter ? (
-          <Replay
-            ref={replayRef}
-            key={replay.key}
-            prints={replay.prints}
-            start={replay.start}
-            mode={chapter.mode}
-            reach={chapter.reach}
-            span={chapter.span ?? null}
-            now={now}
-            online={online}
-            limited={limited}
-            missing={state.missing}
-            width={width}
-            pixelRatio={pixelRatio}
-            bottomInset={insets.bottom}
-            screenReader={screenReader}
-            onImageGone={imageGone}
-            onClose={closeReplay}
-          />
-        ) : (
-          <Animated.View style={[styles.room, { opacity: roomFade }]}>
-            <View style={styles.stage} onLayout={(e) => setStageHeight(e.nativeEvent.layout.height)}>
-              <Animated.View
-                style={[StyleSheet.absoluteFill, { opacity: fades.stage }]}
-                pointerEvents={state.loading ? "none" : "auto"}
-              >
-                {page ? (
-                  <Plate
-                    page={page}
-                    onWord={onWord}
-                    opacity={state.view.kind === "firstVisit" ? threshold : undefined}
-                    testID={`darkroom-page-${state.view.kind}`}
-                  />
-                ) : chapter && stageHeight > 0 && state.view.kind === "prints" ? (
-                  <Stage
-                    ref={stage}
-                    prints={chapter.prints}
-                    generation={chapter.generation}
-                    index={chapter.index}
-                    rebase={chapter.rebase}
-                    width={width}
-                    height={stageHeight}
-                    scrollX={scrollX}
-                    scrollEnabled={!develop.busy && !state.loading}
-                    renderPrint={renderPrint}
-                    renderTail={renderTail}
-                    onSettle={onSettle}
-                    onDragging={setDragging}
-                    // A state showing holds the plate's taps; so do a chapter on its way and its title card.
-                    taps={{ locked: develop.id != null || state.loading != null || fades.card != null, screenReader, reduceMotion }}
-                    accessibility={accessibility}
-                    tailTitle={tailTitle}
-                  />
-                ) : null}
-              </Animated.View>
-              {fades.card ? (
-                <Animated.View style={[StyleSheet.absoluteFill, { opacity: fades.cardOpacity }]} pointerEvents="none">
-                  <TitleCard
-                    eyebrow={fades.card.eyebrow}
-                    title={fades.card.title}
-                    year={fades.card.year}
-                    waiting={state.loading != null}
-                    since={fades.card.since}
-                  />
-                </Animated.View>
-              ) : null}
-            </View>
-
-            <View style={{ marginBottom: Math.max(insets.bottom, 16) + 8 }}>
-              {showsPlay ? (
-                <PlayTab
-                  opacity={developOpacity}
-                  interactive={showsPlay && !atTail && !dragging}
-                  onPress={() => startReplay(current?.id ?? null)}
+        <View style={styles.room}>
+          <View style={styles.stage} onLayout={(e) => setStageHeight(e.nativeEvent.layout.height)}>
+            <Animated.View
+              style={[StyleSheet.absoluteFill, { opacity: fades.stage }]}
+              pointerEvents={state.loading ? "none" : "auto"}
+            >
+              {page ? (
+                <Plate
+                  page={page}
+                  onWord={onWord}
+                  opacity={state.view.kind === "firstVisit" ? threshold : undefined}
+                  testID={`darkroom-page-${state.view.kind}`}
+                />
+              ) : chapter && stageHeight > 0 && state.view.kind === "prints" ? (
+                <Stage
+                  ref={stage}
+                  prints={chapter.prints}
+                  generation={chapter.generation}
+                  index={chapter.index}
+                  rebase={chapter.rebase}
+                  width={width}
+                  height={stageHeight}
+                  scrollX={scrollX}
+                  scrollEnabled={!develop.busy && !state.loading && !gliding}
+                  renderPrint={renderPrint}
+                  renderTail={renderTail}
+                  onSettle={onSettle}
+                  onDragging={setDragging}
+                  // A state showing holds the plate's taps; so do a chapter on its way and its title card.
+                  taps={{ locked: develop.id != null || state.loading != null || fades.card != null, screenReader, reduceMotion }}
+                  accessibility={accessibility}
+                  tailTitle={tailTitle}
                 />
               ) : null}
-              <Develop
-                words={words.bottom}
-                opacity={showsDevelop && !fades.card ? developOpacity : ZERO}
-                interactive={showsDevelop && !atTail && !state.loading && !fades.card}
+            </Animated.View>
+            {chapter && stageHeight > 0 && state.view.kind === "prints" ? (
+              <GlideSheet
+                key={chapter.generation}
+                ref={glide}
+                prints={chapter.prints}
+                index={chapter.index}
                 dragging={dragging}
-                drawing={develop.drawing && develop.id === current?.id}
-                onPress={onBottom}
+                width={width}
+                stageHeight={stageHeight}
+                fontScale={fontScale}
+                pixelRatio={pixelRatio}
+                wordsFor={glideWords}
+                renderTail={renderTailPreview}
               />
-            </View>
-          </Animated.View>
-        )}
+            ) : null}
+            {fades.card ? (
+              <Animated.View style={[StyleSheet.absoluteFill, { opacity: fades.cardOpacity }]} pointerEvents="none">
+                <TitleCard
+                  eyebrow={fades.card.eyebrow}
+                  title={fades.card.title}
+                  year={fades.card.year}
+                  waiting={state.loading != null}
+                  since={fades.card.since}
+                />
+              </Animated.View>
+            ) : null}
+          </View>
+
+          {/* The glide strip's slot, on every page, so the stage keeps one height whatever it shows. */}
+          <View style={styles.glideSlot}>
+            {chapter && state.view.kind === "prints" ? (
+              <GlideStrip
+                key={chapter.generation}
+                prints={chapter.prints}
+                index={chapter.index}
+                rebase={chapter.rebase}
+                mode={chapter.mode}
+                now={now}
+                width={width}
+                enabled={!develop.busy && state.loading == null && fades.card == null && !dragging}
+                opacity={fades.stage}
+                onStart={onGlideStart}
+                onTo={onGlideTo}
+                onEnd={onGlideEnd}
+                onFrame={onFrame}
+              />
+            ) : null}
+          </View>
+
+          <View style={{ marginBottom: Math.max(insets.bottom, 16) + 8 }}>
+            <Develop
+              words={words.bottom}
+              opacity={showsDevelop && !fades.card ? developOpacity : ZERO}
+              interactive={showsDevelop && !atTail && !state.loading && !fades.card}
+              dragging={dragging || gliding}
+              drawing={develop.drawing && develop.id === current?.id}
+              onPress={onBottom}
+            />
+          </View>
+        </View>
 
         <Contents
           visible={sheet.open}
@@ -789,9 +790,12 @@ export default function Darkroom() {
 }
 
 const ZERO = new Animated.Value(0);
+/** A word on the end page's preview while gliding: for the eye, never pressed. */
+const noWord = () => undefined;
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
   room: { flex: 1 },
   stage: { flex: 1 },
+  glideSlot: { height: GLIDE_HEIGHT, marginBottom: GLIDE_GAP },
 });

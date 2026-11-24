@@ -44,6 +44,11 @@ const CLOUD_STEP_MS = 120;
 /** What the pages before have measured, so each page after is laid out — and its photograph asked for — once. */
 const captions = new CaptionHeights();
 
+/** The caption height a page at this type size, with or without a second line, is laid out at: measured, or the estimate. */
+export function knownCaptionHeight(fontScale: number, long: boolean): number {
+  return captions.get(fontScale, long) ?? captionHeight(fontScale, long ? 2 : 1);
+}
+
 /**
  * One print: a plate, and its label hung beneath — the signature line, as
  * a VINTAGE print rules one under its photograph, and the caption under

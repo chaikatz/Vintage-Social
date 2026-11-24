@@ -166,7 +166,7 @@ export function closerRequest(reduceMotion: boolean): CloserRequest {
   };
 }
 
-export interface GateRequest {
+export interface GlideRequest {
   cachePolicy: "none";
   priority: "normal";
   allowDownscaling: false;
@@ -174,22 +174,21 @@ export interface GateRequest {
 }
 
 /**
- * What a photograph in the replay's gate asks for, worked out once as its
- * view is made and never changed while it lives (a change would load it
- * again, as for a plate). Kept by its view alone, never in the shared
- * memory cache, which has no limit and which the replay must not fill:
- * moving the tray or closing the replay lets the bitmap go, and cancels
- * whatever was still coming. One mounted already in front of the member
- * (after a glide, a turn or a step) dissolves in over its proof; one
- * mounted ahead while the replay plays cuts in, which is what makes a
- * burst read as stop-motion.
+ * The sharp preview while gliding: the photograph under the strip's box,
+ * once the finger has slowed on it, asked of Photos at the plate's own
+ * size. Kept by its view alone, never in the shared memory cache or on
+ * disk, and at most one alive: the frame changing unmounts it, which lets
+ * its bitmap go and cancels whatever was still coming. It dissolves in
+ * over the soft proof, and cuts in under Reduce Motion. One that Photos
+ * would have to bring down from iCloud is let go at the first word of
+ * progress, as the closer one is (`GlideSheet`).
  */
-export function gateRequest(dissolve: boolean, reduceMotion: boolean): GateRequest {
+export function glideRequest(reduceMotion: boolean): GlideRequest {
   return {
     cachePolicy: "none",
     priority: "normal",
     allowDownscaling: false,
-    transition: dissolve && !reduceMotion ? DISSOLVE : 0,
+    transition: reduceMotion ? 0 : DISSOLVE,
   };
 }
 
