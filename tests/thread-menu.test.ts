@@ -24,8 +24,9 @@ describe("the thread's header", () => {
       /headerRight: peer\s*\?\s*\(\) => \(\s*<Pressable onPress=\{threadMenu\} hitSlop=\{10\} accessibilityRole="button" accessibilityLabel="More">\s*<Feather name="more-horizontal" size=\{20\} color=\{colors\.ink\} \/>/,
     );
     expect(thread).toMatch(/headerTitle: peer\s*\?\s*\(\{ children, tintColor \}\) => \(\s*<Pressable onPress=\{openProfile\}[^>]*accessibilityRole="link"/);
-    // Drawn as the stack draws a title: its serif at its size, over its own bold.
-    expect(thread).toMatch(/<HeaderTitle tintColor=\{tintColor\} style=\{\[(styles\.title|titleStyle),/);
+    // Drawn as the stack draws a title: its serif at its size, over its own bold (where the build has the Editorial
+    // layout's names, by NameTitle, in the title style: tests/editorial-names.test.ts).
+    expect(thread).toMatch(/<HeaderTitle tintColor=\{tintColor\} style=\{\[(styles\.title|titleStyle),|<NameTitle tintColor=\{tintColor\} style=\{titleStyle\}>/);
     expect(thread).toMatch(/title: \{ fontFamily: type\.serif, fontSize: 17 \}/);
     expect(read("app/_layout.tsx")).toMatch(/headerTitleStyle: \{ fontFamily: type\.serif, fontSize: 17 \}/);
     // Their page, as every name opens one: gone back to when the thread was opened from it (src/hooks/useOpenProfile.ts).

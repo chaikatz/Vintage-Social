@@ -181,7 +181,7 @@
       [
         "expo-font",
         {
-          "fonts": ["./assets/fonts/CormorantGaramond-MediumItalic.ttf", "./assets/fonts/CormorantGaramond-SemiBoldItalic.ttf"]
+          "fonts": ["./assets/fonts/CormorantGaramond-BoldItalic.ttf"]
         }
       ],
       "expo-audio",

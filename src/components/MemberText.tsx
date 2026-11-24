@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { StyleSheet, Text, type StyleProp, type TextStyle } from "react-native";
 import { colors } from "@/theme";
 import { parseMentions } from "@/utils/mentions";
-import { useNameFace } from "@/utils/nameFace";
+import { NAME_EDGE, nameEdge, useNameFace } from "@/utils/nameFace";
 import { USERNAME_RE } from "@/utils/validation";
 
 /**
@@ -113,13 +113,34 @@ export function NamedWords({ words, name, size }: { words: (name: string) => str
   const face = useNameFace();
   const around = face(size) && USERNAME_RE.test(name) ? words(SLOT).split(SLOT) : [];
   if (around.length !== 2) return <>{words(name)}</>;
+  // Where the words begin with the name, or end with it, the room its first or last letter reaches into.
   return (
     <>
-      {around[0]}
+      {around[0] || edge(size, name, "left")}
       <Text style={face(size)}>{name}</Text>
-      {around[1]}
+      {around[1] || edge(size, name, "right")}
     </>
   );
+}
+
+/** NAME_EDGE in what nameEdge gives the side, or nothing where the letter there does not reach out. */
+function edge(size: number, name: string, side: "left" | "right") {
+  const style = nameEdge(size, name, side);
+  return style ? <Text style={style}>{NAME_EDGE}</Text> : null;
+}
+
+/**
+ * Editorial (Preview): what goes before a name that begins a line of words
+ * (a caption's, a comment's, a notice's author): where its first letter
+ * reaches out to the left, as the j's tail does, a narrow space as wide as
+ * it reaches, so the line has room for it (src/utils/nameFace.ts,
+ * nameEdge); `side="right"` after a name that ends a Text sized to it, for
+ * its last letter. Drawn inside the line, beside the name's link and never
+ * in it, so what a finger opens is the name alone. Nothing under Original.
+ */
+export function NameEdge({ name, size, side = "left" }: { name?: string | null; size: number; side?: "left" | "right" }) {
+  const face = useNameFace();
+  return face(size) && name ? edge(size, name, side) : null;
 }
 
 const styles = StyleSheet.create({

@@ -40,7 +40,7 @@ export function ProfileHeader({ profile, action, onPressStat }: Props) {
         </View>
       </View>
       <View style={styles.nameRow}>
-        <Text style={[styles.name, profile.full_name == null ? face(15) : undefined]}>{profile.full_name ?? profile.username}</Text>
+        <Text style={[styles.name, profile.full_name == null ? face(15, "alone") : undefined]}>{profile.full_name ?? profile.username}</Text>
         {profile.is_private ? (
           <View style={styles.privateChip}>
             <Feather name="lock" size={9} color={colors.inkFaint} />

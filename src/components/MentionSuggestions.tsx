@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
 import { colors, radii, spacing } from "@/theme";
 import { useMentionSuggestions } from "@/hooks/useMentionField";
-import { useNameFace } from "@/utils/nameFace";
+import { nameRoom, useNameFace } from "@/utils/nameFace";
 import type { ActiveMention } from "@/utils/mentions";
 import { Avatar } from "./Avatar";
 import { memberLabel } from "./memberLabel";
@@ -30,7 +30,8 @@ export function MentionSuggestions({
   style?: StyleProp<ViewStyle>;
 }) {
   const members = useMentionSuggestions(mention, myId);
-  // Editorial (Preview): each member's username, in the names' face.
+  // Editorial (Preview): each member's username, in the names' face, with the room its letters reach into, and as much
+  // more width (usernameAlone), so a long name is cut short where it always was.
   const face = useNameFace();
   if (members.length === 0) return fallback;
   return (
@@ -53,7 +54,7 @@ export function MentionSuggestions({
           accessibilityHint="Adds their name"
         >
           <Avatar path={m.avatar_url} username={m.username} size={26} />
-          <Text style={[styles.username, face(14)]} numberOfLines={1}>
+          <Text style={[styles.username, face(14) && styles.usernameAlone, face(14, "alone")]} numberOfLines={1}>
             {m.username}
           </Text>
         </Pressable>
@@ -88,4 +89,6 @@ const styles = StyleSheet.create({
   },
   chipPressed: { backgroundColor: colors.paperSunken },
   username: { fontSize: 14, fontWeight: "600", color: colors.ink, maxWidth: 160 },
+  // Editorial (Preview): the widest takes in the room on both sides, so the name itself is as wide as it was.
+  usernameAlone: { maxWidth: 160 + 2 * nameRoom(14) },
 });

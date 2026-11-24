@@ -129,7 +129,7 @@ export default function AdminApplications() {
             <View style={styles.cardHeader}>
               <Avatar path={item.avatar_url} username={item.desired_username} size={44} />
               <View style={styles.cardHeaderText}>
-                <Text style={[styles.username, face(15)]}>{item.desired_username}</Text>
+                <Text style={[styles.username, face(15, "alone")]}>{item.desired_username}</Text>
                 <Text style={styles.meta}>
                   {item.full_name}
                   {item.city ? ` · ${item.city}` : ""} · {postAge(item.created_at)}

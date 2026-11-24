@@ -81,8 +81,8 @@ function ConversationRow({
   const last = conversation.last_message;
   const unread = conversation.unread_count > 0;
   const preview = inboxPreview(last);
-  // Editorial (Preview): who it is with, in the names' face, after an unread thread's style: an unread thread's name in the
-  // face's semibold cut, a step above a read one's medium, as it is semibold under Original; its ink stays the state's.
+  // Editorial (Preview): who it is with, in the names' face, after an unread thread's style: the face's one cut, read or
+  // not, its weight laid over the state's; an unread thread is still told by its dot and its darker, heavier preview.
   const face = useNameFace();
 
   return (
@@ -109,7 +109,7 @@ function ConversationRow({
         />
       </Pressable>
       <View style={styles.rowText}>
-        <Text style={[styles.username, unread && styles.unreadText, face(15, unread ? "semibold" : "medium")]}>
+        <Text style={[styles.username, unread && styles.unreadText, face(15, "alone")]}>
           {conversation.peer.username}
         </Text>
         <Text style={[styles.preview, unread && styles.unreadText]} numberOfLines={1}>

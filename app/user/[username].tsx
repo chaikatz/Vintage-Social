@@ -11,6 +11,7 @@ import { PhotoGrid, type GridPost } from "@/components/PhotoGrid";
 import { PostMap } from "@/components/PostMap";
 import { PlaceGroups } from "@/components/PlaceGroups";
 import { NamedWords } from "@/components/MemberText";
+import { nameHeaderTitle } from "@/components/NameTitle";
 import { EraList } from "@/components/EraList";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
@@ -49,7 +50,8 @@ export default function UserProfile() {
   const myId = session?.user?.id ?? "";
   const [view, setView] = useState<ProfileView>("posted");
   const sort = view === "taken" ? "taken" : "posted";
-  // Editorial (Preview): the title, the member's username, in the names' face.
+  // Editorial (Preview): the title, the member's username, in the names' face, drawn by the app so its letters have
+  // room (nameHeaderTitle).
   const titleStyle = useNameTitleStyle();
 
   const profileQ = useQuery({
@@ -158,7 +160,7 @@ export default function UserProfile() {
   if (!profile) {
     return (
       <Screen padded={false}>
-        <Stack.Screen options={{ title: username ?? "", headerTitleStyle: titleStyle }} />
+        <Stack.Screen options={{ title: username ?? "", headerTitle: nameHeaderTitle(titleStyle), headerTitleStyle: titleStyle }} />
         {profileQ.isError ? (
           <LoadFailed what="this member" onRetry={() => profileQ.refetch()} />
         ) : profileQ.isFetched ? (
@@ -315,7 +317,7 @@ export default function UserProfile() {
 
   return (
     <Screen padded={false}>
-      <Stack.Screen options={{ title: profile.username, gestureEnabled: swipeFree, headerTitleStyle: titleStyle }} />
+      <Stack.Screen options={{ title: profile.username, gestureEnabled: swipeFree, headerTitle: nameHeaderTitle(titleStyle), headerTitleStyle: titleStyle }} />
       {view === "map" && !locked ? (
         <PostMap posts={shown} onOpenPost={openPost} header={header} />
       ) : view === "places" && !locked ? (

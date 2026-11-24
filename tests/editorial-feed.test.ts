@@ -413,7 +413,7 @@ describe("the gallery", () => {
     expect(gallery).toMatch(/<Screen padded=\{false\} style=\{paper\}>/);
     // Its title, the author's username or the era, in the stack's serif; the username's regular under Editorial (tests/editorial-names.test.ts).
     expect(gallery).toMatch(
-      /<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitleStyle: titleStyle \}\} \/>/,
+      /<Stack\.Screen options=\{\{ title: shown\.era \?\? authorQ\.data\?\.username \?\? "", headerStyle: paper as \{ backgroundColor: string \}, headerTitle: nameHeaderTitle\(titleStyle\), headerTitleStyle: titleStyle \}\} \/>/,
     );
   });
 });
@@ -530,14 +530,23 @@ describe("the editorial card", () => {
     // The original card's size for the picture.
     expect(card).toMatch(/const AVATAR = 34;/);
     expect(tags(original, "Avatar")[0]).toMatch(/size=\{34\}/);
-    // The owner's restyle (24 November, a size up the same day): the name in Cormorant Garamond Medium Italic, 16 pt,
-    // in the name ink, the names' face beside the 12.5 pt words (see tests/editorial-names.test.ts, tests/editorial-name-font.test.ts).
+    // The owner's restyle (24 November, a size up the same day, in the bold once the owner had seen build 56): the
+    // name in Cormorant Garamond Bold Italic, 16 pt, in the name ink, the names' face beside the 12.5 pt words, with
+    // the room its letters reach into (see tests/editorial-names.test.ts, tests/editorial-name-font.test.ts, tests/editorial-name-room.test.ts).
     // The original card keeps its own.
     expect(original).toMatch(/\n {2}username: \{ fontSize: 14, fontWeight: "600", color: colors\.ink \},/);
     expect(card).toMatch(/\nconst WORDS = 12\.5;\nconst NAME = nameStyle\(WORDS\);\n/);
-    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, \.\.\.NAME, color: colors\.nameInk \},/);
-    // The medium cut asked for at its own weight, so the phone lands on it (src/utils/nameFace.ts); no style over the italic.
-    expect(sheet!.username).toEqual({ flexShrink: 1, fontFamily: "CormorantGaramond-MediumItalic", fontSize: 16, fontWeight: "500", color: colors.nameInk });
+    expect(card).toMatch(/\n {2}username: \{ flexShrink: 1, \.\.\.nameStyle\(WORDS, "alone"\), color: colors\.nameInk \},/);
+    // The cut asked for at its own weight, so the phone lands on it (src/utils/nameFace.ts); no style over the italic.
+    expect(sheet!.username).toEqual({
+      flexShrink: 1,
+      fontFamily: "CormorantGaramond-BoldItalic",
+      fontSize: 16,
+      fontWeight: "700",
+      paddingHorizontal: 3,
+      marginHorizontal: -3,
+      color: colors.nameInk,
+    });
     expect(sheet!.username).not.toHaveProperty("fontStyle");
     expect(sheet!.username).not.toHaveProperty("letterSpacing");
     // Only the name: the place and the date are on the label.
@@ -581,19 +590,20 @@ describe("the editorial card", () => {
   it("writes the caption after the member's name, as a comment is written", () => {
     // The name a link to the member's page, the words after it with every @name a link too (src/components/MemberText.tsx).
     expect(body).toMatch(
-      /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} size=\{WORDS\} \/>\s*<\/Text>\s*\) : null\}/,
+      /\{post\.caption \? \(\s*<Text style=\{styles\.caption\}>\s*<NameEdge name=\{post\.author\.username\} size=\{WORDS\} \/>\s*<NameLink username=\{post\.author\.username\} onOpenProfile=\{onOpenProfile\} style=\{styles\.author\} \/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText text=\{post\.caption\} onOpenProfile=\{onOpenProfile\} size=\{WORDS\} \/>\s*<\/Text>\s*\) : null\}/,
     );
     expect(body).toMatch(
-      /<Text style=\{styles\.comment\} numberOfLines=\{2\}>\s*<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+size=\{WORDS\}\s*\/>\s*<\/Text>/,
+      /<Text style=\{styles\.comment\} numberOfLines=\{2\}>\s*<NameEdge name=\{c\.author\.username\} size=\{WORDS\} \/>\s*<NameLink\s+username=\{c\.author\.username\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+style=\{styles\.author\}\s*\/>\s*<Text style=\{styles\.nameGap\}>\{NAME_GAP\}<\/Text>\s*<MentionText\s+text=\{c\.body\}\s+onOpenProfile=\{onOpenProfile\}\s+onLongPress=\{onCommentLongPress \? \(\) => onCommentLongPress\(c\) : undefined\}\s+size=\{WORDS\}\s*\/>\s*<\/Text>/,
     );
-    // Who wrote it, as the header draws them: Cormorant Garamond Medium Italic, 16 pt, in the name ink; then 4 pt (a third of an em at 12 pt).
+    // Who wrote it, as the header draws them: Cormorant Garamond Bold Italic, 16 pt, in the name ink; then 4 pt (a third of an em at 12 pt).
+    // Before it, the room its first letter reaches into, where it reaches out (tests/editorial-name-room.test.ts).
     // Every @name in their words in the same face, at the words' size (src/components/MemberText.tsx).
     expect(original).toMatch(/\n {2}captionAuthor: \{ fontWeight: "600" \},/);
     expect(card).toMatch(/\n {2}author: \{ \.\.\.NAME, color: colors\.nameInk \},/);
-    expect(sheet!.author).toEqual({ fontFamily: "CormorantGaramond-MediumItalic", fontSize: 16, fontWeight: "500", color: colors.nameInk });
+    expect(sheet!.author).toEqual({ fontFamily: "CormorantGaramond-BoldItalic", fontSize: 16, fontWeight: "700", color: colors.nameInk });
     expect(card).toMatch(/const NAME_GAP = "\\u2004";/);
     expect(card).toMatch(/\n {2}nameGap: \{ fontSize: 12 \},/);
-    // No weight or style of the card's own over the face: it is the medium italic itself, found by its PostScript name.
+    // No weight or style of the card's own over the face: it is the bold italic itself, found by its PostScript name.
     expect(style("username")).not.toMatch(/fontWeight|fontStyle/);
     expect(card.match(/\n {2}author: \{[^\n]*\},/)?.[0]).not.toMatch(/fontWeight|fontStyle/);
   });

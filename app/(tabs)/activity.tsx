@@ -17,7 +17,7 @@ import { useImageRetry } from "@/media/imageRetry";
 import { useSession } from "@/providers/SessionProvider";
 import { useNameFace } from "@/utils/nameFace";
 import { useOpenProfile } from "@/hooks/useOpenProfile";
-import { NameLink } from "@/components/MemberText";
+import { NameEdge, NameLink } from "@/components/MemberText";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
 import type { ActivityWithRefs } from "@/types/db";
 
@@ -147,6 +147,7 @@ export default function Activity() {
                 <Text style={styles.line}>
                   {!isModeration && item.actor ? (
                     <>
+                      <NameEdge name={item.actor.username} size={13} />
                       <NameLink username={item.actor.username} onOpenProfile={openMember} style={[styles.actor, face(13)]} />{" "}
                     </>
                   ) : (

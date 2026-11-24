@@ -103,7 +103,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
           <View style={styles.chips}>
             {selected.map((p) => (
               <Pressable key={p.id} style={styles.chip} onPress={() => toggle(p)}>
-                <Text style={[styles.chipText, face(12)]}>{p.username}</Text>
+                <Text style={[styles.chipText, face(12, "alone")]}>{p.username}</Text>
                 <Feather name="x" size={12} color={colors.inkSoft} />
               </Pressable>
             ))}
@@ -156,7 +156,7 @@ export function TagPicker({ visible, myId, selected, onChange, onClose }: Props)
               >
                 <Avatar path={item.avatar_url} username={item.username} size={36} />
                 <View style={styles.rowText}>
-                  <Text style={[styles.username, face(14)]}>{item.username}</Text>
+                  <Text style={[styles.username, face(14, "alone")]}>{item.username}</Text>
                   {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
                 </View>
                 <View style={[styles.mark, on && styles.markOn]}>

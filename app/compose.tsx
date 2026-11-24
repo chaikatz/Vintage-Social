@@ -40,7 +40,7 @@ import { placeFields } from "@/api/places";
 import { isDemoMode } from "@/lib/env";
 import { enqueuePost } from "@/uploads";
 import { useSession } from "@/providers/SessionProvider";
-import { useNameFace } from "@/utils/nameFace";
+import { nameRoom, useNameFace } from "@/utils/nameFace";
 import { MAX_CAPTION_LENGTH } from "@/utils/validation";
 import { dateStampText } from "@/utils/time";
 import { perfStart } from "@/utils/perf";
@@ -140,7 +140,8 @@ export default function Compose() {
   // Who was there. Sent with the post; each of them decides.
   const [tags, setTags] = useState<Taggable[]>([]);
   const [picking, setPicking] = useState(false);
-  // Editorial (Preview): their usernames, in the names' face.
+  // Editorial (Preview): their usernames, in the names' face, with the room its letters reach into; the 4 pt before
+  // them less that room (tagNamesAlone), since the line's own left margin is kept over the room's.
   const face = useNameFace();
 
   // One post per visit to this screen. The id is the post's from the first
@@ -579,7 +580,7 @@ export default function Compose() {
                 {tags.slice(0, 6).map((t) => (
                   <Avatar key={t.id} path={t.avatar_url} username={t.username} size={24} />
                 ))}
-                <Text style={[styles.tagNames, face(13)]} numberOfLines={1}>
+                <Text style={[styles.tagNames, face(13) && styles.tagNamesAlone, face(13, "alone")]} numberOfLines={1}>
                   {tags.map((t) => t.username).join(", ")}
                 </Text>
               </View>
@@ -882,6 +883,8 @@ const styles = StyleSheet.create({
   },
   tagFaces: { flexDirection: "row", alignItems: "center", gap: 6 },
   tagNames: { flex: 1, fontSize: 13, color: colors.ink, marginLeft: 4 },
+  // Editorial (Preview): a margin of the line's own on one side outranks the room's on both, so it is set less the room.
+  tagNamesAlone: { marginLeft: 4 - nameRoom(13) },
   placeName: { fontSize: 15, color: colors.ink },
   stage: { ...type.caption, fontSize: 12, color: colors.inkFaint, textAlign: "center", marginTop: spacing.sm },
 

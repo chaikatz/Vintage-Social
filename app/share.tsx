@@ -107,7 +107,7 @@ export default function Share() {
         {thumb ? <Image source={thumb} style={styles.previewImage} contentFit="cover" /> : null}
         <View style={styles.previewText}>
           {/* A post whose member is kept back comes naming nobody (src/components/hiddenAuthors.ts). */}
-          <Text style={[styles.previewAuthor, face(14)]}>{post?.author?.username ?? ""}</Text>
+          <Text style={[styles.previewAuthor, face(14, "alone")]}>{post?.author?.username ?? ""}</Text>
           <Text style={styles.previewCaption} numberOfLines={2}>
             {post?.caption || "A photograph"}
           </Text>
@@ -176,7 +176,7 @@ export default function Share() {
             >
               <Avatar path={item.avatar_url} username={item.username} size={40} />
               <View style={styles.rowText}>
-                <Text style={[styles.username, face(15)]}>{item.username}</Text>
+                <Text style={[styles.username, face(15, "alone")]}>{item.username}</Text>
                 {item.full_name ? <Text style={styles.fullName}>{item.full_name}</Text> : null}
               </View>
               <View style={[styles.check, on && styles.checkOn]}>
