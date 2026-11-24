@@ -681,6 +681,13 @@ describe("the replay, in its source", () => {
     expect(effect.match(/\(i \+ 1\) \/ n/g)).toHaveLength(1);
   });
 
+  it("takes VoiceOver's double-tap on the dial as the toggle itself, with no stray action and no touch for the pan", () => {
+    const dial = code(`${dir}/ReplayDial.tsx`);
+    expect(dial).toMatch(/onAccessibilityTap=\{onToggle\}/);
+    // On the new architecture every entry here is offered as a custom action by its name: "activate" would be one.
+    expect(dial).not.toMatch(/accessibilityActions|onAccessibilityAction\b/);
+  });
+
   it("holds as the app leaves the foreground", () => {
     const hook = code(`${dir}/useReplay.ts`);
     expect(hook).toMatch(/AppState\.addEventListener\("change", \(next\) => \{\s*if \(next !== "active"\) dispatch\(\{ type: "away" \}\);/);

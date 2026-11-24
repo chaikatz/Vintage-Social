@@ -4,7 +4,6 @@ import {
   PanResponder,
   StyleSheet,
   View,
-  type AccessibilityActionEvent,
   type GestureResponderEvent,
   type StyleProp,
   type ViewStyle,
@@ -151,10 +150,9 @@ export const ReplayDial = memo(function ReplayDial({
       accessibilityRole="button"
       accessibilityLabel={dialLabel(phase)}
       accessibilityHint={phase === "playing" ? undefined : PLAY_HINT}
-      accessibilityActions={[{ name: "activate" }]}
-      onAccessibilityAction={(e: AccessibilityActionEvent) => {
-        if (e.nativeEvent.actionName === "activate") onToggle();
-      }}
+      // VoiceOver's double-tap, straight to the toggle. Not an "activate" action: on the new architecture every
+      // action is offered by its name, and the double-tap would still reach the pan as a touch at the centre.
+      onAccessibilityTap={onToggle}
       testID="darkroom-replay-dial"
     >
       <Ticks color={look.contrast ? look.room.soft : look.room.lineFirm} />
