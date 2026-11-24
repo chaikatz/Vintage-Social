@@ -14,7 +14,7 @@ import {
   stageFrame,
   underPlate,
 } from "@/components/darkroom/geometry";
-import { GLIDE, GLIDE_IDLE, glideReducer, sheetShows, stripFollow, type GlideEvent, type GlideState } from "@/components/darkroom/glide";
+import { GLIDE, GLIDE_IDLE, glideReducer, measuredCaption, sheetShows, stripFollow, type GlideEvent, type GlideState } from "@/components/darkroom/glide";
 import { DISSOLVE, glideRequest } from "@/components/darkroom/plateImage";
 import { edgeMarks, groupStarts, MARK_SPACING, STRIP, stripIndex } from "@/components/darkroom/replay";
 import { edgeMarkWords } from "@/components/darkroom/words";
@@ -309,7 +309,17 @@ describe("the preview while gliding", () => {
   it("asks for the sharp preview kept by its view alone, at the plate's size, dissolving in, and cutting in under Reduce Motion", () => {
     expect(glideRequest(false)).toEqual({ cachePolicy: "none", priority: "normal", allowDownscaling: false, transition: DISSOLVE });
     expect(glideRequest(true).transition).toBe(0);
-    expect(GLIDE).toEqual({ deferMs: 250, inMs: 150, sharpMs: 100, landMaxMs: 700, warmLandMs: 120, outMs: 120, far: 8, proof: 48 });
+    expect(GLIDE).toEqual({ deferMs: 250, inMs: 150, revealMs: 60, sharpMs: 100, landMaxMs: 700, warmLandMs: 120, outMs: 120, far: 8, proof: 48 });
+  });
+
+  it("lays the preview out at the caption height its page settles on: the pages' own within a point, the measure otherwise", () => {
+    expect(measuredCaption(40.4, 40)).toBe(40);
+    expect(measuredCaption(39.2, 40)).toBe(40);
+    // SET ASIDE gone to a line of its own under a narrow plate: the plate stands where the page will stand it.
+    expect(measuredCaption(57.3, 40)).toBe(57);
+    expect(measuredCaption(38.9, 40)).toBe(39);
+    // The page's own rule, which this follows: kept within a point of what it was laid out at, the measure rounded otherwise.
+    expect(code(`${dir}/PrintPage.tsx`)).toMatch(/if \(Math\.abs\(h - caption\) >= 1\) setMeasured\(Math\.round\(h\)\);/);
   });
 });
 
@@ -392,6 +402,8 @@ describe("the replay is gone", () => {
     expect(room).toMatch(/<Stack\.Screen options=\{\{ headerShown: false \}\} \/>/);
     expect(room).toMatch(/contents=\{inside\}/);
     expect(room).toMatch(/onBack=\{back\}/);
+    // Nothing the replay added to the room's shared pieces is left behind.
+    expect(code(`${dir}/Caption.tsx`)).not.toMatch(/export function Signature\b/);
     expect(room).toMatch(/onAccessibilityEscape=\{\(\) => \(sheet\.open \? sheet\.close\(\) : back\(\)\)\}/);
     expect(room).toMatch(/stageActions\(current\?\.takenAt \?\? null, aside, \{ words, stated: develop\.id != null, busy: develop\.busy \}\)/);
   });
@@ -510,6 +522,48 @@ describe("the strip, in its own source", () => {
     expect(sheet).not.toMatch(/"(memory|disk|memory-disk)"|prefetch/i);
     expect(sheet).toMatch(/useReducer\(glideReducer, GLIDE_IDLE\)/);
     expect(sheet).toMatch(/pointerEvents="none"\s*accessibilityElementsHidden\s*importantForAccessibility="no-hide-descendants"\s*testID="darkroom-glide-sheet"/);
+  });
+
+  it("never opens on an empty well: drawn unseen from the touch, and over the page once its proof has drawn, or a moment has passed", () => {
+    const sheet = code(`${dir}/GlideSheet.tsx`);
+    const images = [...sheet.matchAll(/<Image\b[\s\S]*?\/>/g)].map((m) => m[0]);
+    expect(images[0]).toMatch(/onLoad=\{\(\) => onProof\(id\)\}/);
+    expect(sheet).toMatch(/const up = wants && \(raised \|\| \(state\.kind === "gliding" && ready\)\);/);
+    expect(sheet).toMatch(/setTimeout\(\(\) => setRaised\(true\), GLIDE\.revealMs\)/);
+    expect(sheet).toMatch(/<View style=\{\[StyleSheet\.absoluteFill, !up && styles\.unseen\]\} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">/);
+    // One preview, its proof kept across the glide's returns to the page in front and to the blank frame.
+    expect(sheet.match(/<Preview\b/g)).toHaveLength(1);
+    expect(sheet).not.toMatch(/<Preview[^>]*\bkey=/);
+    expect(sheet).toMatch(/<View style=\{\[StyleSheet\.absoluteFill, tail && styles\.unseen\]\}>\s*<Preview/);
+  });
+
+  it("stands the preview where its page will: the caption with its own word, never pressed, laid out at its measured height", () => {
+    const sheet = code(`${dir}/GlideSheet.tsx`);
+    const caption = element(sheet, "Caption");
+    expect(caption).toMatch(/word=\{words\.word \? \{ label: words\.word\.label, on: words\.word\.on, inert: true \} : null\}/);
+    expect(caption).toMatch(/onHeight=\{\(h\) => onMeasured\(h, caption, known\)\}/);
+    expect(sheet).toMatch(/const caption = measured \?\? known;\s*const f = plateFrame\(ratio, width, stageHeight, caption, pixelRatio\);/);
+    expect(sheet).toMatch(/const next = measuredCaption\(h, known\);/);
+    const room = code("app/darkroom.tsx");
+    expect(room.slice(room.indexOf("const glideWords = useEvent("))).toMatch(/word: said\.word \? \{ label: said\.word\.label, on: said\.word\.on \} : null,/);
+  });
+
+  it("hands a sharp preview over to a plate dissolving in only once its dissolve is over", () => {
+    const sheet = code(`${dir}/GlideSheet.tsx`);
+    expect(sheet).toMatch(/if \(id === landed\.current\) dissolving\.current = !warm\.current && sharpOf\.current === id;/);
+    expect(sheet).toMatch(/const delay = dissolving\.current \? proofHoldMs\(photographRequest\(true, look\.reduceMotion\)\) : 0;/);
+    expect(sheet).toMatch(/Animated\.timing\(opacity, \{ toValue: 0, duration: GLIDE\.outMs, delay,/);
+    const images = [...sheet.matchAll(/<Image\b[\s\S]*?\/>/g)].map((m) => m[0]);
+    expect(images[1]).toMatch(/onLoad=\{\(\) => onSharp\(id, true\)\}/);
+  });
+
+  it("hands on each frame once, and lands a glide whose momentum is heard late where UIKit will bring it to rest", () => {
+    const strip = code(`${dir}/ReplayStrip.tsx`);
+    expect(strip.match(/on\.current\.onScrubTo\(/g)).toHaveLength(1);
+    expect(strip).toMatch(/const i = stripIndex\(x, count\.current\);\s*if \(i === handed\.current\) return;\s*handed\.current = i;\s*on\.current\.onScrubTo\(i\);/);
+    expect(strip).toMatch(/const target = e\?\.nativeEvent\?\.targetContentOffset\?\.x;/);
+    expect(strip).toMatch(/endTimer\.current = setTimeout\(\(\) => \{\s*if \(driving\.current && restingAt\.current != null\) glidedTo\.current = restingAt\.current;\s*end\(\);\s*\}, END_DRAG_MS\);/);
+    expect(strip).toMatch(/const END_DRAG_MS = 80;/);
   });
 
   it("keeps every photograph by its view alone: never the shared memory cache, never the disk", () => {

@@ -19,16 +19,20 @@
  * - deferMs: the strip is mounted this long after the room's page, so the
  *   first plate's photograph is asked for first.
  * - inMs: it then fades in over this.
+ * - revealMs: a preview coming over the page waits at most this long for
+ *   its soft proof to draw, the page in front staying in view meanwhile,
+ *   so it never opens on an empty well.
  * - sharpMs: a frame still under the box this long (the finger slowed to
  *   under about 360 pt a second, or paused) is drawn sharp.
  * - landMaxMs: let go, the preview waits at most this long for the page's
  *   own photograph to draw, before it fades;
  * - warmLandMs: this long, for one already drawn this visit.
- * - outMs: the preview fades out over this.
+ * - outMs: the preview fades out over this; over a plate still dissolving
+ *   in from its proof, once that dissolve is over.
  * - far: a follow of more than this many frames is a cut.
  * - proof: the soft proof's width, as the plate draws it, scaled up.
  */
-export const GLIDE = { deferMs: 250, inMs: 150, sharpMs: 100, landMaxMs: 700, warmLandMs: 120, outMs: 120, far: 8, proof: 48 } as const;
+export const GLIDE = { deferMs: 250, inMs: 150, revealMs: 60, sharpMs: 100, landMaxMs: 700, warmLandMs: 120, outMs: 120, far: 8, proof: 48 } as const;
 
 /**
  * How the strip follows the pager onto page `next.index` of `next.count`
@@ -48,6 +52,18 @@ export function stripFollow(
   if (prev != null && prev.target === to && prev.rebase === next.rebase) return null;
   const animated = prev != null && !how.reduceMotion && !how.web && prev.rebase === next.rebase && Math.abs(to - prev.target) <= GLIDE.far;
   return { to, animated };
+}
+
+/**
+ * The caption height the preview lays a print out at once its caption has
+ * measured `height`, as its page settles its own (PrintPage): the pages'
+ * height (`known`) while the measure is within a point of it, and the
+ * measure, rounded, otherwise — where the word at the right has gone to a
+ * line of its own under a narrow plate, say. So the preview stands its
+ * plate where the page will, and the landing never shrinks it.
+ */
+export function measuredCaption(height: number, known: number): number {
+  return Math.abs(height - known) < 1 ? known : Math.round(height);
 }
 
 /**

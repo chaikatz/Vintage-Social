@@ -27,7 +27,7 @@ import type { DarkroomMode, Print, Span } from "@/darkroom/types";
 import { Contents } from "@/components/darkroom/Contents";
 import { Develop } from "@/components/darkroom/Develop";
 import { GLIDE_GAP, GLIDE_HEIGHT } from "@/components/darkroom/geometry";
-import { GlideSheet, type GlideSheetHandle } from "@/components/darkroom/GlideSheet";
+import { GlideSheet, type GlideSheetHandle, type GlideWords } from "@/components/darkroom/GlideSheet";
 import { GlideStrip } from "@/components/darkroom/GlideStrip";
 import { haptics } from "@/components/darkroom/haptics";
 import { LookContext, motion, type Look } from "@/components/darkroom/look";
@@ -493,8 +493,8 @@ export default function Darkroom() {
     glide.current?.drawn(id);
   });
 
-  /** The words a print's page sets under it, for the preview of it while gliding. */
-  const glideWords = useEvent((p: Print) => {
+  /** The words a print's page sets under it, its right-hand word too, for the preview of it while gliding. */
+  const glideWords = useEvent((p: Print): GlideWords => {
     const said = captionWords({
       takenAt: p.takenAt,
       now,
@@ -507,7 +507,13 @@ export default function Darkroom() {
       limited,
       shelfFull: false,
     });
-    return { label: said.label, line: said.line, long: said.long, gone: state.missing.has(p.id) };
+    return {
+      label: said.label,
+      line: said.line,
+      long: said.long,
+      gone: state.missing.has(p.id),
+      word: said.word ? { label: said.word.label, on: said.word.on } : null,
+    };
   });
 
   /** A tap on a photograph, handed to the pager, which knows which page is settled. */

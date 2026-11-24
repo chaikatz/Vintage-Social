@@ -532,10 +532,11 @@ To review it in a browser, the web demo reads a small bundled library
 earlier years, so On this day always opens.
 `npm run build:web && npm run test:darkroom` walks it end to end: the
 first-visit page, entering, the strip under the caption, a page turn and
-the strip following it, taps, a frame tapped, a glide landing, set aside,
-a year with its month marks, Surprise me dealing on as the strip nears its
-end, the shelf, an end page, develop into the editor and back, and a
-320-point phone. The unit tests are `tests/darkroom*.test.ts`.
+the strip following it, taps, a frame tapped, a glide landing just where
+its preview stood the photograph and caption, set aside, a year with its
+month marks, Surprise me dealing on as the strip nears its end, the shelf,
+an end page, develop into the editor and back, and a 320-point phone, with
+a glide landing there too. The unit tests are `tests/darkroom*.test.ts`.
 
 ## Media pipeline
 

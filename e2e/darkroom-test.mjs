@@ -5,12 +5,14 @@
 // over DEVELOP, with nothing pressed → a page turn, and the strip
 // following it → taps on the photograph, either half → a frame tapped →
 // a glide across the strip, the page following it and landing where it
-// comes to rest → a scrub paused on a frame, drawn sharp → set aside →
+// comes to rest, the photograph and its caption just where the preview
+// stood them → a scrub paused on a frame, drawn sharp → set aside →
 // Contents, read as an index, and its years → a year's months → a year
 // chapter, its months along the strip → Surprise me, dealt on as the strip
 // nears its end → the Set aside chapter → the end of On this day, its
 // blank frame under the box → DEVELOP into the editor, and back to the
-// same print → the room on a 320-point phone.
+// same print → the room on a 320-point phone, and a glide landing there
+// just where its preview stood, its caption's word on a line of its own.
 //
 //   npm run build:web && npm run test:darkroom      (SHOT_DIR=… to keep screenshots)
 //
@@ -125,11 +127,12 @@ const stripLeft = () =>
     return el ? Math.round(el.scrollLeft * 10) / 10 : -1;
   });
 /** A finger's glide, as the browser has it: the strip scrolled to `x`. */
-const glideTo = (x) =>
-  page.evaluate((left) => {
+const glideOn = (p, x) =>
+  p.evaluate((left) => {
     const el = [...document.querySelectorAll('[data-testid="darkroom-glide-strip"]')].find((e) => e.offsetParent !== null);
     if (el) el.scrollLeft = left;
   }, x);
+const glideTo = (x) => glideOn(page, x);
 /** How many frames the strip holds, the blank one included, read from its length rather than the frames drawn. */
 const stripFrames = () =>
   page.evaluate(() => {
@@ -145,14 +148,38 @@ const until = async (fn, ms, step = 25) => {
   return false;
 };
 /** A view's opacity as the eye sees it: its own and every one around it. */
-const seenOpacity = (id) =>
-  page.evaluate((testId) => {
+const seenOpacityOn = (p, id) =>
+  p.evaluate((testId) => {
     const el = [...document.querySelectorAll(`[data-testid="${testId}"]`)].find((e) => e.getBoundingClientRect().width > 0);
     if (!el) return -1;
     let o = 1;
     for (let e = el; e; e = e.parentElement) o *= Number(getComputedStyle(e).opacity || 1);
     return Math.round(o * 100) / 100;
   }, id);
+const seenOpacity = (id) => seenOpacityOn(page, id);
+/** Where a view stands on the phone: the one on screen, left to right. */
+const boxOn = (p, id) =>
+  p.evaluate((testId) => {
+    const el = [...document.querySelectorAll(`[data-testid="${testId}"]`)].find((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.left >= -1 && r.left < window.innerWidth;
+    });
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
+  }, id);
+/** The preview's plate and date while gliding, and the page's own once landed. */
+const previewOn = async (p) => ({ plate: await boxOn(p, "darkroom-glide-plate"), date: await boxOn(p, "darkroom-glide-caption-date") });
+const pageOn = async (p) => ({ plate: await boxOn(p, "darkroom-plate"), date: await boxOn(p, "darkroom-caption-date") });
+/** Within a point of each other: the plate's every edge, and where the date stands. */
+const standsAlike = (a, b) =>
+  a.plate != null &&
+  b.plate != null &&
+  a.date != null &&
+  b.date != null &&
+  ["x", "y", "width", "height"].every((k) => Math.abs(a.plate[k] - b.plate[k]) <= 1) &&
+  Math.abs(a.date.x - b.date.x) <= 1 &&
+  Math.abs(a.date.y - b.date.y) <= 1;
 /** The date in the preview over the page while gliding. */
 const sheetDate = async () => ((await byId("darkroom-glide-caption-date").first().textContent().catch(() => "")) ?? "").trim();
 const marksShown = () => seen(page.locator('[data-testid^="darkroom-glide-mark-"]')).count();
@@ -229,16 +256,7 @@ const style = (id, prop) =>
     },
     [id, prop],
   );
-const box = (id) =>
-  page.evaluate((testId) => {
-    const el = [...document.querySelectorAll(`[data-testid="${testId}"]`)].find((e) => {
-      const r = e.getBoundingClientRect();
-      return r.width > 0 && r.left >= -1 && r.left < window.innerWidth;
-    });
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return { x: r.left, y: r.top, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
-  }, id);
+const box = (id) => boxOn(page, id);
 const roomPage = await style("darkroom", "backgroundColor");
 const dateInk = await page.evaluate(() => {
   const date = [...document.querySelectorAll('[data-testid="darkroom-caption-date"]')].find((e) => e.offsetParent !== null);
@@ -423,6 +441,7 @@ await glideTo(72);
 const previewing = await until(async () => (await seenOpacity("darkroom-glide-sheet")) > 0.99 && (await sheetDate()) === thirdDate, 100, 10);
 // Read before the strip has been still long enough to count as let go.
 const underPreview = { date: await dateLabel(), page: await pagerPage() };
+const previewStood = await previewOn(page);
 await shot("gliding");
 check("Gliding a frame on, the page follows it at once", previewing, `${previewing} ${await sheetDate()}`);
 check("…while the pager itself has not moved", underPreview.date === secondDate && underPreview.page === 1, JSON.stringify(underPreview));
@@ -433,6 +452,8 @@ check(
   (await byId("darkroom-glide-sheet").count()) === 0 && (await dateLabel()) === thirdDate && (await pagerPage()) === 2 && !(await developDisabled()),
   `${await dateLabel()} · page ${await pagerPage()} · sheet ${await byId("darkroom-glide-sheet").count()}`,
 );
+const landedStood = await pageOn(page);
+check("…its photograph and caption just where the preview stood them", standsAlike(previewStood, landedStood), JSON.stringify({ previewStood, landedStood }));
 
 // --- a scrub, paused on a frame ----------------------------------------------------------------
 // Slid on two frames and held there, the finger still on the strip: the photograph comes sharp.
@@ -673,6 +694,36 @@ check(
   JSON.stringify(sb),
 );
 if (out) await small.screenshot({ path: `${out}/darkroom-${String(++shots).padStart(2, "0")}-phone-320.png` });
+// Glided to the third photograph, upright, under which SET ASIDE has no room beside the date and takes a line of
+// its own: the preview stands it as its page will, so the landing does not shrink it.
+const thirdOn320 = await boxOn(small, "darkroom-glide-cell-2");
+await glideOn(small, 72);
+const smallPreviewing = await (async () => {
+  for (let t = 0; t <= 120; t += 10) {
+    if ((await seenOpacityOn(small, "darkroom-glide-sheet")) > 0.99) return true;
+    await small.waitForTimeout(10);
+  }
+  return false;
+})();
+await small.waitForTimeout(40);
+const smallPreview = await previewOn(small);
+const ownRow = await small.evaluate(() => {
+  const date = [...document.querySelectorAll('[data-testid="darkroom-glide-caption-date"]')].find((e) => e.getBoundingClientRect().width > 0);
+  const word = [...document.querySelectorAll('[data-testid="darkroom-glide-caption-word"]')].find((e) => e.getBoundingClientRect().width > 0);
+  // Each press reaches over the space around it, so the rows are told apart by their middles.
+  const mid = (e) => {
+    const r = e.getBoundingClientRect();
+    return r.top + r.height / 2;
+  };
+  return date && word ? mid(word) > mid(date) + 8 : null;
+});
+await small.waitForTimeout(1500);
+const smallLanded = await pageOn(small);
+check(
+  "On a 320-point phone a glide lands just where its preview stood the photograph and caption",
+  thirdOn320 != null && smallPreviewing && ownRow === true && standsAlike(smallPreview, smallLanded),
+  JSON.stringify({ smallPreviewing, ownRow, smallPreview, smallLanded }),
+);
 
 console.log("\nJS errors:", errors.length ? errors.slice(0, 10) : "none");
 check("No page errors", errors.length === 0);

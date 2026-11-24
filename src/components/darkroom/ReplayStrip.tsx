@@ -87,6 +87,10 @@ export const ReplayStrip = memo(
     const asked = useRef(start * STRIP.pitch);
     /** Where a member's glide last had it. */
     const glidedTo = useRef(start * STRIP.pitch);
+    /** Where UIKit said, as the finger lifted, the glide will come to rest (snapped to a frame). */
+    const restingAt = useRef<number | null>(null);
+    /** The frame last handed on in this glide. */
+    const handed = useRef<number | null>(null);
     /** A finger is gliding it, or its glide is still coming to rest. */
     const driving = useRef(false);
     const endTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -111,9 +115,19 @@ export const ReplayStrip = memo(
     };
     const begin = () => {
       clear();
+      restingAt.current = null;
       if (driving.current) return;
       driving.current = true;
+      handed.current = null;
       on.current.onScrubStart();
+    };
+    /** The glide is at `x`: the frame under the box is handed on when it is another than the last. */
+    const glide = (x: number) => {
+      glidedTo.current = x;
+      const i = stripIndex(x, count.current);
+      if (i === handed.current) return;
+      handed.current = i;
+      on.current.onScrubTo(i);
     };
     /** Where a finger's glide stopped, as the list says as it ends. */
     const restAt = (e: ScrollEvent | undefined) => {
@@ -148,8 +162,7 @@ export const ReplayStrip = memo(
               // Not where the room put it: the member moved it.
               if (!driving.current && Math.abs(x - asked.current) < 1) return;
               begin();
-              glidedTo.current = x;
-              on.current.onScrubTo(stripIndex(x, count.current));
+              glide(x);
               webTimer.current = setTimeout(() => {
                 webTimer.current = null;
                 const offset = stripIndex(x, count.current) * STRIP.pitch;
@@ -162,8 +175,7 @@ export const ReplayStrip = memo(
             }
             // Only a finger's glide reads the frame: the room's own glides are already where it wants them.
             if (!driving.current) return;
-            glidedTo.current = x;
-            on.current.onScrubTo(stripIndex(x, count.current));
+            glide(x);
           },
         }),
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -190,8 +202,16 @@ export const ReplayStrip = memo(
           onBegin={begin}
           onEndDrag={(e) => {
             restAt(e);
+            const target = e?.nativeEvent?.targetContentOffset?.x;
+            restingAt.current = driving.current && typeof target === "number" && Number.isFinite(target) ? target : null;
             if (endTimer.current) clearTimeout(endTimer.current);
-            endTimer.current = setTimeout(end, END_DRAG_MS);
+            // No momentum to follow: the glide ends where the finger lifted. Should the momentum's own word come
+            // late (the room busy as the finger lifts), it ends where UIKit said it will come to rest, so the room
+            // lands on the frame the strip stops on, never on one it passes.
+            endTimer.current = setTimeout(() => {
+              if (driving.current && restingAt.current != null) glidedTo.current = restingAt.current;
+              end();
+            }, END_DRAG_MS);
           }}
           onMomentumBegin={() => {
             if (endTimer.current) clearTimeout(endTimer.current);
