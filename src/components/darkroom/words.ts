@@ -33,7 +33,7 @@ export const STAGE_LABEL = "Photograph";
 export const STAGE_HINT = "Swipe up or down for the next or previous photograph.";
 export const CONTENTS_HINT = "Choose a way in, an occasion, a year or a month.";
 export const CHAPTER_HINT = "Opens the contents.";
-/** PLAY, the stage's action of the same name, and the replay's dial while it is not playing. */
+/** PLAY, the stage's action of the same name, and the replay's own word while it is not playing. */
 export const PLAY_HINT = "Plays this chapter through, a photograph at a time.";
 /** Back, while the replay is up: it closes the replay, not the room. */
 export const REPLAY_BACK_HINT = "Stops playing, and keeps this photograph in front of you.";
@@ -722,10 +722,16 @@ export function withPlayThrough(page: PageWords, ending: Ending | null, playable
   return { ...page, words: [PLAY_THROUGH, ...page.words.filter((w) => w.act !== "play")] };
 }
 
-/** The dial's word for VoiceOver, and the centre's glyph in words: what a press does next. */
-export function dialLabel(phase: ReplayPhase): string {
-  if (phase === "playing") return "Pause";
-  return phase === "ended" ? "Play again" : "Play";
+/**
+ * The replay's own word, set at the foot of the page where DEVELOP stands
+ * in the room, and what VoiceOver hears for it: what a press does next.
+ * HOLD while it plays, PLAY while it is held, AGAIN at the end ("Play
+ * again" aloud, as the word alone would not say what it does).
+ */
+export function replayWord(phase: ReplayPhase): { label: string; said: string } {
+  if (phase === "playing") return { label: "Hold", said: "Hold" };
+  if (phase === "ended") return { label: "Again", said: "Play again" };
+  return { label: "Play", said: "Play" };
 }
 
 /** The photograph's value in the replay: "December 4, 2022. A Sunday. Playing." Never a count. */

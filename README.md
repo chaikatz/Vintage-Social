@@ -510,11 +510,15 @@ same shape seconds apart at 340 (never more than three changes a second;
 800 under Reduce Motion), a short title card before each year or day that
 holds three or more. Under the photograph hang its caption (the date, the
 time, the line), Photos' glide strip set as a contact sheet's frames with a
-grease-pencil box over the one in front, and Retro's dial: sixty ticks, a
-hand that goes once round for the whole replay, and play, pause or play
-again at its centre; turned by a finger it moves through the chapter, a
-tick felt per tick. A touch anywhere holds it; only the dial's centre
-plays. Back lands the room on the photograph it stopped on. The rules are
+grease-pencil box over the one in front, and along the strip's foot the
+leader: a hairline the strip's width, drawn out in the accent from the left
+as the replay plays, one length for the whole of it (a photograph at a time
+under Reduce Motion). The strip is the scrubber, and the leader follows it.
+At the foot, where DEVELOP stands in the room, the room's own ruled word:
+HOLD while it plays, PLAY when held, AGAIN at the end, which plays from the
+first photograph; VoiceOver hears a button named Hold, Play or Play again.
+No icon, no ring, no dial. A touch anywhere holds it; only the word plays.
+Back lands the room on the photograph it stopped on. The rules are
 pure, in `src/components/darkroom/replay.ts`. It plays the chapter's prints
 the room already holds, and asks the library nothing; every image is drawn
 at its view's size and kept by its view alone (never the shared cache,

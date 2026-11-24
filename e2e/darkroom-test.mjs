@@ -2,8 +2,8 @@
 // the door on the Post tab → the first-visit page → On this day, on the
 // app's own page, each plate with its signature line, and CONTENTS a tab
 // with a line under it on a first visit → a page turn → taps on the
-// photograph, either half → PLAY: the replay, its dial, its strip, and
-// back → set aside → Contents, read as an index, and its years → a year's
+// photograph, either half → PLAY: the replay, its strip, its leader and
+// its word (HOLD, PLAY, AGAIN), to its end and again, and back → set aside → Contents, read as an index, and its years → a year's
 // months → a year chapter → Surprise me → the Set aside chapter → the end
 // of On this day, and PLAY IT THROUGH → DEVELOP into the editor, and back
 // to the same print.
@@ -322,11 +322,41 @@ check(
 check("It starts from the print in front", (await replayDate()) === secondDate, await replayDate());
 const gate = await box("darkroom-replay-gate");
 const stripRow = await box("darkroom-replay-strip-row");
-const dial = await box("darkroom-replay-dial");
+const leaderLine = await box("darkroom-replay-leader");
+const replayWordBox = await box("darkroom-replay-word");
 check(
-  "The gate, the caption, the strip and the dial, top to bottom",
-  gate != null && stripRow != null && dial != null && gate.bottom < stripRow.y && stripRow.bottom < dial.y && Math.round(dial.width) === 80 && Math.round(stripRow.height) === 68,
-  JSON.stringify({ gate, stripRow, dial }),
+  "The gate, the caption, the strip, the leader and the word, top to bottom, and no dial",
+  gate != null &&
+    stripRow != null &&
+    leaderLine != null &&
+    replayWordBox != null &&
+    gate.bottom < stripRow.y &&
+    stripRow.bottom < leaderLine.y &&
+    leaderLine.bottom < replayWordBox.y &&
+    Math.round(stripRow.height) === 68 &&
+    (await page.locator('[data-testid="darkroom-replay-dial"]').count()) === 0,
+  JSON.stringify({ gate, stripRow, leaderLine, replayWordBox }),
+);
+check(
+  "The leader is a hairline the strip’s width, just under its frames",
+  leaderLine != null &&
+    stripRow != null &&
+    Math.abs(leaderLine.width - stripRow.width) <= 1 &&
+    Math.abs(leaderLine.x - stripRow.x) <= 1 &&
+    leaderLine.height >= 0.9 &&
+    leaderLine.height <= 1.5 &&
+    leaderLine.y - stripRow.bottom <= 12,
+  JSON.stringify({ leaderLine, stripRow }),
+);
+check(
+  "The word stands centred where DEVELOP stood, its press at least 44 pt",
+  replayWordBox != null &&
+    developWord != null &&
+    replayWordBox.height >= 44 &&
+    replayWordBox.width >= 44 &&
+    Math.abs(replayWordBox.x + replayWordBox.width / 2 - W / 2) <= 1 &&
+    Math.abs(replayWordBox.bottom - developWord.bottom) <= 1,
+  JSON.stringify({ replayWordBox, developWord }),
 );
 await shot("replay-playing");
 let moved = false;
@@ -335,27 +365,85 @@ for (let t = 0; t < 25 && !moved; t++) {
   moved = (await replayDate()) !== secondDate;
 }
 check("…and plays on by itself", moved, await replayDate());
-const dialLabelNow = async () => (await byId("darkroom-replay-dial").first().getAttribute("aria-label")) ?? "";
-check("The dial says Pause while it plays", (await dialLabelNow()) === "Pause", await dialLabelNow());
-await byId("darkroom-replay-dial").first().click();
-await wait(200);
+/** What the word is named for VoiceOver, and what it shows. */
+const wordSaid = async () => (await byId("darkroom-replay-word").first().getAttribute("aria-label")) ?? "";
+const wordShown = async () => ((await byId("darkroom-replay-word").first().innerText().catch(() => "")) ?? "").trim();
+/** How far the leader is drawn, 0 to 1, as the eye sees it. */
+const leaderDrawn = () =>
+  page.evaluate(() => {
+    const visible = (id) =>
+      [...document.querySelectorAll(`[data-testid="${id}"]`)].find((e) => e.getBoundingClientRect().width > 0 || e.offsetParent !== null);
+    const line = visible("darkroom-replay-leader");
+    const drawn = line?.querySelector('[data-testid="darkroom-replay-leader-drawn"]');
+    if (!line || !drawn) return -1;
+    const l = line.getBoundingClientRect();
+    const d = drawn.getBoundingClientRect();
+    // Drawn from the line's left end, whatever its length.
+    if (d.width > 0.5 && Math.abs(d.left - l.left) > 1) return -2;
+    return Math.round((d.width / l.width) * 1000) / 1000;
+  });
+check("The word says HOLD while it plays, and is named Hold", (await wordShown()) === "HOLD" && (await wordSaid()) === "Hold", `${await wordShown()} ${await wordSaid()}`);
+const drawnEarly = await leaderDrawn();
+await wait(700);
+const drawnLater = await leaderDrawn();
+check("The leader draws out from the left as it plays", drawnEarly >= 0 && drawnLater > drawnEarly && drawnLater < 1, `${drawnEarly} → ${drawnLater}`);
+await byId("darkroom-replay-word").first().click();
+await wait(300);
 const heldOn = await replayDate();
+const heldDrawn = await leaderDrawn();
 await wait(1500);
-check("A press on the dial holds it, and the dial says Play", (await dialLabelNow()) === "Play" && (await replayDate()) === heldOn, `${await dialLabelNow()} ${heldOn}`);
+check(
+  "A press on the word holds it, the word says PLAY, and the leader waits",
+  (await wordShown()) === "PLAY" && (await wordSaid()) === "Play" && (await replayDate()) === heldOn && Math.abs((await leaderDrawn()) - heldDrawn) < 0.005,
+  `${await wordShown()} ${heldOn} ${heldDrawn} ${await leaderDrawn()}`,
+);
 await shot("replay-held");
 await byId("darkroom-replay-cell-0").first().click();
 await wait(400);
 check("A frame on the strip goes to its photograph", (await replayDate()) === firstDate, await replayDate());
+check("…and the leader goes back to the start with it", (await leaderDrawn()) < 0.01, String(await leaderDrawn()));
 await page.evaluate(() => {
   const strip = [...document.querySelectorAll('[data-testid="darkroom-replay-strip"]')].find((e) => e.offsetParent !== null);
   if (strip) strip.scrollLeft = 72;
 });
 await wait(400);
 check("Gliding the strip two frames on moves the photograph with it", (await replayDate()) === thirdDate, await replayDate());
-check("…and still held", (await dialLabelNow()) === "Play");
+check("…and the leader follows the strip, two photographs of six along", Math.abs((await leaderDrawn()) - 2 / 6) < 0.01, String(await leaderDrawn()));
+check("…and still held", (await wordSaid()) === "Play");
+// A glide one frame on, and PLAY pressed before it has come to rest: it plays on from the frame the
+// glide reached, and is not held again by it. Then on to the end: AGAIN, and the leader drawn whole.
+await page.evaluate(() => {
+  const strip = [...document.querySelectorAll('[data-testid="darkroom-replay-strip"]')].find((e) => e.offsetParent !== null);
+  if (strip) strip.scrollLeft = 108;
+});
+await wait(40);
+await byId("darkroom-replay-word").first().click();
+await wait(500);
+check(
+  "PLAY pressed as a glide comes to rest plays on from the frame it reached, and stays playing",
+  (await wordSaid()) === "Hold" && (await replayDate()) !== thirdDate && (await leaderDrawn()) >= 3 / 6 - 0.01,
+  `${await wordSaid()} ${await replayDate()} ${await leaderDrawn()}`,
+);
+let over = false;
+for (let t = 0; t < 120 && !over; t++) {
+  await wait(100);
+  over = (await wordSaid()) === "Play again";
+}
+await wait(300);
+check(
+  "Played on, it ends on the last photograph: the word says AGAIN, named Play again, and the leader is drawn whole",
+  over && (await wordShown()) === "AGAIN" && (await leaderDrawn()) > 0.99,
+  `${await wordShown()} ${await wordSaid()} ${await leaderDrawn()} ${await replayDate()}`,
+);
+await shot("replay-ended");
+await byId("darkroom-replay-word").first().click();
+await wait(300);
+check("AGAIN plays from the first photograph", (await replayDate()) === firstDate && (await wordSaid()) === "Hold", `${await replayDate()} ${await wordSaid()}`);
+await byId("darkroom-replay-word").first().click();
+await wait(200);
 await byId("darkroom-replay-cell-1").first().click();
 await wait(400);
-check("…and a frame brings it back", (await replayDate()) === secondDate, await replayDate());
+check("…and a frame brings it back", (await replayDate()) === secondDate && (await wordSaid()) === "Play", await replayDate());
 await byId("darkroom-back").first().click();
 await wait(900);
 check(

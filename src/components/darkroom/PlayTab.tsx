@@ -7,11 +7,12 @@ import { PLAY_HINT } from "./words";
 
 /**
  * PLAY: CONTENTS' twin, mirrored to the foot of the page beside DEVELOP,
- * under the thumb, where the replay's dial will appear. Drawn as CONTENTS
- * is, a word and its glyph in a tab ruled round in the print's firm line
- * (the soft ink under Increase Contrast), never the accent: DEVELOP stays
- * the page's one ruled word. Its press is 44 pt tall and its tab's left
- * edge on the page's 16 pt gutter, as CONTENTS' right edge is at the head.
+ * under the thumb, beside the place where the replay's own word, HOLD,
+ * will stand in DEVELOP's stead. Drawn as CONTENTS is, a word and its
+ * glyph in a tab ruled round in the print's firm line (the soft ink under
+ * Increase Contrast), never the accent: DEVELOP stays the page's one
+ * ruled word. Its press is 44 pt tall and its tab's left edge on the
+ * page's 16 pt gutter, as CONTENTS' right edge is at the head.
  *
  * It leaves with DEVELOP onto the end page (the same opacity), and it is
  * pressed only while a page is not being turned. No haptic.
