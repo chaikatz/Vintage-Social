@@ -5,8 +5,12 @@ import { NamedWords } from "./MemberText";
 
 interface Props {
   title: string;
-  body?: string;
-  /** Editorial (Preview): the username the body is written around, if any, set in the names' face (src/utils/nameFace.ts). */
+  /**
+   * Editorial (Preview): or, where the body is written around a member's
+   * username, what writes it, given `name`, so the name is set in the names'
+   * face (src/utils/nameFace.ts); drawn once the name is known.
+   */
+  body?: string | ((name: string) => string);
   name?: string;
 }
 
@@ -14,7 +18,15 @@ export function EmptyState({ title, body, name }: Props) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>{title}</Text>
-      {body ? <Text style={styles.body}>{name ? <NamedWords words={body} name={name} size={13} /> : body}</Text> : null}
+      {typeof body === "function" ? (
+        name ? (
+          <Text style={styles.body}>
+            <NamedWords words={body} name={name} size={13} />
+          </Text>
+        ) : null
+      ) : body ? (
+        <Text style={styles.body}>{body}</Text>
+      ) : null}
     </View>
   );
 }

@@ -75,7 +75,9 @@ photograph's author and the members to send it to); the inbox; the author
 of a photograph sent in a message; the admin's Applications and Reports; a
 profile's name where it falls back to the username; the lines the app
 writes around a username (a blocked or private profile's, an empty
-Followers or Following list's, an empty Eras page's); and every bar titled
+Followers or Following list's, an empty Eras page's), and who sent an
+applicant (in the admin's Applications) or an invitation (on the
+invitation's page), where that reads as a username; and every bar titled
 with a username (below).
 
 Where a place marks a name for a state of its own, the state still wins:
@@ -92,15 +94,22 @@ the app draws itself) is set in the face at 22 pt, the size that matches
 the 17 pt serif the bars' titles are set in, its weight over the stack's
 bold. The Profile tab's bar keeps its height: the face's line is taller
 than the serif's, and the title gives the difference back to the bar's
-padding above and below. Every other bar's title (Settings, Messages, an
+padding above and below, scaled with the reader's text size as both lines
+are, so it holds under Larger Text too. Every other bar's title (Settings, Messages, an
 era's gallery and the rest) is the stack's own under both layouts.
 
 Display names, what a member types into a field, and what members wrote
 (captions, comments, messages) are as they were, but for the @names in
-them. A system alert titled with a username is drawn by iOS in its own face
-and cannot be styled, and what VoiceOver says is never drawn. A photograph
-exported as a print keeps the `@name` on its label in the print's
-typewriter face, under either layout: it is the print's own lettering.
+them. Who sent an applicant is what they typed, and the invitation's page
+names the member by their full name where they gave one: either is set in
+the face only where it reads as a username (`USERNAME_RE`, which every
+member's username is held to). A system alert titled with a username is
+drawn by iOS in its own face and cannot be styled, and what VoiceOver says
+is never drawn. A photograph exported as a print keeps the `@name` on its
+label in the print's typewriter face, under either layout: it is the
+print's own lettering, captured into the picture members share outside the
+app, and the one place a username is not in the face; whether the print
+should follow the Settings choice too is the owner's call.
 
 `src/utils/nameFace.ts` holds it. `useNameFace()` is a function of the size
 of the words a name sits beside, and of the cut a state asks for
@@ -124,8 +133,12 @@ Settings turns Editorial off. In `src/components/MemberText.tsx`,
 `MentionText` is handed the size of the words it is drawn in and sets each
 @name in the face, and `NamedWords` draws words the app writes a username
 into, with the name in the face under Editorial and the one string the
-words always were under Original; `EmptyState` hands it its body and the
-username, when the screen gives it one.
+words always were under Original. It is handed what writes the words, a
+function of the name (`(name) => `You blocked ${name}``), never the words
+already written, so the name is found where the sentence puts it and never
+in one of the app's own words a username happens to spell ("You blocked
+blocked"); `EmptyState` is handed its body that way too, with the username,
+when the screen gives it one.
 Both cuts are built into the iPhone app by expo-font's plugin in `app.json`
 and loaded once on the web by `nameFace.ts`. `tests/editorial-names.test.ts`
 lists every place a username is drawn, each at its size, every bar titled
@@ -149,12 +162,13 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `app/(tabs)/index.tsx` | Home's seam: which card it draws, and the paper under it |
 | `app/gallery.tsx` | the gallery's seam: which card it draws, and the paper under it and its bar's; and its title, when it is the author's username, in the names' face |
 | `app/user/[username].tsx` | a member's profile: its title, their username, in the names' face, and the lines a blocked or private profile writes around it drawn by `NamedWords` |
-| `app/(tabs)/_layout.tsx` | Home's wordmark bar and tab bar on the paper; the Profile tab's title, the member's username, in the names' face, the bar its height |
+| `app/(gate)/invite.tsx` | the invitation's page: the line naming who sent it drawn by `NamedWords`, so a username there is in the names' face |
+| `app/(tabs)/_layout.tsx` | Home's wordmark bar and tab bar on the paper; the Profile tab's title, the member's username, in the names' face, the bar its height at every size of text |
 | `app/settings.tsx` | the Feed layout and Paper choices |
-| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx`, `app/admin/reports.tsx` | the usernames each screen draws, in the names' face at the size of the words beside them (in `app/messages/index.tsx`, after an unread thread's style, which picks the semibold cut; in `app/messages/[id].tsx`, on the name alone, inside the line that keeps your own bubble's ink, and the thread's title too; in `app/post/[id].tsx`, after a pending tag's style, and the name before the caption too) |
+| `app/(tabs)/activity.tsx`, `app/comments.tsx`, `app/compose.tsx`, `app/post/[id].tsx`, `app/messages/index.tsx`, `app/messages/[id].tsx`, `app/share.tsx`, `app/requests.tsx`, `app/blocked.tsx`, `app/admin/applications.tsx`, `app/admin/reports.tsx` | the usernames each screen draws, in the names' face at the size of the words beside them (in `app/messages/index.tsx`, after an unread thread's style, which picks the semibold cut; in `app/messages/[id].tsx`, on the name alone, inside the line that keeps your own bubble's ink, and the thread's title too; in `app/post/[id].tsx`, after a pending tag's style, and the name before the caption too; in `app/admin/applications.tsx`, who sent an applicant too, drawn by `NamedWords`) |
 | `src/components/UserRow.tsx`, `src/components/TagPicker.tsx`, `src/components/MentionSuggestions.tsx`, `src/components/PendingPostCard.tsx`, `src/components/ProfileHeader.tsx` | the same, in the parts those screens share (the profile header only where its name falls back to the username) |
-| `src/components/MemberText.tsx` | `MentionText` is handed the size of the words it is drawn in, and sets each @name in the names' face, still in the accent; `NamedWords` (new) sets a username the app writes words around in the names' face, and under Original is the words' one string |
-| `src/components/EmptyState.tsx`, `app/follows.tsx`, `src/components/EraList.tsx` | an empty page's sentence: `EmptyState` hands its body and the username to `NamedWords`, and an empty Followers or Following list and an empty Eras page hand it the one their sentence is written around |
+| `src/components/MemberText.tsx` | `MentionText` is handed the size of the words it is drawn in, and sets each @name in the names' face, still in the accent; `NamedWords` (new), handed what writes its words around a name, sets the name in the names' face where it reads as a username, and under Original is the words' one string |
+| `src/components/EmptyState.tsx`, `app/follows.tsx`, `src/components/EraList.tsx` | an empty page's sentence: `EmptyState` takes a body that writes its words around a name, with the name, and hands both to `NamedWords`; an empty Followers or Following list and an empty Eras page hand it theirs (the Eras page's is `erasEmpty`'s own sentence, written around the name) |
 | `tests/video-playback.test.ts` | the Home and gallery playback guards accept either card |
 | `tests/galleryLanding.test.ts` | its gallery guard reads whichever card the gallery's seam draws |
 | `tests/stableCards.test.ts` | its Home and gallery card-props guard accepts either card |
@@ -171,7 +185,7 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 
 `src/components/PostCard.tsx` (drawn only under Original, so its names are
 left as they are), `src/components/eraBook.ts` (the words of an empty Eras
-page, which `EraList` hands to `EmptyState` with the username), every other
+page, which `EraList` hands to `EmptyState` written around the username), every other
 bar's title, `PostMedia`, `usePostActions`, uploads, filters, the Memory
 Room, native modules and Supabase are not touched. `PendingPostCard` is
 touched for the names alone.
@@ -187,7 +201,7 @@ From the repository root, on the branch to clean:
 
 ```bash
 git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts tests/editorial-feed.test.ts tests/editorial-names.test.ts tests/editorial-name-font.test.ts assets/fonts/CormorantGaramond-MediumItalic.ttf assets/fonts/CormorantGaramond-SemiBoldItalic.ttf assets/fonts/CormorantGaramond-OFL.txt EDITORIAL_FEED_PREVIEW.md
-git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx app/admin/reports.tsx "app/user/[username].tsx" app/follows.tsx src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/components/MemberText.tsx src/components/EmptyState.tsx src/components/EraList.tsx src/theme/index.ts tests/theme.test.ts app.json tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/comment-menu.test.ts tests/thread-menu.test.ts tests/member-names.test.ts tests/admin-queue-pages.test.ts e2e/launch-test.mjs
+git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx app/admin/reports.tsx "app/user/[username].tsx" "app/(gate)/invite.tsx" app/follows.tsx src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/components/MemberText.tsx src/components/EmptyState.tsx src/components/EraList.tsx src/theme/index.ts tests/theme.test.ts app.json tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/comment-menu.test.ts tests/thread-menu.test.ts tests/member-names.test.ts tests/admin-queue-pages.test.ts e2e/launch-test.mjs
 npx tsc --noEmit && npx vitest run
 git commit -m "Remove the Editorial feed preview"
 ```
@@ -221,13 +235,21 @@ the array with its `? face(15) : undefined` goes back to the plain style;
 in `app/admin/reports.tsx` `nameOf`'s link goes back to
 `style={styles.name}`), and each `size={…}` handed to `MentionText`. In
 `src/components/MemberText.tsx`, `MentionText`'s `size` prop, its
-`const face` and the face in an @name's style go, and so do `NamedWords`
-and `nameAt`; in `app/user/[username].tsx` each `<NamedWords words={…} …/>`
-goes back to the words it is handed (`You blocked {profile.username}`, and
-the two sentences as strings) and its import goes; in
-`src/components/EmptyState.tsx` the `name` prop and `NamedWords` go, and
-`app/follows.tsx` and `src/components/EraList.tsx` hand it no `name`; in `app/(tabs)/_layout.tsx` the Profile tab's title loses
-`titleStyle` and `nameTitle` (and `styles.nameTitle` goes). Afterwards
+`const face` and the face in an @name's style go, and so do `NamedWords`,
+`SLOT` and the `USERNAME_RE` import; in `app/user/[username].tsx` each
+`<NamedWords words={…} …/>` goes back to the words its function writes
+(`You blocked {profile.username}`, and the two sentences as strings with
+`profile.username`) and its import goes; in `app/admin/applications.tsx`
+the inviter's line goes back to `invited by {item.inviter}`, and in
+`app/(gate)/invite.tsx` the blurb's `<NamedWords …/>` goes back to the two
+sentences as strings with `inviter`, and its import goes; in
+`src/components/EmptyState.tsx` the `name` prop, the function body and
+`NamedWords` go, `app/follows.tsx` hands it its two sentences as strings
+with `username` again (`undefined` while there is none), and
+`src/components/EraList.tsx` hands it `empty.body` and no `name`; in
+`app/(tabs)/_layout.tsx` the Profile tab's title loses `titleStyle` and
+`nameTitle`, and `useWindowDimensions`, `fontScale` and `styles.nameTitle`
+go. Afterwards
 `git diff claude/product-polish -- app src tests e2e`
 should be empty, and
 `git grep -n -e EditorialPostCard -e feedLayout -e feedPaper -e useFeedBackground -e nameFace -e NameFace -- app src tests e2e`

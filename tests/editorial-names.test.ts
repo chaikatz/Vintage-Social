@@ -44,6 +44,8 @@ const { setFeedLayout, __resetFeedLayoutForTest } = await import("@/utils/feedLa
 const { colors, type } = await import("@/theme");
 const { EmptyState } = await import("@/components/EmptyState");
 const { NamedWords } = await import("@/components/MemberText");
+const { erasEmpty } = await import("@/components/eraBook");
+const { USERNAME_RE } = await import("@/utils/validation");
 
 const MEDIUM = "CormorantGaramond-MediumItalic";
 const SEMIBOLD = "CormorantGaramond-SemiBoldItalic";
@@ -330,8 +332,8 @@ const SITES: [file: string, what: string, pattern: RegExp][] = [
   ],
   [
     "src/components/MemberText.tsx",
-    "a username the app writes words around (an empty page's sentence, a private or blocked profile's line), at the words' size",
-    /\{words\.slice\(0, at\)\}\s*<Text style=\{face\(size\)\}>\{name\}<\/Text>\s*\{words\.slice\(at \+ name\.length\)\}/,
+    "a username the app writes words around (an empty page's sentence, a private or blocked profile's line, who sent an applicant or an invitation), at the words' size",
+    /\{around\[0\]\}\s*<Text style=\{face\(size\)\}>\{name\}<\/Text>\s*\{around\[1\]\}/,
   ],
   ["src/components/PendingPostCard.tsx", "the author", /<Text style=\{\[styles\.username, face\(14\)\]\} numberOfLines=\{1\}>\s*\{draft\.author\.username\}/],
   [
@@ -840,25 +842,78 @@ describe("a state a place marks a name for", () => {
 const childrenOf = (element: ReactElement) => (element.props as { children: unknown }).children;
 
 describe("a username written into a sentence", () => {
+  /** The words NamedWords draws, handed what writes them around a name. */
+  const named = (write: (name: string) => string, name: string, size = 13) => childrenOf(NamedWords({ words: write, name, size }) as ReactElement);
+
   it("is drawn in the face by NamedWords, the words around it as they were; under Original the words are the one string they were", () => {
-    const words = (w: string, name: string, size = 13) => NamedWords({ words: w, name, size }) as ReactElement;
     // Under Original, the one string the words always were.
-    expect(childrenOf(words("tomas.lindqvist hasn’t posted a photograph yet.", "tomas.lindqvist"))).toBe("tomas.lindqvist hasn’t posted a photograph yet.");
+    expect(named((name) => `${name} hasn’t posted a photograph yet.`, "tomas.lindqvist")).toBe("tomas.lindqvist hasn’t posted a photograph yet.");
     setFeedLayout("editorial");
     // Under Editorial, the words around the name as they were, and the name in the face at the words' size.
-    const [before, name, after] = childrenOf(words("Nobody follows june.nakamura yet.", "june.nakamura")) as [string, ReactElement, string];
+    const [before, name, after] = named((name) => `Nobody follows ${name} yet.`, "june.nakamura") as [string, ReactElement, string];
     expect([before, after]).toEqual(["Nobody follows ", " yet."]);
     expect(name.props).toEqual({ style: nameStyle(13), children: "june.nakamura" });
-    const blocked = childrenOf(words("You blocked otis.whitfield", "otis.whitfield", 16)) as [string, ReactElement, string];
-    expect(blocked[0]).toBe("You blocked ");
+    const blocked = named((name) => `You blocked ${name}`, "otis.whitfield", 16) as [string, ReactElement, string];
+    expect(blocked).toHaveLength(3);
+    expect([blocked[0], blocked[2]]).toEqual(["You blocked ", ""]);
     expect(blocked[1].props).toEqual({ style: nameStyle(16), children: "otis.whitfield" });
-    // The name as a word of its own, not inside another.
-    const inside = childrenOf(words("Eras are read from the day each photograph was taken, and none of photo’s carries that date.", "photo")) as unknown[];
-    expect([inside[0], inside[2]]).toEqual(["Eras are read from the day each photograph was taken, and none of ", "’s carries that date."]);
-    // A name not in the words leaves them as they were.
-    expect(childrenOf(words("Eras gather the photographs you post.", "you.post"))).toBe("Eras gather the photographs you post.");
+    // Words that do not write the name, or write it more than once, are left as the one string.
+    expect(named(() => "Eras gather the photographs you post.", "you.post")).toBe("Eras gather the photographs you post.");
+    expect(named((name) => `${name}, ${name}`, "june.nakamura")).toBe("june.nakamura, june.nakamura");
     const source = code("src/components/MemberText.tsx");
-    expect(source).toMatch(/const at = face\(size\) \? nameAt\(words, name\) : -1;\s*if \(at < 0\) return <>\{words\}<\/>;/);
+    expect(source).toMatch(/const around = face\(size\) && USERNAME_RE\.test\(name\) \? words\(SLOT\)\.split\(SLOT\) : \[\];\s*if \(around\.length !== 2\) return <>\{words\(name\)\}<\/>;/);
+    // Found by writing the words with a character no sentence or username holds in the name's place, never by searching.
+    expect(source).toMatch(/\nconst SLOT = "\\u0000";\n/);
+    expect(source).not.toMatch(/indexOf\(name/);
+  });
+
+  it("is the name where the sentence writes it, even where a member's username spells one of the sentence's own words", () => {
+    setFeedLayout("editorial");
+    // A member's empty Eras page, as EraList writes it: erasEmpty's own sentence, written around the name.
+    const summary = (undated: number, apart: number) => ({ eras: [], undated, apart }) as unknown as Parameters<typeof erasEmpty>[0];
+    const eras = (undated: number, apart: number) => (name: string) => erasEmpty(summary(undated, apart), name)!.body;
+    const cases: [write: (name: string) => string, username: string][] = [
+      [(name) => `You blocked ${name}`, "blocked"],
+      [(name) => `Ask to follow ${name} to see their photographs.`, "follow"],
+      [(name) => `${name} has your request. You'll see their photographs once they accept.`, "their"],
+      [(name) => `Nobody follows ${name} yet.`, "follows"],
+      [(name) => `${name} isn't following anyone yet.`, "following"],
+      [eras(0, 0), "posted"],
+      [eras(1, 0), "taken"],
+      [eras(1, 0), "photograph"],
+      [eras(1, 1), "place"],
+      [(name) => `invited by ${name}`, "invited"],
+      [(name) => `${name} invited you to VINTAGE. Fill this in and you are a member — no queue, no review.`, "member"],
+    ];
+    for (const [write, username] of cases) {
+      const [before, name, after] = named(write, username) as [string, ReactElement, string];
+      const slot = write("\u0000");
+      // The words before and after the name are the sentence's own, to the letter, and the name in the face is its slot.
+      expect([before, after], write(username)).toEqual(slot.split("\u0000"));
+      expect(name.props, write(username)).toEqual({ style: nameStyle(13), children: username });
+      // Each of these usernames is also one of the sentence's own words: written twice, once as a word, once as the name.
+      expect(write(username).split(/[^\p{L}\p{N}._]+/u).filter((word) => word === username), write(username)).toHaveLength(2);
+    }
+  });
+
+  it("is in the face only where the name reads as a username: a full name, or a name as an applicant wrote it, keeps the words' type", () => {
+    setFeedLayout("editorial");
+    const invited = (name: string) => `${name} invited you to VINTAGE. Fill this in and you are a member — no queue, no review.`;
+    // The invitation's page names the member by their full name, or by their username where they gave none.
+    expect(named(invited, "Elena Marchetti", 15)).toBe(invited("Elena Marchetti"));
+    const [, name] = named(invited, "elena.marchetti", 15) as [string, ReactElement, string];
+    expect(name.props).toEqual({ style: nameStyle(15), children: "elena.marchetti" });
+    // An applicant writes who sent them as they like.
+    expect(named((name) => `invited by ${name}`, "my friend Sam", 12)).toBe("invited by my friend Sam");
+    expect((named((name) => `invited by ${name}`, "elena.marchetti", 12) as [string, ReactElement, string])[1].props).toEqual({
+      style: nameStyle(12),
+      children: "elena.marchetti",
+    });
+    // Every member's username reads as one: the database holds them to it, as the app does.
+    expect(USERNAME_RE.source).toBe("^[a-z0-9_.]{3,24}$");
+    expect(readFileSync(path.join(root, "supabase/migrations/0001_schema.sql"), "utf8")).toContain("check (username ~ '^[a-z0-9_.]{3,24}$')");
+    // The invitation's owner, as the database names them: the full name, or the username where there is none.
+    expect(readFileSync(path.join(root, "supabase/migrations/0012_invite_links.sql"), "utf8")).toContain("select coalesce(nullif(p.full_name, ''), p.username), p.invite_quota");
   });
 
   it("is handed to NamedWords with the size of the line it is in, wherever the app writes one into words", () => {
@@ -868,22 +923,41 @@ describe("a username written into a sentence", () => {
       for (const m of source.matchAll(/<NamedWords\b((?:=>|[^>])*?)\/>/g)) {
         const size = m[1].match(/\bsize=\{([\d.]+)\}/)?.[1];
         expect(Number(size), `${file}: ${m[0]}`).toBe(wordsSize(file, [], around(source, m.index)));
+        // Handed what writes the words, never words already written.
+        expect(m[1], `${file}: ${m[0]}`).toMatch(/^\s*words=\{\s*(?:\(name\) => |body\}|closed\s*\? \(name\) => |status === "pending"\s*\? \(name\) => )/);
         handed.push(`${file}: ${size}`);
       }
     }
-    expect(handed.sort()).toEqual(["app/user/[username].tsx: 13", "app/user/[username].tsx: 16", "src/components/EmptyState.tsx: 13"]);
-    // EmptyState hands it its body and the username, when it is given one; with none, the body as it was.
-    const state = (body: string, name?: string) => EmptyState({ title: "No eras yet", body, name }) as ReactElement;
-    const bodyOf = (element: ReactElement) => childrenOf((childrenOf(element) as ReactElement[])[1]);
-    const named = bodyOf(state("Nobody follows june.nakamura yet.", "june.nakamura")) as ReactElement;
-    expect(named.type).toBe(NamedWords);
-    expect(named.props).toEqual({ words: "Nobody follows june.nakamura yet.", name: "june.nakamura", size: 13 });
-    expect(bodyOf(state("No eras yet."))).toBe("No eras yet.");
-    // A blocked or private profile's lines: the words they always were, handed with the username.
+    expect(handed.sort()).toEqual([
+      "app/(gate)/invite.tsx: 15",
+      "app/admin/applications.tsx: 12",
+      "app/user/[username].tsx: 13",
+      "app/user/[username].tsx: 16",
+      "src/components/EmptyState.tsx: 13",
+    ]);
+    // EmptyState hands it a body written around a name, once the name is known; a body of words, as it was.
+    const state = (body: string | ((name: string) => string) | undefined, name?: string) => EmptyState({ title: "No eras yet", body, name }) as ReactElement;
+    const bodyOf = (element: ReactElement) => (childrenOf(element) as (ReactElement | null)[])[1];
+    const write = (name: string) => `Nobody follows ${name} yet.`;
+    const words = childrenOf(bodyOf(state(write, "june.nakamura"))!) as ReactElement;
+    expect(words.type).toBe(NamedWords);
+    expect(words.props).toEqual({ words: write, name: "june.nakamura", size: 13 });
+    expect(bodyOf(state(write))).toBeNull();
+    expect(childrenOf(bodyOf(state("No eras yet."))!)).toBe("No eras yet.");
+    expect(bodyOf(state(undefined))).toBeNull();
+    // A blocked or private profile's lines: the words they always were, written around the username.
     const profile = code("app/user/[username].tsx");
-    expect(profile).toMatch(/<Text style=\{styles\.lockedTitle\}>\s*<NamedWords words=\{`You blocked \$\{profile\.username\}`\} name=\{profile\.username\} size=\{16\} \/>\s*<\/Text>/);
+    expect(profile).toMatch(/<Text style=\{styles\.lockedTitle\}>\s*<NamedWords words=\{\(name\) => `You blocked \$\{name\}`\} name=\{profile\.username\} size=\{16\} \/>\s*<\/Text>/);
     expect(profile).toMatch(
-      /<Text style=\{styles\.lockedBody\}>\s*<NamedWords\s+words=\{\s*status === "pending"\s*\? `\$\{profile\.username\} has your request\. You'll see their photographs once they accept\.`\s*: `Ask to follow \$\{profile\.username\} to see their photographs\.`\s*\}\s*name=\{profile\.username\}\s*size=\{13\}\s*\/>\s*<\/Text>/,
+      /<Text style=\{styles\.lockedBody\}>\s*<NamedWords\s+words=\{\s*status === "pending"\s*\? \(name\) => `\$\{name\} has your request\. You'll see their photographs once they accept\.`\s*: \(name\) => `Ask to follow \$\{name\} to see their photographs\.`\s*\}\s*name=\{profile\.username\}\s*size=\{13\}\s*\/>\s*<\/Text>/,
+    );
+    // Who sent an applicant, as they wrote it, in an admin's queue.
+    expect(code("app/admin/applications.tsx")).toMatch(
+      /\{item\.inviter \? \(\s*<Text style=\{styles\.meta\}>\s*<NamedWords words=\{\(name\) => `invited by \$\{name\}`\} name=\{item\.inviter\} size=\{12\} \/>\s*<\/Text>\s*\) : null\}/,
+    );
+    // Who sent an invitation, on its page.
+    expect(code("app/(gate)/invite.tsx")).toMatch(
+      /<Text style=\{styles\.blurb\}>\s*\{inviter \? \(\s*<NamedWords\s+words=\{\s*closed\s*\? \(name\) => `\$\{name\} invited you, but every invitation they were given has since been taken up\.`\s*: \(name\) => `\$\{name\} invited you to VINTAGE\. Fill this in and you are a member — no queue, no review\.`\s*\}\s*name=\{inviter\}\s*size=\{15\}\s*\/>\s*\) : unknown \? \(/,
     );
   });
 
@@ -898,13 +972,7 @@ describe("a username written into a sentence", () => {
         /^`Reinstate \$\{member\.username\}\?`$/,
       ],
       "app/messages/[id].tsx": [/^`Block \$\{peer\.username\}\?`$/],
-      "app/user/[username].tsx": [
-        /^`Block \$\{profile\.username\}\?`$/,
-        // A blocked or private profile's lines: drawn by NamedWords, the name in the face (above).
-        /^`You blocked \$\{profile\.username\}`$/,
-        /^`\$\{profile\.username\} has your request\. You'll see their photographs once they accept\.`$/,
-        /^`Ask to follow \$\{profile\.username\} to see their photographs\.`$/,
-      ],
+      "app/user/[username].tsx": [/^`Block \$\{profile\.username\}\?`$/],
       // Spoken by VoiceOver, never drawn.
       "app/(tabs)/search.tsx": [/^`Forget \$\{item\.username\}`$/],
       "app/blocked.tsx": [/^`Unblock \$\{item\.username\}`$/],
@@ -919,9 +987,8 @@ describe("a username written into a sentence", () => {
       "src/utils/nameActions.ts": [/^`View \$\{username\}’s profile`$/],
       // The public web page, written on the server: the preference is kept on the phone.
       "src/share/publicPage.ts": [/^`A photograph from \$\{p\.username\}’s archive · VINTAGE`$/],
-      // An empty Followers or Following list's sentence: drawn by EmptyState, the name in the face (below).
-      "app/follows.tsx": [/^`Nobody follows \$\{username\} yet\.`$/, /^`\$\{username\} isn't following anyone yet\.`$/],
-      // A member's empty Eras page: drawn by EmptyState too, the name in the face (below).
+      // A member's empty Eras page: written by erasEmpty, which EraList hands EmptyState as what writes it around the
+      // name, and EmptyState hands NamedWords: the name in the face (below).
       "src/components/eraBook.ts": [
         /^`\$\{member\} hasn’t posted a photograph yet\.`$/,
         /, and none of \$\{member\}’s carries that date\.`$/,
@@ -948,13 +1015,38 @@ describe("a username written into a sentence", () => {
       }
     }
     expect(code("src/utils/nameActions.ts")).toMatch(/const said = `View \$\{username\}’s profile`;\s*out\.push\(\{ name: said, label: said \}\);/);
-    // The sentences the app draws hand EmptyState the name they are written around.
+    // The sentences the app draws around a username, each handed to NamedWords (directly, or through EmptyState) as
+    // what writes it, a function of the name: every such writer, in every file, and no other.
+    const writers: Record<string, string[]> = {};
+    for (const file of sources()) {
+      const source = code(file);
+      for (const [, writes] of source.matchAll(/\(name\) => (`[^`]*`|[\w$.()!, ]+?(?=\}|\s:\s|\n))/g)) (writers[file] ??= []).push(writes);
+      // Every arrow of a name but one that reads the name itself (a filter's `(name) => name.length > 0`).
+      expect(writers[file]?.length ?? 0, file).toBe(source.match(/\(name\) => (?!name\.)/g)?.length ?? 0);
+    }
+    expect(writers).toEqual({
+      "app/(gate)/invite.tsx": [
+        "`${name} invited you, but every invitation they were given has since been taken up.`",
+        "`${name} invited you to VINTAGE. Fill this in and you are a member — no queue, no review.`",
+      ],
+      "app/admin/applications.tsx": ["`invited by ${name}`"],
+      "app/follows.tsx": ["`Nobody follows ${name} yet.`", "`${name} isn't following anyone yet.`"],
+      "app/user/[username].tsx": [
+        "`You blocked ${name}`",
+        "`${name} has your request. You'll see their photographs once they accept.`",
+        "`Ask to follow ${name} to see their photographs.`",
+      ],
+      // erasEmpty's own sentences (above), written around the name.
+      "src/components/EraList.tsx": ["erasEmpty(summary, name)!.body"],
+    });
+    // An empty Followers or Following list's sentence, and a member's empty Eras page: handed to EmptyState with the name,
+    // drawn once the name is known.
     const follows = code("app/follows.tsx");
-    expect(follows).toMatch(/: username\s*\? `\$\{username\} isn't following anyone yet\.`\s*: undefined\s*\}\s*name=\{username\}\s*\/>/);
+    expect(follows).toMatch(/body=\{followers \? \(name\) => `Nobody follows \$\{name\} yet\.` : \(name\) => `\$\{name\} isn't following anyone yet\.`\}\s*name=\{username\}\s*\/>/);
     expect(follows.match(/<EmptyState\b/g)).toHaveLength(1);
     const eras = code("src/components/EraList.tsx");
     expect(eras).toMatch(/const empty = erasEmpty\(summary, member\);/);
-    expect(eras).toMatch(/<EmptyState title=\{empty\.title\} body=\{empty\.body\} name=\{member\} \/>/);
+    expect(eras).toMatch(/<EmptyState title=\{empty\.title\} body=\{member \? \(name\) => erasEmpty\(summary, name\)!\.body : empty\.body\} name=\{member\} \/>/);
     expect(eras.match(/<EmptyState\b/g)).toHaveLength(1);
   });
 });
@@ -980,16 +1072,28 @@ describe("the trial still comes out cleanly", () => {
       expect(readFileSync(path.join(root, file), "utf8"), file).not.toMatch(/Editorial|nameFace|useNameTitleStyle/);
       expect(code(file), file).not.toMatch(/\bface\(/);
     }
-    // Followers and Eras hand EmptyState the name alone, and EmptyState hands it to NamedWords: none reads the module.
-    for (const file of ["app/follows.tsx", "src/components/EraList.tsx", "src/components/EmptyState.tsx"]) {
+    // Followers and Eras hand EmptyState their sentence as what writes it, and EmptyState, like the invitation's page,
+    // hands it to NamedWords: none reads the module.
+    for (const file of ["app/follows.tsx", "src/components/EraList.tsx", "src/components/EmptyState.tsx", "app/(gate)/invite.tsx"]) {
       expect(code(file), file).not.toMatch(/nameFace|useNameFace|\bface\(/);
     }
     expect(code("src/components/EmptyState.tsx")).toMatch(/^import \{ NamedWords \} from "\.\/MemberText";$/m);
+    for (const file of ["app/(gate)/invite.tsx", "app/admin/applications.tsx"]) {
+      expect(code(file), file).toMatch(/^import \{ NamedWords \} from "@\/components\/MemberText";$/m);
+    }
   });
 
   it("is listed, with every file it touches, where the page says how to take the trial out", () => {
     const page = readFileSync(path.join(root, "EDITORIAL_FEED_PREVIEW.md"), "utf8");
-    for (const file of ["src/utils/nameFace.ts", "tests/editorial-names.test.ts", ...ALL_READERS, "app/follows.tsx", "src/components/EraList.tsx", "src/components/EmptyState.tsx"]) {
+    for (const file of [
+      "src/utils/nameFace.ts",
+      "tests/editorial-names.test.ts",
+      ...ALL_READERS,
+      "app/follows.tsx",
+      "src/components/EraList.tsx",
+      "src/components/EmptyState.tsx",
+      "app/(gate)/invite.tsx",
+    ]) {
       expect(page, file).toContain(file);
     }
     const out = page.slice(page.indexOf("## Taking it out of a branch that has it"));
@@ -1009,10 +1113,12 @@ describe("the trial still comes out cleanly", () => {
         ...ALL_READERS.filter((file) => file !== CARD),
         "app/(tabs)/index.tsx",
         "app/settings.tsx",
-        // The sentences that hand EmptyState the name they are written around, and EmptyState, which hands it to NamedWords.
+        // The sentences handed to EmptyState as what writes them around a name, and EmptyState, which hands them to
+        // NamedWords, as the invitation's page does.
         "app/follows.tsx",
         "src/components/EraList.tsx",
         "src/components/EmptyState.tsx",
+        "app/(gate)/invite.tsx",
         "tests/video-playback.test.ts",
         "tests/galleryLanding.test.ts",
         "tests/stableCards.test.ts",

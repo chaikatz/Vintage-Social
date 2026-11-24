@@ -257,7 +257,7 @@ export default function UserProfile() {
           <Feather name="slash" size={18} color={colors.inkFaint} />
           <Text style={styles.lockedTitle}>
             {/* Editorial (Preview): the username in the names' face, at the line's size; under Original the line as it was. */}
-            <NamedWords words={`You blocked ${profile.username}`} name={profile.username} size={16} />
+            <NamedWords words={(name) => `You blocked ${name}`} name={profile.username} size={16} />
           </Text>
           <Text style={styles.lockedBody}>Neither of you sees the other’s photographs. Unblock to change that.</Text>
         </View>
@@ -271,8 +271,8 @@ export default function UserProfile() {
             <NamedWords
               words={
                 status === "pending"
-                  ? `${profile.username} has your request. You'll see their photographs once they accept.`
-                  : `Ask to follow ${profile.username} to see their photographs.`
+                  ? (name) => `${name} has your request. You'll see their photographs once they accept.`
+                  : (name) => `Ask to follow ${name} to see their photographs.`
               }
               name={profile.username}
               size={13}

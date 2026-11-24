@@ -3,6 +3,7 @@ import { StyleSheet, Text, type StyleProp, type TextStyle } from "react-native";
 import { colors } from "@/theme";
 import { parseMentions } from "@/utils/mentions";
 import { useNameFace } from "@/utils/nameFace";
+import { USERNAME_RE } from "@/utils/validation";
 
 /**
  * A member's name inside a line of words — a comment's author, a
@@ -90,35 +91,35 @@ export const MentionText = React.memo(function MentionText({
   );
 });
 
+/** What the words are written with in the name's place, to find it: a character no sentence or username holds. */
+const SLOT = "\u0000";
+
 /**
  * Words the app writes a username into (an empty page's sentence, a
- * private or blocked profile's line), drawn inside a <Text>.
+ * private or blocked profile's line, who sent an applicant or an
+ * invitation), drawn inside a <Text>. Handed what writes them, a function
+ * of the name, rather than the words already written, so the name is found
+ * exactly where the sentence puts it, never in one of the app's own words
+ * that a member's username happens to spell ("You blocked blocked").
  *
  * Editorial (Preview): the name in the names' face at the words' size
- * (src/utils/nameFace.ts), the words around it as they are. Under Original,
- * and where the name is not in the words as a word of its own, the words
- * are the one string they always were.
+ * (src/utils/nameFace.ts), the words around it as they are, where the name
+ * reads as a username (USERNAME_RE, which every member's username is held
+ * to): a name given as a member wrote it, or a full name where there is
+ * one, keeps the words' own type. Under Original, and where the words do
+ * not write the name once, they are the one string they always were.
  */
-export function NamedWords({ words, name, size }: { words: string; name: string; size: number }) {
+export function NamedWords({ words, name, size }: { words: (name: string) => string; name: string; size: number }) {
   const face = useNameFace();
-  const at = face(size) ? nameAt(words, name) : -1;
-  if (at < 0) return <>{words}</>;
+  const around = face(size) && USERNAME_RE.test(name) ? words(SLOT).split(SLOT) : [];
+  if (around.length !== 2) return <>{words(name)}</>;
   return (
     <>
-      {words.slice(0, at)}
+      {around[0]}
       <Text style={face(size)}>{name}</Text>
-      {words.slice(at + name.length)}
+      {around[1]}
     </>
   );
-}
-
-/** Where `name` is written in `words` as a word of its own, not inside another: its first such place, or -1. */
-function nameAt(words: string, name: string): number {
-  const part = /[\p{L}\p{N}._]/u;
-  for (let at = words.indexOf(name); at >= 0 && name.length > 0; at = words.indexOf(name, at + 1)) {
-    if (!part.test(words[at - 1] ?? "") && !part.test(words[at + name.length] ?? "")) return at;
-  }
-  return -1;
 }
 
 const styles = StyleSheet.create({
