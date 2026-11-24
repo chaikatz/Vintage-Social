@@ -9,6 +9,7 @@ import {
   leaderAt,
   MARK_SPACING,
   PACE,
+  playRestarts,
   REPLAY_MIN,
   replayable,
   replayEnding,
@@ -355,6 +356,25 @@ describe("the replay’s states", () => {
     expect(replayReducer({ ...replayInit(3, ctx2), phase: "held" }, { type: "play" }, ctx2)).toMatchObject({ index: 0 });
   });
 
+  it("says AGAIN exactly where a press goes back to the first print, and PLAY where it plays on from here", () => {
+    const ctx = context(5, { gone: [0, 4] });
+    const held = (index: number): ReplayState => ({ ...replayInit(index, ctx), phase: "held" });
+    for (let i = 0; i < 5; i++) {
+      for (const s of [held(i), { ...held(i), phase: "ended" as const }]) {
+        const restarts = playRestarts(s, ctx);
+        const next = replayReducer(s, { type: "play" }, ctx);
+        // Back to the first print still there (1), or on from the photograph in front.
+        expect(restarts, `${s.phase} ${i}`).toBe(next.index === 1 && (s.index !== 1 || s.phase === "ended"));
+        expect(replayWord(s.phase, restarts).label, `${s.phase} ${i}`).toBe(restarts ? "Again" : "Play");
+        if (!restarts) expect(next.index).toBe(i);
+      }
+    }
+    // Held on the last print, or on one whose followers are all gone: AGAIN, named Play again.
+    expect(replayWord("held", playRestarts(held(4), context(5)))).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("held", playRestarts(held(3), ctx))).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("held", playRestarts(held(2), ctx))).toEqual({ label: "Play", said: "Play" });
+  });
+
   it("moves on when its time is up: to a ready print, or waits for it online, or goes on offline", () => {
     const ctx = context(5, { ready: [2] });
     const s = replayInit(1, ctx);
@@ -543,9 +563,13 @@ describe("the replay’s words", () => {
   });
 
   it("sets the word by what a press does, names it so to VoiceOver, and gives the photograph its value, never a count", () => {
-    expect(replayWord("playing")).toEqual({ label: "Hold", said: "Hold" });
-    expect(replayWord("held")).toEqual({ label: "Play", said: "Play" });
-    expect(replayWord("ended")).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("playing", false)).toEqual({ label: "Hold", said: "Hold" });
+    expect(replayWord("playing", true)).toEqual({ label: "Hold", said: "Hold" });
+    expect(replayWord("held", false)).toEqual({ label: "Play", said: "Play" });
+    // Held where a press starts again from the first print, the word says so.
+    expect(replayWord("held", true)).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("ended", true)).toEqual({ label: "Again", said: "Play again" });
+    expect(replayWord("ended", false)).toEqual({ label: "Again", said: "Play again" });
     const t = at(2022, 11, 4, 16, 12);
     expect(replayValue(t, "A Sunday", "playing")).toBe("December 4, 2022. A Sunday. Playing.");
     expect(replayValue(t, "A Sunday", "held")).toBe("December 4, 2022. A Sunday.");
@@ -738,7 +762,10 @@ describe("the replay, in its source", () => {
     expect(strip.match(/glidedTo\.current = x;\s*on\.current\.onScrubTo\(stripIndex\(x, n\)\);/g)).toHaveLength(2);
     expect(word).toMatch(/minHeight=\{WORD_SLOT\}\s*paddingHorizontal=\{24\}/);
     expect(word).toMatch(/testID="darkroom-replay-word"/);
-    expect(replay).toMatch(/const word = replayWord\(state\.phase\);/);
+    expect(replay).toMatch(/const word = replayWord\(state\.phase, r\.restarts\);/);
+    // AGAIN exactly where a press starts again: the reducer's own rule, worked out as the hook draws.
+    expect(code(`${dir}/useReplay.ts`)).toMatch(/const restarts = playRestarts\(state, ctx\.current\);/);
+    expect(code(`${dir}/replay.ts`)).toMatch(/function play\(s: ReplayState, ctx: ReducerContext\): ReplayState \{\s*if \(s\.phase === "playing"\) return s;\s*if \(playRestarts\(s, ctx\)\) \{/);
     // DEVELOP's own slot and least width, and the room's bottom margin under it, so it stands where DEVELOP stood.
     expect(replay).toMatch(/const WORD_SLOT = 48;/);
     expect(replay).toMatch(/const WORD_MIN_WIDTH = 116;/);

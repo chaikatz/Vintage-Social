@@ -338,11 +338,20 @@ function due(s: ReplayState, ctx: ReducerContext): ReplayState {
   return { ...s, wait: "image", pending: next };
 }
 
-/** Where a press of play goes: on from here, or from the first print again at the end. */
+/**
+ * Whether a press of play starts again from the first print: at the end,
+ * or held on the last print still there (glided to, tapped, or stepped
+ * onto), with nothing after it to play on to. The word says AGAIN exactly
+ * then (`replayWord`).
+ */
+export function playRestarts(s: ReplayState, ctx: ReducerContext): boolean {
+  return s.phase === "ended" || nextShown(s.index, ctx) == null;
+}
+
+/** Where a press of play goes: on from here, or from the first print again at the end (`playRestarts`). */
 function play(s: ReplayState, ctx: ReducerContext): ReplayState {
   if (s.phase === "playing") return s;
-  const atEnd = s.phase === "ended" || nextShown(s.index, ctx) == null;
-  if (atEnd) {
+  if (playRestarts(s, ctx)) {
     const first = firstShown(ctx);
     if (first == null) return s;
     return {

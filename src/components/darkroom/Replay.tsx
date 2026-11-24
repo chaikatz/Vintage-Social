@@ -186,7 +186,7 @@ export const Replay = forwardRef<ReplayHandle, ReplayProps>(function Replay(prop
 
   // --- the word ----------------------------------------------------------------------
 
-  const word = replayWord(state.phase);
+  const word = replayWord(state.phase, r.restarts);
   /**
    * The word pressed. A glide of the strip still coming to rest stops
    * where it is first, on the photograph in front: PLAY is never held

@@ -444,6 +444,23 @@ await wait(200);
 await byId("darkroom-replay-cell-1").first().click();
 await wait(400);
 check("…and a frame brings it back", (await replayDate()) === secondDate && (await wordSaid()) === "Play", await replayDate());
+// Held on the last photograph there is nothing to play on to: the word says AGAIN, as a press there
+// plays from the first.
+await byId("darkroom-replay-cell-5").first().click();
+await wait(400);
+check(
+  "Held on the last photograph, the word says AGAIN, named Play again",
+  (await wordShown()) === "AGAIN" && (await wordSaid()) === "Play again",
+  `${await wordShown()} ${await wordSaid()} ${await replayDate()}`,
+);
+await byId("darkroom-replay-word").first().click();
+await wait(300);
+check("…and it plays from the first photograph", (await replayDate()) === firstDate && (await wordSaid()) === "Hold", `${await replayDate()} ${await wordSaid()}`);
+await byId("darkroom-replay-word").first().click();
+await wait(200);
+await byId("darkroom-replay-cell-1").first().click();
+await wait(400);
+check("…held again on a frame that has more after it, the word says PLAY", (await wordShown()) === "PLAY" && (await replayDate()) === secondDate, `${await wordShown()} ${await replayDate()}`);
 await byId("darkroom-back").first().click();
 await wait(900);
 check(

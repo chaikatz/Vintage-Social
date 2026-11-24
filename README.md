@@ -515,9 +515,10 @@ leader: a hairline the strip's width, drawn out in the accent from the left
 as the replay plays, one length for the whole of it (a photograph at a time
 under Reduce Motion). The strip is the scrubber, and the leader follows it.
 At the foot, where DEVELOP stands in the room, the room's own ruled word:
-HOLD while it plays, PLAY when held, AGAIN at the end, which plays from the
-first photograph; VoiceOver hears a button named Hold, Play or Play again.
-No icon, no ring, no dial. A touch anywhere holds it; only the word plays.
+HOLD while it plays, PLAY when held, AGAIN at the end (or held on the last
+photograph), which plays from the first photograph; VoiceOver hears a button
+named Hold, Play or Play again. No icon, no ring, no dial. A touch anywhere
+holds it; only the word (or VoiceOver's Play on the photograph) plays.
 Back lands the room on the photograph it stopped on. The rules are
 pure, in `src/components/darkroom/replay.ts`. It plays the chapter's prints
 the room already holds, and asks the library nothing; every image is drawn

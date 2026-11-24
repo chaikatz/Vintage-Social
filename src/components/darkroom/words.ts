@@ -725,12 +725,15 @@ export function withPlayThrough(page: PageWords, ending: Ending | null, playable
 /**
  * The replay's own word, set at the foot of the page where DEVELOP stands
  * in the room, and what VoiceOver hears for it: what a press does next.
- * HOLD while it plays, PLAY while it is held, AGAIN at the end ("Play
- * again" aloud, as the word alone would not say what it does).
+ * HOLD while it plays; held, PLAY where it plays on from the photograph in
+ * front, and AGAIN where a press starts again from the first print
+ * (`restarts`, the reducer's own `playRestarts`: at the end, or held on
+ * the last print still there). "Play again" aloud, as the word alone
+ * would not say what it does.
  */
-export function replayWord(phase: ReplayPhase): { label: string; said: string } {
+export function replayWord(phase: ReplayPhase, restarts: boolean): { label: string; said: string } {
   if (phase === "playing") return { label: "Hold", said: "Hold" };
-  if (phase === "ended") return { label: "Again", said: "Play again" };
+  if (phase === "ended" || restarts) return { label: "Again", said: "Play again" };
   return { label: "Play", said: "Play" };
 }
 

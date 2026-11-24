@@ -8,6 +8,7 @@ import {
   HOLD_EASE_MS,
   leaderAt,
   PACE,
+  playRestarts,
   READY_WAIT_MS,
   REST_MS,
   replayInit,
@@ -291,8 +292,11 @@ export function useReplay(o: ReplayOptions) {
 
   const source: ReplaySource = state.source;
   const rest = state.phase !== "playing" && state.centre === state.index;
+  /** A press of play would start again from the first print, so the word says AGAIN (`playRestarts`). */
+  const restarts = playRestarts(state, ctx.current);
   return {
     state,
+    restarts,
     plan,
     leader,
     tray,
