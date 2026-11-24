@@ -458,6 +458,14 @@ export default function Darkroom() {
     !develop.busy &&
     !sheet.open &&
     replay == null;
+  /**
+   * The deal of the chapter PLAY could start on now, in view; null when it
+   * could not. Read as the room's fade out ends, since the member may have
+   * gone on meanwhile: DEVELOP pressed, the room left, the chapter dealt
+   * again.
+   */
+  const playsNow = useRef<number | null>(null);
+  playsNow.current = canPlay && focused && chapter ? chapter.generation : null;
 
   /** The room goes out, and the replay comes in in its place, from this print (or the first). */
   const startReplay = (fromId: string | null) => {
@@ -474,6 +482,11 @@ export default function Darkroom() {
     }).start(() => {
       starting.current = false;
       if (!mounted.current) return;
+      // Gone on while it faded: no replay behind the editor, playing with the screen kept awake. The room comes back.
+      if (playsNow.current !== generation) {
+        roomFade.setValue(1);
+        return;
+      }
       setReplay({ prints, start, generation, key: Date.now() });
     });
   };

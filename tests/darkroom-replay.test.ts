@@ -723,6 +723,18 @@ describe("the replay, in its source", () => {
     expect(replay).toMatch(/onTurnEnd=\{turnEnd\}/);
   });
 
+  it("starts only if PLAY still could as the room's fade ends, and opens held if the app has left the foreground", () => {
+    const room = code("app/darkroom.tsx");
+    expect(room).toMatch(/playsNow\.current = canPlay && focused && chapter \? chapter\.generation : null;/);
+    const start = room.slice(room.indexOf("const startReplay = "), room.indexOf("const closeReplay = "));
+    expect(start).toMatch(
+      /\.start\(\(\) => \{\s*starting\.current = false;\s*if \(!mounted\.current\) return;\s*if \(playsNow\.current !== generation\) \{\s*roomFade\.setValue\(1\);\s*return;\s*\}\s*setReplay\(/,
+    );
+    const hook = code(`${dir}/useReplay.ts`);
+    expect(hook).toMatch(/return AppState\.currentState === "active" \? opened : replayReducer\(opened, \{ type: "away" \}, ctx\.current\);/);
+    expect(hook).toMatch(/\}\);\s*if \(AppState\.currentState !== "active"\) dispatch\(\{ type: "away" \}\);\s*return \(\) => sub\.remove\(\);/);
+  });
+
   it("holds as the app leaves the foreground", () => {
     const hook = code(`${dir}/useReplay.ts`);
     expect(hook).toMatch(/AppState\.addEventListener\("change", \(next\) => \{\s*if \(next !== "active"\) dispatch\(\{ type: "away" \}\);/);

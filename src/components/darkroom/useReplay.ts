@@ -91,7 +91,11 @@ export function useReplay(o: ReplayOptions) {
     online: o.online,
   };
   const reducer = useCallback((s: ReplayState, e: ReplayEvent) => replayReducer(s, e, ctx.current), []);
-  const [state, dispatch] = useReducer(reducer, o.start, (start: number) => replayInit(start, ctx.current));
+  const [state, dispatch] = useReducer(reducer, o.start, (start: number) => {
+    const opened = replayInit(start, ctx.current);
+    // The app left the foreground while the room faded out: it opens held, as it would have been.
+    return AppState.currentState === "active" ? opened : replayReducer(opened, { type: "away" }, ctx.current);
+  });
   const live = useRef(state);
   live.current = state;
 
@@ -169,6 +173,8 @@ export function useReplay(o: ReplayOptions) {
     const sub = AppState.addEventListener("change", (next) => {
       if (next !== "active") dispatch({ type: "away" });
     });
+    // Gone between the first draw and listening: held all the same.
+    if (AppState.currentState !== "active") dispatch({ type: "away" });
     return () => sub.remove();
   }, []);
 
