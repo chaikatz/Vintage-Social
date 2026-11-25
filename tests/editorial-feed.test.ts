@@ -642,16 +642,41 @@ describe("the editorial card", () => {
   it("shows your own photograph's count under the label, and opens who liked it; on anyone else's, nothing", () => {
     const line = body.slice(at("{likes ? ("), at("{post.caption ? ("));
     expect(line).toMatch(
-      /\{likes \? \(\s*likes\.opens \? \(\s*<Pressable\s+onPress=\{\(\) => onOpenLikes\?\.\(post\)\}\s+disabled=\{!onOpenLikes\}\s+hitSlop=\{6\}\s+accessibilityRole="button"\s+accessibilityLabel=\{likes\.label\}\s+accessibilityHint=\{LIKES_HINT\}\s*>\s*<Text maxFontSizeMultiplier=\{LABEL_CAP\} style=\{styles\.likes\}>\s*\{likes\.text\}\s*<\/Text>\s*<\/Pressable>\s*\) : \(\s*<Text maxFontSizeMultiplier=\{LABEL_CAP\} style=\{\[styles\.likes, styles\.noLikes\]\} accessibilityLabel=\{likes\.label\}>\s*\{likes\.text\}\s*<\/Text>\s*\)\s*\) : null\}/,
+      /\{likes \? \(\s*likes\.opens \? \(\s*<Pressable\s+onPress=\{\(\) => onOpenLikes\?\.\(post\)\}\s+disabled=\{!onOpenLikes\}\s+hitSlop=\{LIKES_SLOP\}\s+accessibilityRole="button"\s+accessibilityLabel=\{likes\.label\}\s+accessibilityHint=\{LIKES_HINT\}\s*>\s*<Text maxFontSizeMultiplier=\{LABEL_CAP\} style=\{styles\.likes\}>\s*\{likes\.text\}\s*<\/Text>\s*<\/Pressable>\s*\) : \(\s*<Text maxFontSizeMultiplier=\{LABEL_CAP\} style=\{\[styles\.likes, styles\.noLikes\]\} accessibilityLabel=\{likes\.label\}>\s*\{likes\.text\}\s*<\/Text>\s*\)\s*\) : null\}/,
     );
     // One height for the count and for "No likes yet", so the first like changes the words and not the card; the
     // words' size, from the edge the words start at.
     expect(card).toMatch(/export const LIKES_LINE = 18;/);
     expect(style("likes")).toMatch(/fontSize: WORDS,\s*lineHeight: LIKES_LINE,\s*fontWeight: "600",\s*color: colors\.ink,\s*paddingHorizontal: EDGE,/);
-    expect(card).toMatch(/\n {2}noLikes: \{ fontWeight: "400", color: colors\.inkFaint \},/);
+    // "No likes yet" in the secondary ink, which reads at AA on both papers and on black.
+    expect(card).toMatch(/\n {2}noLikes: \{ fontWeight: "400", color: colors\.inkSoft \},/);
+    // The count is 44 points tall to a finger: its 18-point line and 13 more above and below.
+    expect(card).toMatch(/const LIKES_SLOP = \{ top: \(TARGET - LIKES_LINE\) \/ 2, bottom: \(TARGET - LIKES_LINE\) \/ 2, left: 6, right: 6 \} as const;/);
+    expect(card).toMatch(/const TARGET = 44;/);
+    expect(style("likes")).not.toMatch(/padding(Top|Bottom|Vertical)/);
     expect(sheet!.likes).toMatchObject({ fontSize: 12.5, lineHeight: 18 });
     expect(sheet!.noLikes).not.toHaveProperty("lineHeight");
     expect(sheet!.noLikes).not.toHaveProperty("fontSize");
+  });
+
+  it("draws \"No likes yet\" at AA on either paper, light and dark", async () => {
+    const { light, dark } = await import("@/theme");
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    // Off-white is the app's paper, white is #FFFFFF; the dark print keeps its black (src/utils/feedPaper.ts).
+    for (const paper of [light.paper, "#FFFFFF"]) expect(ratio(light.inkSoft, paper)).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(dark.inkSoft, dark.paper)).toBeGreaterThanOrEqual(4.5);
+    // inkFaint, which it was in, does not.
+    expect(ratio(light.inkFaint, light.paper)).toBeLessThan(4.5);
   });
 
   it("labels the print with the place and the date alone, without the member's @name", () => {
@@ -1118,5 +1143,34 @@ describe("Settings", () => {
     expect(layout).toBeGreaterThan(appearance);
     expect(paper).toBeGreaterThan(layout);
     expect(save).toBeGreaterThan(paper);
+  });
+});
+
+describe("taking it out, as the page says", () => {
+  const page = readFileSync(path.join(root, "EDITORIAL_FEED_PREVIEW.md"), "utf8");
+  const out = page.slice(page.indexOf("## Taking it out of a branch that has it"), page.indexOf("## On phones that tried it"));
+  const flat = out.replace(/\s+/g, " ");
+
+  it("says what the closing grep still finds once it is out: claude/product-polish's own three tests, and why", () => {
+    const grep = out.match(/git grep -n ((?:-e \S+ )+)-- app src tests e2e/)?.[1] ?? "";
+    const patterns = [...grep.matchAll(/-e (\S+)/g)].map((m) => m[1]);
+    expect(patterns.length).toBeGreaterThan(5);
+    expect(flat).not.toMatch(/should find nothing/);
+    expect(flat).toContain("should find only three lines, all in `claude/product-polish`'s own tests");
+    for (const file of ["tests/comment-menu.test.ts", "tests/exportLayout.test.ts", "tests/member-names.test.ts"]) {
+      expect(flat, file).toContain(`\`${file}\``);
+      const src = readFileSync(path.join(root, file), "utf8");
+      expect(patterns.some((p) => src.includes(p)), file).toBe(true);
+    }
+  });
+
+  it("names the checklist's two lines that are the experiment's, and leaves the App Store app's ID where it is", () => {
+    expect(flat).toContain("two lines of `APP_STORE_LAUNCH.md` are the experiment's");
+    expect(flat).toContain('the "What you test on TestFlight" row');
+    expect(flat).toContain("`git checkout claude/product-polish -- APP_STORE_LAUNCH.md`");
+    const checklist = readFileSync(path.join(root, "APP_STORE_LAUNCH.md"), "utf8");
+    expect(checklist).toContain("| What you test on TestFlight | branch `claude/editorial-feed-preview`");
+    expect(checklist).toMatch(/- `claude\/editorial-feed-preview` is what you have been testing, with the\n {2}Editorial feed in it\./);
+    expect(flat).toContain("`submit.production.ios.ascAppId`");
   });
 });

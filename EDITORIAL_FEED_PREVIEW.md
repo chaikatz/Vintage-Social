@@ -388,11 +388,27 @@ with `username` again (`undefined` while there is none), and
 `src/components/EraList.tsx` hands it `empty.body` and no `name`; in
 `app/(tabs)/_layout.tsx` the Profile tab's title loses `titleStyle` and
 `nameTitle`, and `useWindowDimensions`, `fontScale` and `styles.nameTitle`
-go. Afterwards
+go.
+
+Outside the code, two lines of `APP_STORE_LAUNCH.md` are the
+experiment's: the "What you test on TestFlight" row of the table in
+section 1, and the `claude/editorial-feed-preview` bullet under "Decide
+which branch you are launching". With no other change of the branch's
+own to that file, `git checkout claude/product-polish -- APP_STORE_LAUNCH.md`
+takes them back; otherwise take them out by hand. `eas.json`'s
+`submit.production.ios.ascAppId` is the App Store app's ID, not part of
+the experiment: it was added on this branch because this is the one that
+goes to TestFlight, and it belongs in whichever branch is launched, so
+leave it (or add it to `claude/product-polish` if that is the one).
+
+Afterwards
 `git diff claude/product-polish -- app src tests e2e`
 should be empty, and
 `git grep -n -e EditorialPostCard -e EditorialPendingCard -e feedLayout -e feedPaper -e useFeedBackground -e nameFace -e NameFace -e NameEdge -e NameTitle -e nameHeaderTitle -e Cormorant -- app src tests e2e`
-should find nothing.
+should find only three lines, all in `claude/product-polish`'s own tests,
+which name the card's file to look for it and pass without it:
+`tests/comment-menu.test.ts`, `tests/exportLayout.test.ts` and
+`tests/member-names.test.ts`.
 
 ## On phones that tried it
 

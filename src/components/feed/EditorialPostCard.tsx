@@ -168,7 +168,7 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
           <Pressable
             onPress={() => onOpenLikes?.(post)}
             disabled={!onOpenLikes}
-            hitSlop={6}
+            hitSlop={LIKES_SLOP}
             accessibilityRole="button"
             accessibilityLabel={likes.label}
             accessibilityHint={LIKES_HINT}
@@ -370,6 +370,15 @@ const BUTTONS = 3;
  */
 export const LIKES_LINE = 18;
 
+/**
+ * The count's reach past its line, the owner's way into who liked it: the
+ * line is 18 points with nothing above or below, so 13 more each way
+ * make the 44 a finger needs (TARGET), and nothing on the card moves. A
+ * touch that also lands on the caption under it goes to the caption, the
+ * later of the two.
+ */
+const LIKES_SLOP = { top: (TARGET - LIKES_LINE) / 2, bottom: (TARGET - LIKES_LINE) / 2, left: 6, right: 6 } as const;
+
 /** The buttons' outline size. */
 const ICON = 21;
 
@@ -566,7 +575,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     paddingHorizontal: EDGE,
   },
-  noLikes: { fontWeight: "400", color: colors.inkFaint },
+  noLikes: { fontWeight: "400", color: colors.inkSoft },
   // A name in the caption and the comments: the header's name, as it is drawn there.
   author: { ...NAME, color: colors.nameInk },
   nameGap: { fontSize: 12 },
