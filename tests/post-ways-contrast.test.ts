@@ -4,13 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import { colors } from "@/theme";
 
 /**
- * The camera and the clip on the Post tab, as they are seen: their words
- * and marks against their box, on paper and on black, at WCAG's 4.5:1 for
- * text (and so for the marks beside it); their edge against the page at
- * 3:1, what WCAG asks of the edge that shows a control is there; and the
- * clip's limit under them at 4.5:1. The colours are the tokens the page
- * names in its styles, read from the source, so a change of token there
- * is held here.
+ * The Post tab as it is seen, on paper and on black: its words and marks
+ * against what they stand on at WCAG's 4.5:1 for text (and so for the
+ * marks beside it), and the grease-pencil box against the sunken paper of
+ * a cell at the 3:1 WCAG asks of what shows a control's state. The
+ * colours are the tokens the page's parts name in their styles, read from
+ * the source, so a change of token there is held here.
  */
 
 // The theme read as iOS, so each dynamic colour comes back as its two prints.
@@ -40,8 +39,10 @@ const ratio = (a: string, b: string) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
-const tab = readFileSync(path.resolve(import.meta.dirname, "..", "app/(tabs)/create.tsx"), "utf8");
-const style = (name: string) => tab.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
+const read = (f: string) => readFileSync(path.resolve(import.meta.dirname, "..", f), "utf8");
+/** One entry of the file's StyleSheet, as written. */
+const style = (src: string, name: string) =>
+  src.slice(src.indexOf("StyleSheet.create({")).match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
 /** The token a style, or a line of the source, names for a property. */
 function token(src: string, prop: string): Token {
   const name = src.match(new RegExp(`${prop}[:=]\\s*\\{?colors\\.(\\w+)`))?.[1];
@@ -50,46 +51,75 @@ function token(src: string, prop: string): Token {
   return name as Token;
 }
 
-const boxed = tab.slice(tab.indexOf("function BoxedWay"), tab.indexOf("function QuietWay"));
-const word = token(style("boxWord"), "color");
-const mark = token(boxed.match(/<Feather [^>]*>/)?.[0] ?? "", "color");
-const spinner = token(boxed.match(/<ActivityIndicator [^>]*>/)?.[0] ?? "", "color");
-const fill = token(style("box"), "backgroundColor");
-const pressedFill = token(style("boxPressed"), "backgroundColor");
-const edge = token(style("box"), "borderColor");
-const note = token(style("waysNoteText"), "color");
+const ways = read("src/components/post/WaysRow.tsx");
+const doors = read("src/components/post/PostDoors.tsx");
+const hero = read("src/components/post/RollHero.tsx");
+const cells = read("src/components/post/RollCell.tsx");
+const panel = read("src/components/post/MountPanel.tsx");
+const footer = read("src/components/post/RollFooter.tsx");
 
-describe("the camera and the clip, on paper and on black", () => {
+/** Ink on ground, as the page draws it, and the ratio it must reach. */
+const PAIRS: [string, Token, Token, number][] = [
+  ["RECENT", token(style(ways, "recent"), "color"), "paper", 4.5],
+  ["the ways' words", token(style(ways, "wayWord"), "color"), "paper", 4.5],
+  ["the ways' marks", token(ways.match(/<Feather name=\{icon\}[^>]*>/)?.[0] ?? "", "color"), "paper", 4.5],
+  ["the limited line", token(style(ways, "limitedText"), "color"), "paper", 4.5],
+  ["SHARE MORE", token(style(ways, "shareMoreWord"), "color"), "paper", 4.5],
+  ["On this day's eyebrow", token(style(doors, "dayEyebrow"), "color"), token(style(doors, "day"), "backgroundColor"), 4.5],
+  ["On this day's line", token(style(doors, "dayLine"), "color"), token(style(doors, "day"), "backgroundColor"), 4.5],
+  ["On this day's years", token(style(doors, "sub"), "color"), token(style(doors, "day"), "backgroundColor"), 4.5],
+  ["the Memory Room's eyebrow", token(style(doors, "roomEyebrow"), "color"), token(style(doors, "room"), "backgroundColor"), 4.5],
+  ["the Memory Room's line", token(style(doors, "roomLine"), "color"), token(style(doors, "room"), "backgroundColor"), 4.5],
+  ["the Memory Room's pressed line", token(style(doors, "roomLine"), "color"), token(style(doors, "roomPressed"), "backgroundColor"), 4.5],
+  ["SET ASIDE", token(style(doors, "shelfWord"), "color"), "paper", 4.5],
+  ["POST", token(style(hero, "postWord"), "color"), token(style(hero, "post"), "backgroundColor"), 4.5],
+  ["the strip's date", token(style(hero, "date"), "color"), token(style(hero, "mount"), "backgroundColor"), 4.5],
+  ["the camera tile", token(style(cells, "cameraWord"), "color"), token(style(cells, "camera"), "backgroundColor"), 4.5],
+  ["a panel's bar", token(style(panel, "barWord"), "color"), token(style(panel, "bar"), "backgroundColor"), 4.5],
+  ["a panel's headline", token(style(panel, "headline"), "color"), token(style(panel, "mount"), "backgroundColor"), 4.5],
+  ["the foot's line", token(style(footer, "line"), "color"), "paper", 4.5],
+  ["the grease-pencil box", token(style(cells, "box"), "borderColor"), token(style(cells, "cell"), "backgroundColor"), 3],
+];
+
+describe("the Post tab, on paper and on black", () => {
   for (const side of ["light", "dark"] as const) {
-    it(`letters and marks them at 4.5:1 or more on their box, at rest and pressed (${side})`, () => {
-      for (const ground of [fill, pressedFill]) {
-        for (const ink of [word, mark]) {
-          expect(ratio(print(ink)[side], print(ground)[side]), `${ink} on ${ground}`).toBeGreaterThanOrEqual(4.5);
-        }
-        expect(ratio(print(spinner)[side], print(ground)[side]), `spinner on ${ground}`).toBeGreaterThanOrEqual(3);
+    it(`sets its words and marks at 4.5:1 or more on what they stand on, and its box at 3:1 (${side})`, () => {
+      for (const [what, ink, ground, least] of PAIRS) {
+        expect(ratio(print(ink)[side], print(ground)[side]), `${what}: ${ink} on ${ground}`).toBeGreaterThanOrEqual(least);
       }
-    });
-
-    it(`draws their edge at 3:1 or more against the page and their own box (${side})`, () => {
-      expect(ratio(print(edge)[side], print("paper")[side])).toBeGreaterThanOrEqual(3);
-      expect(ratio(print(edge)[side], print(fill)[side])).toBeGreaterThanOrEqual(3);
-    });
-
-    it(`sets the clip's limit under them at 4.5:1 or more on the page (${side})`, () => {
-      expect(ratio(print(note)[side], print("paper")[side])).toBeGreaterThanOrEqual(4.5);
     });
   }
 
-  it("is drawn in the theme's own tokens, none of them a colour of its own", () => {
-    for (const t of [word, mark, spinner, fill, pressedFill, edge, note]) expect(Object.keys(colors)).toContain(t);
-    const own = boxed + style("box") + style("boxPressed") + style("boxWord") + style("waysNoteText");
-    expect(own).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+  it("names the tokens the spec gives each of them", () => {
+    const byName = Object.fromEntries(PAIRS.map(([what, ink, ground]) => [what, `${ink} on ${ground}`]));
+    expect(byName).toMatchObject({
+      RECENT: "inkSoft on paper",
+      "the ways' words": "ink on paper",
+      "SHARE MORE": "accent on paper",
+      "On this day's eyebrow": "inkSoft on paper",
+      "the Memory Room's eyebrow": "gold on card",
+      POST: "camera on onCamera",
+      "the strip's date": "onCamera on camera",
+      "the camera tile": "onCamera on cameraTile",
+      "the grease-pencil box": "accent on paperSunken",
+    });
   });
 
-  it("is clearer than the faint capitals they were: the words in the darkest ink there is", () => {
-    // The quiet capitals were the secondary ink, at 10.5 points; the faint ink fails 4.5:1 on paper.
-    expect(word).toBe("ink");
+  it("keeps the faint ink off the page's small capitals, where it fails 4.5:1 on paper", () => {
     expect(ratio(print("inkFaint").light, print("paper").light)).toBeLessThan(4.5);
-    expect(note).not.toBe("inkFaint");
+    for (const [what, ink] of PAIRS) expect(ink, what).not.toBe("inkFaint");
+  });
+
+  it("gives the camera tile the camera's dark on paper, and a grey a step up from the black on black", () => {
+    expect(print("cameraTile")).toEqual({ light: "#1C1915", dark: "#1C1C1E" });
+    expect(print("cameraTile").dark).not.toBe(print("paper").dark);
+  });
+
+  it("is drawn in the theme's own tokens, but for the opening scrim, which is the library picker's", () => {
+    for (const [name, src] of [["ways", ways], ["doors", doors], ["hero", hero], ["panel", panel], ["footer", footer]] as const) {
+      expect(src.replace(/shadowColor: "#000"/g, ""), name).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+    }
+    expect(cells.match(/rgba?\(/g)).toHaveLength(1);
+    expect(cells).toMatch(/const SCRIM = "rgba\(28, 25, 21, 0\.45\)";/);
   });
 });

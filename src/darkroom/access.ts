@@ -12,8 +12,9 @@ import { isDemoMode } from "@/lib/env";
  *   limited        a chosen selection; works, but sees only that
  *   full           the whole library
  *
- * Asking is only ever done from a tap on the Darkroom's own explanation,
- * never on the way past it.
+ * Asking is only ever done from a tap on an explanation: the room's
+ * first-visit page, or the Post tab's SHOW MY PHOTOGRAPHS. Never on the
+ * way past either.
  */
 export type LibraryAccess = "unavailable" | "undetermined" | "denied" | "limited" | "full";
 

@@ -80,6 +80,8 @@ describe("the light print", () => {
       // The camera's two are the shutter's own on paper, and a knob is the raised paper.
       camera: "#1C1915",
       onCamera: "#F2EBDD",
+      // The Post tab's camera tile is the camera's own dark on paper.
+      cameraTile: "#1C1915",
       // A mark on a photograph in the feed keeps the off-white it was always drawn in.
       onPhoto: "#F6F1E8",
       knob: light.paperRaised,
