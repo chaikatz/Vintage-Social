@@ -8,7 +8,7 @@ import type { LibraryAccess } from "@/darkroom/access";
  * words can be held without a phone.
  *
  *   ask             access never asked: explain, then let iOS ask, only from the tap
- *   denied          refused: the way to Settings, and LIBRARY still works
+ *   denied          refused: CHOOSE A PHOTOGRAPH (the picker), then the way to Settings
  *   empty-full      the whole library open, and nothing in it
  *   empty-limited   a limited selection, and nothing in it
  *   failed          the library would not answer: never shown as empty
@@ -76,7 +76,8 @@ export function panelWords(kind: PanelKind, iosMajor: number): PanelWords | null
         eyebrow: ROLL,
         headline: "VINTAGE can’t see your photographs.",
         body: "Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone.",
-        bar: null,
+        // The mount still points at posting: the picker needs no access. Settings is the quieter way, under it.
+        bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
         path: unbrokenPath(settingsPath(iosMajor)),
         quiet: { label: "Open Settings", hint: "Opens VINTAGE’s page in Settings." },
       };
@@ -116,7 +117,7 @@ export function panelWords(kind: PanelKind, iosMajor: number): PanelWords | null
         eyebrow: "From your library",
         headline: "Share a photograph.",
         body: "The one you have in mind.",
-        bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you post.", act: "choose" },
+        bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
         path: null,
         quiet: null,
       };

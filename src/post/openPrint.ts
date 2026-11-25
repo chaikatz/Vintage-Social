@@ -12,7 +12,9 @@ import type { PickedParams } from "@/utils/pickForCompose";
  * On the phone it goes the way the library picker's do
  * (`composeParamsFor`): Photos renders its current version at the
  * editor's 2048 pixels, upright, bringing it down from iCloud when it
- * must, and never the full original or a Live Photo's video. The
+ * must, and not the full original or a Live Photo's video (only if
+ * Photos cannot make that rendition does `composeParamsFor` fall back to
+ * the photograph's own file, its last resort). The
  * library's identifier goes with it, so a post from the roll is
  * remembered as one from the Memory Room is: it comes off the shelf, and
  * the room's place moves on past it (`markDeveloped`, once the server has

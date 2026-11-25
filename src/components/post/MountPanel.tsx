@@ -7,9 +7,10 @@ import { colors, spacing, type } from "@/theme";
 /**
  * The mount with no photograph on it: the same dark box as the selected
  * photograph's, at least as tall, so nothing on the page moves when one
- * arrives. In it, a few words and at most one thing to tap — SHOW MY
- * PHOTOGRAPHS, SHARE MORE, TRY AGAIN, or, where there is no library,
- * CHOOSE A PHOTOGRAPH — or, refused, the way to Settings. While the roll
+ * arrives. In it, a few words and at most one bar to tap — CONTINUE
+ * (which is when iOS asks), SHARE MORE, TRY AGAIN, or, refused or where
+ * there is no library, CHOOSE A PHOTOGRAPH — and, refused, the way to
+ * Settings under it. While the roll
  * is read it is an empty box, with a small spinner only after 400 ms; and
  * before the tab has ever been in front, an empty box.
  */

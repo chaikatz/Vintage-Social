@@ -610,7 +610,9 @@ photographs. Top to bottom:
   every panel that stands in for it is the same box.
 - **The ways.** RECENT, then SHORT VIDEO (up to 60 seconds) and LIBRARY,
   the iPhone's own picker, which needs no permission.
-- **The roll.** Newest first, four to a row, edge to edge, the camera
+- **The roll.** Photographs only (films are SHORT VIDEO's; VoiceOver
+  hears the header as "Recent photographs"), newest first, four to a
+  row, edge to edge, the camera
   first on the iPhone, the selected one in the room's grease-pencil box.
   Tapping a photograph selects it; tapped from far down the roll, the
   page goes back up to it. Under full access screenshots are left out,
@@ -618,7 +620,9 @@ photographs. Top to bottom:
   member chose shows, with "VINTAGE sees only the photographs you chose."
   and SHARE MORE above the roll.
 - **The foot.** Where the roll ends — the library's end, or 1,200 —
-  FURTHER BACK and ENTER THE MEMORY ROOM.
+  FURTHER BACK and ENTER THE MEMORY ROOM; not under a limited selection
+  read to its end, where the room has the same photographs and nothing
+  further back (SHARE MORE, above the roll, is the way to more).
 
 Tapping the Post tab again goes back to the top and selects the newest.
 The selection is kept for five minutes away from the tab, time in the
@@ -629,15 +633,20 @@ posted, the selection moves to the newest not yet posted.
 
 A photograph from the roll is opened as the library picker's are
 (`composeParamsFor`): a 2048 px rendition from Photos, brought down from
-iCloud when it must be, never the original or a Live Photo's video, with
+iCloud when it must be, not the original or a Live Photo's video, with
 the library's identifier, so a post from the roll is remembered as the
 room's are (taken off the shelf, the room's place moved on past it).
 Leaving the tab or the app stops it, and a copy that still arrives is
-deleted. One way in opens at a time; every control rests while it does.
+deleted. Only if Photos cannot make that rendition is the photograph's
+own file read instead, as the picker's last resort (iOS brings the
+original down for it, and leaving the tab does not stop that read),
+then decoded to the editor's size. One way in opens at a time; every
+control rests while it does.
 
 Its states, all on the same mount: before the tab has been in front, an
 empty box and wells; never asked, "Your photographs, right here." and
-CONTINUE, which is when iOS asks; refused, the way to Settings
+CONTINUE, which is when iOS asks; refused, CHOOSE A PHOTOGRAPH (the
+picker, which needs no access) and under it the way to Settings
 (LIBRARY, SHORT VIDEO and the camera still work); reading, an empty box
 with a spinner after 400 ms; an empty library, or an empty selection
 with SHARE MORE; a library that would not answer, TRY AGAIN, never shown
@@ -646,7 +655,12 @@ under its proof. Without a library (Android, a browser outside the demo)
 it is the On this day door, CHOOSE A PHOTOGRAPH, the camera and the clip.
 
 It reads nothing before it is first in front — the pager mounts it
-beside Search and Activity — and draws no photograph until then. Ten
+beside Search and Activity — and draws no photograph until then; once in
+front, it waits for the tab's own slide (`src/post/settle.ts`, 280 ms:
+React Native 0.81 makes InteractionManager a bare setImmediate, so that
+waits for nothing). Quick taps on the tab join the read under way rather
+than starting another, and a limited selection changed in the Memory
+Room is read again in full the next time the tab is in front. Ten
 seconds after the tab is left, and at once when the app goes to the
 background, every photograph out of sight is let go, its view taken off
 the screen with it; the rows on the screen, one either side, and the
@@ -654,11 +668,11 @@ mount stay, so the tab is just as it was whenever it is seen again,
 swiped back to or come back to. On a memory warning all of them go while
 the tab is not in front, and in front the mount's full image over its
 proof. The doors' little prints stay. Leaving the tab, or the app going
-to the background, also stops the On this day door's reading under
-way, which starts again the next time the tab is in front. The rules and numbers are pure, in `src/post/roll.ts`,
-`dayDoor.ts` and `panels.ts`; `tests/post-*.test.ts` and
-`tests/create-entry.test.ts` hold them, and `e2e/post-test.mjs` walks the
-tab in the web demo.
+to the background, also stops the On this day door's reading under way,
+which starts again the next time the tab is in front. The rules and
+numbers are pure, in `src/post/roll.ts`, `dayDoor.ts` and `panels.ts`;
+`tests/post-*.test.ts` and `tests/create-entry.test.ts` hold them, and
+`e2e/post-test.mjs` walks the tab in the web demo.
 
 ## Media pipeline
 

@@ -58,7 +58,8 @@ describe("what each panel says", () => {
       eyebrow: "Your camera roll",
       headline: "VINTAGE can’t see your photographs.",
       body: "Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone.",
-      bar: null,
+      // Refused, the mount's one bar still leads to a post: the picker, which needs no access.
+      bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
       path: "Settings\u00A0› Apps\u00A0› VINTAGE\u00A0› Photos\u00A0› Full\u00A0Access",
       quiet: { label: "Open Settings", hint: "Opens VINTAGE’s page in Settings." },
     });
@@ -94,7 +95,7 @@ describe("what each panel says", () => {
       eyebrow: "From your library",
       headline: "Share a photograph.",
       body: "The one you have in mind.",
-      bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you post.", act: "choose" },
+      bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
     });
     const tab = code("app/(tabs)/create.tsx");
     const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));

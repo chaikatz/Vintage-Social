@@ -21,10 +21,15 @@ import { signatureDate } from "@/utils/time";
  * the same photograph asked of Photos at 48 points and scaled up, which
  * it answers at once; then the photograph at the frame's size dissolving
  * in over it. Both are kept by this view alone, never in the shared
- * image cache or on disk. Choosing another photograph makes a new view,
- * so the last one's picture goes with it and its request is stopped. Let
- * go (`released`: the tab is not in front and the mount is out of sight,
- * or memory is short), both views come off the screen and their pictures
+ * image cache or on disk. Choosing another photograph makes a new proof,
+ * but the full image is one view for every photograph: given the next
+ * one's source, it stops the request for the last (a view taken off the
+ * screen would let its request run on, an iCloud download and all, until
+ * Photos answered), and its recycling key clears the last picture at
+ * once, so it is never shown over the next one's proof. Quick taps along
+ * the roll leave one full-size request running, not one for each. Let go
+ * (`released`: the tab is not in front and the mount is out of sight, or
+ * memory is short), both views come off the screen and their pictures
  * with them; on a memory warning in front (`heroReleased`), the full
  * image only, over its proof.
  * Offline, a photograph whose full image has not come after twelve
@@ -76,6 +81,8 @@ export const RollHero = React.memo(function RollHero({
   const { strip, button } = heroMetrics(W);
   const frame = heroFrame(print, W, H);
   const [loadedId, setLoadedId] = useState<string | null>(null);
+  // Decided once for the mount: the full image dissolves in over each proof, or under Reduce Motion simply appears.
+  const [transition] = useState(() => (reduceMotion ? 0 : DISSOLVE));
   const [stalledId, setStalledId] = useState<string | null>(null);
   const loaded = loadedId === print.id;
   // A full image let go has to come again, and may stall as any other.
@@ -115,7 +122,7 @@ export const RollHero = React.memo(function RollHero({
       style={({ pressed }) => [styles.post, { height: large ? undefined : button }, large && styles.postLarge, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel="Post"
-      accessibilityHint="Opens the selected photograph in the editor. Nothing is shared until you post."
+      accessibilityHint="Opens the selected photograph in the editor. Nothing is shared until you choose Share to VINTAGE."
       accessibilityState={{ busy, disabled: held }}
     >
       {busy ? (
@@ -142,7 +149,22 @@ export const RollHero = React.memo(function RollHero({
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         >
-          <Picture key={print.id} print={print} width={frame.width} released={released} heroReleased={heroReleased} reduceMotion={reduceMotion} onLoad={setLoadedId} />
+          <Proof key={print.id} print={print} width={frame.width} released={released} />
+          {released || heroReleased ? null : (
+            <Image
+              source={printSource(print.uri)}
+              testID="post-hero-full"
+              style={styles.fill}
+              contentFit="cover"
+              cachePolicy="none"
+              allowDownscaling={false}
+              priority="normal"
+              recyclingKey={print.id}
+              transition={transition}
+              onLoad={() => setLoadedId(print.id)}
+              accessibilityIgnoresInvertColors
+            />
+          )}
         </Pressable>
       </View>
       {large ? (
@@ -160,55 +182,27 @@ export const RollHero = React.memo(function RollHero({
   );
 });
 
-/** The proof, then the photograph over it. Made afresh for each photograph, so its transition is decided once. */
-function Picture({
-  print,
-  width,
-  released,
-  heroReleased,
-  reduceMotion,
-  onLoad,
-}: {
-  print: Print;
-  width: number;
-  released: boolean;
-  heroReleased: boolean;
-  reduceMotion: boolean;
-  onLoad: (id: string) => void;
-}) {
-  const [transition] = useState(() => (reduceMotion ? 0 : DISSOLVE));
+/**
+ * The soft proof, made afresh for each photograph: Photos answers it at
+ * once, so the frame is never empty while the full image comes.
+ */
+function Proof({ print, width, released }: { print: Print; width: number; released: boolean }) {
   const r = frameRatio(print);
   return (
-    <>
-      <View style={styles.proofSlot} pointerEvents="none">
-        <View style={{ width: PROOF_WIDTH, height: PROOF_WIDTH / r, transform: [{ scale: width / PROOF_WIDTH }] }}>
-          {released ? null : (
-            <Image
-              source={printSource(print.uri)}
-              style={styles.fill}
-              contentFit="cover"
-              cachePolicy="none"
-              transition={0}
-              accessibilityIgnoresInvertColors
-            />
-          )}
-        </View>
+    <View style={styles.proofSlot} pointerEvents="none">
+      <View style={{ width: PROOF_WIDTH, height: PROOF_WIDTH / r, transform: [{ scale: width / PROOF_WIDTH }] }}>
+        {released ? null : (
+          <Image
+            source={printSource(print.uri)}
+            style={styles.fill}
+            contentFit="cover"
+            cachePolicy="none"
+            transition={0}
+            accessibilityIgnoresInvertColors
+          />
+        )}
       </View>
-      {released || heroReleased ? null : (
-        <Image
-          source={printSource(print.uri)}
-          style={styles.fill}
-          contentFit="cover"
-          cachePolicy="none"
-          allowDownscaling={false}
-          priority="normal"
-          recyclingKey={print.id}
-          transition={transition}
-          onLoad={() => onLoad(print.id)}
-          accessibilityIgnoresInvertColors
-        />
-      )}
-    </>
+    </View>
   );
 }
 

@@ -234,6 +234,19 @@ export function mergeNewest(prev: readonly Print[], page: { prints: readonly Pri
 export type RollEnd = "more" | "done" | "capped";
 
 /**
+ * Whether the foot of the roll — FURTHER BACK, and the way into the
+ * Memory Room — stands under it: where the roll has ended and shown
+ * something. Not where a limited selection has been read to its end: the
+ * room sees those same photographs and nothing further back, and SHARE
+ * MORE above the roll is the way to more. Read to the cap, a large
+ * selection still has more in the room.
+ */
+export function footShown(s: { ready: boolean; end: RollEnd; count: number; access: LibraryAccess | null }): boolean {
+  if (!s.ready || s.end === "more" || s.count === 0) return false;
+  return !(s.access === "limited" && s.end === "done");
+}
+
+/**
  * What the tab has let go of its photographs: nothing; those out of
  * sight (ten seconds after it is left, at once in the background), the
  * rows on the screen and the mount staying drawn so the page is the same

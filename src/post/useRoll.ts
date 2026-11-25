@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, InteractionManager } from "react-native";
-import { chooseMorePhotographs, openPhotoSettings, readAccess, requestAccess, type LibraryAccess } from "@/darkroom/access";
+import { AppState } from "react-native";
+import {
+  chooseMorePhotographs,
+  openPhotoSettings,
+  readAccess,
+  requestAccess,
+  selectionSheetsOpened,
+  type LibraryAccess,
+} from "@/darkroom/access";
 import { gated } from "@/darkroom/discovery";
 import { developedAt } from "@/darkroom/history";
 import { darkroomAvailable, darkroomSource } from "@/darkroom/source";
@@ -26,6 +33,7 @@ import {
   type Release,
   type RollEnd,
 } from "./roll";
+import { afterTabSettles } from "./settle";
 
 /**
  * The Post tab's roll: the member's own photographs, newest first, read
@@ -93,6 +101,8 @@ export interface Roll {
   refresh(): void;
 }
 
+/** A tap on the tab joins a read under way for no longer than this; past it, it reads afresh. */
+const READ_JOIN_MS = 5_000;
 /** A failed further page is not asked again for this long, so a list at its end does not ask on every frame. */
 const MORE_PAUSE_MS = 5_000;
 /** The first read goes on to no more than this many pages before it shows what it has. */
@@ -136,6 +146,8 @@ export function useRoll(focused: boolean): Roll {
   /** Each first read or refresh supersedes any read before it. */
   const generation = useRef(0);
   const reading = useRef(false);
+  /** When the read under way began: a tap on the tab joins it, unless it has been going for too long. */
+  const readSince = useRef(0);
   const readingMore = useRef(false);
   const moreFailedAt = useRef(0);
   const asked = useRef(false);
@@ -143,6 +155,8 @@ export function useRoll(focused: boolean): Roll {
   const leftAt = useRef<number | null>(null);
   const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const watching = useRef<(() => void) | null>(null);
+  /** The selection sheets opened anywhere in the app, as of the tab's last look. */
+  const sheetsSeen = useRef(selectionSheetsOpened());
 
   const setPhase = useCallback((p: RollPhase) => {
     phaseRef.current = p;
@@ -235,6 +249,7 @@ export function useRoll(focused: boolean): Roll {
     if (!source) return;
     const mine = ++generation.current;
     reading.current = true;
+    readSince.current = Date.now();
     if (phaseRef.current !== "ready") setPhase("loading");
     try {
       let page = await source.page({ range: firstRange(Date.now()), first: ROLL_FIRST, order: "desc" });
@@ -272,6 +287,7 @@ export function useRoll(focused: boolean): Roll {
     if (phaseRef.current !== "ready") return readFirst();
     const mine = ++generation.current;
     reading.current = true;
+    readSince.current = Date.now();
     try {
       const page = await source.page({ range: firstRange(Date.now()), first: ROLL_FIRST, order: "desc" });
       if (mine !== generation.current || !mounted.current) return;
@@ -295,6 +311,7 @@ export function useRoll(focused: boolean): Roll {
     if (phaseRef.current !== "ready") return readFirst();
     const mine = ++generation.current;
     reading.current = true;
+    readSince.current = Date.now();
     const extent = read.current.length;
     try {
       let page = await source.page({ range: firstRange(Date.now()), first: ROLL_PAGE, order: "desc" });
@@ -370,10 +387,14 @@ export function useRoll(focused: boolean): Roll {
     settle(leftAt.current);
     leftAt.current = null;
     if (!source) return;
-    const task = InteractionManager.runAfterInteractions(() => {
-      void front(false);
+    // The limited selection changed elsewhere (the room's SHARE MORE) while the tab was away: read it all again.
+    const sheets = selectionSheetsOpened();
+    const chosenElsewhere = sheets !== sheetsSeen.current;
+    sheetsSeen.current = sheets;
+    // After the tab's own slide (src/post/settle.ts); left before then, nothing is read.
+    return afterTabSettles(() => {
+      void front(false, chosenElsewhere);
     });
-    return () => task.cancel();
   }, [focused, front, settle, source]);
 
   // The app's own comings and goings.
@@ -407,7 +428,7 @@ export function useRoll(focused: boolean): Roll {
         heard.current = true;
         return;
       }
-      InteractionManager.runAfterInteractions(() => {
+      afterTabSettles(() => {
         void front(true);
       });
     });
@@ -460,6 +481,8 @@ export function useRoll(focused: boolean): Roll {
   const shareMore = useCallback(() => {
     void (async () => {
       await chooseMorePhotographs();
+      // The tab's own sheet: its own listener hears what changed.
+      sheetsSeen.current = selectionSheetsOpened();
       if (!mounted.current || !focusedRef.current || watching.current) return;
       // iOS's sheet says nothing when the member is done; the library's change does.
       watching.current = watchLibrary(() => {
@@ -514,6 +537,10 @@ export function useRoll(focused: boolean): Roll {
   }, [apply, source]);
 
   const refresh = useCallback(() => {
+    // Quick taps on the tab join the read under way, which is already reading the newest: another
+    // would supersede it, throwing its answer away to ask Photos the same again. A read that has
+    // gone on for too long (Photos not answering) is let go, and the tap reads afresh.
+    if (reading.current && Date.now() - readSince.current < READ_JOIN_MS) return;
     void front(true);
   }, [front]);
 

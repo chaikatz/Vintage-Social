@@ -40,6 +40,7 @@ import { discardPrintCopy, openPrint, postHaptic } from "@/post/openPrint";
 import { panelFor, type PanelAct } from "@/post/panels";
 import {
   cellSize,
+  footShown,
   GAP,
   heroFrame,
   heroHeight,
@@ -416,8 +417,10 @@ export default function Create() {
     </View>
   );
 
-  // Where the roll ends, the room hands on; an empty roll has nothing further back to hand on to.
-  const footer = ready && roll.end !== "more" && roll.prints.length > 0 ? <RollFooter held={held} onEnter={openRoom} /> : null;
+  // Where the roll ends, the room hands on; an empty roll, or a limited selection read to its end, has nothing further back.
+  const footer = footShown({ ready, end: roll.end, count: roll.prints.length, access: roll.access }) ? (
+    <RollFooter held={held} onEnter={openRoom} />
+  ) : null;
 
   return (
     <Screen padded={false}>
