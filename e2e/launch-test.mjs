@@ -9,7 +9,8 @@
 // screen mounted.
 import { chromium } from "playwright";
 const out = process.env.SHOT_DIR;
-const B = "http://127.0.0.1:8090";
+// E2E_BASE points it at a build served elsewhere (the default is e2e/serve.mjs's).
+const B = process.env.E2E_BASE ?? "http://127.0.0.1:8090";
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await ctx.newPage();

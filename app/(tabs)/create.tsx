@@ -380,7 +380,8 @@ export default function Create() {
     </View>
   );
 
-  const footer = ready && roll.end !== "more" ? <RollFooter held={held} onEnter={openRoom} /> : null;
+  // Where the roll ends, the room hands on; an empty roll has nothing further back to hand on to.
+  const footer = ready && roll.end !== "more" && roll.prints.length > 0 ? <RollFooter held={held} onEnter={openRoom} /> : null;
 
   return (
     <Screen padded={false}>
