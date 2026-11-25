@@ -11,6 +11,7 @@ import { useMinute } from "@/utils/useMinute";
 import { mentionedUsernames } from "@/utils/mentions";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
 import { nameStyle } from "@/utils/nameFace";
+import { LIKES_HINT, likesLine } from "@/utils/ownLikes";
 import { Avatar } from "../Avatar";
 import { MentionText, NameEdge, NameLink } from "../MemberText";
 import { INLINE_COMMENTS, PostCard } from "../PostCard";
@@ -44,9 +45,20 @@ type Props = React.ComponentProps<typeof PostCard>;
  * Nothing here decides anything. A like goes through the very same steps
  * as PostCard's, the double tap is PostMedia's, and the name, the "…" and
  * the comments call what the screen passes in.
+ *
+ * The count of likes is the author's alone (src/utils/ownLikes.ts): under
+ * your own photograph, just under the label, how many liked it, which
+ * opens who did, or "No likes yet" in its place; under anyone else's,
+ * nothing, as before.
+ *
+ * Its member, its label and its caption are pieces of their own
+ * (PrintMember, PrintLabel, PrintCaption), drawn as well by the card of a
+ * post still on its way up (src/components/feed/EditorialPendingCard.tsx),
+ * so that card is this one, line for line, until the post is.
  */
 export const EditorialPostCard = React.memo(function EditorialPostCard({
   post,
+  viewerId,
   likedByMe,
   onToggleLike,
   onOpenComments,
@@ -54,6 +66,7 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
   onOpenProfile,
   onMore,
   onShare,
+  onOpenLikes,
   comments,
   active = true,
   warm = true,
@@ -68,10 +81,6 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
   };
 
   const paper = paperStyle(useFeedPaper());
-  // Larger Text grows the label, up to its cap, and the right-hand lines
-  // then ask for more room beside the buttons.
-  const scale = Math.min(Math.max(useWindowDimensions().fontScale, 1), LABEL_CAP);
-  const dateline = { flexBasis: DATELINE * scale };
   // A post whose author row-level security keeps back names nobody: drawn as
   // nothing, as PostCard draws it (src/components/hiddenAuthors.ts). After the
   // hooks, so they are called in the same order on every draw, and before
@@ -79,28 +88,14 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
   if (!authorShown(post)) return null;
 
   const preview = withAuthors(comments ?? []).slice(-INLINE_COMMENTS);
-  // The print's own words: the place and the date in full. Its `@name` is left off; the name is above the picture.
-  const label = exportLabelText(post, null);
+  // Your own photograph's count (or "No likes yet", in the same place); nothing on anyone else's.
+  const likes = likesLine(post, viewerId, post.like_count);
 
   return (
     <View style={[styles.card, paper]} testID="editorial-post-card">
       {/* The member, as the original card has them: their picture and name, which open their profile, and the "…". */}
       <View style={styles.header}>
-        <Pressable
-          style={styles.member}
-          onPress={() => onOpenProfile(post.author.username)}
-          accessibilityRole="button"
-          accessibilityLabel={post.author.username}
-          accessibilityHint="Opens their profile"
-        >
-          {/* Their picture in a thin ring, the card's paper showing between the two. */}
-          <View style={styles.ring}>
-            <Avatar path={post.author.avatar_url} username={post.author.username} size={FACE} />
-          </View>
-          <Text style={styles.username} numberOfLines={1}>
-            {post.author.username}
-          </Text>
-        </Pressable>
+        <PrintMember post={post} onOpenProfile={onOpenProfile} />
         <Pressable
           style={[styles.button, styles.more]}
           onPress={() => onMore(post)}
@@ -131,7 +126,7 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
       <View style={styles.rule} />
 
       {/* The label: the buttons where the wordmark was, `MILAN / OCTOBER 28, 2026` on the right. */}
-      <View style={styles.label}>
+      <PrintLabel post={post}>
         <View style={styles.actions}>
           <Pressable
             style={styles.button}
@@ -165,28 +160,29 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
             </Pressable>
           ) : null}
         </View>
+      </PrintLabel>
 
-        <View style={[styles.dateline, dateline]}>
-          {label.place ? (
-            <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.place} numberOfLines={2}>
-              {label.place}
-            </Text>
-          ) : null}
-          <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.date} numberOfLines={1}>
-            {label.date}
+      {/* The count is the author's alone; on anyone else's photograph there is no line at all. */}
+      {likes ? (
+        likes.opens ? (
+          <Pressable
+            onPress={() => onOpenLikes?.(post)}
+            disabled={!onOpenLikes}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={likes.label}
+            accessibilityHint={LIKES_HINT}
+          >
+            <Text style={styles.likes}>{likes.text}</Text>
+          </Pressable>
+        ) : (
+          <Text style={[styles.likes, styles.noLikes]} accessibilityLabel={likes.label}>
+            {likes.text}
           </Text>
-        </View>
-      </View>
-
-      {post.caption ? (
-        <Text style={styles.caption}>
-          {/* The name and every @name in the words open their member's page; before the name, the room its first letter reaches into. */}
-          <NameEdge name={post.author.username} size={WORDS} />
-          <NameLink username={post.author.username} onOpenProfile={onOpenProfile} style={styles.author} />
-          <Text style={styles.nameGap}>{NAME_GAP}</Text>
-          <MentionText text={post.caption} onOpenProfile={onOpenProfile} size={WORDS} />
-        </Text>
+        )
       ) : null}
+
+      <PrintCaption post={post} onOpenProfile={onOpenProfile} />
 
       {preview.map((c) => (
         <Pressable
@@ -229,6 +225,91 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
   );
 });
 
+/** What the print's pieces draw of a post: one that is posted, or one still on its way up. */
+interface Drawn {
+  author: { username: string; avatar_url: string | null };
+  caption: string | null;
+  location: string | null;
+  taken_at: string | null;
+  created_at: string;
+}
+
+/**
+ * The member over the print: their picture in a thin ring, the card's
+ * paper showing between the two, and their name, which open their profile.
+ */
+export function PrintMember({ post, onOpenProfile }: { post: Pick<Drawn, "author">; onOpenProfile: (username: string) => void }) {
+  return (
+    <Pressable
+      style={styles.member}
+      onPress={() => onOpenProfile(post.author.username)}
+      accessibilityRole="button"
+      accessibilityLabel={post.author.username}
+      accessibilityHint="Opens their profile"
+    >
+      <View style={styles.ring}>
+        <Avatar path={post.author.avatar_url} username={post.author.username} size={FACE} />
+      </View>
+      <Text style={styles.username} numberOfLines={1}>
+        {post.author.username}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * The label under the rule: what it is handed on the left, where the
+ * print strikes its wordmark (the buttons), and on the right, as the
+ * print strikes them, the place and the date in full in the typewriter
+ * face. Its `@name` is left off; the name is above the picture.
+ */
+export function PrintLabel({ post, children }: { post: Drawn; children: React.ReactNode }) {
+  // Larger Text grows the label, up to its cap, and the right-hand lines
+  // then ask for more room beside the buttons.
+  const scale = Math.min(Math.max(useWindowDimensions().fontScale, 1), LABEL_CAP);
+  const dateline = { flexBasis: DATELINE * scale };
+  const label = exportLabelText(post, null);
+  return (
+    <View style={styles.label}>
+      {children}
+
+      <View style={[styles.dateline, dateline]}>
+        {label.place ? (
+          <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.place} numberOfLines={2}>
+            {label.place}
+          </Text>
+        ) : null}
+        <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.date} numberOfLines={1}>
+          {label.date}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Where the buttons stand on the label, as wide and as tall as the three
+ * of them, left as paper: a post still on its way up has nothing to like,
+ * comment on or send yet, and the place and the date beside them stay
+ * exactly where they will be.
+ */
+export function NoButtonsYet() {
+  return <View style={[styles.actions, styles.noButtons]} importantForAccessibility="no-hide-descendants" />;
+}
+
+/** The caption after the member's name, the way a comment is written; nothing when there is none. */
+export function PrintCaption({ post, onOpenProfile }: { post: Pick<Drawn, "author" | "caption">; onOpenProfile: (username: string) => void }) {
+  return post.caption ? (
+    <Text style={styles.caption}>
+      {/* The name and every @name in the words open their member's page; before the name, the room its first letter reaches into. */}
+      <NameEdge name={post.author.username} size={WORDS} />
+      <NameLink username={post.author.username} onOpenProfile={onOpenProfile} style={styles.author} />
+      <Text style={styles.nameGap}>{NAME_GAP}</Text>
+      <MentionText text={post.caption} onOpenProfile={onOpenProfile} size={WORDS} />
+    </Text>
+  ) : null;
+}
+
 /**
  * `29m ago`: when the post went up, at the foot of the print, in the
  * label's typewriter face a shade fainter, written as it is said (in
@@ -256,7 +337,7 @@ function PostedTime({ at }: { at: string }) {
  * as fractions of the width, and its label as it is set there: the same
  * sizes, in points, the same tracking and the same leading.
  */
-const PRINT = exportLayout(1, "print", PRINT_WIDTH);
+export const PRINT = exportLayout(1, "print", PRINT_WIDTH);
 
 /** A length on the print as a share of its width: the card is the print at the screen's width. */
 function share(length: number): `${number}%` {
@@ -264,7 +345,7 @@ function share(length: number): `${number}%` {
 }
 
 /** One line of the label, as the print sets it. */
-function line(box: TextBox) {
+export function line(box: TextBox) {
   return {
     fontFamily: type.mono,
     fontSize: box.size,
@@ -275,6 +356,17 @@ function line(box: TextBox) {
 
 /** The side of a button: Apple's smallest comfortable target. */
 const TARGET = 44;
+
+/** The buttons on the label: like, comment and send, as Home and the gallery give every post. */
+const BUTTONS = 3;
+
+/**
+ * The line under your own photograph's label: its count of likes, or "No
+ * likes yet", at one height either way, so the first like changes the
+ * words and not the card. A post on its way up says what it is doing in
+ * the same line (EditorialPendingCard), so it is the same height too.
+ */
+export const LIKES_LINE = 18;
 
 /** The buttons' outline size. */
 const ICON = 21;
@@ -315,7 +407,7 @@ const NAME = nameStyle(WORDS);
  * their size the longest date still fits across a 320 pt screen, on a
  * line of its own under the buttons; any larger and it would not.
  */
-const LABEL_CAP = 2;
+export const LABEL_CAP = 2;
 
 /**
  * The narrowest the right-hand lines are set: the longest date there is,
@@ -333,7 +425,7 @@ const BETWEEN = PRINT.byline.y - (PRINT.place.y + PRINT.place.height);
  * first button and every line of words start this far in from the left of
  * the screen, and the "…" and the label end this far in from the right.
  */
-const EDGE = 12;
+export const EDGE = 12;
 
 /** Where the label's first line starts under the rule; the buttons' outlines start there too. */
 const LABEL_TOP = PRINT.place.y - PRINT.rule.y;
@@ -422,6 +514,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // The buttons' own room, with nothing in it.
+  noButtons: { width: BUTTONS * TARGET, height: TARGET },
   // As much paper under the last line as the buttons' targets leave under
   // their outlines, so the caption starts the same distance below either.
   dateline: {
@@ -457,6 +551,16 @@ const styles = StyleSheet.create({
     marginHorizontal: EDGE,
     marginTop: spacing.xs,
   },
+  // Your own photograph's count, in the words' size, and "No likes yet" in
+  // its place at the same height, quieter.
+  likes: {
+    fontSize: WORDS,
+    lineHeight: LIKES_LINE,
+    fontWeight: "600",
+    color: colors.ink,
+    paddingHorizontal: EDGE,
+  },
+  noLikes: { fontWeight: "400", color: colors.inkFaint },
   // A name in the caption and the comments: the header's name, as it is drawn there.
   author: { ...NAME, color: colors.nameInk },
   nameGap: { fontSize: 12 },
@@ -468,3 +572,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm - 2,
   },
 });
+
+/** The card's sheet, for the card of a post on its way up (EditorialPendingCard), which is drawn on it. */
+export { styles as printStyles, WORDS };

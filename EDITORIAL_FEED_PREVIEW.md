@@ -25,11 +25,16 @@ profile, and the "…" at the end of that line. Then the picture inset on the
 paper with the print's margins, the hairline rule under it, and just under
 the rule the print's label: on the right, as on the print, the place and the
 date in full in the typewriter face; on the left, where the wordmark is
-printed, the like, comment and send buttons. There are no counts, no
-`@name` on the label, no wordmark, no "Members only" and no membership
-number. Then the caption after the member's name, the way a comment is
-written, the newest comments, and last, in the label's typewriter face,
-when it was posted (`29m ago`).
+printed, the like, comment and send buttons. There is no count of
+comments, no `@name` on the label, no wordmark, no "Members only" and no
+membership number. Then, under your own photograph only, how many liked
+it (`4 likes`, which opens who did, or `No likes yet`, quieter, in its
+place at the same height); under anyone else's, nothing, as on the
+original card (the owner's request of 25 November; the rule is
+`src/utils/ownLikes.ts`, on `claude/product-polish`). Then the caption
+after the member's name, the way a comment is written, the newest
+comments, and last, in the label's typewriter face, when it was posted
+(`29m ago`).
 
 Only the picture keeps the print's margins. Everything around it is set
 where Instagram sets it: the member's picture and name, the buttons, the
@@ -49,6 +54,43 @@ black.
 A post still on its way up lies on the same paper: its card at the top of
 Home (`PendingPostCard`) has no paper of its own, a permanent change that
 is on `claude/product-polish` too.
+
+## A post on its way up
+
+While Editorial is chosen, a post still going up is drawn at the top of
+Home as the editorial card it is about to become
+(`src/components/feed/EditorialPendingCard.tsx`, the owner's request of 25
+November: on build 58 it was drawn full width in the original style, and
+the print that took its place looked like something else). It is made of
+the editorial card's own pieces, on its own sheet: the member over the
+print (`PrintMember`), the picture inside the print's margins at its own
+shape, the hairline, the label with the place and the date in full
+(`PrintLabel`), and the caption after the member's name (`PrintCaption`).
+So when the post is up and the feed's row takes its place, nothing moves:
+the web walk measures the card's top, the picture's box and the card's
+height the same to the hundredth of a point at 390 and at 320 points.
+
+What is not yet so is left as paper, or says so. There is no "…", and no
+like, comment or send button: their room on the label is left as paper
+(`NoButtonsYet`, as wide and as tall as the three of them), so the place
+and the date stand where they will. The hairline under the picture fills
+with the accent as the post goes up, and stays where it got to, faint,
+while it waits or has failed. The line under the label, where your own
+post's `No likes yet` will be, says what is happening (`Uploading…`,
+`Waiting for a connection`, `Couldn't post.`) in the label's typewriter
+face, with Retry and Discard, at that line's height; why it failed goes
+under it. The last line, where the post will say when it went up, says who
+was there (`With one member`), or is left as paper. Nothing on it can be
+liked, commented on or sent, and nothing reads as posted until the server
+has it.
+
+What it says and does is the original pending card's: both draw from
+`usePendingCard`, `PendingStatus` and `ProgressRule` in
+`src/components/PendingPostCard.tsx`, so the words, Retry, Discard behind
+the same question, the hold while it is asked, and what VoiceOver hears
+are the same. Under Original the card is drawn exactly as before. Home
+draws the one that follows the card chosen
+(`const PendingCard = FeedCard === EditorialPostCard ? EditorialPendingCard : PendingPostCard;`).
 
 ## Usernames
 
@@ -217,7 +259,8 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 
 | file | what it is |
 |------|------------|
-| `src/components/feed/EditorialPostCard.tsx` | the editorial card (new): its usernames in Cormorant Garamond Bold Italic, 16 pt, in the name ink (the one over the print with its room, those before the words with the narrow space before a first letter that reaches out), the member's picture in a thin ring, the words at 12.5 pt (the owner's restyle, 24 November, a size up the same day, in the bold once the owner had seen build 56) |
+| `src/components/feed/EditorialPostCard.tsx` | the editorial card (new): its usernames in Cormorant Garamond Bold Italic, 16 pt, in the name ink (the one over the print with its room, those before the words with the narrow space before a first letter that reaches out), the member's picture in a thin ring, the words at 12.5 pt (the owner's restyle, 24 November, a size up the same day, in the bold once the owner had seen build 56); under your own photograph its count of likes, or `No likes yet`, through `likesLine` (25 November); its member, label and caption as pieces of their own (`PrintMember`, `PrintLabel`, `PrintCaption`, `NoButtonsYet`) and its sheet (`printStyles`), which the card of a post on its way up draws too |
+| `src/components/feed/EditorialPendingCard.tsx` | a post on its way up, drawn as the editorial card it will become, from that card's pieces (new) |
 | `src/utils/feedLayout.ts` | the layout preference, kept on the phone (new) |
 | `src/utils/feedPaper.ts` | the paper preference, kept on the phone, and the paper a feed lies on (new) |
 | `src/utils/nameFace.ts` | the usernames' face while Editorial is chosen: Cormorant Garamond Bold Italic at the size that matches the words beside it, the room around a name alone and before or after one in a line, the title style of a bar titled with a username, and the cut loaded on the web (new) |
@@ -237,6 +280,8 @@ The experiment is only on the branch `claude/editorial-feed-preview`, which is
 | `src/components/MemberText.tsx` | `MentionText` is handed the size of the words it is drawn in, and sets each @name in the names' face, still in the accent; `NamedWords` (new), handed what writes its words around a name, sets the name in the names' face where it reads as a username, with the narrow space before or after it where the words begin or end with it, and under Original is the words' one string; `NameEdge` (new), the narrow space before a name that begins a line |
 | `src/components/EmptyState.tsx`, `app/follows.tsx`, `src/components/EraList.tsx` | an empty page's sentence: `EmptyState` takes a body that writes its words around a name, with the name, and hands both to `NamedWords`; an empty Followers or Following list and an empty Eras page hand it theirs (the Eras page's is `erasEmpty`'s own sentence, written around the name) |
 | `tests/video-playback.test.ts` | the Home and gallery playback guards accept either card |
+| `tests/likes-own-0042.test.ts` | its guards on the cards told who is reading accept the card the layout chose (`FeedCard`), and it allows the editorial card to read `like_count` through `likesLine` |
+| `tests/outbox.test.ts` | its guard on Home's pending card accepts the one the layout chose (`PendingCard`) |
 | `tests/galleryLanding.test.ts` | its gallery guard reads whichever card the gallery's seam draws |
 | `tests/stableCards.test.ts` | its Home and gallery card-props guard accepts either card |
 | `tests/thread-menu.test.ts` | its guard on the thread's title link accepts the title style, drawn by `NameTitle`, as well as the stack's |
@@ -255,7 +300,10 @@ left as they are), `src/components/eraBook.ts` (the words of an empty Eras
 page, which `EraList` hands to `EmptyState` written around the username), every other
 bar's title, `PostMedia`, `usePostActions`, uploads, filters, the Memory
 Room, native modules and Supabase are not touched. `PendingPostCard` is
-touched for the names alone.
+touched for the names, and so that what it says and does is drawn from one
+place by both cards (`usePendingCard`, `PendingStatus`, `ProgressRule`,
+each the original card's own code, moved out of its body); it is drawn
+exactly as before.
 
 ## Keeping it out
 
@@ -267,8 +315,8 @@ permanent change and none of the experiment.
 From the repository root, on the branch to clean:
 
 ```bash
-git rm src/components/feed/EditorialPostCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts src/components/NameTitle.tsx tests/editorial-feed.test.ts tests/editorial-names.test.ts tests/editorial-name-font.test.ts tests/editorial-name-room.test.ts assets/fonts/CormorantGaramond-BoldItalic.ttf assets/fonts/CormorantGaramond-OFL.txt EDITORIAL_FEED_PREVIEW.md
-git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx app/admin/reports.tsx "app/user/[username].tsx" "app/(gate)/invite.tsx" app/follows.tsx src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/components/MemberText.tsx src/components/EmptyState.tsx src/components/EraList.tsx src/theme/index.ts tests/theme.test.ts app.json tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/comment-menu.test.ts tests/thread-menu.test.ts tests/member-names.test.ts tests/admin-queue-pages.test.ts e2e/launch-test.mjs
+git rm src/components/feed/EditorialPostCard.tsx src/components/feed/EditorialPendingCard.tsx src/utils/feedLayout.ts src/utils/feedPaper.ts src/utils/nameFace.ts src/components/NameTitle.tsx tests/editorial-feed.test.ts tests/editorial-names.test.ts tests/editorial-name-font.test.ts tests/editorial-name-room.test.ts assets/fonts/CormorantGaramond-BoldItalic.ttf assets/fonts/CormorantGaramond-OFL.txt EDITORIAL_FEED_PREVIEW.md
+git checkout claude/product-polish -- "app/(tabs)/index.tsx" app/gallery.tsx "app/(tabs)/_layout.tsx" app/settings.tsx "app/(tabs)/activity.tsx" app/comments.tsx app/compose.tsx "app/post/[id].tsx" app/messages/index.tsx "app/messages/[id].tsx" app/share.tsx app/requests.tsx app/blocked.tsx app/admin/applications.tsx app/admin/reports.tsx "app/user/[username].tsx" "app/(gate)/invite.tsx" app/follows.tsx src/components/UserRow.tsx src/components/TagPicker.tsx src/components/MentionSuggestions.tsx src/components/PendingPostCard.tsx src/components/ProfileHeader.tsx src/components/MemberText.tsx src/components/EmptyState.tsx src/components/EraList.tsx src/theme/index.ts tests/theme.test.ts app.json tests/video-playback.test.ts tests/galleryLanding.test.ts tests/stableCards.test.ts tests/comment-menu.test.ts tests/thread-menu.test.ts tests/member-names.test.ts tests/admin-queue-pages.test.ts tests/likes-own-0042.test.ts tests/outbox.test.ts e2e/launch-test.mjs
 npx tsc --noEmit && npx vitest run
 git commit -m "Remove the Editorial feed preview"
 ```
@@ -278,7 +326,15 @@ The `checkout` line is right when the branch has every change
 merging it) and no change of its own to them besides the experiment's. If
 not, take the experiment's hunks out of them by hand instead
 (`git diff claude/product-polish claude/editorial-feed-preview -- <file>`
-shows exactly what to remove). In `app/gallery.tsx` those are the three
+shows exactly what to remove). In `app/(tabs)/index.tsx`, besides the
+same lines as the gallery's, they are the import of `EditorialPendingCard`,
+the `PendingCard` line with the comment above it, and `<PendingCard`, which
+goes back to `<PendingPostCard`; `FeedCard` goes from the list after
+`renderItem`, and `viewerId={userId}` and `userId` in that list stay (they
+are `claude/product-polish`'s). In `src/components/PendingPostCard.tsx`
+`usePendingCard`, `PendingStatus`, `ProgressRule`'s `look` and
+`ORIGINAL_STATUS` go back into the card's body as they were. In
+`app/gallery.tsx` those are the three
 imports (`EditorialPostCard`, `useFeedLayout`, `useFeedBackground`), the
 `FeedCard` and `paper` lines with the comment above them, `style={paper}` on
 the `Screen`, `headerStyle: paper …` in the `Stack.Screen` options, and
@@ -332,7 +388,7 @@ with `username` again (`undefined` while there is none), and
 go. Afterwards
 `git diff claude/product-polish -- app src tests e2e`
 should be empty, and
-`git grep -n -e EditorialPostCard -e feedLayout -e feedPaper -e useFeedBackground -e nameFace -e NameFace -e NameEdge -e NameTitle -e nameHeaderTitle -e Cormorant -- app src tests e2e`
+`git grep -n -e EditorialPostCard -e EditorialPendingCard -e feedLayout -e feedPaper -e useFeedBackground -e nameFace -e NameFace -e NameEdge -e NameTitle -e nameHeaderTitle -e Cormorant -- app src tests e2e`
 should find nothing.
 
 ## On phones that tried it

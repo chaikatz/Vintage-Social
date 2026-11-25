@@ -1,5 +1,17 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { AccessibilityInfo, Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  Animated,
+  Easing,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type TextStyle,
+  type ViewStyle,
+} from "react-native";
 import { colors, spacing, type } from "@/theme";
 import { showAlert } from "@/utils/alert";
 import { useReducedMotion } from "@/utils/useReducedMotion";
@@ -12,7 +24,7 @@ import { Byline } from "./PostCard";
 import { PostMedia } from "./PostMedia";
 import { announcement, clipMayPlay, offersDiscard, offersRetry, statusAccessibility } from "./pendingCardWords";
 
-interface Props {
+export interface PendingCardProps {
   pending: PendingPost;
   /** Whether its clip may play: on screen, with no feed card playing. Never while the clip is being developed. */
   active?: boolean;
@@ -45,7 +57,97 @@ interface Props {
  * post could have been published it can be discarded at any moment, so
  * the wrong photograph, or one shared offline, can still be taken back.
  */
-export function PendingPostCard({ pending, active = false, focused = true, onOpenProfile }: Props) {
+export function PendingPostCard({ pending, active = false, focused = true, onOpenProfile }: PendingCardProps) {
+  const { draft, state } = pending;
+  const card = usePendingCard(pending, focused);
+  const { createdAt, media, failed } = card;
+
+  const tagged = draft.tagIds.length;
+  // Editorial (Preview): the member's username, and every @name in the caption, in the names' face.
+  const face = useNameFace();
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => onOpenProfile?.(draft.author.username)}
+          disabled={!onOpenProfile}
+          accessibilityLabel={draft.author.username}
+        >
+          <Avatar path={draft.author.avatar_url} username={draft.author.username} size={34} />
+        </Pressable>
+        <Pressable
+          style={styles.headerText}
+          onPress={() => onOpenProfile?.(draft.author.username)}
+          disabled={!onOpenProfile}
+          accessibilityRole={onOpenProfile ? "button" : undefined}
+        >
+          <Text style={[styles.username, face(14, "alone")]} numberOfLines={1}>
+            {draft.author.username}
+          </Text>
+          <Byline post={{ taken_at: draft.takenAt, created_at: createdAt, location: draft.location }} />
+        </Pressable>
+      </View>
+
+      {/* Not posted yet: held in memory, never written to the image cache on disk. */}
+      <PostMedia post={media} active={active && clipMayPlay(state)} cachePolicy="memory" />
+
+      <ProgressRule fraction={card.fraction} />
+      <PendingStatus pending={pending} card={card} focused={focused} />
+      {failed && pending.error ? <Text style={styles.reason}>{pending.error}</Text> : null}
+
+      {draft.caption.trim() ? (
+        <Text style={styles.caption}>
+          {/* As it will read once posted: the name and every @name open their member's page. */}
+          {onOpenProfile ? (
+            <>
+              <NameEdge name={draft.author.username} size={14} />
+              <NameLink username={draft.author.username} onOpenProfile={onOpenProfile} style={[styles.captionAuthor, face(14)]} />{" "}
+              <MentionText text={draft.caption.trim()} onOpenProfile={onOpenProfile} size={14} />
+            </>
+          ) : (
+            <>
+              <NameEdge name={draft.author.username} size={14} />
+              <Text style={[styles.captionAuthor, face(14)]}>{draft.author.username}</Text> {draft.caption.trim()}
+            </>
+          )}
+        </Text>
+      ) : null}
+      {tagged > 0 ? (
+        <Text style={styles.tagged}>{tagged === 1 ? "With one member" : `With ${tagged} members`}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** What a post on its way up shows and does, whichever card draws it. */
+export interface PendingCardState {
+  // When it was shared, as the post's own time will be written.
+  createdAt: string;
+  // The picture as it will be posted, for PostMedia.
+  media: React.ComponentProps<typeof PostMedia>["post"];
+  // The one line saying what is happening, and what it offers.
+  line: string;
+  failed: boolean;
+  retry: boolean;
+  discard: boolean;
+  spoken: ReturnType<typeof statusAccessibility>;
+  // Asks first, holding the post before its insert while the question is open.
+  confirmDiscard: () => void;
+  // How far along the whole post is, for its progress rule; null while it is not moving.
+  fraction: number | null;
+}
+
+/**
+ * Everything a pending card says and does but how it is set out: the
+ * picture as it will be posted, the line saying what is happening, what it
+ * offers (Retry, Discard), what VoiceOver hears of a change of state, and
+ * the question before a post is discarded. The original card here and,
+ * under Editorial (Preview), the editorial one
+ * (src/components/feed/EditorialPendingCard.tsx) both draw from it, so the
+ * two never say or do different things.
+ */
+export function usePendingCard(pending: PendingPost, focused: boolean): PendingCardState {
   const { draft, state, progress } = pending;
   const createdAt = useMemo(() => new Date(pending.createdAt).toISOString(), [pending.createdAt]);
 
@@ -101,100 +203,89 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
     );
   };
 
-  const tagged = draft.tagIds.length;
-  // Editorial (Preview): the member's username, and every @name in the caption, in the names' face.
-  const face = useNameFace();
+  return {
+    createdAt,
+    media,
+    line,
+    failed,
+    retry,
+    discard,
+    spoken,
+    confirmDiscard,
+    fraction: overallProgress(state, progress, draft.kind),
+  };
+}
 
+/** The styles a card sets its status line in; the original card's unless another is handed. */
+export interface StatusLook {
+  row: StyleProp<ViewStyle>;
+  state: StyleProp<TextStyle>;
+  stateFailed: StyleProp<TextStyle>;
+  action: StyleProp<TextStyle>;
+  discard: StyleProp<TextStyle>;
+  dot: StyleProp<TextStyle>;
+}
+
+/**
+ * The line saying what is happening, and what can be done about it:
+ * Retry after a failure, and Discard for as long as the post can still be
+ * taken back. Where a post has its likes and comments, a pending one has
+ * this.
+ */
+export function PendingStatus({
+  pending,
+  card,
+  focused,
+  look,
+}: {
+  pending: PendingPost;
+  card: PendingCardState;
+  focused: boolean;
+  look?: StatusLook;
+}) {
+  const { line, failed, retry, discard, spoken, confirmDiscard } = card;
+  const set = look ?? ORIGINAL_STATUS;
   return (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => onOpenProfile?.(draft.author.username)}
-          disabled={!onOpenProfile}
-          accessibilityLabel={draft.author.username}
-        >
-          <Avatar path={draft.author.avatar_url} username={draft.author.username} size={34} />
-        </Pressable>
-        <Pressable
-          style={styles.headerText}
-          onPress={() => onOpenProfile?.(draft.author.username)}
-          disabled={!onOpenProfile}
-          accessibilityRole={onOpenProfile ? "button" : undefined}
-        >
-          <Text style={[styles.username, face(14, "alone")]} numberOfLines={1}>
-            {draft.author.username}
-          </Text>
-          <Byline post={{ taken_at: draft.takenAt, created_at: createdAt, location: draft.location }} />
-        </Pressable>
+    <View style={set.row}>
+      {/* The words are spoken from a View: on iOS a Text's accessibility
+          element carries its label but never its value, and the percent
+          lives in the value. */}
+      <View
+        style={styles.stateWrap}
+        accessible
+        accessibilityRole={spoken.role}
+        accessibilityLabel={spoken.label}
+        accessibilityValue={spoken.value}
+        accessibilityLiveRegion={focused ? "polite" : "none"}
+      >
+        <Text style={[set.state, failed && set.stateFailed]} accessible={false}>
+          {line}
+        </Text>
       </View>
-
-      {/* Not posted yet: held in memory, never written to the image cache on disk. */}
-      <PostMedia post={media} active={active && clipMayPlay(state)} cachePolicy="memory" />
-
-      <ProgressRule fraction={overallProgress(state, progress, draft.kind)} />
-      <View style={styles.statusRow}>
-        {/* The words are spoken from a View: on iOS a Text's accessibility
-            element carries its label but never its value, and the percent
-            lives in the value. */}
-        <View
-          style={styles.stateWrap}
-          accessible
-          accessibilityRole={spoken.role}
-          accessibilityLabel={spoken.label}
-          accessibilityValue={spoken.value}
-          accessibilityLiveRegion={focused ? "polite" : "none"}
+      {retry ? (
+        <Pressable
+          onPress={() => retryPost(pending.id)}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Retry posting"
         >
-          <Text style={[styles.state, failed && styles.stateFailed]} accessible={false}>
-            {line}
-          </Text>
-        </View>
-        {retry ? (
-          <Pressable
-            onPress={() => retryPost(pending.id)}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Retry posting"
-          >
-            <Text style={styles.action}>Retry</Text>
-          </Pressable>
-        ) : null}
-        {retry && discard ? (
-          <Text style={styles.dot} accessible={false}>
-            ·
-          </Text>
-        ) : null}
-        {discard ? (
-          <Pressable
-            onPress={confirmDiscard}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Discard this post"
-          >
-            <Text style={[styles.action, styles.discard]}>Discard</Text>
-          </Pressable>
-        ) : null}
-      </View>
-      {failed && pending.error ? <Text style={styles.reason}>{pending.error}</Text> : null}
-
-      {draft.caption.trim() ? (
-        <Text style={styles.caption}>
-          {/* As it will read once posted: the name and every @name open their member's page. */}
-          {onOpenProfile ? (
-            <>
-              <NameEdge name={draft.author.username} size={14} />
-              <NameLink username={draft.author.username} onOpenProfile={onOpenProfile} style={[styles.captionAuthor, face(14)]} />{" "}
-              <MentionText text={draft.caption.trim()} onOpenProfile={onOpenProfile} size={14} />
-            </>
-          ) : (
-            <>
-              <NameEdge name={draft.author.username} size={14} />
-              <Text style={[styles.captionAuthor, face(14)]}>{draft.author.username}</Text> {draft.caption.trim()}
-            </>
-          )}
+          <Text style={set.action}>Retry</Text>
+        </Pressable>
+      ) : null}
+      {retry && discard ? (
+        <Text style={set.dot} accessible={false}>
+          ·
         </Text>
       ) : null}
-      {tagged > 0 ? (
-        <Text style={styles.tagged}>{tagged === 1 ? "With one member" : `With ${tagged} members`}</Text>
+      {discard ? (
+        <Pressable
+          onPress={confirmDiscard}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Discard this post"
+        >
+          <Text style={[set.action, set.discard]}>Discard</Text>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -205,7 +296,14 @@ export function PendingPostCard({ pending, active = false, focused = true, onOpe
  * as the post goes up. While the post is waiting or has failed it stays
  * where it got to, in the faint ink, so it reads as paused, not as gone.
  */
-function ProgressRule({ fraction }: { fraction: number | null }) {
+export function ProgressRule({
+  fraction,
+  look,
+}: {
+  fraction: number | null;
+  /** The track and its fill, moving and paused; the original card's unless another is handed. */
+  look?: { track: StyleProp<ViewStyle>; fill: StyleProp<ViewStyle>; paused: StyleProp<ViewStyle> };
+}) {
   const still = useReducedMotion();
   const last = useRef(fraction ?? 0);
   if (fraction != null) last.current = fraction;
@@ -228,8 +326,8 @@ function ProgressRule({ fraction }: { fraction: number | null }) {
   }, [target, still, value]);
   const width = value.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"], extrapolate: "clamp" });
   return (
-    <View style={styles.track} accessible={false} importantForAccessibility="no-hide-descendants" pointerEvents="none">
-      <Animated.View style={[styles.rule, fraction == null && styles.rulePaused, { width }]} />
+    <View style={look?.track ?? styles.track} accessible={false} importantForAccessibility="no-hide-descendants" pointerEvents="none">
+      <Animated.View style={[look?.fill ?? styles.rule, fraction == null && (look?.paused ?? styles.rulePaused), { width }]} />
     </View>
   );
 }
@@ -299,3 +397,13 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs,
   },
 });
+
+/** The original card's status line. */
+const ORIGINAL_STATUS: StatusLook = {
+  row: styles.statusRow,
+  state: styles.state,
+  stateFailed: styles.stateFailed,
+  action: styles.action,
+  discard: styles.discard,
+  dot: styles.dot,
+};

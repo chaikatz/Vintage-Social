@@ -131,6 +131,7 @@ describe("every surface that shows a photograph's actions", () => {
     const allowed = new Set([
       "src/types/db.ts", // the row
       "src/components/PostCard.tsx", // through likesLine
+      "src/components/feed/EditorialPostCard.tsx", // Editorial (Preview): through likesLine, as PostCard
       "src/hooks/usePostActions.ts", // likeCountFor: the count with a like on its way
       "src/media/stableCards.ts", // the card's post with that count
       "src/uploads/feedCache.ts", // a new post's row, at nought

@@ -1167,6 +1167,7 @@ describe("the trial still comes out cleanly", () => {
     expect(out).toMatch(/git rm [^\n]*src\/utils\/nameFace\.ts/);
     expect(out).toMatch(/git rm [^\n]*tests\/editorial-names\.test\.ts/);
     expect(out).toMatch(/git rm [^\n]*src\/components\/feed\/EditorialPostCard\.tsx/);
+    expect(out).toMatch(/git rm [^\n]*src\/components\/feed\/EditorialPendingCard\.tsx/);
     // The names' face goes with it: its cut, its licence, the bar's title drawn for it, and their guards.
     expect(out).toMatch(/git rm [^\n]*assets\/fonts\/CormorantGaramond-BoldItalic\.ttf/);
     expect(out).toMatch(/git rm [^\n]*assets\/fonts\/CormorantGaramond-OFL\.txt/);
@@ -1195,6 +1196,9 @@ describe("the trial still comes out cleanly", () => {
         "tests/thread-menu.test.ts",
         "tests/member-names.test.ts",
         "tests/admin-queue-pages.test.ts",
+        // Home's and the gallery's cards told who is reading, and Home's pending card, whichever the layout chose.
+        "tests/likes-own-0042.test.ts",
+        "tests/outbox.test.ts",
         // The editorial card's name ink (the owner's restyle, 24 November).
         "src/theme/index.ts",
         "tests/theme.test.ts",

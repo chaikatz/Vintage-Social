@@ -2237,7 +2237,8 @@ describe("Home, read from the source", () => {
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 
   it("tells the card whether Home is in front, so a hidden Home says nothing aloud", () => {
-    const card = /<PendingPostCard[\s\S]*?\/>/.exec(home)?.[0] ?? "";
+    // Editorial (Preview): Home draws whichever pending card the layout chose (PendingCard), handed the same props.
+    const card = /<(?:PendingPostCard|PendingCard)\b[\s\S]*?\/>/.exec(home)?.[0] ?? "";
     expect(card).toMatch(/focused=\{focused\}/);
     expect(home).toMatch(/const focused = useIsFocused\(\)/);
   });

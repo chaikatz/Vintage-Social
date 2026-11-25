@@ -345,7 +345,19 @@ describe("Home", () => {
     expect(home).toMatch(/keyExtractor=\{\(p\) => p\.id\}/);
     expect(home).toMatch(/ListHeaderComponent=\{header\}/);
     expect(home).toMatch(/renderItem=\{renderItem\}/);
-    expect(tags(home, "PendingPostCard")).toHaveLength(1);
+    // A post on its way up is drawn by the card that follows the one chosen, handed the original's props.
+    expect(home).toMatch(/const PendingCard = FeedCard === EditorialPostCard \? EditorialPendingCard : PendingPostCard;/);
+    expect(tags(home, "PendingPostCard")).toHaveLength(0);
+    expect(tags(home, "EditorialPendingCard")).toHaveLength(0);
+    const cards = tags(home, "PendingCard");
+    expect(cards).toHaveLength(1);
+    expect(props(cards[0], "PendingCard")).toEqual([
+      "key={p.id}",
+      "pending={p}",
+      "active={focused && visibleId === null && i === 0}",
+      "focused={focused}",
+      "onOpenProfile={(username) => router.push(`/user/${username}`)}",
+    ]);
   });
 });
 
@@ -421,11 +433,16 @@ describe("the gallery", () => {
 });
 
 describe("the editorial card is drawn by Home and the gallery alone", () => {
-  it("is imported by Home and the gallery and by nothing else", () => {
+  it("is imported by Home and the gallery and by nothing else, but the card of a post on its way up, drawn from its pieces", () => {
     const users = sources().filter(
       (rel) => /EditorialPostCard/.test(code(rel)) && rel !== "src/components/feed/EditorialPostCard.tsx",
     );
-    expect(users.sort()).toEqual(["app/(tabs)/index.tsx", "app/gallery.tsx"]);
+    expect(users.sort()).toEqual(["app/(tabs)/index.tsx", "app/gallery.tsx", "src/components/feed/EditorialPendingCard.tsx"]);
+    // And that card by Home alone.
+    const pending = sources().filter(
+      (rel) => /EditorialPendingCard/.test(code(rel)) && rel !== "src/components/feed/EditorialPendingCard.tsx",
+    );
+    expect(pending).toEqual(["app/(tabs)/index.tsx"]);
   });
 
   it("has its paper read only by the feeds, Home's bars, Settings and the card", () => {
@@ -435,6 +452,7 @@ describe("the editorial card is drawn by Home and the gallery alone", () => {
       "app/(tabs)/index.tsx",
       "app/gallery.tsx",
       "app/settings.tsx",
+      "src/components/feed/EditorialPendingCard.tsx",
       "src/components/feed/EditorialPostCard.tsx",
     ]);
   });
@@ -462,13 +480,32 @@ describe("the editorial card", () => {
     card.match(new RegExp(`\\n  ${name}: \\{([\\s\\S]*?)\\n  \\},`))?.[1] ??
     card.match(new RegExp(`\\n  ${name}: \\{ ([^\\n]*?) \\},`))?.[1] ??
     "";
-  /** The card as it is drawn, from its outermost View to the end of EditorialPostCard. */
-  const body = card.slice(card.indexOf('testID="editorial-post-card"'), card.indexOf("function PostedTime("));
+  /** A piece of the card's (PrintMember, PrintLabel, PrintCaption), from its name to its closing brace. */
+  const piece = (name: string) => {
+    const from = card.indexOf(`export function ${name}(`);
+    expect(from, name).toBeGreaterThan(-1);
+    return card.slice(from, card.indexOf("\n}\n", from) + 2);
+  };
+  /** What a piece returns, as it is written. */
+  const drawnBy = (name: string) => {
+    const fn = piece(name);
+    const ret = fn.slice(fn.indexOf("return ") + "return ".length);
+    return ret.slice(0, ret.lastIndexOf(";")).trim();
+  };
+  /** The card's own JSX, from its outermost View to the end of EditorialPostCard. */
+  const own = card.slice(card.indexOf('testID="editorial-post-card"'), card.indexOf("interface Drawn {"));
+  /** The card as it is drawn: its own JSX with each of its pieces' JSX in its place. */
+  const labelOf = drawnBy("PrintLabel");
+  const body = own
+    .replace("<PrintMember post={post} onOpenProfile={onOpenProfile} />", drawnBy("PrintMember"))
+    .replace("<PrintLabel post={post}>", labelOf.slice(0, labelOf.indexOf("{children}")))
+    .replace("</PrintLabel>", labelOf.slice(labelOf.indexOf("{children}") + "{children}".length))
+    .replace("<PrintCaption post={post} onOpenProfile={onOpenProfile} />", `{${drawnBy("PrintCaption")}}`);
   const at = (needle: string) => body.indexOf(needle);
   /** The row above the picture. */
   const header = body.slice(at("<View style={styles.header}>"), at("<PostMedia"));
   /** The label under the rule. */
-  const label = body.slice(at("<View style={styles.label}>"), at("{post.caption ? ("));
+  const label = body.slice(at("<View style={styles.label}>"), at("{likes ? ("));
   const posted = card.slice(card.indexOf("function PostedTime("), card.indexOf("const PRINT ="));
   const sheet = sheets.find((s) => "card" in s && "rule" in s);
   const L = exportLayout(1, "print", PRINT_WIDTH);
@@ -477,6 +514,19 @@ describe("the editorial card", () => {
     expect(length).toMatch(/^\d+(\.\d+)?%$/);
     return (parseFloat(String(length)) / 100) * room;
   };
+
+  it("draws its member, its label and its caption by its own pieces, handed the post and the way to a member", () => {
+    for (const tag of [
+      "<PrintMember post={post} onOpenProfile={onOpenProfile} />",
+      "<PrintLabel post={post}>",
+      "</PrintLabel>",
+      "<PrintCaption post={post} onOpenProfile={onOpenProfile} />",
+    ]) {
+      expect(own.split(tag), tag).toHaveLength(2);
+      expect(body, tag).not.toContain(tag);
+    }
+    expect(body).not.toMatch(/<Print[A-Z]/);
+  });
 
   it("takes exactly PostCard's props", () => {
     expect(card).toMatch(/type Props = React\.ComponentProps<typeof PostCard>;/);
@@ -503,6 +553,7 @@ describe("the editorial card", () => {
       'accessibilityLabel="Send to"',
       "{label.place}",
       "{label.date}",
+      "{likes ? (",
       "{post.caption}",
       "{preview.map(",
       "<PostedTime at={post.created_at} />",
@@ -575,11 +626,32 @@ describe("the editorial card", () => {
     expect(style("print")).toMatch(/pointerEvents: "box-none",/);
   });
 
-  it("has no counts: neither likes nor comments", () => {
-    expect(card).not.toMatch(/like_count|comment_count|onOpenLikes|\{likes\}|\{replies\}|View all/);
+  it("has no counts but your own photograph's likes: never a count of comments, and the likes through the one rule", () => {
+    expect(card).not.toMatch(/comment_count|\{likes\}|\{replies\}|View all/);
     expect(card).not.toMatch(/styles\.(counts|count|countText)\b/);
+    // The count of likes is read once, through likesLine, for the reader the card is given (src/utils/ownLikes.ts).
+    expect(card.match(/like_count/g)).toHaveLength(1);
+    expect(card).toMatch(/const likes = likesLine\(post, viewerId, post\.like_count\);/);
+    expect(card).toMatch(/^import \{ LIKES_HINT, likesLine \} from "@\/utils\/ownLikes";$/m);
+    // Taken from the props, and handed the post on a tap, only where the count opens anything.
+    expect(card.match(/onOpenLikes/g)).toHaveLength(3);
     // The label draws nothing of the post's but its place and date.
     expect(label).not.toMatch(/\{post\./);
+  });
+
+  it("shows your own photograph's count under the label, and opens who liked it; on anyone else's, nothing", () => {
+    const line = body.slice(at("{likes ? ("), at("{post.caption ? ("));
+    expect(line).toMatch(
+      /\{likes \? \(\s*likes\.opens \? \(\s*<Pressable\s+onPress=\{\(\) => onOpenLikes\?\.\(post\)\}\s+disabled=\{!onOpenLikes\}\s+hitSlop=\{6\}\s+accessibilityRole="button"\s+accessibilityLabel=\{likes\.label\}\s+accessibilityHint=\{LIKES_HINT\}\s*>\s*<Text style=\{styles\.likes\}>\{likes\.text\}<\/Text>\s*<\/Pressable>\s*\) : \(\s*<Text style=\{\[styles\.likes, styles\.noLikes\]\} accessibilityLabel=\{likes\.label\}>\s*\{likes\.text\}\s*<\/Text>\s*\)\s*\) : null\}/,
+    );
+    // One height for the count and for "No likes yet", so the first like changes the words and not the card; the
+    // words' size, from the edge the words start at.
+    expect(card).toMatch(/export const LIKES_LINE = 18;/);
+    expect(style("likes")).toMatch(/fontSize: WORDS,\s*lineHeight: LIKES_LINE,\s*fontWeight: "600",\s*color: colors\.ink,\s*paddingHorizontal: EDGE,/);
+    expect(card).toMatch(/\n {2}noLikes: \{ fontWeight: "400", color: colors\.inkFaint \},/);
+    expect(sheet!.likes).toMatchObject({ fontSize: 12.5, lineHeight: 18 });
+    expect(sheet!.noLikes).not.toHaveProperty("lineHeight");
+    expect(sheet!.noLikes).not.toHaveProperty("fontSize");
   });
 
   it("labels the print with the place and the date alone, without the member's @name", () => {
@@ -637,9 +709,11 @@ describe("the editorial card", () => {
     // Outlines, not targets, at the edge: the heart's on the left, the dots' on the right.
     expect(style("actions")).toMatch(/marginLeft: -INSET,/);
     expect(style("more")).toMatch(/marginRight: -\(TARGET - DOTS \* 0\.75\) \/ 2,/);
+    // Your own photograph's count of likes starts there too: a line with no link in it, so by padding.
+    expect(style("likes")).toMatch(/paddingHorizontal: EDGE,/);
     // And nothing else sets its own sides.
     const written = card.slice(card.indexOf("const styles = StyleSheet.create("));
-    expect(written.match(/padding(Horizontal|Left|Right): /g)).toHaveLength(4);
+    expect(written.match(/padding(Horizontal|Left|Right): /g)).toHaveLength(5);
     expect(written.match(/marginHorizontal: EDGE,/g)).toHaveLength(3);
   });
 
@@ -739,7 +813,7 @@ describe("the editorial card", () => {
 
   it("ends with when it went up, in the label's typewriter face a shade fainter", () => {
     // Last, after the caption and the comments, and once.
-    expect(body).toMatch(/<PostedTime at=\{post\.created_at\} \/>\s*<\/View>\s*\);\s*\}\);?\s*$/);
+    expect(own).toMatch(/<PostedTime at=\{post\.created_at\} \/>\s*<\/View>\s*\);\s*\}\);?\s*$/);
     expect(card.match(/<PostedTime\b/g)).toHaveLength(1);
     // When it was posted, not when it was taken; said in full to a screen reader.
     expect(posted).toMatch(/accessibilityLabel=\{postedAgoSpoken\(at, now\)\}/);
@@ -820,17 +894,20 @@ describe("the editorial card", () => {
 
   it("draws nothing for a post naming nobody, after its hooks and before anything reads a name", () => {
     // Row-level security can send a post without its author (src/components/hiddenAuthors.ts).
-    const whole = card.slice(card.indexOf("function EditorialPostCard("), card.indexOf("function PostedTime("));
+    const whole = card.slice(card.indexOf("function EditorialPostCard("), card.indexOf("interface Drawn {"));
     const guard = whole.indexOf("if (!authorShown(post)) return null;");
     expect(guard).toBeGreaterThan(-1);
     // Every hook above it, so they are called in the same order whatever the post.
     const hooks = whole.match(/\buse[A-Z]\w*\(/g) ?? [];
     expect(hooks.length).toBeGreaterThan(0);
     for (const hook of hooks) expect(whole.lastIndexOf(hook), hook).toBeLessThan(guard);
-    // Nothing that reads the author before it: the label's words name the member too.
-    for (const reader of ["exportLabelText(post", "post.author.", "withAuthors(comments"]) {
+    // Nothing that reads the author before it: the label's words name the member too, and its pieces are drawn after.
+    for (const reader of ["withAuthors(comments", "<PrintMember post={post}", "<PrintLabel post={post}>", "<PrintCaption post={post}"]) {
       expect(whole.indexOf(reader), reader).toBeGreaterThan(guard);
     }
+    // The card itself reads no name: its pieces do, and they are drawn only past the guard, the label's hook with it.
+    expect(whole).not.toMatch(/post\.author\./);
+    expect(piece("PrintLabel")).toMatch(/const scale = Math\.min\(Math\.max\(useWindowDimensions\(\)\.fontScale, 1\), LABEL_CAP\);/);
     expect(card).toMatch(/^import \{ authorShown, withAuthors \} from "\.\.\/hiddenAuthors";$/m);
   });
 
@@ -877,7 +954,10 @@ describe("the editorial card", () => {
     // Every control is a button with a name, a whole target wide: the
     // member, the heart, the comments, sending and the "…". A comment under
     // the picture is read out as its own words.
-    const controls = (card.match(/<Pressable\b[\s\S]*?[^=]>(?=\s*\n)/g) ?? []).filter((p) => !/key=\{c\.id\}/.test(p));
+    // Your own photograph's count is a line of words that opens who liked it, as PostCard's is (above).
+    const controls = (card.match(/<Pressable\b[\s\S]*?[^=]>(?=\s*\n)/g) ?? []).filter(
+      (p) => !/key=\{c\.id\}/.test(p) && !/accessibilityLabel=\{likes\.label\}/.test(p),
+    );
     expect(controls).toHaveLength(5);
     for (const control of controls) {
       expect(control).toMatch(/style=\{(styles\.member|styles\.button|\[styles\.button, styles\.more\])\}/);
@@ -885,6 +965,107 @@ describe("the editorial card", () => {
       expect(control).toMatch(/accessibilityLabel=/);
     }
     expect(card).toMatch(/testID="editorial-post-card"/);
+  });
+});
+
+describe("a post on its way up, under Editorial", () => {
+  const pending = code("src/components/feed/EditorialPendingCard.tsx");
+  const card = code("src/components/feed/EditorialPostCard.tsx");
+  const original = code("src/components/PendingPostCard.tsx");
+  const feedCache = code("src/uploads/feedCache.ts");
+  /** The card as it is drawn, from its outermost View to the end of EditorialPendingCard. */
+  const body = pending.slice(pending.indexOf('testID="editorial-pending-card"'), pending.indexOf("const NO_WORDS ="));
+  const at = (needle: string) => body.indexOf(needle);
+  /** A rule of the card's own sheet, as written. */
+  const rule = (source: string, name: string) =>
+    source.match(new RegExp(`\\n  ${name}: \\{([\\s\\S]*?)\\n  \\},`))?.[1] ?? source.match(new RegExp(`\\n  ${name}: \\{ ([^\\n]*?) \\},`))?.[1] ?? "";
+
+  it("is the editorial card's own pieces, on its own sheet and paper", () => {
+    expect(pending).toMatch(/<View style=\{\[printStyles\.card, paper\]\} testID="editorial-pending-card">/);
+    expect(pending).toMatch(/const paper = paperStyle\(useFeedPaper\(\)\);/);
+    expect(body).toMatch(/<View style=\{printStyles\.header\}>\s*<PrintMember post=\{post\} onOpenProfile=\{onOpenProfile\} \/>\s*<\/View>/);
+    expect(body).toMatch(
+      /<View style=\{printStyles\.print\}>\s*<PostMedia post=\{card\.media\} active=\{active && clipMayPlay\(state\)\} cachePolicy="memory" bare \/>\s*<\/View>/,
+    );
+    expect(body).toMatch(/<PrintLabel post=\{post\}>\s*<NoButtonsYet \/>\s*<\/PrintLabel>/);
+    expect(body).toMatch(/<PrintCaption post=\{post\} onOpenProfile=\{onOpenProfile\} \/>/);
+    // The line where the card will say when it went up, in that line's face and at its cap, so it is as tall.
+    expect(body).toMatch(/<Text\s+maxFontSizeMultiplier=\{LABEL_CAP\}\s+style=\{printStyles\.posted\}\s+numberOfLines=\{1\}/);
+    expect(pending).toMatch(/const NO_WORDS = "\\u00a0";/);
+    // Every piece from the card itself, nothing drawn again here.
+    expect(pending).toMatch(/import \{\s*EDGE,\s*LABEL_CAP,\s*LIKES_LINE,\s*NoButtonsYet,\s*PRINT,\s*PrintCaption,\s*PrintLabel,\s*PrintMember,\s*WORDS,\s*line,\s*printStyles,\s*\} from "\.\/EditorialPostCard";/);
+    expect(pending).not.toMatch(/<Avatar\b|<NameLink\b|<MentionText\b|exportLabelText|nameStyle|useNameFace/);
+  });
+
+  it("sets out its rows in the card's order, with what is not yet so left as paper or saying so", () => {
+    const order = [
+      "<View style={printStyles.header}>",
+      "<PostMedia",
+      "<ProgressRule fraction={card.fraction} look={RULE} />",
+      "<PrintLabel post={post}>",
+      "<PendingStatus pending={pending} card={card} focused={focused} look={STATUS} />",
+      "{card.failed && pending.error ?",
+      "<PrintCaption",
+      "{withWhom ?? NO_WORDS}",
+    ];
+    const seen = order.map(at);
+    order.forEach((needle, i) => expect(seen[i], needle).toBeGreaterThan(-1));
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+  });
+
+  it("is the post as it will be saved, so the label and the caption do not change when the row takes its place", () => {
+    expect(pending).toMatch(/author: draft\.author,\s*caption: draft\.caption\.trim\(\),\s*location: clampLocation\(draft\.location\),\s*taken_at: draft\.takenAt,\s*created_at: card\.createdAt,/);
+    // The row the feed is handed (src/uploads/feedCache.ts).
+    expect(feedCache).toMatch(/caption: draft\.caption\.trim\(\),/);
+    expect(feedCache).toMatch(/taken_at: draft\.takenAt,/);
+    expect(feedCache).toMatch(/location: clampLocation\(draft\.location\),/);
+    expect(feedCache).toMatch(/like_count: 0,/);
+  });
+
+  it("offers nothing to like, comment on, send or open, and never reads as posted", () => {
+    expect(pending).not.toMatch(/onDoubleTap|onToggleLike|onOpenComments|onShare|onMore|onOpenLikes|likesLine|PostedTime|postedAgo|useMinute/);
+    expect(pending).not.toMatch(/"Like"|"Unlike"|"Comments"|"Send to"|"Post options"/);
+    expect(pending).not.toMatch(/from "\.\.\/PostCard"|EditorialPostCard\b(?! *")/);
+    // The buttons' room is the three buttons' own, left as paper and hidden from VoiceOver.
+    expect(card).toMatch(/export function NoButtonsYet\(\) \{\s*return <View style=\{\[styles\.actions, styles\.noButtons\]\} importantForAccessibility="no-hide-descendants" \/>;\s*\}/);
+    expect(card).toMatch(/const BUTTONS = 3;/);
+    expect(card).toMatch(/\n {2}noButtons: \{ width: BUTTONS \* TARGET, height: TARGET \},/);
+    // Home gives every card all three, the send button with them.
+    expect(code("app/(tabs)/index.tsx")).toMatch(/onShare=\{onShare\}/);
+    // The last line is hidden from VoiceOver while it holds nothing.
+    expect(body).toMatch(/accessible=\{withWhom != null\}\s*importantForAccessibility=\{withWhom == null \? "no-hide-descendants" : "auto"\}/);
+  });
+
+  it("says and does exactly what the original pending card does: the same hook, the same line, the same rule", () => {
+    expect(pending).toMatch(/const card = usePendingCard\(pending, focused\);/);
+    expect(original).toMatch(/const card = usePendingCard\(pending, focused\);/);
+    expect(original).toMatch(/<PendingStatus pending=\{pending\} card=\{card\} focused=\{focused\} \/>/);
+    expect(original).toMatch(/<ProgressRule fraction=\{card\.fraction\} \/>/);
+    expect(pending).toMatch(/import \{ PendingStatus, ProgressRule, usePendingCard, type PendingCardProps, type StatusLook \} from "\.\.\/PendingPostCard";/);
+    // Only the hook speaks, holds and discards; neither card does it itself.
+    for (const source of [pending, original.slice(original.indexOf("export function PendingPostCard("), original.indexOf("export interface PendingCardState"))]) {
+      expect(source).not.toMatch(/announceForAccessibility|holdPost|discardPost|retryPost|showAlert/);
+    }
+    expect(original.match(/announceForAccessibility\(/g)).toHaveLength(1);
+    // Focus and the clip as the original has them.
+    expect(pending).toMatch(/export function EditorialPendingCard\(\{ pending, active = false, focused = true, onOpenProfile \}: Props\)/);
+  });
+
+  it("puts its line where your own post's count will be, at the count's height, in the label's typewriter face", () => {
+    expect(rule(pending, "row")).toMatch(/minHeight: LIKES_LINE,/);
+    expect(rule(pending, "row")).toMatch(/paddingHorizontal: EDGE,/);
+    // Wrapping, it gains a line's height and no gap between lines.
+    expect(rule(pending, "row")).toMatch(/columnGap: spacing\.sm,/);
+    expect(rule(pending, "row")).not.toMatch(/\bgap:|rowGap/);
+    for (const name of ["state", "action", "dot"]) {
+      expect(rule(pending, name), name).toMatch(/\.\.\.line\(PRINT\.byline\),/);
+      expect(rule(pending, name), name).toMatch(/lineHeight: LIKES_LINE,/);
+    }
+    expect(rule(card, "likes")).toMatch(/lineHeight: LIKES_LINE,/);
+    // The hairline is the card's rule, holding the accent as it fills, faint while it waits.
+    expect(pending).toMatch(/const RULE = \{ track: \[printStyles\.rule, styles\.track\], fill: styles\.fill, paused: styles\.paused \};/);
+    expect(rule(pending, "track")).toBe("overflow: \"hidden\"");
+    expect(rule(pending, "fill")).toMatch(/height: "100%", backgroundColor: colors\.accent/);
   });
 });
 

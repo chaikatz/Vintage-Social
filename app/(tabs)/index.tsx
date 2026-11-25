@@ -6,6 +6,7 @@ import { focusManager, onlineManager, useInfiniteQuery, useQueryClient } from "@
 import { Screen } from "@/components/Screen";
 import { PostCard } from "@/components/PostCard";
 import { EditorialPostCard } from "@/components/feed/EditorialPostCard";
+import { EditorialPendingCard } from "@/components/feed/EditorialPendingCard";
 import { PendingPostCard } from "@/components/PendingPostCard";
 import { NewPostsTag } from "@/components/NewPostsTag";
 import { EmptyState } from "@/components/EmptyState";
@@ -262,6 +263,8 @@ export default function Home() {
   // another card, on the paper chosen with it. Everything else about the
   // list stays as it is.
   const FeedCard = useFeedLayout() === "editorial" ? EditorialPostCard : PostCard;
+  // A post on its way up is drawn as the card it will become, so nothing moves when it is up.
+  const PendingCard = FeedCard === EditorialPostCard ? EditorialPendingCard : PendingPostCard;
   const paper = useFeedBackground();
 
   // Each card is handed the same objects while nothing about it has
@@ -300,7 +303,7 @@ export default function Home() {
     pending.length > 0 ? (
       <View>
         {pending.map((p, i) => (
-          <PendingPostCard
+          <PendingCard
             key={p.id}
             pending={p}
             active={focused && visibleId === null && i === 0}

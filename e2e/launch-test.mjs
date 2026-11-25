@@ -387,7 +387,19 @@ check(
   /[A-Z]+ \d{1,2}, \d{4}/.test(print) && prints.every((p) => !/@[a-z0-9._]+/.test(p) && !/MEMBER|NO\. \d{5}/.test(p)),
   print.slice(0, 120),
 );
-check("The editorial card has no like or comment counts", prints.every((p) => !/\d+ (likes?|comments?)\b/i.test(p)));
+// No count of comments on any print, and a count of likes only under the member's own (src/utils/ownLikes.ts):
+// Elena, signed in here, sees hers and nobody else's.
+const counted = await editorial.evaluateAll((els) =>
+  els.map((el) => ({
+    author: el.firstElementChild?.querySelector('[role="button"]')?.getAttribute("aria-label") ?? "",
+    likes: /(^|\n)(\d+ likes?|No likes yet)(\n|$)/.test(el.innerText ?? ""),
+  })),
+);
+check(
+  "The editorial card has no comment counts, and a count of likes only under the member's own photographs",
+  prints.every((p) => !/\d+ comments?\b/i.test(p)) && counted.length > 0 && counted.every((c) => c.likes === (c.author === "elena.marchetti")),
+  counted.map((c) => `${c.author}:${c.likes ? "count" : "-"}`).join(", "),
+);
 // Above the picture, as on the original card: the member's picture and name, and the "…" at the end of their line.
 const head = await editorial.first().evaluate((el) => {
   const member = el.firstElementChild?.querySelector('[role="button"]');
