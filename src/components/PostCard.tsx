@@ -8,7 +8,7 @@ import { postedAgo, postedAgoSpoken, shortDate } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
 import { mentionedUsernames } from "@/utils/mentions";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
-import { LIKES_HINT, likesLine } from "@/utils/ownLikes";
+import { LIKES_HINT, LIKES_SLOP, likesLine } from "@/utils/ownLikes";
 import { Avatar } from "./Avatar";
 import { MentionText, NameLink } from "./MemberText";
 import { PostMedia } from "./PostMedia";
@@ -173,7 +173,7 @@ export const PostCard = React.memo(function PostCard({
           <Pressable
             onPress={() => onOpenLikes?.(post)}
             disabled={!onOpenLikes}
-            hitSlop={6}
+            hitSlop={LIKES_SLOP}
             accessibilityRole="button"
             accessibilityLabel={likes.label}
             accessibilityHint={LIKES_HINT}
@@ -338,7 +338,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
   },
-  noLikes: { fontWeight: "400", color: colors.inkFaint },
+  noLikes: { fontWeight: "400", color: colors.inkSoft },
   caption: {
     ...type.body,
     fontSize: 14,

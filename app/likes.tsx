@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   list: { paddingVertical: spacing.sm },
   note: {
     ...type.caption,
-    color: colors.inkFaint,
+    color: colors.inkSoft,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xs,
     paddingBottom: spacing.sm,
