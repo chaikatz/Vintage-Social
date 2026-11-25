@@ -96,6 +96,8 @@ export const colors = {
   // set on them is light on both prints.
   camera: dyn("#1C1915", "#000000"),
   onCamera: dyn("#F2EBDD", "#FFFFFF"),
+  // The Post tab's camera tile: the camera's dark on paper, a step up from the black on black, where shutter would be a white slab.
+  cameraTile: dyn("#1C1915", dark.paperRaised),
   // A mark set straight on a photograph or a film in the feed — the
   // double-tap heart, the play and sound glyphs on their dark discs. The
   // print's own off-white on paper; on black, white, as every other mark.

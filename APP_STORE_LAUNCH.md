@@ -241,7 +241,7 @@ support address shown in Settings" points at nothing.
     now has **Delete my account** (two confirmations, as in Settings), and
     the Privacy Policy, the Terms and the support page name it, with
     writing in to the support address kept as a second way. Both
-    documents are dated **November 8, 2026**.
+    documents are dated **November 25, 2026**.
   - The Terms say the house accounts are the club's own, show
     public-domain and licensed photographs, and are not members.
 - **Support page:** `npm run build:legal` can now write
@@ -356,7 +356,7 @@ npx vercel --prod
 
 Then open, in Safari:
 
-- `https://vintagesocial.app/privacy` → "Last updated November 8, 2026",
+- `https://vintagesocial.app/privacy` → "Last updated November 25, 2026",
   it says "Memory Room", not "Darkroom", and it names "Delete my account"
   for an application that is waiting.
 - `https://vintagesocial.app/terms` → "no tolerance for objectionable
@@ -678,8 +678,8 @@ Every type below: **linked to the user: Yes · used for tracking: No**.
 **Not collected:** Health & Fitness, Financial Info, Contacts, Browsing
 History, Search History (search history stays on the phone), Purchases,
 Sensitive Info, Diagnostics (no crash or analytics SDK), Other Data. The
-photo library is **not** collected: the Memory Room reads it on the phone
-and only a photograph the member posts is uploaded.
+photo library is **not** collected: the Memory Room and the Post tab read it
+on the phone and only a photograph the member posts is uploaded.
 
 **Tracking: No.** No advertising, no data brokers, no IDFA.
 
@@ -758,12 +758,15 @@ to check)
 > follow, like and comment on one another's
 > photographs: those likes and comments (for example "Where is this?"
 > under a photograph in Home) were made by script when the accounts were
-> made, not written by people. The Terms of Use say so. Search finds members. The Post tab has two ways in:
-> "Enter the Memory Room" shows photographs already in your library, a few
-> at a time by the date they were taken (it asks for photo access on its
-> first page; limited access works; nothing from the library leaves the
-> phone unless you post it), and "Choose a photograph" opens the system
-> picker. Pick a photograph, choose a filter, then "Share to VINTAGE".
+> made, not written by people. The Terms of Use say so. Search finds members. The Post tab shows your newest
+> photographs, the one you tap large above them with POST under it (it
+> asks for photo access only when you tap “Show my photographs”; limited
+> access works; nothing from the library leaves the phone unless you post
+> it). Above them, The Memory Room shows photographs from further back,
+> one at a time, and On this day shows what you posted and photographed
+> on this date in earlier years. LIBRARY opens the system picker, and
+> SHORT VIDEO a clip of up to 60 seconds. Pick a photograph, choose a
+> filter, then "Share to VINTAGE".
 > Activity lists likes, comments, follows and tags. Profile shows your
 > photographs by date posted or taken, as a Timeline, as Eras, on a Map and
 > by Places.
@@ -805,7 +808,7 @@ to check)
 > That account is approved at once. "Apply for membership" shows the other
 > path: the application waits for a person, and the screen says so.
 >
-> Permissions: photo library (the Memory Room and choosing a photograph),
+> Permissions: photo library (the Post tab’s photographs, the Memory Room and choosing a photograph),
 > camera (taking a photograph), notifications (asked after the first
 > sign-in; optional). The add-to-Photos prompt appears only if you choose
 > Save Image or Save Video after sharing a photograph outside VINTAGE
@@ -848,7 +851,7 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 1. Delete the app, install from TestFlight, open. The landing page shows
    the V and three ways in, and Privacy · Terms at the foot. No flash of
    the wrong colour, in Light and in Dark.
-2. Privacy, then Terms: both open, dated November 8, 2026, and come back.
+2. Privacy, then Terms: both open, dated November 25, 2026, and come back.
 
 **Joining**
 3. Apply for membership with a throwaway email. It lands on Application
@@ -879,10 +882,11 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 **Every day**
 6. Sign in with your own account. Home scrolls and pulls to refresh;
    photographs come in sharp; nothing stutters.
-7. Post tab → Enter the Memory Room → Continue → allow access. Turn a few
-   pages; open CONTENTS; POST one → editor → Share to VINTAGE. It
-   appears at the top of Home.
-8. Post a photograph from Choose a photograph, and a short film. Both play
+7. Post tab → Show my photographs → allow access. Tap a photograph, then
+   POST → editor → Share to VINTAGE; it appears at the top of Home. Then
+   The Memory Room → Continue; turn a few pages; open CONTENTS; POST
+   one → editor → Share to VINTAGE.
+8. Post a photograph from Library, and a short film. Both play
    and show when opened.
 9. From the second account: like and comment on it. Activity shows both;
    a notification arrives if allowed. Under it, your own account reads

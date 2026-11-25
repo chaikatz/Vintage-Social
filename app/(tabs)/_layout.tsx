@@ -11,6 +11,7 @@ import { keepPagerToOneFinger } from "@/utils/pagerTouches";
 import { colors, spacing, type } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { emitHomeAgain } from "@/utils/homeRefresh";
+import { emitPostAgain } from "@/post/again";
 import { usePushRegistration } from "@/utils/push";
 
 /**
@@ -101,6 +102,13 @@ export default function TabsLayout() {
             title: "Post",
             tabBarIcon: ({ color }) => <Feather name="plus-square" size={23} color={color} />,
           }}
+          // Tapping Post while already on Post is "again", as Home's is: the
+          // roll back to the top and the newest photograph selected.
+          listeners={({ navigation }) => ({
+            tabPress: () => {
+              if (navigation.isFocused()) emitPostAgain();
+            },
+          })}
         />
         <SwipeTabs.Screen
           name="activity"

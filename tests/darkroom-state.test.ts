@@ -556,6 +556,57 @@ describe("the place", () => {
     expect(session.placeLine(NOW + 13 * HOUR)).toBeNull();
   });
 
+  it("gives the Post tab its door's picture from the file, never from the library: the print left off on and its neighbour", async () => {
+    let { session } = await launch();
+    expect(session.placeCover()).toBeNull();
+    const deck = prints(4);
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 1, prints: deck });
+    session.flushPlace();
+
+    ({ session } = await launch());
+    const cover = session.placeCover(NOW + HOUR);
+    expect(cover?.front.id).toBe("p1");
+    expect(cover?.back?.id).toBe("p2");
+    expect(phone.libraryLoaded).toBe(false);
+    // Only what the file keeps: the address, the shape and the date.
+    expect(cover?.front).toEqual({ id: "p1", uri: "ph://p1", width: 4032, height: 3024, takenAt: deck[1].takenAt, subtypes: [] });
+
+    // At the end of the deck, the last print shown, with the one before it.
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 4, prints: deck });
+    expect(session.placeCover()?.front.id).toBe("p3");
+    expect(session.placeCover()?.back?.id).toBe("p2");
+    // A deck of one has no neighbour.
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 0, prints: prints(1) });
+    expect(session.placeCover()).toEqual({ front: expect.objectContaining({ id: "p0" }), back: null });
+
+    // Twelve hours, as the line.
+    expect(session.placeCover(NOW + 13 * HOUR)).toBeNull();
+  });
+
+  it("gives the door On this day's picture only on the day it was left", async () => {
+    const late = new Date(2026, 9, 22, 23, 0).getTime();
+    let { session } = await launch();
+    session.savePlace({ mode: "on-this-day", year: null, month: 0, index: 0, prints: prints(4) }, late);
+    session.flushPlace();
+    ({ session } = await launch());
+    expect(session.placeCover(late + 30 * 60_000)?.front.id).toBe("p0");
+    ({ session } = await launch());
+    expect(session.placeCover(late + 90 * 60_000)).toBeNull();
+  });
+
+  it("does not start a visit when the door reads it, so a print just posted is still moved past", async () => {
+    const { session } = await launch();
+    const deck = prints(4);
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 1, prints: deck });
+    session.flushPlace();
+    session.advancePlace("p1");
+    // The tab reads its door while the room under compose has not heard of the post.
+    expect(session.placeCover()?.front.id).toBe("p2");
+    expect(session.placeLine()).toBe("You left off in August 2018.");
+    session.savePlace({ mode: "surprise", year: null, month: 0, index: 1, prints: deck });
+    expect(session.readPlace()?.index).toBe(2);
+  });
+
   it("moves on past a posted print, and writes", async () => {
     const { session } = await launch();
     session.savePlace({ mode: "year", year: 2018, month: 7, index: 1, prints: prints(4) });

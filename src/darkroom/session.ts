@@ -20,8 +20,9 @@ import type { DarkroomMode, DayReach, Print, Span } from "./types";
  * (see `posted.ts`), so coming back starts at the next one. Either way the
  * file is written in one go from here, so neither can undo the other.
  *
- * The Post tab reads the place for its "You left off in August 2018." line
- * from this file alone. It never asks the library anything.
+ * The Post tab reads the place for its Memory Room door — the "You left
+ * off in August 2018." line (`placeLine`) and the print it carries
+ * (`placeCover`) — from this file alone. Neither asks the library anything.
  *
  * Every other chapter visited in this run of the app keeps its own
  * position, in memory only: going On this day → 2016 → On this day comes
@@ -243,6 +244,24 @@ export function placeLine(now = Date.now()): string | null {
   if (!p) return null;
   const print = p.deck[Math.min(p.index, p.deck.length - 1)];
   return print ? `You left off in ${monthYearWords(print.takenAt)}.` : null;
+}
+
+/**
+ * The Post tab's picture for the same place: the print the place stands
+ * on (at the end of the deck, the last one shown) and one beside it, the
+ * next if there is one, else the one before, so the door carries the
+ * photograph the member left off on. The same rules as `placeLine` —
+ * twelve hours, and On this day only on its own day — read from the file
+ * alone, never the library. It does not start a visit, as `readPlace`
+ * does, so a print just posted is still moved past.
+ */
+export function placeCover(now = Date.now()): { front: Print; back: Print | null } | null {
+  const p = current(now);
+  if (!p) return null;
+  const at = Math.min(p.index, p.deck.length - 1);
+  const front = p.deck[at];
+  if (!front) return null;
+  return { front, back: p.deck[at + 1] ?? p.deck[at - 1] ?? null };
 }
 
 /**

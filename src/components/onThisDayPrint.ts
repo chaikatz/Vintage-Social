@@ -6,9 +6,11 @@ import { memoryHeadline, onThisDay } from "@/utils/memories";
 import type { PostRow } from "@/types/db";
 
 /**
- * The one print the Post tab's On this day line may carry: a photograph
- * the member posted, taken on this date in an earlier year, kept apart
- * from the screen so it can be tested without a phone.
+ * The one print the Post tab's On this day door may carry from the
+ * member's own posts: a photograph the member posted, taken on this date
+ * in an earlier year, kept apart from the screen so it can be tested
+ * without a phone. (The door's count of this date's photographs in the
+ * library is the library's, read in `src/post/dayDoor.ts`.)
  *
  * It is drawn from what the member has already posted, never from the
  * phone's library, and drawn the way the profile grid draws its squares:
@@ -30,8 +32,8 @@ export interface TodaysPrint {
  * The newest year's memory, and its picture. When that year's post has
  * nothing to draw (a film posted before posters were made) an older year
  * that has one is shown instead, so the line and the print are always
- * the same photograph. Null when today has no memory: the line keeps its
- * ordinary words and nothing else is drawn.
+ * the same photograph. Null when today has no memory: the door shows the
+ * library's count, or the leaf of a calendar.
  */
 export function todaysPrint(
   posts: readonly PostRow[] | null | undefined,

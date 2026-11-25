@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { PostRow } from "@/types/db";
@@ -6,11 +6,12 @@ import type { PostRow } from "@/types/db";
 /**
  * The Post tab, where a post begins: read from the source, the few lines
  * that decide where each tap goes and that a tap can only open one thing,
- * how the page is set so its two ways in are plain at a glance; and,
- * without a phone, the one print its On this day line may carry.
+ * the words the page says, and how it is set; and, without a phone, the
+ * one print its On this day door may carry from the member's own posts.
  *
- * The tab's privacy contract (it never reads or asks for the library) and
- * the Memory Room's words on it are held in darkroom-surfaces.test.ts.
+ * The tab's privacy contract (what it reads of the library, and when it
+ * may ask) is held in darkroom-surfaces.test.ts; its rules and numbers in
+ * post-roll.test.ts, post-day-door.test.ts and post-access.test.ts.
  */
 
 // The public address of a stored file, as the app builds it, without a Supabase client.
@@ -34,376 +35,348 @@ function code(file: string): string {
 }
 
 const tab = code("app/(tabs)/create.tsx");
-const gate = code("src/components/gate/GateButton.tsx");
-/** One entry of a StyleSheet, as written. */
-const style = (src: string, name: string) => src.match(new RegExp(`\\n  ${name}: \\{[^}]*\\}`))?.[0] ?? "";
-/** The Memory Room's part of the page, and the library's. */
-const room = tab.slice(tab.indexOf("function MemoryRoomDoor"), tab.indexOf("function QuietWay"));
-const library = tab.slice(tab.indexOf("<View style={styles.section}>"), tab.indexOf("<OnThisDay"));
+const layout = code("app/(tabs)/_layout.tsx");
+const POST_PARTS = readdirSync(path.join(root, "src/components/post")).map((f) => `src/components/post/${f}`);
+const parts = Object.fromEntries(POST_PARTS.map((f) => [path.basename(f, ".tsx"), code(f)]));
+const panels = code("src/post/panels.ts");
+const openPrintSrc = code("src/post/openPrint.ts");
+/** Everything the page draws: the tab and its parts. */
+const page = [tab, ...Object.values(parts)].join("\n");
+const open = tab.slice(tab.indexOf("const openWith"), tab.indexOf("// Leaving the tab"));
 
 describe("the ways in", () => {
   it("go through the ordinary picker, the camera and the clip picker, then the editor", () => {
     expect(tab).toMatch(/import \{ pickFromLibrary, takeForCompose, type PickedParams \} from "@\/utils\/pickForCompose"/);
-    expect(tab).toMatch(/onPress=\{\(\) => openWith\("photo", \(\) => pickFromLibrary\("photo"\)\)\}/);
-    expect(tab).toMatch(/onPress=\{\(\) => openWith\("camera", takeForCompose\)\}/);
-    expect(tab).toMatch(/onPress=\{\(\) => openWith\("video", \(\) => pickFromLibrary\("video"\)\)\}/);
-    const open = tab.slice(tab.indexOf("const openWith"), tab.indexOf("const native"));
-    expect(open).toMatch(/const params = await get\(\);\s*if \(params\) router\.push\(\{ pathname: "\/compose", params \}\);/);
+    expect(tab).toMatch(/openWith\("photo", \(\) => pickFromLibrary\("photo"\)\)/);
+    expect(tab).toMatch(/openWith\("video", \(\) => pickFromLibrary\("video"\)\)/);
+    expect(tab).toMatch(/const params = await get\(stop\?\.signal\);/);
+    expect(open).toMatch(/if \(params\) router\.push\(\{ pathname: "\/compose", params \}\);/);
     expect(tab.match(/pathname: "\/compose"/g)).toHaveLength(1);
+    // Nothing else on the page pushes the editor.
+    for (const [name, src] of Object.entries(parts)) expect(src, name).not.toMatch(/\/compose/);
   });
 
-  it("never prepares a photograph itself, or opens a picker of its own", () => {
-    // The native prepare (2048 px, sRGB) and the clip's trimmer live behind pickForCompose.
+  it("keep the camera to the phone", () => {
+    expect(tab).toMatch(/const native = Platform\.OS !== "web";/);
+    expect(tab.match(/openWith\("camera", takeForCompose\)/g)).toHaveLength(1);
+    expect(tab).toMatch(/native \? \(\) => openWith\("camera", takeForCompose\) : undefined/);
+    // The tile is the iPhone's: the roll's rows ask for it only there.
+    expect(tab).toMatch(/const ios = Platform\.OS === "ios";/);
+    expect(tab).toMatch(/rollRows\(roll\.prints, \{ camera: ios \}\)/);
+    expect(tab).toMatch(/wellRows\(\{ camera: ios \}\)/);
+  });
+
+  it("open a photograph of the roll through the same one way, and only that one can be stopped", () => {
+    expect(tab).toMatch(/void openWith\("print", \(signal\) => openPrint\(print, signal\), print\.id\);/);
+    expect(tab).toMatch(/import \{ discardPrintCopy, openPrint, postHaptic \} from "@\/post\/openPrint"/);
+    expect(open).toMatch(/const stop = way === "print" \? new AbortController\(\) : null;/);
+    expect(tab.match(/new AbortController\(\)/g)).toHaveLength(1);
+    // A copy that arrives after the tab was left, or the open was stopped, is thrown away, and nothing is pushed.
+    expect(open).toMatch(/if \(params && \(stop\?\.signal\.aborted \|\| !front\.current\)\) \{\s*discardPrintCopy\(params\.uri\);\s*return;\s*\}/);
+    // Leaving the tab, or the app going to the background, stops it.
+    expect(tab).toMatch(/return \(\) => \{\s*front\.current = false;\s*printStop\.current\?\.abort\(\);\s*\};/);
+    expect(tab).toMatch(/if \(state === "background"\) printStop\.current\?\.abort\(\);/);
+  });
+
+  it("post with one firm tap: POST, the photograph on the mount, or the selected cell tapped again a moment later", () => {
+    const post = tab.slice(tab.indexOf("const post = useCallback"), tab.indexOf("const listRef"));
+    expect(post).toMatch(/if \(opening\.current\) return;\s*postHaptic\(\);/);
+    const cell = tab.slice(tab.indexOf("const onCell = useCallback"), tab.indexOf("const onCellPost"));
+    expect(cell).toMatch(/if \(Date\.now\(\) - sel\.at >= SECOND_TAP_MS\) post\(print\);/);
+    expect(cell).toMatch(/select\(print\.id\);/);
+    // With any of the photograph's frame scrolled out of view, a photograph tapped is brought up to the mount.
+    expect(cell).toMatch(/if \(offset\.current > heroTop\.current \+ heroFrame\(print, W, H\)\.top\) toTop\(\);/);
+    expect(tab).toMatch(/scrollToOffset\(\{ offset: 0, animated: !reduceMotionRef\.current \}\)/);
+    expect(parts.RollHero).toMatch(/testID="post-post"\s+onPress=\{onPost\}/);
+    expect(parts.RollHero).toMatch(/testID="post-hero-photo"\s+onPress=\{onPost\}/);
+    // No haptic on selecting: the house is quiet.
+    expect(cell).not.toMatch(/Haptic/);
+    expect(openPrintSrc).toMatch(/Haptics\.impactAsync\(Haptics\.ImpactFeedbackStyle\.Rigid\)/);
+  });
+
+  it("open the room and On this day each in one tap, with nothing to confirm on the way", () => {
+    expect(tab).toMatch(/const openRoom = useCallback\(\(\) => router\.push\("\/darkroom"\), \[router\]\);/);
+    expect(tab).toMatch(/const openDay = useCallback\(\(\) => router\.push\("\/memories"\), \[router\]\);/);
+    expect(tab).toMatch(/router\.push\(\{ pathname: "\/darkroom", params: \{ mode: "set-aside" \} \}\)/);
+    // The room's door and the roll's foot both go to the room.
+    expect(tab).toMatch(/onRoom=\{openRoom\}/);
+    expect(tab).toMatch(/<RollFooter held=\{held\} onEnter=\{openRoom\} \/>/);
+    expect(page).not.toMatch(/ActionSheet|Modal\b|Alert\.alert/);
+  });
+
+  it("say only after the fact that something could not be opened", () => {
+    const caught = open.slice(open.indexOf("} catch {"), open.indexOf("} finally {"));
+    expect(caught).toMatch(/showAlert\("Couldn’t open that", "It couldn’t be read here\. Try again in a moment, or choose another\."\);\s*$/);
+    expect(tab.match(/showAlert\(/g)).toHaveLength(1);
+    for (const [name, src] of Object.entries(parts)) expect(src, name).not.toMatch(/showAlert\(/);
+    // A photograph that would not come from iCloud says so, offline or not.
+    expect(openPrintSrc).toContain('"Couldn’t open that one"');
+    expect(openPrintSrc).toContain('"It may be in iCloud, and this iPhone is offline."');
+    expect(openPrintSrc).toContain('"It may still be in iCloud. Try again in a moment."');
+  });
+
+  it("never prepares a photograph itself, or opens a picker or the library of its own", () => {
     expect(tab).not.toMatch(/@\/media\/nativeMedia|expo-image-manipulator|expo-image-picker|expo-media-library|vintage-library/);
     expect(tab).not.toMatch(/prepareImage|launchImageLibraryAsync|launchCameraAsync|manipulateAsync/);
   });
 
-  it("keeps the camera to the phone", () => {
-    expect(tab).toMatch(/const native = Platform\.OS !== "web";/);
-    const camera = tab.slice(tab.indexOf("{native ? ("), tab.indexOf('label="Short video"'));
-    expect(camera).toMatch(/label="Camera"/);
+  it("mounts no renderer: the filters are the editor's", () => {
+    for (const src of [tab, ...Object.values(parts)]) expect(src).not.toMatch(/FilteredImage|GLView|expo-gl|@\/filters/);
   });
 
-  it("opens each one in a single tap, with nothing to confirm on the way", () => {
-    // The one alert on the page says a way in could not be opened, after the fact; nothing asks first.
-    const open = tab.slice(tab.indexOf("const openWith"), tab.indexOf("const native"));
-    const caught = open.slice(open.indexOf("} catch {"), open.indexOf("} finally {"));
-    expect(caught).toMatch(/^\} catch \{\s*showAlert\("Couldn’t open that", "[^"]+"\);\s*$/);
-    expect(tab.replace(caught, "")).not.toMatch(/showAlert\(|Alert\.alert|ActionSheet|Modal\b/);
-    // The room is one tap from the page, as the picker is: no sheet, no second page in front of it.
-    expect(room).toMatch(/onPress=\{\(\) => router\.push\("\/darkroom"\)\}/);
-  });
-
-  it("never scrolls sideways inside the pager", () => {
-    expect(tab).not.toMatch(/horizontal|FlatList|ScrollView/);
+  it("never scrolls sideways inside the pager: one list, top to bottom", () => {
+    expect(page).not.toMatch(/\bhorizontal\b/);
+    expect(tab.match(/<FlatList\s/g)).toHaveLength(1);
+    expect(page).not.toMatch(/ScrollView/);
+    expect(tab).toMatch(/<Screen padded=\{false\}>\s*<FlatList/);
+    // Where there is no roll the page is short, and scrolls only when its words outgrow it.
     expect(tab).toMatch(/<Screen padded=\{false\} scroll>/);
   });
 
-  it("mounts no renderer: the filters are the editor's", () => {
-    expect(tab).not.toMatch(/FilteredImage|GLView|expo-gl|@\/filters/);
+  it("draws the roll a screenful at a time, and lets the rest go", () => {
+    const list = tab.slice(tab.indexOf("<FlatList"), tab.indexOf("/>", tab.indexOf("showsVerticalScrollIndicator")));
+    expect(list).toMatch(/initialNumToRender=\{4\}/);
+    expect(list).toMatch(/maxToRenderPerBatch=\{4\}/);
+    expect(list).toMatch(/windowSize=\{3\}/);
+    expect(list).toMatch(/removeClippedSubviews=\{false\}/);
+    expect(list).toMatch(/onEndReached=\{roll\.loadMore\}/);
+    expect(list).toMatch(/onEndReachedThreshold=\{1\.5\}/);
+    expect(list).toMatch(/scrollEventThrottle=\{16\}/);
+    expect(list).toMatch(/extraData=/);
+    // A row is drawn again only when something in it changes.
+    expect(parts.RollCell).toMatch(/export const RollRow = React\.memo\(/);
+    expect(parts.RollCell).toMatch(/export const RollCell = React\.memo\(/);
+    expect(tab).toMatch(/selectedId=\{selectedId && item\.items\.some\(\(i\) => i\.key === selectedId\) \? selectedId : null\}/);
   });
 
-  it("says the clip's limit on the page, where no trimmer may hold a clip to it", () => {
+  it("says the clip's limit under the ways only where no trimmer holds a clip to it", () => {
     expect(tab).toMatch(/import \{ MAX_VIDEO_SECONDS \} from "@\/utils\/validation"/);
-    const note = tab.match(/<Text style=\{styles\.waysNoteText\}[^>]*>([^<]*)<\/Text>/)?.[1] ?? "";
-    expect(note.trim()).toBe("Clips up to {MAX_VIDEO_SECONDS} seconds.");
-    // Under the ways on every platform, and still in the clip's hint.
-    const under = tab.slice(tab.indexOf('label="Short video"'), tab.indexOf("<OnThisDay"));
-    expect(under).toContain("styles.waysNote");
-    expect(under).not.toMatch(/Platform\.OS|native \?/);
-    // It is drawn up into the foot of their touch boxes, so it lets their taps through, from a
-    // View: Android's Text ignores pointerEvents.
-    expect(tab).toMatch(/<View style=\{styles\.waysNote\} pointerEvents="none">\s*<Text style=\{styles\.waysNoteText\}/);
-    expect(tab).not.toMatch(/<Text[^>]*pointerEvents/);
-    expect(tab).toMatch(/hint=\{`Up to \$\{MAX_VIDEO_SECONDS\} seconds, same feed, same grid`\}/);
-  });
-});
-
-describe("the page, at a glance", () => {
-  it("says what it is for in its one serif line, whether or not there is a Memory Room", () => {
-    expect(tab).toMatch(/<Text style=\{styles\.title\}[^>]*>\s*Share a photograph\.\s*<\/Text>/);
-    expect(tab.indexOf("Share a photograph.")).toBeLessThan(tab.indexOf("{door ?"));
-    expect(tab.match(/fontFamily: type\.serif/g)).toHaveLength(1);
-    expect(style(tab, "title")).toMatch(/fontFamily: type\.serif/);
-    expect(tab).not.toMatch(/type\.title|fontStyle: "italic"/);
+    expect(tab).toMatch(/Platform\.OS !== "ios" \? \(\s*<View style=\{styles\.note\} pointerEvents="none">\s*<Text style=\{styles\.noteText\}[^>]*>\s*Clips up to \{MAX_VIDEO_SECONDS\} seconds\.\s*<\/Text>/);
+    expect(parts.WaysRow).toMatch(/hint=\{`Up to \$\{MAX_VIDEO_SECONDS\} seconds, same feed, same grid`\}/);
   });
 
-  it("sets its two ways in alike: an eyebrow that names it, one line, and one bar", () => {
-    expect(room).toMatch(
-      /<Text style=\{\[styles\.eyebrow, styles\.roomEyebrow\]\} accessibilityRole="header"[^>]*>\s*The Memory Room\s*<\/Text>\s*<Text style=\{styles\.line\}[^>]*>\s*\{returnLine \?\? "Rediscover something worth sharing\."\}\s*<\/Text>\s*<GateButton\s+title="Enter the Memory Room"/,
-    );
-    expect(library).toMatch(
-      /<Text style=\{styles\.eyebrow\} accessibilityRole="header"[^>]*>\s*From your library\s*<\/Text>\s*<Text style=\{styles\.line\}[^>]*>\s*The one you have in mind\.\s*<\/Text>\s*<GateButton\s+title="Choose a photograph"/,
-    );
-    // The room comes first.
-    expect(tab.indexOf("<MemoryRoomDoor")).toBeLessThan(tab.indexOf('title="Choose a photograph"'));
-  });
-
-  it("gives the two bars the same size, and does not let them look alike", () => {
-    expect(tab.match(/<GateButton\b/g)).toHaveLength(2);
-    for (const part of [room, library]) {
-      const bar = part.match(/<GateButton\b[\s\S]*?\/>/)?.[0] ?? "";
-      expect(bar).toMatch(/style=\{styles\.bar\}/);
-      expect(bar).toMatch(/maxFontSizeMultiplier=\{BAR_TYPE_CAP\}/);
-      expect(bar).toMatch(/disabled=\{held\}/);
-    }
-    expect(room).toMatch(/title="Enter the Memory Room"\s+variant="card"/);
-    expect(library).toMatch(/title="Choose a photograph"\s+variant=\{door \? "outline" : "solid"\}/);
-    // The room's bar is the invitation card's stock, ruled and lettered in its ink (brown and gold on paper, white on black); the library's is ruled in ink.
-    expect(style(gate, "card")).toMatch(/backgroundColor: colors\.card, borderWidth: 1, borderColor: colors\.goldSoft/);
-    expect(style(gate, "outline")).toMatch(/borderWidth: 1, borderColor: colors\.ink/);
-    expect(gate).toMatch(/labelCard: \{ color: colors\.gold \}/);
-    expect(gate).toMatch(/: card\s*\? colors\.gold/);
-    // Neither variant changes the bar's height: that is the page's.
-    expect(style(gate, "card")).not.toMatch(/height|padding|margin/);
-  });
-
-  it("keeps the room's bar to its route, and its words to the Memory Room", () => {
-    expect(room).toMatch(/router\.push\("\/darkroom"\)/);
-    expect(tab).not.toMatch(/Darkroom/);
-  });
-
-  it("leaves out the words it used to carry", () => {
-    for (const gone of [
-      "New post",
-      "monthDay",
-      "Your best photos",
-      "From further back than you’d think to look.",
-      "Or the one you came with.",
-      "One picture at a time.",
-      "Nothing here is ranked.",
-      "What you posted on this date in other years\"",
-    ]) {
-      expect(tab).not.toContain(gone);
-    }
-  });
-
-  it("names its two parts as headers, so VoiceOver can go from one to the other", () => {
-    expect(tab.match(/accessibilityRole="header"/g)).toHaveLength(2);
-  });
-});
-
-describe("the camera and the clip", () => {
-  const boxed = tab.slice(tab.indexOf("function BoxedWay"), tab.indexOf("function QuietWay"));
-
-  it("are two ruled boxes under the library's bar, each with its mark and its word", () => {
-    const under = library.slice(library.indexOf('title="Choose a photograph"'));
-    expect(under).toMatch(
-      /<View style=\{styles\.boxes\}>\s*\{native \? \(\s*<BoxedWay\s+icon="camera"\s+label="Camera"\s+hint="Take one now"[\s\S]*?\) : null\}\s*<BoxedWay\s+icon="video"\s+label="Short video"/,
-    );
-    // Not the quiet capitals they were: those stay for the room's shelf (Today in other years, Set aside).
-    expect(tab.match(/<QuietWay\b/g)).toHaveLength(2);
-    expect(tab.match(/<BoxedWay\b/g)).toHaveLength(2);
-    expect(boxed).toMatch(/<Feather name=\{icon\} size=\{BOX_MARK\} color=\{colors\.ink\} \/>/);
-    expect(boxed).toMatch(/<Text style=\{styles\.boxWord\} maxFontSizeMultiplier=\{BAR_TYPE_CAP\}>\s*\{label\}\s*<\/Text>/);
-  });
-
-  it("are lettered and marked in ink on the raised paper, ruled in the secondary ink, and darken when pressed", () => {
-    expect(style(tab, "boxWord")).toMatch(/color: colors\.ink[,\s]/);
-    expect(style(tab, "boxWord")).toMatch(/fontFamily: type\.mono, fontSize: 11,/);
-    expect(style(tab, "box")).toMatch(/backgroundColor: colors\.paperRaised,/);
-    expect(style(tab, "box")).toMatch(/borderWidth: 1,\s*borderColor: colors\.inkSoft,/);
-    expect(style(tab, "boxPressed")).toMatch(/backgroundColor: colors\.paperSunken/);
-    expect(boxed).toMatch(/style=\{\(\{ pressed \}\) => \[styles\.box, pressed && styles\.boxPressed\]\}/);
-    expect(boxed).toMatch(/<ActivityIndicator size="small" color=\{colors\.ink\}/);
-    // Square, as the bars are: ink on paper, not a button in a browser.
-    expect(style(tab, "box")).not.toMatch(/borderRadius/);
-    // The clip's limit under them is in the secondary ink, not the faint one.
-    expect(style(tab, "waysNoteText")).toMatch(/color: colors\.inkSoft/);
-  });
-
-  it("are comfortable to the thumb, and named to VoiceOver by their words", () => {
-    expect(Number(tab.match(/const BOX_HEIGHT = (\d+);/)?.[1])).toBeGreaterThanOrEqual(48);
-    expect(style(tab, "box")).toMatch(/minHeight: BOX_HEIGHT,/);
-    expect(style(tab, "box")).toMatch(/flexGrow: 1,\s*flexBasis: BOX_BASIS,/);
-    expect(boxed).toMatch(/accessibilityRole="button"\s+accessibilityLabel=\{label\}\s+accessibilityHint=\{hint\}\s+accessibilityState=\{\{ busy, disabled: held \}\}/);
-  });
-
-  it("sit side by side in half the column of a 320 pt phone, their words free to take a second line", () => {
-    const basis = Number(tab.match(/const BOX_BASIS = (\d+);/)?.[1]);
-    const mark = Number(tab.match(/const BOX_MARK = (\d+);/)?.[1]);
-    const column = 320 - 2 * 16; // spacing.lg either side of the body
-    const half = (column - 12) / 2; // spacing.md between them
-    expect(basis).toBeLessThanOrEqual(half);
-    // SHORT VIDEO, Courier New at 0.6 em with its tracking, beside its mark, inside the box's padding and rule.
-    const word = "Short video".length * (11 * 0.6 + 1.6);
-    expect(word + mark + 8 + 2 * 8 + 2).toBeLessThanOrEqual(half);
-    expect(style(tab, "boxes")).toMatch(/flexDirection: "row", flexWrap: "wrap"/);
-    expect(style(tab, "boxWord")).toMatch(/flexShrink: 1/);
-  });
-
-  it("never break a word in two, even at the largest text sizes on a 320 pt phone", () => {
-    // A word wider than its line is broken between two letters ("CAMER / A"), so each word has to fit beside the mark
-    // at the size its letters stop growing. iOS grows the letters but not the tracking between them.
-    const capName = boxed.match(/<Text style=\{styles\.boxWord\} maxFontSizeMultiplier=\{(\w+)\}>/)?.[1];
-    expect(capName).toBeTruthy();
-    const cap = Number(tab.match(new RegExp(`const ${capName} = ([\\d.]+);`))?.[1]);
-    expect(cap).toBeGreaterThan(1);
-    const num = (prop: string) => Number(style(tab, "boxWord").match(new RegExp(`${prop}: ([\\d.]+)`))?.[1]);
-    const COURIER_EM = 0.6; // every Courier New glyph
-    const mark = Number(tab.match(/const BOX_MARK = (\d+);/)?.[1]);
-    expect(style(tab, "box")).toMatch(/paddingHorizontal: spacing\.sm,/);
-    expect(style(tab, "boxInside")).toMatch(/gap: spacing\.sm/);
-    const half = (320 - 2 * 16 - 12) / 2; // the column of a 320 pt phone, less spacing.md, halved
-    const room = half - 2 * 1 - 2 * 8 - mark - 8; // less the rule, the padding, the mark and the gap beside it
-    const labels = [...tab.matchAll(/<BoxedWay\s+icon="\w+"\s+label="([^"]+)"/g)].map((m) => m[1]);
-    expect(labels).toEqual(["Camera", "Short video"]);
-    const words = labels.flatMap((l) => l.split(" "));
-    const longest = words.reduce((a, b) => (b.length > a.length ? b : a), "");
-    expect(longest.toUpperCase()).toBe("CAMERA");
-    const width = (w: string) => w.length * (num("fontSize") * cap * COURIER_EM + num("letterSpacing"));
-    for (const w of words) expect(width(w), w).toBeLessThanOrEqual(room);
-    // At the page's own cap it would not fit: the reason the boxes' letters stop sooner.
-    const pageCap = Number(tab.match(/const TYPE_CAP = ([\d.]+);/)?.[1]);
-    expect(longest.length * (num("fontSize") * pageCap * COURIER_EM + num("letterSpacing"))).toBeGreaterThan(room);
-  });
-});
-
-describe("at the largest text sizes on the narrowest phones", () => {
-  it("wraps the ways rather than running off the page", () => {
-    expect(style(tab, "ways")).toMatch(/flexDirection: "row",\s*flexWrap: "wrap"/);
-    expect(style(tab, "ways")).toMatch(/rowGap: spacing\.\w+/);
-    expect(style(tab, "boxes")).toMatch(/rowGap: spacing\.\w+/);
-  });
-
-  it("keeps each bar's centred label clear of its arrow on either side, and lets the bar grow", () => {
-    expect(style(tab, "bar")).toMatch(/paddingHorizontal: BAR_INSET/);
-    expect(style(tab, "bar")).toMatch(/height: undefined,\s*minHeight: 52/);
-    const inset = Number(tab.match(/const BAR_INSET = (\d+);/)?.[1]);
-    const right = Number(gate.match(/arrow: \{ position: "absolute", right: (\d+) \}/)?.[1]);
-    const size = Number(gate.match(/name="arrow-right" size=\{(\d+)\}/)?.[1]);
-    expect(right).toBeGreaterThan(0);
-    expect(size).toBeGreaterThan(0);
-    expect(inset).toBeGreaterThan(right + size);
-  });
-
-  it("holds nothing to one line, so no word is cut short", () => {
-    expect(tab).not.toMatch(/numberOfLines/);
-  });
-
-  it("never breaks a word of its serif line in two, even on a 320 pt phone", () => {
-    // A word wider than the line is broken between two letters ("photograp / h."), so its longest word has to fit.
-    const words = tab.match(/<Text style=\{styles\.title\}[^>]*>\s*([^<]*?)\s*<\/Text>/)?.[1].split(/\s+/) ?? [];
-    expect(words.reduce((a, b) => (b.length > a.length ? b : a), "")).toBe("photograph.");
-    const PHOTOGRAPH_EM = 5.45; // Georgia, measured in Gelasio, which shares its metrics: 5.422 em
-    expect(tab).toMatch(/<Text style=\{styles\.title\}[^>]*maxFontSizeMultiplier=\{TITLE_CAP\}/);
-    const cap = Number(tab.match(/const TITLE_CAP = ([\d.]+);/)?.[1]);
-    const num = (prop: string) => Number(style(tab, "title").match(new RegExp(`${prop}: ([\\d.]+)`))?.[1]);
-    // iOS grows the letters but not the tracking between them.
-    const word = num("fontSize") * cap * PHOTOGRAPH_EM + "photograph.".length * num("letterSpacing");
-    expect(style(tab, "body")).toMatch(/paddingHorizontal: spacing\.lg/);
-    const column = 320 - 2 * 16; // spacing.lg either side of the body
-    expect(word).toBeGreaterThan(0);
-    expect(word).toBeLessThanOrEqual(column);
-    // The cap is the title's own: the rest of the page still grows as far as before.
-    expect(cap).toBeLessThan(Number(tab.match(/const TYPE_CAP = ([\d.]+);/)?.[1]));
+  it("is told by the tab bar when Post is tapped again, and goes back to the top with the newest", () => {
+    const create = layout.slice(layout.indexOf('name="create"'), layout.indexOf('name="activity"'));
+    expect(create).toMatch(/listeners=\{\(\{ navigation \}\) => \(\{\s*tabPress: \(\) => \{\s*if \(navigation\.isFocused\(\)\) emitPostAgain\(\);\s*\},\s*\}\)\}/);
+    expect(layout).toMatch(/import \{ emitPostAgain \} from "@\/post\/again"/);
+    expect(tab).toMatch(/onPostAgain\(\(\) => \{\s*toTop\(\);\s*selectNewest\(\);\s*refresh\(\);\s*\}\)/);
+    // Nothing else in the header changed: no NEXT.
+    expect(layout).not.toMatch(/NEXT|Next/);
   });
 });
 
 describe("one tap, one editor", () => {
-  const open = tab.slice(tab.indexOf("const openWith"), tab.indexOf("const native"));
-
   it("is guarded by a ref, checked and set in the tap before anything awaits", () => {
     expect(tab).toMatch(/const opening = useRef\(false\);/);
     const firstAwait = open.indexOf("await");
-    expect(firstAwait).toBeGreaterThan(-1);
     const check = open.indexOf("if (opening.current) return;");
     const set = open.indexOf("opening.current = true;");
+    expect(firstAwait).toBeGreaterThan(-1);
     expect(check).toBeGreaterThan(-1);
     expect(set).toBeGreaterThan(check);
     expect(set).toBeLessThan(firstAwait);
-    // Rendered state alone let two taps in one frame both through.
     expect(open).not.toMatch(/if \(busy|if \(opening\) return/);
   });
 
-  it("lets go however the picker ends: a choice, a cancel or a failure", () => {
+  it("lets go however the way in ends: a choice, a cancel or a failure", () => {
     const after = open.slice(open.indexOf("finally"));
     expect(after).toMatch(/opening\.current = false;/);
     expect(after).toMatch(/setBusy\(null\);/);
   });
 
-  it("shows the spinner only on the way that was tapped, and rests the others", () => {
-    expect(tab).toMatch(/loading=\{busy === "photo"\}/);
-    expect(tab).toMatch(/busy=\{busy === "camera"\}/);
-    expect(tab).toMatch(/busy=\{busy === "video"\}/);
+  it("holds every control while one way in is opening, and shows the spinner only on that one", () => {
     expect(tab).toMatch(/const held = busy !== null;/);
-    // The two bars, the camera's and the clip's box, each quiet way's own Pressable, and On this day.
-    expect(tab.match(/disabled=\{held\}/g)).toHaveLength(5);
-    // Handed to the camera, the clip, the room's Today in other years, the shelf, the room's part of the page and On this day.
-    expect(tab.match(/\bheld=\{held\}/g)).toHaveLength(6);
-    expect(tab).toMatch(/<MemoryRoomDoor held=\{held\} \/>/);
-    expect(tab).toMatch(/<OnThisDay held=\{held\}/);
-    // The old busy ring, shown on the library whatever was tapped, is gone.
-    expect(tab).not.toMatch(/busy=\{opening\}/);
-    // The page's one Feather is the boxes' mark, which the spinner stands in for.
-    expect(tab.match(/<Feather\b/g)).toHaveLength(1);
-    expect(tab).toMatch(/<View style=\{\[styles\.boxInside, busy && styles\.hidden\]\}>\s*<Feather name=\{icon\}/);
-  });
-});
-
-describe("the Memory Room's way in", () => {
-  it("is shown only where there is a Memory Room", () => {
-    expect(tab).toMatch(/const door = darkroomAvailable\(\);/);
-    expect(tab).toMatch(/\{door \? <MemoryRoomDoor held=\{held\} \/> : null\}/);
+    for (const name of ["PostDoors", "RollHero", "WaysRow", "RollCell", "MountPanel", "RollFooter"]) {
+      expect(parts[name], name).toMatch(/disabled=\{held/);
+    }
+    expect(tab).toMatch(/busy=\{busy\?\.way === "print"\}/);
+    expect(tab).toMatch(/cameraBusy=\{busy\?\.way === "camera"\}/);
+    expect(tab).toMatch(/const busyId = busy\?\.way === "print" \? \(busy\.id \?\? null\) : null;/);
+    // POST's spinner stands in its own box; a cell opening wears the picker's scrim.
+    expect(parts.RollHero).toMatch(/\{busy \? \(\s*<ActivityIndicator size="small" color=\{colors\.camera\} \/>/);
+    expect(parts.RollCell).toMatch(/const SCRIM = "rgba\(28, 25, 21, 0\.45\)";/);
+    // The mount's bar spins only for its own work: SHOW MY PHOTOGRAPHS waiting on iOS. LIBRARY, in the
+    // ways row, spins there alone; only where there is no library is the panel's bar the picker's own.
+    const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));
+    const available = tab.slice(tab.indexOf("const dim"));
+    expect(alone).toMatch(/kind="unavailable"[\s\S]*?busy=\{ways === "photo"\}/);
+    expect(available).toMatch(/kind=\{panel \?\? "loading"\}[\s\S]*?busy=\{roll\.asking\}/);
+    expect(available).not.toMatch(/ways === "photo"/);
   });
 
-  it("says where the member left off, in place of its line, when they were in the room lately", () => {
-    expect(room).toMatch(/setReturnLine\(placeLine\(\)\);/);
-    expect(room).toMatch(/\{returnLine \?\? "Rediscover something worth sharing\."\}/);
+  it("keeps the doors one shape whatever they carry, and whether or not the tab is resting", () => {
+    // The fan goes with its count; its prints stand even before their photographs are drawn.
+    expect(parts.PostDoors).toMatch(/if \(face\.kind === "fan"\) \{/);
+    expect(parts.PostDoors).toMatch(/\{print && pictures \? <Cover print=\{print\} reduceMotion=\{reduceMotion\} \/> : null\}/);
+    // The room's stack stands from the first frame, while access is still being read, as frames.
+    expect(tab).toMatch(/roomDoorFace\(place\.line, place\.cover, shelf\[0\] \?\? null, allowed \|\| roll\.access === null\)/);
+    expect(parts.PostDoors).toMatch(/\{drawn \? <Cover print=\{front\} reduceMotion=\{reduceMotion\} \/> : null\}/);
+    // Where the member left off is read from the first frame, not only once the tab is in front.
+    expect(tab).toMatch(/const \[place, setPlace\] = useState<Place>\(readPlaceFile\);/);
+    // The post's thumbnail fades in only where motion is wanted.
+    expect(parts.PostDoors).toMatch(/const \[transition\] = useState\(\(\) => \(reduceMotion \? 0 : POST_FADE_MS\)\);/);
+    expect(parts.PostDoors).not.toMatch(/transition=\{200\}/);
   });
 
-  it("puts TODAY IN OTHER YEARS under its bar, one tap into the room's On this day", () => {
-    const ways = room.slice(room.indexOf("<View style={[styles.ways, styles.shelf]}>"));
-    expect(ways).toMatch(/^<View style=\{\[styles\.ways, styles\.shelf\]\}>\s*<QuietWay\s+label="Today in other years"/);
-    expect(ways).toMatch(/onPress=\{\(\) => router\.push\(\{ pathname: "\/darkroom", params: \{ mode: "on-this-day" \} \}\)\}/);
-    // Named apart from the foot of the page's On this day, which is the member's posts, and said as the room's.
-    expect(ways).toMatch(/spoken="Today in other years, in the Memory Room"/);
-    expect(ways).not.toMatch(/label="On this day"/);
-  });
-
-  it("puts SET ASIDE under its bar, counted, and only when something is set aside", () => {
-    const shelf = room.slice(room.indexOf("{n > 0 ? ("));
-    expect(shelf).toMatch(/^\{n > 0 \? \(\s*<QuietWay\s+label=\{`Set aside · \$\{countLabel\(n\)\}`\}/);
-    expect(shelf).toMatch(/spoken=\{`Set aside, \$\{n\} \$\{n === 1 \? "photograph" : "photographs"\}`\}/);
-    expect(shelf).toMatch(/onPress=\{\(\) => router\.push\(\{ pathname: "\/darkroom", params: \{ mode: "set-aside" \} \}\)\}/);
-    expect(tab).toMatch(/import \{ countLabel \} from "@\/darkroom\/labels"/);
-  });
-
-  it("never cuts SET ASIDE short", () => {
-    const word = tab.match(/<Text style=\{\[styles\.wayWord, busy && styles\.hidden\]\}[^>]*>\s*\{label\}\s*<\/Text>/)?.[0] ?? "";
-    expect(word).not.toBe("");
-    expect(word).not.toMatch(/numberOfLines/);
-    // The tracked-capitals margin that made its box narrower than its letters ("SET ASID…").
-    expect(style(tab, "wayWord")).not.toBe("");
-    expect(style(tab, "wayWord")).not.toMatch(/marginRight/);
-  });
-
-  it("lets VoiceOver count the shelf, and hear each quiet way by its name", () => {
-    expect(tab).toMatch(/accessibilityLabel=\{spoken \?\? label\}/);
-  });
-});
-
-describe("On this day on the Post tab", () => {
-  it("reads the member's own posts from the cache the profile shares, once the tab is in front", () => {
-    expect(tab).toMatch(/queryKey: \["user-posts", userId\]/);
-    expect(tab).toMatch(/queryFn: \(\) => fetchUserPosts\(userId\)/);
-    expect(tab).toMatch(/enabled: Boolean\(userId\) && focused/);
-    expect(tab).toMatch(/todaysPrint\(posts\.data/);
-  });
-
-  it("draws one print at most, and only one the member posted", () => {
-    expect(tab.match(/<Image\b/g)).toHaveLength(1);
-    expect(tab).toMatch(/<Image\s+source=\{print\.source\}/);
-    expect(tab).not.toMatch(/ph:\/\/|assetId|\.uri\b/);
-  });
-
-  it("still opens On this day, which also holds the Eras, from one quiet line", () => {
-    expect(tab).toMatch(/onPress=\{\(\) => router\.push\("\/memories"\)\}/);
-    expect(tab).toMatch(/<Text style=\{styles\.dayTitle\}[^>]*>\s*On this day →\s*<\/Text>/);
-    // The memory's sentence goes under it only on a day that has one.
-    expect(tab).toMatch(/\{print \? \(\s*<Text style=\{styles\.dayLine\}[^>]*>\s*\{print\.headline\}/);
-  });
-
-  it("reads the day's memory to VoiceOver as what the line says, not as a hint", () => {
-    expect(tab).toMatch(/accessibilityLabel=\{print \? `On this day\. \$\{print\.headline\}` : "On this day"\}/);
-    expect(tab).toContain('accessibilityHint="Opens what you posted on this date in other years."');
-    expect(tab).not.toMatch(/accessibilityHint=\{line\}/);
+  it("counts time in the background as time away for the selection, and moves on from a photograph posted", () => {
+    const roll = code("src/post/useRoll.ts");
+    expect(roll).toMatch(/if \(state === "background"\) \{\s*if \(focusedRef\.current && leftAt\.current == null\) leftAt\.current = Date\.now\(\);/);
+    expect(roll).toMatch(/state === "active" && focusedRef\.current\) \{\s*setRelease\("none"\);\s*if \(leftAt\.current != null\) \{\s*settle\(leftAt\.current\);\s*leftAt\.current = null;/);
+    // In front again after a blur, the same rule.
+    expect(roll).toMatch(/setHeroReleased\(false\);\s*settle\(leftAt\.current\);\s*leftAt\.current = null;/);
+    expect(roll).toMatch(/moved = afterPosting\(sel, shown\.current, developedAt\);/);
+    // A photograph newer than the newest shown is selected as a read from the top brings it.
+    expect(roll).toMatch(/if \(fromTop && newerArrived\(before, visible\[0\]\)\) \{\s*choose\(visible\[0\]\.id\);/);
+    expect(roll.match(/apply\([^;]*, true\);/g)).toHaveLength(3);
+    expect(roll.match(/apply\([^;]*, false\);/g)).toHaveLength(1);
+    // After SHARE MORE, the whole roll is read again from the top, as far as it was read.
+    expect(roll).toMatch(/void front\(true, true\);/);
+    expect(roll).toMatch(/if \(deep\) await readAll\(\);/);
   });
 
   it("keeps the memory on today's date, which turns over with the clock", () => {
     expect(tab).toMatch(/const today = useToday\(\);/);
-    expect(tab).toMatch(/<OnThisDay [^>]*day=\{today\}/);
-    expect(tab).toMatch(/todaysPrint\(posts\.data, new Date\(day\)\), \[posts\.data, day\]/);
-    // Only the hook reads the clock.
+    expect(tab).toMatch(/todaysPrint\(posts\.data, new Date\(today\)\), \[posts\.data, today\]/);
     const hook = tab.slice(tab.indexOf("function useToday"), tab.indexOf("function startOfDay"));
-    expect(hook.match(/Date\.now\(\)/g)?.length).toBeGreaterThan(0);
-    expect(tab.match(/Date\.now\(\)/g)?.length).toBe(hook.match(/Date\.now\(\)/g)?.length);
-    // At midnight, and whenever the app comes back to the front; both let go with the tab.
     expect(hook).toMatch(/timer = setTimeout\(turn, tomorrow\(now\) - now\);/);
     expect(hook).toMatch(/AppState\.addEventListener\("change", \(state\) => \{\s*if \(state === "active"\) turn\(\);/);
     const cleanup = hook.slice(hook.indexOf("return () =>"));
     expect(cleanup).toMatch(/clearTimeout\(timer\);/);
     expect(cleanup).toMatch(/sub\.remove\(\);/);
+  });
+
+  it("reads the member's own posts once the tab is in front, from the cache the profile shares", () => {
+    expect(tab).toMatch(/queryKey: \["user-posts", userId\]/);
+    expect(tab).toMatch(/enabled: Boolean\(userId\) && focused,/);
+    expect(tab).toMatch(/staleTime: 10 \* 60_000,/);
+  });
+});
+
+describe("the page's words", () => {
+  const all = page + "\n" + panels;
+
+  it("say everything the spec gives them, word for word, each in its part", () => {
+    const words: [string, string][] = [
+      [parts.PostDoors, "The Memory Room"],
+      [code("src/post/roll.ts"), '"Rediscover something worth sharing."'],
+      [parts.PostDoors, "On this day"],
+      [code("src/post/dayDoor.ts"), '"Every year, on this date."'],
+      [parts.PostDoors, "Set aside · {countLabel(n)}"],
+      [parts.PostDoors, 'accessibilityHint="Opens your photographs, one at a time, from further back."'],
+      [parts.PostDoors, 'accessibilityHint="Opens what you posted and photographed on this date in other years."'],
+      [parts.PostDoors, 'accessibilityHint="Opens the photographs you set aside."'],
+      [parts.RollHero, '"In iCloud"'],
+      [parts.RollHero, "Post"],
+      [parts.RollHero, 'accessibilityHint="Opens the selected photograph in the editor. Nothing is shared until you post."'],
+      [parts.WaysRow, "Recent"],
+      [parts.WaysRow, 'label="Short video"'],
+      [parts.WaysRow, 'label="Library"'],
+      [parts.WaysRow, 'hint="Opens your photo library. Nothing is shared until you post."'],
+      [parts.WaysRow, "VINTAGE sees only the photographs you chose."],
+      [parts.WaysRow, "Share more"],
+      [parts.WaysRow, 'accessibilityHint="Opens iOS’s list of the photographs VINTAGE may see."'],
+      [parts.RollCell, "Camera"],
+      [parts.RollCell, 'accessibilityHint="Take one now"'],
+      [parts.RollCell, '"Opens it in the editor."'],
+      [parts.RollCell, '"Selects it."'],
+      [parts.RollFooter, "Further back"],
+      [parts.RollFooter, "In the Memory Room, one at a time."],
+      [parts.RollFooter, 'title="Enter the Memory Room"'],
+      [panels, '"Your camera roll"'],
+      [panels, '"Your photographs, right here."'],
+      [panels, '"VINTAGE shows them on this iPhone only. Nothing leaves it until you post one."'],
+      [panels, '"Show my photographs"'],
+      [panels, '"Asks to see your photo library."'],
+      [panels, '"VINTAGE can’t see your photographs."'],
+      [panels, '"Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone."'],
+      [panels, '"Open Settings"'],
+      [panels, '"Opens VINTAGE’s page in Settings."'],
+      [panels, '"Nothing here yet."'],
+      [panels, '"Take one, and it will be the first."'],
+      [panels, '"Nothing shared with VINTAGE yet."'],
+      [panels, '"Choose the photographs it may see. Nothing leaves this iPhone until you post one."'],
+      [panels, '"Your photographs didn’t load."'],
+      [panels, '"Try again in a moment."'],
+      [panels, '"Try again"'],
+      [panels, '"Reads your photographs again."'],
+      [panels, '"From your library"'],
+      [panels, '"Share a photograph."'],
+      [panels, '"The one you have in mind."'],
+      [panels, '"Choose a photograph"'],
+    ];
+    for (const [src, w] of words) expect(src, w).toContain(w);
+  });
+
+  it("leave out the words they used to carry", () => {
+    for (const gone of [
+      "New post",
+      "Your best photos",
+      "Today in other years",
+      "On this day →",
+      "From further back than you’d think to look.",
+      "Or the one you came with.",
+      "One picture at a time.",
+      "Nothing here is ranked.",
+      "MemoryRoomDoor held",
+      "QuietWay",
+      "BoxedWay",
+    ]) {
+      expect(page, gone).not.toContain(gone);
+    }
+    // The old headline and the picker's bar are the page without a library's alone.
+    expect(page).not.toContain("Share a photograph.");
+    expect(page).not.toContain("Choose a photograph");
+  });
+
+  it("never says Darkroom, never shouts, never leans, and sets its apostrophes as a typographer does", () => {
+    expect(all).not.toMatch(/Darkroom/);
+    expect(all).not.toMatch(/!["'`]/);
+    expect(all).not.toMatch(/fontStyle: "italic"/);
+    expect(all).not.toMatch(/"[^"\n]*\w'\w[^"\n]*"|>[^<{]*\w'\w[^<{]*</);
+  });
+
+  it("names its headers for VoiceOver: RECENT, a panel's headline, the roll's foot", () => {
+    expect(parts.WaysRow).toMatch(/accessibilityRole="header"[^>]*>\s*Recent\s*</);
+    expect(parts.MountPanel).toMatch(/<Text style=\{\[styles\.headline, narrow && styles\.headlineNarrow\]\} accessibilityRole="header"/);
+    expect(parts.RollFooter).toMatch(/accessibilityRole="header"[^>]*>\s*Further back\s*</);
+  });
+
+  it("gives the page one bar in the invitation card's stock, at the roll's foot", () => {
+    expect(page.match(/variant="card"/g)).toHaveLength(1);
+    const bar = parts.RollFooter.match(/<GateButton\b[\s\S]*?\/>/)?.[0] ?? "";
+    expect(bar).toMatch(/variant="card"/);
+    expect(bar).toMatch(/style=\{styles\.bar\}/);
+    expect(bar).toMatch(/maxFontSizeMultiplier=\{BAR_TYPE_CAP\}/);
+    expect(bar).toMatch(/disabled=\{held\}/);
+    expect(page.match(/<GateButton\b/g)).toHaveLength(1);
+  });
+
+  it("caps the typewriter's capitals sooner than the serif and the system lines, and holds nothing to one line", () => {
+    for (const [name, src] of Object.entries(parts)) {
+      expect(src, name).not.toMatch(/numberOfLines/);
+      if (/<Text/.test(src)) expect(src, name).toMatch(/const BAR_TYPE_CAP = 1\.8;/);
+    }
+    expect(tab).toMatch(/const TYPE_CAP = 2\.4;/);
+    expect(parts.RollHero).toMatch(/<Text style=\{styles\.postWord\} maxFontSizeMultiplier=\{BAR_TYPE_CAP\}>/);
+    expect(parts.WaysRow).toMatch(/<Text style=\{styles\.wayWord\} maxFontSizeMultiplier=\{BAR_TYPE_CAP\}>/);
+  });
+});
+
+describe("what a cell is to VoiceOver", () => {
+  it("is a photograph by its date and time, selected or not, with POST as an action of its own", () => {
+    const cell = parts.RollCell.slice(parts.RollCell.indexOf("export const RollCell"), parts.RollCell.indexOf("export function CameraTile"));
+    expect(cell).toMatch(/accessibilityLabel=\{cellLabel\(print\)\}/);
+    expect(cell).toMatch(/accessibilityState=\{\{ selected, busy, disabled: held \}\}/);
+    expect(cell).toMatch(/accessibilityActions=\{\[\{ name: "activate" \}, \{ name: "post", label: "Post" \}\]\}/);
+    expect(cell).toMatch(/if \(e\.nativeEvent\.actionName === "post"\) onOpen\(print\);/);
+    expect(cell).toMatch(/accessibilityIgnoresInvertColors/);
+  });
+
+  it("hears the mount's words as one line and POST on its own, and not the photograph", () => {
+    expect(parts.RollHero).toMatch(/accessible accessibilityLabel=\{`Selected: \$\{date\}\. \$\{age\}\.`\}/);
+    const photo = parts.RollHero.slice(parts.RollHero.indexOf('testID="post-hero-photo"'), parts.RollHero.indexOf("<Picture"));
+    expect(photo).toMatch(/accessibilityElementsHidden/);
+    expect(photo).toMatch(/importantForAccessibility="no-hide-descendants"/);
   });
 });
 
