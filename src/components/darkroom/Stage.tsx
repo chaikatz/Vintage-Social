@@ -34,7 +34,7 @@ const WEB_SETTLE_MS = 140;
 /**
  * A turn the stage began has settled well within this. Should the list
  * never say so, it is put on the page after it, and settled there: taps
- * are heard again, and DEVELOP can be pressed.
+ * are heard again, and POST can be pressed.
  */
 const TURN_HELD_MS = 1000;
 
@@ -72,16 +72,18 @@ export interface StageHandle {
  * behind the member, the list is put back on the same page (`rebase`).
  *
  * The scroll position drives `scrollX` on the native driver, which is
- * what DEVELOP fades by. The settled page is read when the scroll comes to
- * rest. A pinch never turns the page: the list's own pan is kept to one
- * finger (`keepScrollToOneFinger`), the same fix the tab pager has.
+ * what POST fades by toward the end page; the list also puts `scrollX`
+ * on the page it settles on (`wordFade.ts`). The settled page is read
+ * when the scroll comes to rest. A pinch never turns the page: the
+ * list's own pan is kept to one finger (`keepScrollToOneFinger`), the
+ * same fix the tab pager has.
  *
  * A tap on the photograph turns the page as well (`tap`, decided by
  * `tapStep`): the list scrolls itself on a page or back one, with the
  * slide a swipe ends in, and settles where a swipe does. A swipe is never
  * also a tap: once the list's pan moves, the plate's press is cancelled.
  * From the tap until the list settles further taps are not heard and
- * DEVELOP cannot be pressed, as during a swipe, and the next turn is
+ * POST cannot be pressed, as during a swipe, and the next turn is
  * counted from the page the list settled on, never from one it is
  * leaving.
  *
@@ -138,17 +140,24 @@ export const Stage = React.forwardRef<StageHandle, {
 
   const page = useCallback((x: number) => Math.max(0, Math.min(items.length - 1, Math.round(x / Math.max(1, width)))), [items.length, width]);
 
-  /** The list has come to rest on page `i`: however it got there, the turn is over. */
+  /**
+   * The list has come to rest on page `i`: however it got there, the turn
+   * is over. The scroll value is put on that page too, so the word under
+   * the photograph follows the page settled on even should a scroll event
+   * never have arrived (`wordFade.ts`); the list is there already, so
+   * nothing moves.
+   */
   const settled = useCallback(
     (i: number) => {
       turning.current = false;
       if (turnHeld.current) clearTimeout(turnHeld.current);
       turnHeld.current = null;
       settledAt.current = i;
+      scrollX.setValue(i * width);
       onSettle(i);
       onDragging(false);
     },
-    [onSettle, onDragging],
+    [onSettle, onDragging, scrollX, width],
   );
 
   /** Onto page `i` at once, and settled there: for when the list will not say so itself. */

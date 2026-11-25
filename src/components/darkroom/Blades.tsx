@@ -3,7 +3,7 @@ import { Animated, Easing, StyleSheet, View } from "react-native";
 import { bladeDepth } from "./geometry";
 import { useLook } from "./look";
 
-/** In, as DEVELOP is tapped; out, a beat after the room is back in front. */
+/** In, as POST is tapped; out, a beat after the room is back in front. */
 const CLOSE_MS = 220;
 const OPEN_MS = 180;
 const OPEN_DELAY_MS = 120;
@@ -14,7 +14,7 @@ const BLADE_OPACITY = 0.85;
  * the parts of a print the feed will crop, the way an enlarger's easel
  * frames the paper. Only for a print outside the feed's 4:5 to 1.91:1
  * (`feedCrops`): from the top and bottom for a tall one, the sides for a
- * wide one. They close as DEVELOP is tapped, stay while the editor is on
+ * wide one. They close as POST is tapped, stay while the editor is on
  * top, and open again once the room is back. Under Reduce Motion they
  * appear and go at once. Never read aloud.
  */

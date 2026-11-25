@@ -3,9 +3,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   captionHeight,
+  DEVELOP_HEIGHT,
   GLIDE_GAP,
   GLIDE_HEIGHT,
   GLIDE_INSET,
+  GLIDE_LIFT,
   groupTop,
   plateBox,
   plateFrame,
@@ -326,9 +328,12 @@ describe("the preview while gliding", () => {
 // ---------------------------------------------------------------------------
 
 describe("the page, with the strip on it", () => {
-  it("sets the strip's slot to its marks' row and its box's, and a gap over DEVELOP", () => {
+  it("sets the strip's slot to its marks' row and its box's, a gap between it and POST over it, and a lift under it", () => {
     expect(GLIDE_HEIGHT).toBe(STRIP.marks + 2 + STRIP.boxH);
-    expect([GLIDE_GAP, GLIDE_INSET]).toEqual([8, 16]);
+    expect([GLIDE_GAP, GLIDE_INSET, GLIDE_LIFT]).toEqual([12, 16, 4]);
+    // POST's block is one height on every page, and what was under the stage adds up as it did, so no plate moved.
+    expect(DEVELOP_HEIGHT).toBe(48);
+    expect(GLIDE_LIFT + GLIDE_HEIGHT + GLIDE_GAP + DEVELOP_HEIGHT).toBe(8 + 48 + 68 + 8);
   });
 
   it("gives the photograph's area what is left on every phone", () => {
@@ -412,18 +417,22 @@ describe("the replay is gone", () => {
 describe("the strip, in the room's source", () => {
   const room = code("app/darkroom.tsx");
 
-  it("is on the page once, under the stage and over DEVELOP, in a slot that is always there", () => {
+  it("is on the page once, under the stage and POST, in a slot that is always there", () => {
     expect(room.match(/<GlideStrip\s/g)).toHaveLength(1);
     expect(room.match(/<GlideSheet\s/g)).toHaveLength(1);
     expect(element(room, "GlideStrip")).toMatch(/key=\{chapter\.generation\}/);
     expect(element(room, "GlideSheet")).toMatch(/key=\{chapter\.generation\}/);
-    // The slot is rendered whatever the stage shows, so the stage keeps one height.
-    const stageEnd = room.indexOf("<View style={styles.glideSlot}>");
-    expect(stageEnd).toBeGreaterThan(room.indexOf('<View style={styles.stage} onLayout='));
-    expect(room.slice(stageEnd - 40, stageEnd)).toMatch(/<\/View>\s*$/);
-    expect(room.slice(stageEnd)).toMatch(/^<View style=\{styles\.glideSlot\}>\s*\{chapter && state\.view\.kind === "prints" \? \(\s*<GlideStrip/);
-    expect(opens(room, "Develop")).toBeGreaterThan(stageEnd);
-    expect(room).toMatch(/glideSlot: \{ height: GLIDE_HEIGHT, marginBottom: GLIDE_GAP \}/);
+    // POST's slot comes straight after the stage, and the strip's after it; both are rendered whatever the stage
+    // shows, so the stage keeps one height.
+    const wordAt = room.indexOf("<View style={styles.wordSlot}>");
+    const stripAt = room.indexOf("<View style={[styles.glideSlot, { marginBottom: Math.max(insets.bottom, MIN_BOTTOM_INSET) + GLIDE_LIFT }]}>");
+    expect(wordAt).toBeGreaterThan(room.indexOf('<View style={styles.stage} onLayout='));
+    expect(room.slice(wordAt - 40, wordAt)).toMatch(/<\/View>\s*$/);
+    expect(room.slice(wordAt)).toMatch(/^<View style=\{styles\.wordSlot\}>\s*<Develop\s/);
+    expect(stripAt).toBeGreaterThan(opens(room, "Develop"));
+    expect(room.slice(stripAt)).toMatch(/^<View style=\{\[styles\.glideSlot, [^\n]*\}>\s*\{chapter && state\.view\.kind === "prints" \? \(\s*<GlideStrip/);
+    expect(room.match(/<Develop\s/g)).toHaveLength(1);
+    expect(room).toMatch(/wordSlot: \{ marginBottom: GLIDE_GAP \},\s*glideSlot: \{ height: GLIDE_HEIGHT \},/);
     // The sheet lies over the stage, under the title card.
     expect(opens(room, "GlideSheet")).toBeGreaterThan(opens(room, "Stage"));
     expect(opens(room, "GlideSheet")).toBeLessThan(room.indexOf("{fades.card ? ("));
@@ -450,7 +459,7 @@ describe("the strip, in the room's source", () => {
     expect(room.match(/onTap=/g)).toHaveLength(1);
   });
 
-  it("holds the pager and DEVELOP while a finger glides, and never leaves the pager held", () => {
+  it("holds the pager and POST while a finger glides, and never leaves the pager held", () => {
     expect(element(room, "Stage")).toMatch(/scrollEnabled=\{!develop\.busy && !state\.loading && !gliding\}/);
     expect(element(room, "Develop")).toMatch(/dragging=\{dragging \|\| gliding\}/);
     expect(element(room, "GlideStrip")).toMatch(/enabled=\{!develop\.busy && state\.loading == null && fades\.card == null && !dragging\}/);

@@ -14,7 +14,7 @@ import type { Print } from "@/darkroom/types";
 import { haptics } from "./haptics";
 import type { DevelopState } from "./words";
 
-/** Past this, a develop says DEVELOPING… rather than just drawing its rule. */
+/** Past this, a develop says OPENING… rather than just drawing its rule. */
 export const SLOW_DEVELOP_MS = 400;
 /** A measured download's rule follows each step over this. */
 const PROGRESS_STEP_MS = 120;
@@ -22,7 +22,7 @@ const PROGRESS_STEP_MS = 120;
 const IDLE: DevelopState = { kind: "idle" };
 
 /**
- * Develop, as the room sees it (§6.2, §6.3): from a tap on DEVELOP to the
+ * Develop, as the room sees it (§6.2, §6.3): from a tap on POST to the
  * editor, by way of the phone and, only when the member says so, iCloud.
  *
  * One develop at a time. A ref, not state, guards it, so a second tap in
@@ -35,7 +35,7 @@ const IDLE: DevelopState = { kind: "idle" };
  * went to instead. A copy that arrives after that is deleted by
  * `develop.ts`.
  *
- * Every outcome is a state, printed in the caption and DEVELOP positions;
+ * Every outcome is a state, printed in the caption and POST positions;
  * there are no alerts and no failure haptics. Back from the editor
  * without posting, the developed copy is deleted and the room is as it
  * was.
@@ -106,7 +106,7 @@ export function useDevelop(opts: {
     [set],
   );
 
-  /** DEVELOP, or TRY AGAIN after a read that failed: from the phone only. */
+  /** POST, or TRY AGAIN after a read that failed: from the phone only. */
   const develop = useCallback(
     async (print: Print) => {
       if (guard.current) return;
@@ -131,7 +131,7 @@ export function useDevelop(opts: {
     [set, conclude],
   );
 
-  /** DOWNLOAD AND DEVELOP, or TRY AGAIN after iCloud did not send it. */
+  /** DOWNLOAD AND POST, or TRY AGAIN after iCloud did not send it. */
   const download = useCallback(
     async (print: Print) => {
       if (guard.current) return;
@@ -238,7 +238,7 @@ export function useDevelop(opts: {
     busy: kind === "working" || kind === "downloading",
     /** The editor is on top with this develop. */
     composing,
-    /** The rule under DEVELOP is drawn out. */
+    /** The rule under POST is drawn out. */
     drawing: kind === "working" || composing,
     /** The print the easel blades are closed over. */
     bladesFor: kind === "working" || kind === "downloading" || composing ? at.id : null,

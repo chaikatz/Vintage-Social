@@ -867,7 +867,7 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 6. Sign in with your own account. Home scrolls and pulls to refresh;
    photographs come in sharp; nothing stutters.
 7. Post tab → Enter the Memory Room → Continue → allow access. Turn a few
-   pages; open CONTENTS; Develop one → editor → Share to VINTAGE. It
+   pages; open CONTENTS; POST one → editor → Share to VINTAGE. It
    appears at the top of Home.
 8. Post a photograph from Choose a photograph, and a short film. Both play
    and show when opened.

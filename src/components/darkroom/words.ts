@@ -25,7 +25,21 @@ import type { DarkroomMode, DayReach, Span } from "@/darkroom/types";
  */
 
 export const LOOKING = "Looking through your library…";
+/**
+ * The photograph's word, under its caption: POST. (The code calls the
+ * act develop, as it calls the room the Darkroom; a member reads and
+ * hears POST.) It opens the editor and posts nothing by itself.
+ */
+export const POST = "Post";
+/** In POST's place while the photograph is read, or brought down, for the editor. */
+export const OPENING = "Opening…";
 export const DEVELOP_HINT = "Opens this photograph in the editor, to post.";
+/**
+ * POST, and what a develop state puts in its place, grows with Larger Text
+ * up to this, and no further: DOWNLOAD AND POST, the longest, still fits
+ * one line on a 320-point phone there.
+ */
+export const WORD_MAX_SCALE = 1.5;
 export const SET_ASIDE_HINT_OFF = "Keeps it on this iPhone to come back to. Nothing is posted.";
 export const SET_ASIDE_HINT_ON = "Double-tap to put it back.";
 export const SHELF_FULL = "The shelf is full. Put one back first.";
@@ -123,7 +137,7 @@ export type DevelopState =
   | { kind: "cloudFailed" }
   | { kind: "missing" }
   | { kind: "unreadable" }
-  /** The image itself said the photograph is gone: the plate says so, and DEVELOP follows. */
+  /** The image itself said the photograph is gone: the plate says so, and POST follows. */
   | { kind: "gone" };
 
 export type RightAct = "toggle" | "notNow" | "stop" | "remove";
@@ -138,7 +152,7 @@ export interface StateWords {
   progress: boolean;
   /** The word at the caption's right, or none. */
   right: { label: string; act: RightAct; inert: boolean } | null;
-  /** The word in DEVELOP's place. */
+  /** The word in POST's place. */
   bottom: {
     label: string;
     act: BottomAct;
@@ -167,7 +181,7 @@ function toggleWord(ctx: StateContext, inert = false): StateWords["right"] {
 }
 
 const develop = (over: Partial<StateWords["bottom"]> = {}): StateWords["bottom"] => ({
-  label: "Develop",
+  label: POST,
   act: "develop",
   ruled: true,
   dim: false,
@@ -183,8 +197,10 @@ const MISSING = {
 };
 
 /**
- * The words in the caption and DEVELOP positions for a state. The layout
- * never moves; only these change.
+ * The words in the caption and POST positions for a state. The layout
+ * never moves; only these change. While a print is read off the phone, or
+ * comes down from iCloud, POST says OPENING… — it is opening the editor,
+ * and nothing is posted until the editor's Share to VINTAGE.
  */
 export function stateWords(state: DevelopState, ctx: StateContext): StateWords {
   const base = { line1: null, line2: null, progress: false, announce: null };
@@ -193,17 +209,17 @@ export function stateWords(state: DevelopState, ctx: StateContext): StateWords {
       return { ...base, right: toggleWord(ctx), bottom: develop() };
     case "working":
       return state.slow
-        ? { ...base, right: null, bottom: develop({ label: "Developing…", act: "none", busy: true }), announce: "Developing" }
+        ? { ...base, right: null, bottom: develop({ label: OPENING, act: "none", busy: true }), announce: "Opening" }
         : { ...base, right: toggleWord(ctx, true), bottom: develop({ act: "none", busy: true }) };
     case "inCloud": {
-      const line2 = state.network === "cellular" ? "Developing it will use mobile data." : "Developing it will download it.";
+      const line2 = state.network === "cellular" ? "Posting it will use mobile data." : "Posting it will download it.";
       return {
         ...base,
         line1: "Kept in iCloud",
         line2,
         right: { label: "Not now", act: "notNow", inert: false },
-        bottom: develop({ label: "Download and develop", act: "download" }),
-        // Said with what DOWNLOAD AND DEVELOP will cost, since VoiceOver never reaches the caption.
+        bottom: develop({ label: "Download and post", act: "download" }),
+        // Said with what DOWNLOAD AND POST will cost, since VoiceOver never reaches the caption.
         announce: `Kept in iCloud. ${line2}`,
       };
     }
@@ -213,7 +229,7 @@ export function stateWords(state: DevelopState, ctx: StateContext): StateWords {
         line1: "Bringing it down from iCloud",
         progress: true,
         right: { label: "Stop", act: "stop", inert: false },
-        bottom: develop({ label: "Developing…", act: "none", ruled: false, dim: true, busy: true }),
+        bottom: develop({ label: OPENING, act: "none", ruled: false, dim: true, busy: true }),
         announce: "Bringing it down from iCloud",
       };
     case "offline":
@@ -315,10 +331,10 @@ export interface StageAction {
 
 /**
  * The stage's custom actions for VoiceOver (§11.1), which stand in for the
- * words VoiceOver cannot reach on the pages: DEVELOP's word, the caption's
+ * words VoiceOver cannot reach on the pages: POST's word, the caption's
  * word at the right, the caption thread, and Contents. Each is offered
  * only while it would do something, so a develop state shows through:
- * DOWNLOAD AND DEVELOP and NOT NOW in iCloud, STOP while downloading (the
+ * DOWNLOAD AND POST and NOT NOW in iCloud, STOP while downloading (the
  * only way out then, §6.3), REMOVE for a print gone from the shelf. Off
  * VoiceOver SET ASIDE carries a dot in the accent; here it says PUT BACK instead.
  * With no print in front of the member — the next batch still being
@@ -337,7 +353,7 @@ export function stageActions(
 ): StageAction[] {
   const contents: StageAction[] = state?.busy ? [] : [{ name: "contents", label: "Contents" }];
   if (takenAt == null) return contents;
-  const bottom = state?.words.bottom ?? { label: "Develop", act: "develop" };
+  const bottom = state?.words.bottom ?? { label: POST, act: "develop" };
   const right = state ? state.words.right : { label: "Set aside", act: "toggle" as const, inert: false };
   const out: StageAction[] = [];
   if (bottom.act !== "none") out.push({ name: "develop", label: bottom.label });
@@ -647,7 +663,7 @@ export function endPage(ending: Ending, ctx: { now: number; limited: boolean; ye
  * The stage's value: "October 22, 2019. Six years ago today. Set aside.
  * Posted in May 2026." While a develop state is showing, its own lines
  * follow, since they are printed in the caption VoiceOver cannot reach:
- * "Kept in iCloud. Developing it will use mobile data."
+ * "Kept in iCloud. Posting it will use mobile data."
  */
 export function stageValue(
   takenAt: number,

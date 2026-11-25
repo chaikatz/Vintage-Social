@@ -8,8 +8,8 @@ import { edgeMarks } from "./replay";
 import { ReplayStrip, type StripHandle } from "./ReplayStrip";
 
 /**
- * The glide strip as the room's page holds it: under the caption, over
- * DEVELOP, on every page of every chapter (`ReplayStrip` draws it).
+ * The glide strip as the room's page holds it: under POST, at the foot of
+ * every page of every chapter (`ReplayStrip` draws it).
  *
  * It comes a quarter of a second after the page (`GLIDE.deferMs`), so the
  * first photograph is asked of Photos before any of the strip's frames

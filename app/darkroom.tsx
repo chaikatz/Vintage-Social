@@ -26,7 +26,7 @@ import { putBack, toggleSetAside, useSetAside } from "@/darkroom/setAside";
 import type { DarkroomMode, Print, Span } from "@/darkroom/types";
 import { Contents } from "@/components/darkroom/Contents";
 import { Develop } from "@/components/darkroom/Develop";
-import { GLIDE_GAP, GLIDE_HEIGHT } from "@/components/darkroom/geometry";
+import { GLIDE_GAP, GLIDE_HEIGHT, GLIDE_LIFT, MIN_BOTTOM_INSET } from "@/components/darkroom/geometry";
 import { GlideSheet, type GlideSheetHandle, type GlideWords } from "@/components/darkroom/GlideSheet";
 import { GlideStrip } from "@/components/darkroom/GlideStrip";
 import { haptics } from "@/components/darkroom/haptics";
@@ -42,6 +42,8 @@ import { useContentsSheet } from "@/components/darkroom/useContentsSheet";
 import { useDevelop } from "@/components/darkroom/useDevelop";
 import { useOnline } from "@/components/darkroom/useOnline";
 import { useStageFades } from "@/components/darkroom/useStageFades";
+import { useWordFade } from "@/components/darkroom/useWordFade";
+import { wordOnPage } from "@/components/darkroom/wordFade";
 import {
   chapterAnnouncement,
   chapterName,
@@ -79,12 +81,13 @@ export { RecoverRoom as ErrorBoundary } from "@/navigation/Recover";
  * on end with many photographs — found in the library; or a year read as
  * a chapter.
  * Swipe for the next, or tap the photograph: its right half turns on, its
- * left half back. DEVELOP takes the print into the ordinary editor
- * to post; SET ASIDE keeps it on this phone to come back to. Under the
- * caption, on every page, the glide strip: every photograph of the
- * chapter as a small frame, and sliding across it plays the chapter
- * through, the page following the finger (`GlideStrip`, `GlideSheet`)
- * until it lets go, and the room turns there. Printed on
+ * left half back. POST, right under the photograph, takes the print into
+ * the ordinary editor to post (the code still calls that develop); SET
+ * ASIDE keeps it on this phone to come back to. Under POST, on every
+ * page, the glide strip: every photograph of the chapter as a small
+ * frame, and sliding across it plays the chapter through, the page
+ * following the finger (`GlideStrip`, `GlideSheet`) until it lets go, and
+ * the room turns there. Printed on
  * the app's own page, light or dark as the appearance is, and changing
  * with it (`useScheme` in room.ts); the status bar is the app's own,
  * which follows the appearance in the same way.
@@ -164,7 +167,7 @@ export default function Darkroom() {
   const [shelfFull, setShelfFull] = useState<string | null>(null);
   /** The preview over the stage while a finger glides the strip (`sheet` is Contents). */
   const glide = useRef<GlideSheetHandle>(null);
-  /** A finger is gliding the strip: the pager waits, and DEVELOP with it. */
+  /** A finger is gliding the strip: the pager waits, and POST with it. */
   const [gliding, setGliding] = useState(false);
   /** The same, as of now, for handlers that run between renders. */
   const glidingNow = useRef(false);
@@ -380,7 +383,7 @@ export default function Darkroom() {
     }
   };
 
-  // --- DEVELOP and the caption's word ----------------------------------------------
+  // --- POST and the caption's word --------------------------------------------------
 
   const onBottom = (act: BottomAct) => {
     if (!current) return;
@@ -628,20 +631,20 @@ export default function Darkroom() {
   const headWhere = fades.card && state.loading?.mode ? state.loading : where;
   const headName = inside && headWhere?.mode ? chapterName(headWhere.mode, headWhere.year, headWhere.span) : null;
   const n = chapter?.prints.length ?? 0;
-  const developOpacity = useMemo(
-    () => scrollX.interpolate({ inputRange: [(n - 1) * width, n * width], outputRange: [1, 0], extrapolate: "clamp" }),
-    [scrollX, n, width],
-  );
   const showsDevelop = state.view.kind === "prints" && current != null;
+  // POST is on every photograph's page settled in front, and fades toward the end page with the scroll: one
+  // graph for as long as the room is open, never handed over to another value (wordFade.ts says why).
+  const wordShown = wordOnPage({ prints: state.view.kind === "prints", photograph: current != null, card: fades.card != null });
+  const wordOpacity = useWordFade(scrollX, n, width, wordShown, reduceMotion);
 
   return (
     <LookContext.Provider value={look}>
       <View
         style={[styles.root, { backgroundColor: look.room.page }]}
-        // Magic Tap is DEVELOP (§11.1) where React Native delivers it. On
+        // Magic Tap is POST (§11.1) where React Native delivers it. On
         // the new architecture in 0.81 it never arrives: the view reads its
         // handler under another name (onAccessibilityMagicTap) than the one
-        // React sends, and there is no way round that from here. DEVELOP is
+        // React sends, and there is no way round that from here. POST is
         // reached instead as the stage's first custom action, by its words.
         onMagicTap={() => {
           if (showsDevelop) onBottom(words.bottom.act);
@@ -723,8 +726,21 @@ export default function Darkroom() {
             ) : null}
           </View>
 
-          {/* The glide strip's slot, on every page, so the stage keeps one height whatever it shows. */}
-          <View style={styles.glideSlot}>
+          {/* POST, right under the photograph, on every photograph's page; its block is on every page, so the
+              stage keeps one height whatever it shows. */}
+          <View style={styles.wordSlot}>
+            <Develop
+              words={words.bottom}
+              opacity={wordOpacity}
+              interactive={showsDevelop && !atTail && !state.loading && !fades.card}
+              dragging={dragging || gliding}
+              drawing={develop.drawing && develop.id === current?.id}
+              onPress={onBottom}
+            />
+          </View>
+
+          {/* The glide strip's slot under it, on every page, so the stage keeps one height whatever it shows. */}
+          <View style={[styles.glideSlot, { marginBottom: Math.max(insets.bottom, MIN_BOTTOM_INSET) + GLIDE_LIFT }]}>
             {chapter && state.view.kind === "prints" ? (
               <GlideStrip
                 key={chapter.generation}
@@ -742,17 +758,6 @@ export default function Darkroom() {
                 onFrame={onFrame}
               />
             ) : null}
-          </View>
-
-          <View style={{ marginBottom: Math.max(insets.bottom, 16) + 8 }}>
-            <Develop
-              words={words.bottom}
-              opacity={showsDevelop && !fades.card ? developOpacity : ZERO}
-              interactive={showsDevelop && !atTail && !state.loading && !fades.card}
-              dragging={dragging || gliding}
-              drawing={develop.drawing && develop.id === current?.id}
-              onPress={onBottom}
-            />
           </View>
         </View>
 
@@ -789,7 +794,6 @@ export default function Darkroom() {
   );
 }
 
-const ZERO = new Animated.Value(0);
 /** A word on the end page's preview while gliding: for the eye, never pressed. */
 const noWord = () => undefined;
 
@@ -797,5 +801,6 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   room: { flex: 1 },
   stage: { flex: 1 },
-  glideSlot: { height: GLIDE_HEIGHT, marginBottom: GLIDE_GAP },
+  wordSlot: { marginBottom: GLIDE_GAP },
+  glideSlot: { height: GLIDE_HEIGHT },
 });

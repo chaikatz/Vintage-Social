@@ -6,7 +6,7 @@
  * in.
  *
  * Only the photograph turns. The words around it — the running head, the
- * caption's date and SET ASIDE, DEVELOP — are presses of their own, and a
+ * caption's date and SET ASIDE, POST — are presses of their own, and a
  * title card or an end page keeps its words and its swipe and takes no
  * tap at all.
  *
@@ -40,7 +40,7 @@ export interface TapContext {
  *     stage: the stage is adjustable, and its swipes up and down are how
  *     VoiceOver turns the page;
  *   - while a develop state is showing, whose words are in the caption and
- *     in DEVELOP's place, and which a turn would clear;
+ *     in POST's place, and which a turn would clear;
  *   - while the photograph is zoomed in;
  *   - while a turn is under way, so quick taps turn one page, never a
  *     second from a page already being left;

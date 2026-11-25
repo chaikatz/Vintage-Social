@@ -452,7 +452,7 @@ describe("a plate's photograph", () => {
     expect(progressOf(null)).toBeNull();
   });
 
-  it("draws the photograph's download on the signature line of the plate in front, unless DOWNLOAD AND DEVELOP is drawing its own", () => {
+  it("draws the photograph's download on the signature line of the plate in front, unless DOWNLOAD AND POST is drawing its own", () => {
     expect(page).toMatch(/progress=\{props\.progress \?\? \(current \? cloud\.shown : null\)\}/);
     expect(full).toMatch(/onProgress=\{\(e\) => \{\s*const fraction = progressOf\(e\);/);
     // Drawn or failed, the line is the signature line again.

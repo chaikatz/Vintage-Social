@@ -3,7 +3,7 @@ import type { Print } from "@/darkroom/types";
 import type { DevelopImageOptions, DevelopProgressEvent } from "../modules/vintage-library";
 
 /**
- * DEVELOP, from a print to the editor's params, against a fake library.
+ * POST (the code's develop), from a print to the editor's params, against a fake library.
  *
  * The native module is a fake that answers when the test says so, so each
  * path can be held open: a print on the phone, one only in iCloud, an
