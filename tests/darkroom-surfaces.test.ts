@@ -442,7 +442,7 @@ describe("the Post tab", () => {
     for (const [f, src] of parts) {
       for (const image of src.match(/<Image\b[\s\S]*?\/>/g) ?? []) {
         // The one photograph the member posted is the server's thumbnail; every other is the library's.
-        if (/source=\{face\.memory\.source\}/.test(image)) continue;
+        if (/source=\{memory\.source\}/.test(image)) continue;
         images += 1;
         expect(image, f).toMatch(/source=\{[^}]*printSource\(/);
         expect(image, f).toContain('cachePolicy="none"');
@@ -462,17 +462,33 @@ describe("the Post tab", () => {
     expect(tab).not.toMatch(/prefetch/i);
   });
 
-  it("lets every photograph go ten seconds after the tab is left, at once in the background", () => {
-    expect(roll).toMatch(/releaseTimer\.current = setTimeout\(\(\) => setReleased\(true\), RELEASE_AFTER_BLUR_MS\);/);
-    expect(roll).toMatch(/if \(state === "background"\) setReleased\(true\);/);
-    expect(roll).toMatch(/AppState\.addEventListener\("memoryWarning", \(\) => setHeroReleased\(true\)\)/);
+  it("lets go of what is out of sight ten seconds after the tab is left, at once in the background, keeping what the screen shows", () => {
     // Nothing is drawn before the tab is first in front.
-    expect(roll).toMatch(/const \[released, setReleased\] = useState\(true\);/);
+    expect(roll).toMatch(/const \[release, setRelease\] = useState<Release>\("all"\);/);
+    // Left, and sent to the background: what is out of sight goes.
+    expect(roll).toMatch(/releaseTimer\.current = setTimeout\(\(\) => setRelease\(\(r\) => \(r === "none" \? "unseen" : r\)\), RELEASE_AFTER_BLUR_MS\);/);
+    expect(roll).toMatch(/if \(state === "background"\) \{[\s\S]*?setRelease\(\(r\) => \(r === "none" \? "unseen" : r\)\);/);
+    // Short of memory: everything while the tab rests; in front, the mount's full image alone.
+    expect(roll).toMatch(/if \(focusedRef\.current\) setHeroReleased\(true\);\s*else setRelease\("all"\);/);
+    // In front again, everything comes back.
+    expect(roll).toMatch(/releaseTimer\.current = null;\s*setRelease\("none"\);\s*setHeroReleased\(false\);/);
+    expect(roll).toMatch(/state === "active" && focusedRef\.current\) \{\s*setRelease\("none"\);/);
+    // What the screen shows stays: the rows in sight, one either side, and the mount while it is in view.
+    expect(tab).toMatch(/release === "unseen"\s*\? \{\s*\.\.\.rowsInSight\(\{ offset: offset\.current, header: headerHeight\.current, viewport: viewport\.current, row: size \+ GAP \}\),\s*hero: offset\.current < heroBottom\.current,/);
+    expect(tab).toMatch(/const rowReleased = \(index: number\) => release === "all" \|\| \(sight != null && \(index < sight\.first \|\| index > sight\.last\)\);/);
+    expect(tab).toMatch(/released=\{rowReleased\(index\)\}/);
+    expect(tab).toMatch(/released=\{heroLetGo\}/);
+    // A photograph let go is taken off the screen with its view, so its picture goes with it: a view
+    // given no source would keep showing, and holding, the last one.
     const cell = parts.find(([f]) => f.endsWith("RollCell.tsx"))![1];
-    expect(cell).toMatch(/source=\{released \? null : printSource\(print\.uri\)\}/);
+    expect(cell).toMatch(/\{released \? null : \(\s*<Image\s+source=\{printSource\(print\.uri\)\}/);
     const hero = parts.find(([f]) => f.endsWith("RollHero.tsx"))![1];
-    expect(hero).toMatch(/source=\{released \|\| heroReleased \? null : printSource\(print\.uri\)\}/);
-    expect(tab).toMatch(/const pictures = allowed && !roll\.released;/);
+    expect(hero).toMatch(/\{released \? null : \(\s*<Image\s+source=\{printSource\(print\.uri\)\}[^>]*?transition=\{0\}/);
+    expect(hero).toMatch(/\{released \|\| heroReleased \? null : \(\s*<Image\s+source=\{printSource\(print\.uri\)\}/);
+    for (const [f, src] of parts) expect(src, f).not.toMatch(/source=\{[^}]*\? null :/);
+    // The doors' prints are a few points across: they stay while the tab rests, so the doors never change face.
+    expect(tab).toMatch(/const pictures = allowed;/);
+    expect(tab).not.toMatch(/roll\.released/);
   });
 
   it("reads where the member left off from the place file, and the shelf from its own", () => {

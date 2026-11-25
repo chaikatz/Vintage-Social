@@ -40,11 +40,14 @@ import { discardPrintCopy, openPrint, postHaptic } from "@/post/openPrint";
 import { panelFor, type PanelAct } from "@/post/panels";
 import {
   cellSize,
+  GAP,
+  heroFrame,
   heroHeight,
   NARROW,
   pageHeight,
   roomDoorFace,
   rollRows,
+  rowsInSight,
   SECOND_TAP_MS,
   wellRows,
   type RollRow as Row,
@@ -76,11 +79,14 @@ export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
  * The roll is read from the library only while the tab is in front, and
  * only with the access the member already gave; the tab asks for it only
  * from a tap on its own explanation, SHOW MY PHOTOGRAPHS. Everything it
- * reads stays on this phone, a bounded page at a time, and every
- * photograph it draws is let go ten seconds after the tab is left
- * (`src/post/useRoll.ts`). What it says about the room it reads from the
- * room's own small files. The one posted photograph On this day may show
- * is read from the server once the tab is in front.
+ * reads stays on this phone, a bounded page at a time. Ten seconds after
+ * the tab is left, and at once when the app goes to the background, it
+ * lets go of every photograph out of sight, keeping the rows on the
+ * screen and the mount, so the page is just as it was whenever it is
+ * seen again (`src/post/useRoll.ts`). What it says about the room it
+ * reads from the room's own small files, from the first frame. The one
+ * posted photograph On this day may show is read from the server once
+ * the tab is in front.
  *
  * Where there is no library to read (Android, a browser outside the
  * demo) the page is On this day, the picker's bar, the camera and the
@@ -184,9 +190,20 @@ export default function Create() {
 
   const listRef = useRef<FlatList<Row>>(null);
   const offset = useRef(0);
+  // Where the mount stands in the list's header, how tall the header is, and how much of the list shows.
+  const heroTop = useRef(0);
   const heroBottom = useRef(Number.POSITIVE_INFINITY);
+  const headerHeight = useRef(0);
+  const viewport = useRef(0);
   const onMountLayout = useCallback((e: LayoutChangeEvent) => {
+    heroTop.current = e.nativeEvent.layout.y;
     heroBottom.current = e.nativeEvent.layout.y + e.nativeEvent.layout.height;
+  }, []);
+  const onHeaderLayout = useCallback((e: LayoutChangeEvent) => {
+    headerHeight.current = e.nativeEvent.layout.height;
+  }, []);
+  const onListLayout = useCallback((e: LayoutChangeEvent) => {
+    viewport.current = e.nativeEvent.layout.height;
   }, []);
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     offset.current = e.nativeEvent.contentOffset.y;
@@ -207,10 +224,10 @@ export default function Create() {
         return;
       }
       select(print.id);
-      // Scrolled away from the mount, the photograph is brought up to it, with POST under it.
-      if (offset.current > heroBottom.current) toTop();
+      // With any of its frame out of view, the photograph is brought up to the mount, with POST under it.
+      if (offset.current > heroTop.current + heroFrame(print, W, H).top) toTop();
     },
-    [post, select, selection, toTop],
+    [post, select, selection, toTop, W, H],
   );
   const onCellPost = useCallback(
     (print: Print) => {
@@ -246,8 +263,9 @@ export default function Create() {
   const memory = useMemo(() => todaysPrint(posts.data, new Date(today)), [posts.data, today]);
   const day = useDayDoor({ focused, access: roll.access, ready: roll.phase === "ready", today, memory });
 
-  // Where the member left off in the room, from its own small file; and the shelf, from its own.
-  const [place, setPlace] = useState<{ line: string | null; cover: ReturnType<typeof placeCover> }>({ line: null, cover: null });
+  // Where the member left off in the room, from its own small file, from the first frame and again
+  // each time the tab is in front; and the shelf, from its own.
+  const [place, setPlace] = useState<Place>(readPlaceFile);
   useFocusEffect(
     useCallback(() => {
       try {
@@ -258,8 +276,11 @@ export default function Create() {
     }, []),
   );
   const shelf = useSetAside();
-  const pictures = allowed && !roll.released;
-  const room = roomDoorFace(place.line, place.cover, shelf[0] ?? null, pictures);
+  // The doors' prints stand where they will be while access is still being read, and their
+  // photographs come into them once it was given. They stay while the tab rests (they are a few
+  // points across), so the doors are the same whenever the page is seen again.
+  const pictures = allowed;
+  const room = roomDoorFace(place.line, place.cover, shelf[0] ?? null, allowed || roll.access === null);
 
   const openRoom = useCallback(() => router.push("/darkroom"), [router]);
   const openDay = useCallback(() => router.push("/memories"), [router]);
@@ -291,6 +312,22 @@ export default function Create() {
       </View>
     ) : null;
 
+  // What stays drawn when the tab lets go of what is out of sight: the rows on the screen, one
+  // either side, and the mount when it shows — read from where the list stood as it was let go.
+  const release = roll.release;
+  const sight = useMemo(
+    () =>
+      release === "unseen"
+        ? {
+            ...rowsInSight({ offset: offset.current, header: headerHeight.current, viewport: viewport.current, row: size + GAP }),
+            hero: offset.current < heroBottom.current,
+          }
+        : null,
+    [release, size],
+  );
+  const rowReleased = (index: number) => release === "all" || (sight != null && (index < sight.first || index > sight.last));
+  const heroLetGo = release === "all" || (sight != null && !sight.hero);
+
   if (!door) {
     return (
       <Screen padded={false} scroll>
@@ -316,10 +353,9 @@ export default function Create() {
   const dim = roll.phase === "undetermined" || roll.phase === "denied";
   const selectedId = roll.selected?.id ?? null;
   const busyId = busy?.way === "print" ? (busy.id ?? null) : null;
-  const drawnOut = roll.released;
 
   const header = (
-    <View>
+    <View onLayout={onHeaderLayout}>
       <PostDoors
         room={room}
         day={day}
@@ -343,7 +379,7 @@ export default function Create() {
             large={large}
             busy={busy?.way === "print"}
             held={held}
-            released={drawnOut}
+            released={heroLetGo}
             heroReleased={roll.heroReleased}
             reduceMotion={reduceMotion}
             focused={focused}
@@ -357,7 +393,7 @@ export default function Create() {
             iosMajor={iosMajor}
             H={H}
             narrow={narrow}
-            busy={roll.asking || ways === "photo"}
+            busy={roll.asking}
             held={held}
             onAct={onAct}
             onOpenSettings={roll.openSettings}
@@ -390,14 +426,14 @@ export default function Create() {
         testID="post-roll"
         data={rows}
         keyExtractor={(row) => row.key}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <RollRow
             row={item}
             size={size}
             selectedId={selectedId && item.items.some((i) => i.key === selectedId) ? selectedId : null}
             busyId={busyId && item.items.some((i) => i.key === busyId) ? busyId : null}
             cameraBusy={busy?.way === "camera"}
-            released={drawnOut}
+            released={rowReleased(index)}
             held={held}
             dim={dim}
             reduceMotion={reduceMotion}
@@ -406,7 +442,7 @@ export default function Create() {
             onCamera={onCamera}
           />
         )}
-        extraData={[selectedId, busy, held, drawnOut, dim]}
+        extraData={[selectedId, busy, held, release, sight, dim]}
         ListHeaderComponent={header}
         ListFooterComponent={footer}
         initialNumToRender={4}
@@ -417,6 +453,7 @@ export default function Create() {
         onEndReachedThreshold={1.5}
         scrollEventThrottle={16}
         onScroll={onScroll}
+        onLayout={onListLayout}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
       />
@@ -425,6 +462,17 @@ export default function Create() {
 }
 
 type Way = "photo" | "camera" | "video" | "print";
+
+type Place = { line: string | null; cover: ReturnType<typeof placeCover> };
+
+/** Where the member left off in the room, from its own small file; nothing when it cannot be read. */
+function readPlaceFile(): Place {
+  try {
+    return { line: placeLine(), cover: placeCover() };
+  } catch {
+    return { line: null, cover: null };
+  }
+}
 
 /** The page's type stops growing here, as the Memory Room's own word pages do. */
 const TYPE_CAP = 2.4;

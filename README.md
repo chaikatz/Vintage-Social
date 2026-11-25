@@ -481,8 +481,10 @@ day door one count per earlier year of today's date (thirty at most) and
 three covers, all through the room's two-at-a-time gate. It keeps no
 listener on the library except for a moment after SHARE MORE. It draws
 every photograph at its view's size and keeps it in that view alone,
-never in the shared cache or on disk, and lets all of them go ten seconds
-after the tab is left. `app/memories.tsx` never asks, and the ordinary picker
+never in the shared cache or on disk; ten seconds after the tab is left,
+and at once when the app goes to the background, it lets go of every
+one out of sight, keeping only those on the screen, and of all of them
+on a memory warning. `app/memories.tsx` never asks, and the ordinary picker
 (`src/utils/pickForCompose.ts`) needs no permission and cuts the picked
 file's EXIF down to its date fields the moment it arrives. The room asks
 the library only bounded questions — counts, pages of at most 150, time
@@ -566,7 +568,11 @@ photographs. Top to bottom:
   ("Every year, on this date."). Each is a ruled card with a chevron, so
   neither reads as a heading over nothing. SET ASIDE · 3 under them when
   anything is set aside. Narrower than 360 points they keep their words
-  and let their pictures go; at the larger text sizes they stack.
+  and let their pictures go; at the larger text sizes they stack. A door
+  is one size whatever it carries: its words have room for three lines
+  of the serif from the first frame, and its prints stand as
+  paper-edged frames until their photographs come into them, so a face
+  that arrives once the page is up never moves the page.
 - **The mount.** The selected photograph large, on the camera's dark, in
   the frame the editor will give it (compose's own 4:5 to 1.91:1 clamp),
   with the print's signature line under it — the date in tracked
@@ -588,6 +594,11 @@ photographs. Top to bottom:
   FURTHER BACK and ENTER THE MEMORY ROOM.
 
 Tapping the Post tab again goes back to the top and selects the newest.
+The selection is kept for five minutes away from the tab, time in the
+background counting as time away; a photograph newer than the newest
+shown (one just taken in the Camera app, or just shared with VINTAGE) is
+selected as it arrives; and once the selected photograph has been
+posted, the selection moves to the newest not yet posted.
 
 A photograph from the roll is opened as the library picker's are
 (`composeParamsFor`): a 2048 px rendition from Photos, brought down from
@@ -608,10 +619,16 @@ under its proof. Without a library (Android, a browser outside the demo)
 it is the On this day door, CHOOSE A PHOTOGRAPH, the camera and the clip.
 
 It reads nothing before it is first in front — the pager mounts it
-beside Search and Activity — and draws no photograph until then. Every
-photograph it draws is let go ten seconds after the tab is left, at once
-when the app goes to the background, and the mount's on a memory
-warning. The rules and numbers are pure, in `src/post/roll.ts`,
+beside Search and Activity — and draws no photograph until then. Ten
+seconds after the tab is left, and at once when the app goes to the
+background, every photograph out of sight is let go, its view taken off
+the screen with it; the rows on the screen, one either side, and the
+mount stay, so the tab is just as it was whenever it is seen again,
+swiped back to or come back to. On a memory warning all of them go while
+the tab is not in front, and in front the mount's full image over its
+proof. The doors' little prints stay. Leaving the tab, or the app going
+to the background, also stops the On this day door's reading under
+way, which starts again the next time the tab is in front. The rules and numbers are pure, in `src/post/roll.ts`,
 `dayDoor.ts` and `panels.ts`; `tests/post-*.test.ts` and
 `tests/create-entry.test.ts` hold them, and `e2e/post-test.mjs` walks the
 tab in the web demo.

@@ -22,7 +22,11 @@ import { signatureDate } from "@/utils/time";
  * it answers at once; then the photograph at the frame's size dissolving
  * in over it. Both are kept by this view alone, never in the shared
  * image cache or on disk. Choosing another photograph makes a new view,
- * so the last one's picture goes with it and its request is stopped.
+ * so the last one's picture goes with it and its request is stopped. Let
+ * go (`released`: the tab is not in front and the mount is out of sight,
+ * or memory is short), both views come off the screen and their pictures
+ * with them; on a memory warning in front (`heroReleased`), the full
+ * image only, over its proof.
  * Offline, a photograph whose full image has not come after twelve
  * seconds says it is in iCloud, under its proof.
  *
@@ -34,6 +38,8 @@ const TYPE_CAP = 2.4;
 const BAR_TYPE_CAP = 1.8;
 /** The proof is this wide, scaled up to the frame. */
 const PROOF_WIDTH = 48;
+/** POST's reach past its edges: the strip's own margin above and below, so it stays on the mount. */
+const POST_SLOP = { top: 8, bottom: 8, left: 6, right: 6 };
 
 export const RollHero = React.memo(function RollHero({
   print,
@@ -72,6 +78,10 @@ export const RollHero = React.memo(function RollHero({
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [stalledId, setStalledId] = useState<string | null>(null);
   const loaded = loadedId === print.id;
+  // A full image let go has to come again, and may stall as any other.
+  useEffect(() => {
+    if (released || heroReleased) setLoadedId(null);
+  }, [released, heroReleased]);
 
   // A photograph that has not come in twelve seconds, while the tab is in front.
   useEffect(() => {
@@ -100,6 +110,8 @@ export const RollHero = React.memo(function RollHero({
       testID="post-post"
       onPress={onPost}
       disabled={held}
+      // To 56 points tall within the strip, and a little wider: the page's one primary action, under the thumb.
+      hitSlop={POST_SLOP}
       style={({ pressed }) => [styles.post, { height: large ? undefined : button }, large && styles.postLarge, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel="Post"
@@ -170,28 +182,32 @@ function Picture({
     <>
       <View style={styles.proofSlot} pointerEvents="none">
         <View style={{ width: PROOF_WIDTH, height: PROOF_WIDTH / r, transform: [{ scale: width / PROOF_WIDTH }] }}>
-          <Image
-            source={released ? null : printSource(print.uri)}
-            style={styles.fill}
-            contentFit="cover"
-            cachePolicy="none"
-            transition={0}
-            accessibilityIgnoresInvertColors
-          />
+          {released ? null : (
+            <Image
+              source={printSource(print.uri)}
+              style={styles.fill}
+              contentFit="cover"
+              cachePolicy="none"
+              transition={0}
+              accessibilityIgnoresInvertColors
+            />
+          )}
         </View>
       </View>
-      <Image
-        source={released || heroReleased ? null : printSource(print.uri)}
-        style={styles.fill}
-        contentFit="cover"
-        cachePolicy="none"
-        allowDownscaling={false}
-        priority="normal"
-        recyclingKey={print.id}
-        transition={transition}
-        onLoad={() => onLoad(print.id)}
-        accessibilityIgnoresInvertColors
-      />
+      {released || heroReleased ? null : (
+        <Image
+          source={printSource(print.uri)}
+          style={styles.fill}
+          contentFit="cover"
+          cachePolicy="none"
+          allowDownscaling={false}
+          priority="normal"
+          recyclingKey={print.id}
+          transition={transition}
+          onLoad={() => onLoad(print.id)}
+          accessibilityIgnoresInvertColors
+        />
+      )}
     </>
   );
 }

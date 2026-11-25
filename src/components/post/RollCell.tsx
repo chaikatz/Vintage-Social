@@ -18,6 +18,9 @@ import { colors, type } from "@/theme";
  *
  * A row is drawn again only when something in it changes: the selection
  * moving in or out of it, a cell opening, the tab letting its pictures go.
+ * A cell let go (`released`) takes its photograph's view off the screen,
+ * and the picture with it, leaving the sunken paper; it comes back when
+ * the tab is in front again.
  */
 
 const BAR_TYPE_CAP = 1.8;
@@ -47,6 +50,7 @@ export const RollRow = React.memo(function RollRow({
   /** The photograph opening, when it is in this row. */
   busyId: string | null;
   cameraBusy: boolean;
+  /** This row's photographs are let go: it is out of sight while the tab is not in front. */
   released: boolean;
   held: boolean;
   /** The wells stand quieter while the roll waits on the member. */
@@ -122,17 +126,19 @@ export const RollCell = React.memo(function RollCell({
       accessibilityActions={[{ name: "activate" }, { name: "post", label: "Post" }]}
       onAccessibilityAction={act}
     >
-      <Image
-        source={released ? null : printSource(print.uri)}
-        style={StyleSheet.absoluteFill}
-        contentFit="cover"
-        cachePolicy="none"
-        allowDownscaling={false}
-        priority="normal"
-        recyclingKey={print.id}
-        transition={transition}
-        accessibilityIgnoresInvertColors
-      />
+      {released ? null : (
+        <Image
+          source={printSource(print.uri)}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          cachePolicy="none"
+          allowDownscaling={false}
+          priority="normal"
+          recyclingKey={print.id}
+          transition={transition}
+          accessibilityIgnoresInvertColors
+        />
+      )}
       {selected ? (
         <View style={styles.box} pointerEvents="none">
           <View style={styles.boxInner} />

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { settingsPath } from "@/components/darkroom/words";
 import { panelFor, panelWords, type PanelKind } from "@/post/panels";
 
 /**
@@ -58,10 +59,17 @@ describe("what each panel says", () => {
       headline: "VINTAGE can’t see your photographs.",
       body: "Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone.",
       bar: null,
-      path: "Settings › Apps › VINTAGE › Photos › Full Access",
+      path: "Settings\u00A0› Apps\u00A0› VINTAGE\u00A0› Photos\u00A0› Full\u00A0Access",
       quiet: { label: "Open Settings", hint: "Opens VINTAGE’s page in Settings." },
     });
-    expect(panelWords("denied", 17)!.path).toBe("Settings › VINTAGE › Photos › Full Access");
+    expect(panelWords("denied", 17)!.path).toBe("Settings\u00A0› VINTAGE\u00A0› Photos\u00A0› Full\u00A0Access");
+    // The room's own words for the way, with each step held together: it breaks only after a "›".
+    for (const ios of [17, 18]) {
+      const path = panelWords("denied", ios)!.path!;
+      expect(path.replace(/\u00A0/g, " ")).toBe(settingsPath(ios));
+      expect(path.split(" ").every((step) => !step.includes(" "))).toBe(true);
+      expect(path.split(" ").slice(0, -1).every((step) => step.endsWith("›"))).toBe(true);
+    }
   });
 
   it("tells an empty library from an empty selection, and the empty selection how to share more", () => {

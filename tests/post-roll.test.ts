@@ -2,16 +2,24 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  afterPosting,
   ageWords,
   cellLabel,
   cellSize,
   heroFrame,
   heroHeight,
   heroMetrics,
+  DOOR_LINE,
+  DOOR_LINES,
+  DOOR_PICTURE,
+  DOOR_SUB,
+  doorWordsHeight,
+  GAP,
   keepSelection,
   KEEP_SELECTION_MS,
   mergeNewest,
   mergeOlder,
+  newerArrived,
   nextRange,
   pageHeight,
   PREVIEW_MAX,
@@ -24,6 +32,7 @@ import {
   ROLL_PAGE,
   ROLL_STALE_MS,
   roomDoorFace,
+  rowsInSight,
   SECOND_TAP_MS,
   shouldRefresh,
   visibleOf,
@@ -134,11 +143,26 @@ describe("the roll's rows", () => {
     const without = rollRows(prints(6), { camera: false });
     expect(without.map((r) => r.items.length)).toEqual([4, 2]);
     expect(without[0].items.every((i) => i.kind === "print")).toBe(true);
-    expect(rollRows([], { camera: true })).toEqual([{ key: "row-camera", items: [{ kind: "camera", key: "camera" }] }]);
+    expect(rollRows([], { camera: true })).toEqual([{ key: "row-0", items: [{ kind: "camera", key: "camera" }] }]);
     expect(rollRows([], { camera: false })).toEqual([]);
     // Every row has its own key.
     const keys = rollRows(prints(40), { camera: true }).map((r) => r.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("are named by their place, so a photograph arriving at the top makes again only the one cell in each row that crosses into the next", () => {
+    const before = rollRows(prints(11), { camera: true });
+    const newest = print(-1);
+    const after = rollRows([newest, ...prints(11)], { camera: true });
+    // The rows keep their names, and the wells' rows have the same names, so nothing is made afresh when the roll arrives.
+    expect(after.slice(0, before.length).map((r) => r.key)).toEqual(before.map((r) => r.key));
+    expect(wellRows({ camera: true }).map((r) => r.key)).toEqual(["row-0", "row-1", "row-2"]);
+    // In each row, every cell but one is a photograph the row already had.
+    before.forEach((row, i) => {
+      const had = new Set(row.items.map((it) => it.key));
+      const kept = after[i].items.filter((it) => had.has(it.key));
+      expect(kept.length).toBeGreaterThanOrEqual(row.items.length - 1);
+    });
   });
 
   it("stand in as three rows of wells, the camera among them", () => {
@@ -230,6 +254,14 @@ describe("reading the roll", () => {
     expect(mergeNewest(before, { prints: [], hasNextPage: false })).toEqual([]);
   });
 
+  it("keeps a photograph that shares the cut's own millisecond but fell outside the page", () => {
+    const at = print(4).takenAt;
+    const twin = print(40, { takenAt: at });
+    const before = [...prints(5), twin, print(5), print(6)];
+    const page = { prints: [print(0), print(1), print(2), print(3), print(4)], hasNextPage: true };
+    expect(mergeNewest(before, page).map((p) => p.id)).toEqual(["p0", "p1", "p2", "p3", "p4", "p40", "p5", "p6"]);
+  });
+
   it("reads the newest again on focus only a minute on, or once the library has been heard to change", () => {
     const now = 1_000_000;
     expect(shouldRefresh(now - 59_000, now, false)).toBe(false);
@@ -253,6 +285,86 @@ describe("the selection", () => {
     expect(keepSelection({ id: "gone", at: now }, list, now)).toBe("p0");
     expect(keepSelection(null, list, now)).toBe("p0");
     expect(keepSelection(null, [], now)).toBeNull();
+  });
+
+  it("counts three hours in the background as three hours away", () => {
+    // The tab notes when the app went to the background, and asks with that time on its return.
+    expect(keepSelection({ id: "p3", at: now - 3 * 3_600_000 }, list, now)).toBe("p0");
+  });
+
+  it("goes to a photograph newer than the newest shown as it arrives: one just taken, or just shared", () => {
+    expect(newerArrived(print(0), print(-1))).toBe(true);
+    expect(newerArrived(print(0), print(0))).toBe(false);
+    expect(newerArrived(print(0), print(1))).toBe(false);
+    // A first read has nothing before it to be newer than: the newest is selected by the usual rule.
+    expect(newerArrived(undefined, print(0))).toBe(false);
+    expect(newerArrived(print(0), undefined)).toBe(false);
+  });
+
+  it("moves on from a photograph once it has been posted, to the newest not yet posted", () => {
+    const posted = new Map<string, number>([
+      ["p0", now + 10],
+      ["p2", now + 20],
+    ]);
+    const at = (id: string) => posted.get(id) ?? null;
+    // p2 was selected, then posted: the newest not yet posted is p1.
+    expect(afterPosting({ id: "p2", at: now }, list, at)).toBe("p1");
+    // Not posted since it was selected: the selection stays (undefined is "no change").
+    expect(afterPosting({ id: "p3", at: now }, list, at)).toBeUndefined();
+    expect(afterPosting({ id: "p2", at: now + 30 }, list, at)).toBeUndefined();
+    expect(afterPosting(null, list, at)).toBeUndefined();
+    // Everything posted: the newest.
+    expect(afterPosting({ id: "p0", at: now }, list, () => now + 1)).toBe("p0");
+  });
+});
+
+describe("what stays drawn while the tab rests", () => {
+  // 390 points: the header (doors, mount, ways) about 490 tall, the list 683, a row 96 + 2.
+  const row = cellSize(390) + GAP;
+
+  it("is the rows on the screen, one either side", () => {
+    // At the top: rows 0 and 1 show under the header; row 2 is the one to spare.
+    expect(rowsInSight({ offset: 0, header: 490, viewport: 683, row })).toEqual({ first: 0, last: 2 });
+    // Scrolled into the roll: from one row above the first in view to one below the last.
+    const deep = rowsInSight({ offset: 490 + 10 * row + 40, header: 490, viewport: 683, row });
+    expect(deep.first).toBe(9);
+    expect(deep.last).toBe(10 + Math.ceil((40 + 683) / row) - 1 + 1);
+  });
+
+  it("keeps everything while the list has not been measured", () => {
+    expect(rowsInSight({ offset: 0, header: 490, viewport: 0, row })).toEqual({ first: 0, last: Number.POSITIVE_INFINITY });
+  });
+});
+
+describe("the doors' room for words", () => {
+  it("holds every face from the first frame: three lines of the serif, never less than the picture", () => {
+    const two = 2 * DOOR_LINE.height + DOOR_SUB.gap + DOOR_SUB.height;
+    expect(DOOR_LINES).toBe(3);
+    for (const narrow of [false, true]) {
+      const room = doorWordsHeight(narrow);
+      const line = narrow ? DOOR_LINE.narrowHeight : DOOR_LINE.height;
+      // A count of a thousand on two lines with its years under it.
+      expect(room).toBeGreaterThanOrEqual(2 * line + DOOR_SUB.gap + DOOR_SUB.height);
+      // The member's own post's sentence on three.
+      expect(room).toBeGreaterThanOrEqual(3 * line);
+    }
+    expect(doorWordsHeight(false)).toBeGreaterThanOrEqual(Math.max(DOOR_PICTURE, two));
+    expect(doorWordsHeight(false)).toBe(51);
+    expect(doorWordsHeight(true)).toBe(48);
+  });
+
+  it("grows with the member's text size, as far as the serif does", () => {
+    expect(doorWordsHeight(false, 1.3)).toBe(Math.ceil(51 * 1.3));
+    expect(doorWordsHeight(false, 3.1)).toBe(Math.ceil(51 * 2.4));
+    expect(doorWordsHeight(false, 0.8)).toBe(51);
+  });
+
+  it("is what the doors draw with", () => {
+    const doors = readFileSync(path.join(root, "src/components/post/PostDoors.tsx"), "utf8");
+    expect(doors).toMatch(/minHeight: Math\.max\(narrow \? 0 : DOOR_PICTURE, doorWordsHeight\(narrow, fontScale\)\)/);
+    expect(doors).toMatch(/fontSize: DOOR_LINE\.size, lineHeight: DOOR_LINE\.height/);
+    expect(doors).toMatch(/fontSize: DOOR_SUB\.size, lineHeight: DOOR_SUB\.height/);
+    expect(doors).not.toMatch(/rowPictured/);
   });
 });
 

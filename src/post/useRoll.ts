@@ -2,16 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, InteractionManager } from "react-native";
 import { chooseMorePhotographs, openPhotoSettings, readAccess, requestAccess, type LibraryAccess } from "@/darkroom/access";
 import { gated } from "@/darkroom/discovery";
+import { developedAt } from "@/darkroom/history";
 import { darkroomAvailable, darkroomSource } from "@/darkroom/source";
 import type { LibrarySource, Print } from "@/darkroom/types";
 import { onReturnFromBackground } from "@/utils/appReturn";
 import { watchLibrary } from "@/utils/library";
 import type { RollPhase } from "./panels";
 import {
+  afterPosting,
   firstRange,
   keepSelection,
   mergeNewest,
   mergeOlder,
+  newerArrived,
   nextRange,
   RELEASE_AFTER_BLUR_MS,
   ROLL_CAP,
@@ -20,6 +23,7 @@ import {
   ROLL_PAGE,
   shouldRefresh,
   visibleOf,
+  type Release,
   type RollEnd,
 } from "./roll";
 
@@ -43,11 +47,25 @@ import {
  * library: only after SHARE MORE, while the tab is in front, does it
  * listen for the selection to change, and it stops when the tab is left.
  *
- * Every photograph it draws is let go ten seconds after the tab is left
- * (`released`), and at once when the app goes to the background; the
- * selected photograph's full image goes on a memory warning
- * (`heroReleased`) until the next selection. What it read about them —
- * identifiers, sizes, dates — is kept.
+ * What it draws it lets go of (`release`) in two steps. Ten seconds
+ * after the tab is left, and at once when the app goes to the
+ * background, every photograph out of sight goes ("unseen"): the screen
+ * says which rows stay — those on it, and one either side — with the
+ * mount when it is in view, so whenever the tab is seen again, swiped
+ * back to or come back to from the editor or the Home screen, it is just
+ * as it was. On a memory warning while the tab is not in front, all of
+ * them go ("all"), as they are before it is first in front; in front,
+ * the selected photograph's full image goes (`heroReleased`) until the
+ * next selection, its proof staying. In front again, everything comes
+ * back. Each photograph let go is taken off the screen with its view, so
+ * its picture goes with it. What it read about them — identifiers,
+ * sizes, dates — is kept.
+ *
+ * The selection is kept across visits for five minutes, the app's time in
+ * the background counted as time away; a photograph newer than the
+ * newest shown (one just taken, or just shared) is selected as it
+ * arrives; and once the selected photograph has been posted, the
+ * selection moves to the newest not yet posted.
  */
 export interface Roll {
   phase: RollPhase;
@@ -59,8 +77,8 @@ export interface Roll {
   loadingMore: boolean;
   /** SHOW MY PHOTOGRAPHS is waiting on iOS. */
   asking: boolean;
-  /** Every camera-roll image on the tab is let go. */
-  released: boolean;
+  /** What of the tab's camera-roll images is let go. */
+  release: Release;
   /** The selected photograph's full image is let go; its proof stays. */
   heroReleased: boolean;
   /** The selection, and when it was made, for the second tap. */
@@ -81,6 +99,8 @@ const MORE_PAUSE_MS = 5_000;
 const FIRST_PAGES = 3;
 /** A further read goes on, while a page brings nothing to show (screenshots only), to no more than this many pages. */
 const MORE_PAGES = 4;
+/** Reading the whole roll again from the top, after SHARE MORE, goes on to no more than this many pages: past the cap. */
+const ALL_PAGES = Math.ceil(ROLL_CAP / ROLL_PAGE) + 1;
 
 const allowedAccess = (a: LibraryAccess | null) => a === "full" || a === "limited";
 
@@ -99,7 +119,7 @@ export function useRoll(focused: boolean): Roll {
   const [loadingMore, setLoadingMore] = useState(false);
   const [asking, setAsking] = useState(false);
   // Nothing is drawn before the tab is first in front.
-  const [released, setReleased] = useState(true);
+  const [release, setRelease] = useState<Release>("all");
   const [heroReleased, setHeroReleased] = useState(false);
 
   const mounted = useRef(true);
@@ -139,9 +159,15 @@ export function useRoll(focused: boolean): Roll {
     setSelectedId(id);
   }, []);
 
-  /** What was read, shown: screenshots left out under full access, 1,200 at most, the selection kept while it is there. */
+  /**
+   * What was read, shown: screenshots left out under full access, 1,200 at
+   * most, the selection kept while it is there. A read from the top
+   * (`fromTop`) that brings a photograph newer than the newest shown
+   * selects it.
+   */
   const apply = useCallback(
-    (next: Print[], nextEnd: RollEnd) => {
+    (next: Print[], nextEnd: RollEnd, fromTop: boolean) => {
+      const before = shown.current[0];
       read.current = next;
       let visible = visibleOf(next, accessRef.current);
       let e = nextEnd;
@@ -153,8 +179,40 @@ export function useRoll(focused: boolean): Roll {
       endRef.current = e;
       setPrints(visible);
       setEnd(e);
+      if (fromTop && newerArrived(before, visible[0])) {
+        choose(visible[0].id);
+        return;
+      }
       const sel = selection.current;
       choose(keepSelection(sel ? { id: sel.id, at: Date.now() } : null, visible, Date.now()));
+    },
+    [choose],
+  );
+
+  /**
+   * Back in front after `away` (when the tab was left, or the app went to
+   * the background): a selection left more than five minutes ago gives
+   * way to the newest, and one that has since been posted to the newest
+   * not yet posted.
+   */
+  const settle = useCallback(
+    (away: number | null) => {
+      const sel = selection.current;
+      if (!sel) return;
+      if (away != null) {
+        const kept = keepSelection({ id: sel.id, at: away }, shown.current, Date.now());
+        if (kept !== sel.id) {
+          choose(kept);
+          return;
+        }
+      }
+      let moved: string | null | undefined;
+      try {
+        moved = afterPosting(sel, shown.current, developedAt);
+      } catch {
+        moved = undefined;
+      }
+      if (moved !== undefined) choose(moved);
     },
     [choose],
   );
@@ -185,6 +243,8 @@ export function useRoll(focused: boolean): Roll {
       let more = page.hasNextPage;
       let stepPast = false;
       for (let pages = 1; more && pages < FIRST_PAGES && visibleOf(next, accessRef.current).length < ROLL_MIN_VISIBLE; pages++) {
+        // Left between pages: what is read is shown, and the rest waits for the end of the roll.
+        if (!focusedRef.current) break;
         const range = nextRange(next, stepPast);
         if (!range) break;
         page = await source.page({ range, first: ROLL_PAGE, order: "desc" });
@@ -196,7 +256,7 @@ export function useRoll(focused: boolean): Roll {
       }
       lastReadAt.current = Date.now();
       heard.current = false;
-      apply(next, more ? "more" : "done");
+      apply(next, more ? "more" : "done", true);
       setPhase("ready");
     } catch {
       // A library that would not answer is never shown as an empty one.
@@ -217,7 +277,44 @@ export function useRoll(focused: boolean): Roll {
       if (mine !== generation.current || !mounted.current) return;
       lastReadAt.current = Date.now();
       heard.current = false;
-      apply(mergeNewest(read.current, page), page.hasNextPage ? (endRef.current === "capped" ? "more" : endRef.current) : "done");
+      apply(mergeNewest(read.current, page), page.hasNextPage ? (endRef.current === "capped" ? "more" : endRef.current) : "done", true);
+    } catch {
+      // The roll on screen stays as it was.
+    } finally {
+      if (mine === generation.current) reading.current = false;
+    }
+  }, [apply, readFirst, source]);
+
+  /**
+   * As far as the roll was read, read again from the top, a bounded page
+   * at a time: after SHARE MORE, which can share photographs from
+   * anywhere in it, older ones included, and take others away.
+   */
+  const readAll = useCallback(async () => {
+    if (!source) return;
+    if (phaseRef.current !== "ready") return readFirst();
+    const mine = ++generation.current;
+    reading.current = true;
+    const extent = read.current.length;
+    try {
+      let page = await source.page({ range: firstRange(Date.now()), first: ROLL_PAGE, order: "desc" });
+      if (mine !== generation.current || !mounted.current) return;
+      let next = mergeNewest([], page);
+      let more = page.hasNextPage;
+      let stepPast = false;
+      for (let pages = 1; more && pages < ALL_PAGES && next.length < extent && focusedRef.current; pages++) {
+        const range = nextRange(next, stepPast);
+        if (!range) break;
+        page = await source.page({ range, first: ROLL_PAGE, order: "desc" });
+        if (mine !== generation.current || !mounted.current) return;
+        const merged = mergeOlder(next, page.prints);
+        next = merged.prints;
+        more = page.hasNextPage;
+        stepPast = merged.added === 0;
+      }
+      lastReadAt.current = Date.now();
+      heard.current = false;
+      apply(next, more ? "more" : "done", true);
     } catch {
       // The roll on screen stays as it was.
     } finally {
@@ -229,10 +326,11 @@ export function useRoll(focused: boolean): Roll {
    * In front: what access there is now, which never asks; the first page
    * when the library may be read and has not been, or has changed hands;
    * otherwise the newest page again only when it is a minute old, or
-   * `force` (back from the background, the tab tapped again).
+   * `force` (back from the background, the tab tapped again); `deep` reads
+   * the whole roll again (the selection shared with VINTAGE has changed).
    */
   const front = useCallback(
-    async (force: boolean) => {
+    async (force: boolean, deep = false) => {
       if (!source || !focusedRef.current) return;
       const before = accessRef.current;
       const now = await readAccess();
@@ -248,9 +346,10 @@ export function useRoll(focused: boolean): Roll {
         if (!reading.current || before !== now) await readFirst();
         return;
       }
-      if (force || shouldRefresh(lastReadAt.current, Date.now(), heard.current)) await readNewest();
+      if (deep) await readAll();
+      else if (force || shouldRefresh(lastReadAt.current, Date.now(), heard.current)) await readNewest();
     },
-    [clear, readFirst, readNewest, setAccess, setPhase, source],
+    [clear, readAll, readFirst, readNewest, setAccess, setPhase, source],
   );
 
   // In front, and left.
@@ -261,35 +360,44 @@ export function useRoll(focused: boolean): Roll {
       watching.current?.();
       watching.current = null;
       if (releaseTimer.current) clearTimeout(releaseTimer.current);
-      releaseTimer.current = setTimeout(() => setReleased(true), RELEASE_AFTER_BLUR_MS);
+      releaseTimer.current = setTimeout(() => setRelease((r) => (r === "none" ? "unseen" : r)), RELEASE_AFTER_BLUR_MS);
       return;
     }
     if (releaseTimer.current) clearTimeout(releaseTimer.current);
     releaseTimer.current = null;
-    setReleased(false);
+    setRelease("none");
     setHeroReleased(false);
-    // A selection left more than five minutes ago gives way to the newest.
-    if (leftAt.current != null && selection.current) {
-      choose(keepSelection({ id: selection.current.id, at: leftAt.current }, shown.current, Date.now()));
-    }
+    settle(leftAt.current);
     leftAt.current = null;
     if (!source) return;
     const task = InteractionManager.runAfterInteractions(() => {
       void front(false);
     });
     return () => task.cancel();
-  }, [choose, focused, front, source]);
+  }, [focused, front, settle, source]);
 
   // The app's own comings and goings.
   useEffect(() => {
     mounted.current = true;
     const change = AppState.addEventListener("change", (state) => {
-      if (state === "background") setReleased(true);
-      else if (state === "active" && focusedRef.current) setReleased(false);
+      if (state === "background") {
+        // Time in the background is time away, for the selection as for a blur.
+        if (focusedRef.current && leftAt.current == null) leftAt.current = Date.now();
+        setRelease((r) => (r === "none" ? "unseen" : r));
+      } else if (state === "active" && focusedRef.current) {
+        setRelease("none");
+        if (leftAt.current != null) {
+          settle(leftAt.current);
+          leftAt.current = null;
+        }
+      }
     });
     let warning: { remove: () => void } | null = null;
     try {
-      warning = AppState.addEventListener("memoryWarning", () => setHeroReleased(true));
+      warning = AppState.addEventListener("memoryWarning", () => {
+        if (focusedRef.current) setHeroReleased(true);
+        else setRelease("all");
+      });
     } catch {
       warning = null;
     }
@@ -312,7 +420,7 @@ export function useRoll(focused: boolean): Roll {
       watching.current = null;
       if (releaseTimer.current) clearTimeout(releaseTimer.current);
     };
-  }, [front]);
+  }, [front, settle]);
 
   const select = useCallback(
     (id: string) => {
@@ -357,7 +465,7 @@ export function useRoll(focused: boolean): Roll {
       watching.current = watchLibrary(() => {
         if (!focusedRef.current) return;
         heard.current = true;
-        void front(true);
+        void front(true, true);
       }, 2000);
     })();
   }, [front]);
@@ -395,7 +503,7 @@ export function useRoll(focused: boolean): Roll {
           if (visibleOf(next, accessRef.current).length > before) break;
         }
         if (mine !== generation.current || !mounted.current) return;
-        apply(next, more ? "more" : "done");
+        apply(next, more ? "more" : "done", false);
       } catch {
         moreFailedAt.current = Date.now();
       } finally {
@@ -421,7 +529,7 @@ export function useRoll(focused: boolean): Roll {
     end,
     loadingMore,
     asking,
-    released,
+    release,
     heroReleased,
     selection: current,
     select,

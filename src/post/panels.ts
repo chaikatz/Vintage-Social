@@ -45,6 +45,18 @@ const ROLL = "Your camera roll";
 
 const SHARE_MORE_HINT = "Opens iOS’s list of the photographs VINTAGE may see.";
 
+/**
+ * The way through Settings, made to break only after a "›": each step,
+ * "Full Access" and all, stays on one line, and its arrow with it, so a
+ * narrow mount never leaves a word of a step alone on the next line.
+ */
+export function unbrokenPath(path: string): string {
+  return path
+    .split(" › ")
+    .map((step) => step.replace(/ /g, "\u00A0"))
+    .join("\u00A0› ");
+}
+
 /** The words for one panel. The two that are only a box have none. */
 export function panelWords(kind: PanelKind, iosMajor: number): PanelWords | null {
   switch (kind) {
@@ -65,7 +77,7 @@ export function panelWords(kind: PanelKind, iosMajor: number): PanelWords | null
         headline: "VINTAGE can’t see your photographs.",
         body: "Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone.",
         bar: null,
-        path: settingsPath(iosMajor),
+        path: unbrokenPath(settingsPath(iosMajor)),
         quiet: { label: "Open Settings", hint: "Opens VINTAGE’s page in Settings." },
       };
     case "empty-full":

@@ -61,7 +61,8 @@ const check = (name, ok, detail = "") => {
 };
 const wait = (ms) => page.waitForTimeout(ms);
 const text = () => page.textContent("body");
-const shot = (n) => page.screenshot({ path: `${out}/${n}.png` });
+// Screenshots only when SHOT_DIR asks for them: without it they were written into ./undefined/.
+const shot = (n) => (out ? page.screenshot({ path: `${out}/${n}.png` }) : Promise.resolve());
 const seen = (l) => l.locator("visible=true");
 const byText = (t) => seen(page.getByText(t, { exact: true }));
 const byLabel = (t) => seen(page.getByLabel(t, { exact: true }));

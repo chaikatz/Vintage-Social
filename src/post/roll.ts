@@ -31,7 +31,7 @@ export const ROLL_CAP = 1200;
 export const ROLL_MIN_VISIBLE = 24;
 /** Coming back to the tab reads the newest again only when the last read is older than this. */
 export const ROLL_STALE_MS = 60_000;
-/** The tab's photographs are let go this long after it is left. */
+/** The tab's photographs out of sight are let go this long after it is left. */
 export const RELEASE_AFTER_BLUR_MS = 10_000;
 /** A selection is kept across visits this long. */
 export const KEEP_SELECTION_MS = 300_000;
@@ -116,13 +116,38 @@ export interface RollRow {
   items: RollItem[];
 }
 
+/**
+ * Rows are named by their place, not by their first photograph: a
+ * photograph arriving at the top moves every other one a cell along, and
+ * a row named by its first would be a new row each time, every
+ * photograph on the screen made again. Named by place, a row stays, and
+ * only the one photograph in each that crosses into the next is made
+ * again; the cells inside are named by their photographs.
+ */
 function chunk(items: RollItem[], columns: number): RollRow[] {
   const out: RollRow[] = [];
   for (let i = 0; i < items.length; i += columns) {
-    const slice = items.slice(i, i + columns);
-    out.push({ key: `row-${slice[0].key}`, items: slice });
+    out.push({ key: `row-${i / columns}`, items: items.slice(i, i + columns) });
   }
   return out;
+}
+
+/**
+ * The rows on the screen, one either side to spare, from where the roll
+ * is scrolled to: what stays drawn when the tab lets the rest of its
+ * photographs go, so the page is as it was whenever it is seen again.
+ * `header` is the height above the first row (the doors, the mount, the
+ * ways), `row` a row's height with the space under it.
+ */
+export function rowsInSight(p: { offset: number; header: number; viewport: number; row: number; margin?: number }): {
+  first: number;
+  last: number;
+} {
+  const margin = p.margin ?? 1;
+  if (!(p.row > 0) || !(p.viewport > 0)) return { first: 0, last: Number.POSITIVE_INFINITY };
+  const top = Math.max(0, p.offset) - p.header;
+  const bottom = Math.max(0, p.offset) + p.viewport - p.header;
+  return { first: Math.max(0, Math.floor(top / p.row) - margin), last: Math.max(-1, Math.ceil(bottom / p.row) - 1 + margin) };
 }
 
 /** The roll as rows of four, the camera first when asked for. */
@@ -200,12 +225,22 @@ export function mergeNewest(prev: readonly Print[], page: { prints: readonly Pri
   const cut = top[top.length - 1]?.takenAt;
   if (cut == null) return [...prev];
   const ids = new Set(top.map((p) => p.id));
-  const older = prev.filter((p) => !ids.has(p.id) && p.takenAt < cut);
+  // The cut's own millisecond included: a photograph sharing it that the page left out is kept.
+  const older = prev.filter((p) => !ids.has(p.id) && p.takenAt <= cut);
   return [...top, ...older];
 }
 
 /** The roll's end: more to read, the library's end reached, or the roll's cap. */
 export type RollEnd = "more" | "done" | "capped";
+
+/**
+ * What the tab has let go of its photographs: nothing; those out of
+ * sight (ten seconds after it is left, at once in the background), the
+ * rows on the screen and the mount staying drawn so the page is the same
+ * whenever it is seen again; or all of them (before it is first in
+ * front, and on a memory warning while it is not).
+ */
+export type Release = "none" | "unseen" | "all";
 
 /** Read again on focus only when the last read is a minute old, or the library was heard to change. */
 export function shouldRefresh(lastReadAt: number | null, now: number, heard: boolean): boolean {
@@ -225,6 +260,36 @@ export function shouldRefresh(lastReadAt: number | null, now: number, heard: boo
 export function keepSelection(sel: { id: string; at: number } | null, prints: readonly Print[], now: number): string | null {
   if (sel && now - sel.at < KEEP_SELECTION_MS && prints.some((p) => p.id === sel.id)) return sel.id;
   return prints[0]?.id ?? null;
+}
+
+/**
+ * A read from the top brought a photograph newer than the newest shown
+ * before it — one just taken, or just shared with VINTAGE: it is the one
+ * the member came for, so it is selected, as it would be on a first visit.
+ */
+export function newerArrived(
+  before: Pick<Print, "id" | "takenAt"> | null | undefined,
+  newest: Pick<Print, "id" | "takenAt"> | null | undefined,
+): boolean {
+  if (!before || !newest) return false;
+  return newest.id !== before.id && newest.takenAt > before.takenAt;
+}
+
+/**
+ * Where the selection goes once the photograph it stood on has been
+ * posted from this phone (`postedAt`, when): the newest that has not
+ * been, else the newest, so the mount never sits offering the same
+ * photograph again.
+ */
+export function afterPosting(
+  sel: { id: string; at: number } | null,
+  prints: readonly Print[],
+  postedAt: (id: string) => number | null,
+): string | null | undefined {
+  if (!sel) return undefined;
+  const at = postedAt(sel.id);
+  if (at == null || at < sel.at) return undefined;
+  return (prints.find((p) => postedAt(p.id) == null) ?? prints[0])?.id ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +352,32 @@ export function cellLabel(print: Pick<Print, "takenAt">): string {
 // ---------------------------------------------------------------------------
 // The Memory Room's door
 // ---------------------------------------------------------------------------
+
+/** The doors' serif line: 13.5 on 17, and 13 on 16 narrower than 360 points. */
+export const DOOR_LINE = { size: 13.5, height: 17, narrowSize: 13, narrowHeight: 16 } as const;
+/** Lines of the serif each door keeps room for, whatever face it shows. */
+export const DOOR_LINES = 3;
+/** The tallest picture a door carries (the room's stack, the day's fan). */
+export const DOOR_PICTURE = 42;
+/** The day door's sub-line under its count: the typewriter, 9.5 on 12, three points down. */
+export const DOOR_SUB = { size: 9.5, height: 12, gap: 3 } as const;
+/** The serif stops growing with the text size here, as the page's other lines do. */
+const DOOR_TYPE_CAP = 2.4;
+
+/**
+ * How tall a door's words may grow before the door does: three lines of
+ * the serif at the member's text size. Every face fits in it from the
+ * first frame — the leaf's two lines, a count of a thousand on two lines
+ * with its years under it, the member's own post's sentence on three —
+ * so a face that arrives after the page is up (the count once the roll
+ * is read, the post once the server answers) never moves the page under
+ * the member's thumb.
+ */
+export function doorWordsHeight(narrow: boolean, fontScale = 1): number {
+  const scale = Math.min(Math.max(fontScale, 1), DOOR_TYPE_CAP);
+  const line = narrow ? DOOR_LINE.narrowHeight : DOOR_LINE.height;
+  return Math.ceil(DOOR_LINES * line * scale);
+}
 
 /**
  * What the Memory Room's door carries: where the member left off, in

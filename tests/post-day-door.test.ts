@@ -135,6 +135,16 @@ describe("reading the door", () => {
     expect(asked).toBeLessThan(1 + 30);
   });
 
+  it("is stopped by the tab: left, or sent to the background, the reading under way asks nothing more", async () => {
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    const hook = readFileSync(path.join(import.meta.dirname, "..", "src/post/useDayDoor.ts"), "utf8");
+    // React Query hands the reading its signal; cancelling the query aborts it, and the next time in front reads afresh.
+    expect(hook).toMatch(/queryFn: async \(\{ signal \}\) =>[\s\S]*?readDayDoor\(source, new Date\(p\.today\), signal\)/);
+    expect(hook).toMatch(/if \(!p\.focused\) void client\.cancelQueries\(\{ queryKey: \["post-on-this-day"\] \}\);/);
+    expect(hook).toMatch(/if \(state === "background"\) void client\.cancelQueries\(\{ queryKey: \["post-on-this-day"\] \}\);/);
+  });
+
   it("fails as a whole when Photos fails, and stops asking", async () => {
     const { source, log } = counting({ oldest: new Date(1950, 0, 1).getTime(), perYear: () => 1, failAt: 4 });
     await expect(readDayDoor(source, NOW)).rejects.toThrow();

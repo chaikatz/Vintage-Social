@@ -84,8 +84,8 @@ describe("the ways in", () => {
     const cell = tab.slice(tab.indexOf("const onCell = useCallback"), tab.indexOf("const onCellPost"));
     expect(cell).toMatch(/if \(Date\.now\(\) - sel\.at >= SECOND_TAP_MS\) post\(print\);/);
     expect(cell).toMatch(/select\(print\.id\);/);
-    // Scrolled away from the mount, a photograph tapped is brought up to it.
-    expect(cell).toMatch(/if \(offset\.current > heroBottom\.current\) toTop\(\);/);
+    // With any of the photograph's frame scrolled out of view, a photograph tapped is brought up to the mount.
+    expect(cell).toMatch(/if \(offset\.current > heroTop\.current \+ heroFrame\(print, W, H\)\.top\) toTop\(\);/);
     expect(tab).toMatch(/scrollToOffset\(\{ offset: 0, animated: !reduceMotionRef\.current \}\)/);
     expect(parts.RollHero).toMatch(/testID="post-post"\s+onPress=\{onPost\}/);
     expect(parts.RollHero).toMatch(/testID="post-hero-photo"\s+onPress=\{onPost\}/);
@@ -195,6 +195,43 @@ describe("one tap, one editor", () => {
     // POST's spinner stands in its own box; a cell opening wears the picker's scrim.
     expect(parts.RollHero).toMatch(/\{busy \? \(\s*<ActivityIndicator size="small" color=\{colors\.camera\} \/>/);
     expect(parts.RollCell).toMatch(/const SCRIM = "rgba\(28, 25, 21, 0\.45\)";/);
+    // The mount's bar spins only for its own work: SHOW MY PHOTOGRAPHS waiting on iOS. LIBRARY, in the
+    // ways row, spins there alone; only where there is no library is the panel's bar the picker's own.
+    const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));
+    const available = tab.slice(tab.indexOf("const dim"));
+    expect(alone).toMatch(/kind="unavailable"[\s\S]*?busy=\{ways === "photo"\}/);
+    expect(available).toMatch(/kind=\{panel \?\? "loading"\}[\s\S]*?busy=\{roll\.asking\}/);
+    expect(available).not.toMatch(/ways === "photo"/);
+  });
+
+  it("keeps the doors one shape whatever they carry, and whether or not the tab is resting", () => {
+    // The fan goes with its count; its prints stand even before their photographs are drawn.
+    expect(parts.PostDoors).toMatch(/if \(face\.kind === "fan"\) \{/);
+    expect(parts.PostDoors).toMatch(/\{print && pictures \? <Cover print=\{print\} reduceMotion=\{reduceMotion\} \/> : null\}/);
+    // The room's stack stands from the first frame, while access is still being read, as frames.
+    expect(tab).toMatch(/roomDoorFace\(place\.line, place\.cover, shelf\[0\] \?\? null, allowed \|\| roll\.access === null\)/);
+    expect(parts.PostDoors).toMatch(/\{drawn \? <Cover print=\{front\} reduceMotion=\{reduceMotion\} \/> : null\}/);
+    // Where the member left off is read from the first frame, not only once the tab is in front.
+    expect(tab).toMatch(/const \[place, setPlace\] = useState<Place>\(readPlaceFile\);/);
+    // The post's thumbnail fades in only where motion is wanted.
+    expect(parts.PostDoors).toMatch(/const \[transition\] = useState\(\(\) => \(reduceMotion \? 0 : POST_FADE_MS\)\);/);
+    expect(parts.PostDoors).not.toMatch(/transition=\{200\}/);
+  });
+
+  it("counts time in the background as time away for the selection, and moves on from a photograph posted", () => {
+    const roll = code("src/post/useRoll.ts");
+    expect(roll).toMatch(/if \(state === "background"\) \{\s*if \(focusedRef\.current && leftAt\.current == null\) leftAt\.current = Date\.now\(\);/);
+    expect(roll).toMatch(/state === "active" && focusedRef\.current\) \{\s*setRelease\("none"\);\s*if \(leftAt\.current != null\) \{\s*settle\(leftAt\.current\);\s*leftAt\.current = null;/);
+    // In front again after a blur, the same rule.
+    expect(roll).toMatch(/setHeroReleased\(false\);\s*settle\(leftAt\.current\);\s*leftAt\.current = null;/);
+    expect(roll).toMatch(/moved = afterPosting\(sel, shown\.current, developedAt\);/);
+    // A photograph newer than the newest shown is selected as a read from the top brings it.
+    expect(roll).toMatch(/if \(fromTop && newerArrived\(before, visible\[0\]\)\) \{\s*choose\(visible\[0\]\.id\);/);
+    expect(roll.match(/apply\([^;]*, true\);/g)).toHaveLength(3);
+    expect(roll.match(/apply\([^;]*, false\);/g)).toHaveLength(1);
+    // After SHARE MORE, the whole roll is read again from the top, as far as it was read.
+    expect(roll).toMatch(/void front\(true, true\);/);
+    expect(roll).toMatch(/if \(deep\) await readAll\(\);/);
   });
 
   it("keeps the memory on today's date, which turns over with the clock", () => {

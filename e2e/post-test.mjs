@@ -6,7 +6,9 @@
 // selected cell tapped again → the end of the roll → a cell tapped from far
 // down brings the mount back → the two pickers → On this day and the room
 // → SET ASIDE · 1 under the doors, into the shelf → the Post tab tapped
-// again → a 320-point phone.
+// again → a 320-point phone → the doors and the roll as the tab rests: sent
+// to the background, left for another tab, and the selection after a
+// minute and after three hours away.
 //
 //   npm run build:web && node e2e/serve.mjs & node e2e/post-test.mjs     (SHOT_DIR=… to keep screenshots)
 //
@@ -29,7 +31,7 @@ const H = Number(process.env.E2E_H ?? 852);
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
 const errors = [];
 /** A phone of this size, as the browser draws it. */
-const phone = async (width, height) => {
+const phone = async (width, height, clock = false) => {
   const context = await browser.newContext({
     viewport: { width, height },
     deviceScaleFactor: out ? 2 : 1,
@@ -37,6 +39,8 @@ const phone = async (width, height) => {
     hasTouch: true,
   });
   const p = await context.newPage();
+  // A clock the walk can move on, for the time away from the tab.
+  if (clock) await p.clock.install();
   p.on("pageerror", (e) => errors.push(e.message));
   p.on("console", (m) => {
     if (m.type() === "error" && !/ERR_|Failed to load resource|no supported source/.test(m.text())) errors.push("console: " + m.text());
@@ -102,6 +106,59 @@ const selectedCell = (p = page) =>
   });
 const cell = (i, p = page) => seen(p.locator('[data-testid="post-cell"]')).nth(i);
 
+/** The doors as they stand: their size, the size of their words, and how many photographs they carry. */
+const doors = (p = page) =>
+  p.evaluate(() => {
+    const on = (id) =>
+      [...document.querySelectorAll(`[data-testid="${id}"]`)].find((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0;
+      });
+    const one = (id) => {
+      const el = on(id);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const words = [...el.querySelectorAll("div")].filter((d) => d.children.length === 0 && (d.textContent ?? "").trim().length > 0);
+      return {
+        height: Math.round(r.height),
+        imgs: el.querySelectorAll("img").length,
+        words: words.map((d) => {
+          const w = d.getBoundingClientRect();
+          return `${Math.round(w.left)}:${Math.round(w.width)}:${Math.round(w.height)}`;
+        }),
+        text: (el.textContent ?? "").replace(/\s+/g, " ").trim(),
+      };
+    };
+    const hero = on("post-hero") ?? on("post-panel");
+    return { room: one("post-door-room"), day: one("post-door-day"), heroY: hero ? Math.round(hero.getBoundingClientRect().top) : null };
+  });
+/** The roll's cells on the screen with their photograph drawn, and every cell's photograph drawn at all. */
+const drawnNow = (p = page) =>
+  p.evaluate(() => {
+    const cells = [...document.querySelectorAll('[data-testid="post-cell"]')].filter((e) => e.getBoundingClientRect().width > 0);
+    const inView = cells.filter((c) => {
+      const r = c.getBoundingClientRect();
+      return r.bottom > 0 && r.top < window.innerHeight - 60;
+    });
+    const has = (c) => [...c.querySelectorAll("img")].some((i) => i.getAttribute("src"));
+    const hero = [...document.querySelectorAll('[data-testid="post-hero"]')].find((e) => e.getBoundingClientRect().width > 0);
+    return {
+      inView: inView.length,
+      inViewDrawn: inView.filter(has).length,
+      all: cells.length,
+      allDrawn: cells.filter(has).length,
+      hero: hero ? hero.querySelectorAll("img").length : -1,
+    };
+  });
+/** The page sent to the background, or brought back, as the phone's home gesture does. */
+const visibility = (p, hidden) =>
+  p.evaluate((h) => {
+    Object.defineProperty(document, "hidden", { value: h, configurable: true });
+    Object.defineProperty(document, "visibilityState", { value: h ? "hidden" : "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, hidden);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
 /** Signed in as a demo member. */
 const signIn = async (p) => {
   await p.goto(B + "/", { waitUntil: "networkidle" });
@@ -138,9 +195,51 @@ const postTab = async (p = page, ms = 1600) => {
 // --- 1. the page ---------------------------------------------------------------------------------
 await signIn(page);
 await page.goto(B + "/create", { waitUntil: "networkidle" });
-await wait(2200);
+// As the page comes up its faces arrive — the roll, then On this day's count — and nothing moves.
+const seenDoors = [];
+for (let i = 0; i < 40; i++) {
+  seenDoors.push(await doors());
+  await wait(60);
+}
+await wait(400);
 await appears("post-hero", 8000);
 await wait(600);
+const settled = await doors();
+const heights = new Set(seenDoors.filter((d) => d.day && d.room).flatMap((d) => [d.day.height, d.room.height]));
+const heroYs = new Set(seenDoors.map((d) => d.heroY).filter((y) => y != null));
+check(
+  "The doors keep one height while their faces arrive, and the mount under them never moves",
+  heights.size === 1 && heights.has(settled.day.height) && heroYs.size === 1 && heroYs.has(settled.heroY),
+  JSON.stringify({ heights: [...heights], heroYs: [...heroYs], faces: [...new Set(seenDoors.map((d) => d.day?.text))] }),
+);
+// The longest faces the door may be given — a count in the thousands, the member's own post's
+// sentence — set into it in place of the demo's: the door, and everything under it, stays put.
+const longFaces = await page.evaluate(() => {
+  const door = [...document.querySelectorAll('[data-testid="post-door-day"]')].find((e) => e.getBoundingClientRect().width > 0);
+  const hero = [...document.querySelectorAll('[data-testid="post-hero"]')].find((e) => e.getBoundingClientRect().width > 0);
+  const line = door && [...door.querySelectorAll("div")].find((d) => d.children.length === 0 && /photograph/.test(d.textContent ?? ""));
+  if (!door || !hero || !line) return null;
+  // The fan's years, under its count; the member's post has none.
+  const sub = [...door.querySelectorAll("div")].find((d) => d.children.length === 0 && /\d{4}/.test(d.textContent ?? ""));
+  const was = line.textContent;
+  const out = [];
+  for (const [words, years] of [
+    ["1,204 photographs", true],
+    ["12 years ago today, you were in Lisbon.", false],
+  ]) {
+    line.textContent = words;
+    if (sub) sub.style.display = years ? "" : "none";
+    out.push({ words, lines: Math.round(line.getBoundingClientRect().height / 17), door: Math.round(door.getBoundingClientRect().height), hero: Math.round(hero.getBoundingClientRect().top) });
+  }
+  line.textContent = was;
+  if (sub) sub.style.display = "";
+  return out;
+});
+check(
+  "…and the longest faces it may be given leave the door, and the page under it, where they were",
+  longFaces != null && longFaces.every((f) => f.door === settled.day.height && f.hero === settled.heroY),
+  JSON.stringify({ longFaces, door: settled.day.height, hero: settled.heroY }),
+);
 const words = await text();
 check(
   "The Post tab names its doors, its roll and its ways in",
@@ -180,6 +279,33 @@ const thirdDate = await textOf("post-hero-date");
 check("A photograph tapped is shown large, by its own date", thirdDate !== firstDate && /^[A-Z]+ \d{1,2}, \d{4}$/.test(thirdDate), `${firstDate} → ${thirdDate}`);
 check("…and wears the box", (await selectedCell()) === 2);
 await shot("selected");
+
+// --- 3b. sent to the background, and back ----------------------------------------------------------------
+const frontDoors = await doors();
+const frontDrawn = await drawnNow();
+await visibility(page, true);
+await wait(400);
+const awayDoors = await doors();
+const awayDrawn = await drawnNow();
+check(
+  "In the background the doors are as they were: the same prints, the same words in the same place",
+  same(frontDoors, awayDoors) && frontDoors.day.imgs > 0,
+  JSON.stringify({ front: frontDoors.day, away: awayDoors.day }),
+);
+check(
+  "…the photographs on the screen and the mount stay drawn",
+  awayDrawn.inView > 0 && awayDrawn.inViewDrawn === awayDrawn.inView && awayDrawn.hero === frontDrawn.hero && frontDrawn.hero >= 1,
+  JSON.stringify({ frontDrawn, awayDrawn }),
+);
+check("…and those out of sight are let go", awayDrawn.allDrawn < frontDrawn.allDrawn, JSON.stringify({ frontDrawn, awayDrawn }));
+await visibility(page, false);
+await wait(1200);
+const backDrawn = await drawnNow();
+check(
+  "Back in front, every photograph is drawn again, and the selection is where it was",
+  backDrawn.allDrawn === frontDrawn.allDrawn && (await selectedCell()) === 2 && same(await doors(), frontDoors),
+  JSON.stringify(backDrawn),
+);
 
 // --- 4. POST into the editor, and back -----------------------------------------------------------------------
 await byId("post-post").first().click();
@@ -318,7 +444,61 @@ const smallWays = await small.evaluate(() =>
 check("…with RECENT, SHORT VIDEO and LIBRARY on one line in view", smallWays);
 await shot("320", small);
 
-// --- 13. ---------------------------------------------------------------------------------------------------------------
+// --- 13. the tab at rest, on a clock the walk moves on ----------------------------------------------------------------
+const rest = await phone(W, H, true);
+await signIn(rest);
+await postTab(rest, 2600);
+await appears("post-hero", 8000, rest);
+// Into the room and out, so its door carries the print left off on.
+await byId("post-door-room", rest).first().click();
+await appears("darkroom-page-firstVisit", 8000, rest);
+await byId("darkroom-word-enter", rest).first().click();
+await appears("darkroom-caption-date", 10000, rest);
+await rest.waitForTimeout(900);
+await appBack(rest, 1500);
+await postTab(rest, 1800);
+await rest.waitForTimeout(800);
+await cell(2, rest).click();
+await rest.waitForTimeout(700);
+const restDoors = await doors(rest);
+const restDrawn = await drawnNow(rest);
+// Another tab, for longer than the tab waits before letting go of what is out of sight.
+await seen(rest.locator('[role="tab"]')).nth(3).click();
+await rest.waitForTimeout(600);
+await rest.clock.fastForward("00:11");
+await rest.waitForTimeout(400);
+const leftDoors = await rest.evaluate(() => {
+  const el = document.querySelector('[data-testid="post-door-day"]');
+  const room = document.querySelector('[data-testid="post-door-room"]');
+  return { day: el ? el.querySelectorAll("img").length : -1, room: room ? room.querySelectorAll("img").length : -1, text: (el?.textContent ?? "").replace(/\s+/g, " ").trim() };
+});
+check(
+  "Left for another tab, the Post tab's doors keep their prints and their words",
+  leftDoors.day === restDoors.day.imgs && leftDoors.room === restDoors.room.imgs && restDoors.room.imgs === 2 && leftDoors.text === restDoors.day.text,
+  JSON.stringify({ leftDoors, was: { day: restDoors.day.imgs, room: restDoors.room.imgs } }),
+);
+await postTab(rest, 1200);
+const restBack = await drawnNow(rest);
+check(
+  "…and back on it, the page is as it was, the same photograph selected",
+  same(await doors(rest), restDoors) && restBack.allDrawn === restDrawn.allDrawn && (await selectedCell(rest)) === 2,
+  JSON.stringify(restBack),
+);
+// A minute in the background keeps the selection; three hours give way to the newest.
+await visibility(rest, true);
+await rest.waitForTimeout(300);
+await rest.clock.fastForward("01:00");
+await visibility(rest, false);
+await rest.waitForTimeout(1800);
+check("A minute in the background keeps the photograph selected", (await selectedCell(rest)) === 2, String(await selectedCell(rest)));
+await visibility(rest, true);
+await rest.waitForTimeout(300);
+await rest.clock.fastForward("03:00:00");
+await visibility(rest, false);
+await rest.waitForTimeout(2200);
+check("Three hours in the background give way to the newest", (await selectedCell(rest)) === 0, String(await selectedCell(rest)));
+
+// --- 14. ---------------------------------------------------------------------------------------------------------------
 check("No page errors", errors.length === 0, errors.slice(0, 5).join(" | "));
 
 await browser.close();
