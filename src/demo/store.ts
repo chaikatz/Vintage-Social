@@ -340,13 +340,20 @@ export function demoFetchMyLikes(userId: string, postIds: string[]): Set<string>
   );
 }
 
-export function demoFetchLikers(postId: string): ProfileRow[] {
+/**
+ * A photograph's likes as the database answers them (0042): every one, to
+ * its author; to anyone else, their own like at most. Newest first, with
+ * when each was made, for the likers list's pages (src/api/posts.ts).
+ */
+export function demoFetchLikers(postId: string): { at: string; liker: ProfileRow }[] {
+  const me = state.currentUserId;
+  const author = state.posts.find((p) => p.id === postId)?.author_id;
   return state.likes
-    .filter((l) => l.post_id === postId)
+    .filter((l) => l.post_id === postId && me !== null && (l.user_id === me || author === me))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .map((l) => state.profiles.find((p) => p.id === l.user_id))
-    .filter((p): p is ProfileRow => Boolean(p))
-    .map(clone);
+    .map((l) => ({ at: l.created_at, liker: state.profiles.find((p) => p.id === l.user_id) }))
+    .filter((r): r is { at: string; liker: ProfileRow } => Boolean(r.liker))
+    .map((r) => ({ at: r.at, liker: clone(r.liker) }));
 }
 
 export function demoLike(userId: string, postId: string): void {

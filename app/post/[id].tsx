@@ -23,6 +23,7 @@ import { useOpenProfile } from "@/hooks/useOpenProfile";
 import { MentionText, NameLink } from "@/components/MemberText";
 import { mentionedUsernames } from "@/utils/mentions";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
+import { LIKES_HINT, likesLine } from "@/utils/ownLikes";
 import { useSession } from "@/providers/SessionProvider";
 import { showAlert } from "@/utils/alert";
 import { errorMessage } from "@/utils/errorMessage";
@@ -115,7 +116,8 @@ export default function PostDetail() {
   }
 
   const liked = isLiked(post);
-  const likes = likeCountFor(post);
+  // Your own photograph's count, or "No likes yet" in its place; nothing on anyone else's.
+  const likesShown = likesLine(post, userId, likeCountFor(post));
   const like = (next: boolean) => {
     if (next && !liked) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (next !== liked) toggleLike(post, next);
@@ -198,12 +200,23 @@ export default function PostDetail() {
         </Pressable>
       </View>
 
-      {likes > 0 ? (
-        <Pressable onPress={() => onOpenLikes(post)} disabled={!own} hitSlop={6}>
-          <Text style={styles.likes}>
-            {likes} {likes === 1 ? "like" : "likes"}
+      {/* The count is the author's alone, as on the card (src/utils/ownLikes.ts); on anyone else's photograph there is no line. */}
+      {likesShown ? (
+        likesShown.opens ? (
+          <Pressable
+            onPress={() => onOpenLikes(post)}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={likesShown.label}
+            accessibilityHint={LIKES_HINT}
+          >
+            <Text style={styles.likes}>{likesShown.text}</Text>
+          </Pressable>
+        ) : (
+          <Text style={[styles.likes, styles.noLikes]} accessibilityLabel={likesShown.label}>
+            {likesShown.text}
           </Text>
-        </Pressable>
+        )
       ) : null}
 
       {post.caption ? (
@@ -309,7 +322,9 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   spacer: { flex: 1 },
-  likes: { fontSize: 13, fontWeight: "600", color: colors.ink, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  // One height for the count and for "No likes yet", as on the card.
+  likes: { fontSize: 13, lineHeight: 18, fontWeight: "600", color: colors.ink, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  noLikes: { fontWeight: "400", color: colors.inkFaint },
   caption: { ...type.body, fontFamily: type.serif, fontSize: 15, lineHeight: 22, marginHorizontal: spacing.lg, marginTop: spacing.sm },
   captionAuthor: { fontWeight: "600" },
   comment: { ...type.body, fontSize: 14, color: colors.ink, marginHorizontal: spacing.lg, marginTop: spacing.xs + 2 },

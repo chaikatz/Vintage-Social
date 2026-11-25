@@ -275,7 +275,8 @@ describe("0039, as a file", () => {
   it("is checked by the owner's verify script, rows 49 to 60", () => {
     const verify = code(read("supabase/production/12_policies_read_once_verify.sql"));
     for (let n = 49; n <= 60; n++) expect(verify).toMatch(new RegExp(`select ${n}, '0039:`));
-    expect(verify).toMatch(/select 4, 'policies on public', count\(\*\)::text, '85'/);
-    expect(verify).toMatch(/select 6, 'restrictive policies \(blocking, 0028, 0033, 0038, 0039, 0040\)', count\(\*\)::text, '27'/);
+    // With 0042's one restrictive read policy on likes (tests/likes-own-0042.test.ts).
+    expect(verify).toMatch(/select 4, 'policies on public', count\(\*\)::text, '86'/);
+    expect(verify).toMatch(/select 6, 'restrictive policies \(blocking, 0028, 0033, 0038, 0039, 0040, 0042\)', count\(\*\)::text, '28'/);
   });
 });

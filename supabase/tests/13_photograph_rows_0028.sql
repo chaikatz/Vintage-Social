@@ -180,6 +180,12 @@ insert into p28_writes values
    'delete from public.comments where id = ''d2000000-0000-4000-8000-000000000001''');
 create temp table p28_write_answers (run text, label text, answer text);
 
+-- 0042 narrows likes further, to the liker and the photograph's author;
+-- this file is about 0028, so it asks as the database stood before 0042
+-- too (and puts it back with everything else when it rolls back).
+-- supabase/tests/21_likes_0042.sql asks both together.
+drop policy "likes: the liker's and the author's" on public.likes;
+
 -- Before: as the database stood without 0028.
 drop policy "comments: only with their photograph" on public.comments;
 drop policy "likes: only with their photograph" on public.likes;

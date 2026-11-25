@@ -86,9 +86,18 @@ or anywhere in the repository, and must never be.
   leaves them out; they are for the lock screen).
 - Staging, if you want it to match: the same two files, and version 3
   (staging still runs version 1).
-- Step 4: `0041_member_number_shown_by_choice.sql` on production, then
-  verify script 12 (69 rows). Build 53 works before it too: it shows
-  every member's number hidden and says it couldn't save the switch.
+- Step 4: `0041_member_number_shown_by_choice.sql` and
+  `0042_likes_read_by_the_liker_and_the_author.sql` on production, in that
+  order (or both at once, as one all-or-nothing script with the comment
+  lines left out, as 0039 and 0040 were), then verify script 12 (70
+  rows). Build 53 works before 0041 too: it shows every member's number
+  hidden and says it couldn't save the switch. 0042 changes nothing a
+  screen shows: from round 26 the app shows a photograph's count, and who
+  liked it, to its author only, and 0042 makes the database answer the
+  same (a like is read only by the member who made it and the
+  photograph's author). Builds before round 26 show the count under
+  everyone's photographs, which 0042 leaves as it is (it is a column of
+  the photograph).
 
 ---
 
@@ -385,13 +394,16 @@ notice, and how to undo it. If you approve, in the merged branch:
    every later file, in number order. 0041 adds one column, false for
    every member (a member's number is then hidden until they choose to
    show it); its way back is the two lines at the end of its header.
+   0042 adds one restrictive read policy on likes (a like is read by the
+   member who made it and the photograph's author, nobody else); its way
+   back is the one line at the end of its header. Neither needs the other.
    If 0039 is ever run again, run 0041 again after it: 0039 takes back
    the switch's column.
 4. Then run each verify script in `supabase/production` numbered **12 or
    higher** → **Run**, once, after the last file (some rows count what
    later files add, so part-way through they read false). The `13_` and
    `14_` files there are not verify scripts: see item 6.
-   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0041 in 69 rows.
+   Verify script 12 today: `12_policies_read_once_verify.sql`, which checks 0023 to 0042 in 70 rows.
    Every row's `ok` must read true. Each file's own rows, so a false one
    points at its file:
 
@@ -416,6 +428,7 @@ notice, and how to undo it. If you approve, in the merged branch:
    | 0039 | Members write only what the app writes: each table's columns as the app sends them and no others (an author can no longer undo an admin's removal, or date, count or repoint a photograph; nobody rewrites their counts or name in the club, moves a conversation or a tag, or dates what they file), a photograph's files and every portrait from the member's own folder, never a URL or another member's file, nothing for signed-out visitors, and the old invitation functions refuse a suspended account and count links and codes as one allowance | 49–60 |
    | 0040 | A block holds for comments and likes and their notices, and files a report so the admins are told; a new message reaches the other member's phone; the avatars bucket takes JPEG and PNG pictures up to 2 MB; the database's calls to the `push` function carry its secret (needs item 5) | 61–68 |
    | 0041 | A member's number is shown only if they choose: a switch in Settings, "Show my member number", off for everyone until they turn it on; the profile always says MEMBER | 69 |
+   | 0042 | A like is read only by the member who made it and the photograph's author: who liked a photograph is the author's to know (one restrictive read policy on likes; the counts, liking and unliking are as they were) | 4, 6, 70 |
 
 5. Redeploy the `push` function, which changed in the sweep. It is now
    **two files**, `index.ts` and `logic.ts` (`index.ts` imports
@@ -872,7 +885,10 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 8. Post a photograph from Choose a photograph, and a short film. Both play
    and show when opened.
 9. From the second account: like and comment on it. Activity shows both;
-   a notification arrives if allowed.
+   a notification arrives if allowed. Under it, your own account reads
+   "1 like" (before, "No likes yet"), and a tap lists the second account;
+   the second account sees its heart filled and no count at all (a build
+   from round 26 on).
 10. Send it to the second account (paper plane → a member). Reply from
     the thread.
 11. Paper plane → Share outside VINTAGE → Share the print → **Save Image**.

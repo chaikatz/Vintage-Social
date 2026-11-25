@@ -6,7 +6,7 @@ import { ROWS_PER_READ } from "@/utils/eraEdits";
 import { withTimeout } from "@/utils/retry";
 import { pathOwner } from "@/utils/storagePath";
 import { readInChunks } from "./batch";
-import { pageAfter, type Cursor } from "./keyset";
+import { demoKeysetPage, pageAfter, type Cursor } from "./keyset";
 import { functionMissing } from "./rpcMissing";
 import { withAuthors } from "@/components/hiddenAuthors";
 
@@ -453,20 +453,69 @@ export async function removeDeletedPostFiles(
   ]);
 }
 
-/** Who liked a post, newest first. Shown only for your own posts (app/likes.tsx). */
-export async function fetchLikers(postId: string): Promise<Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">[]> {
-  if (!postId) return [];
-  if (isDemoMode()) return demo.demoFetchLikers(postId);
-  const { data, error } = await supabase
+/** What a row of the likers list draws, and no more of their profile. */
+export type Liker = Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url">;
+
+/** Members a page of a photograph's likers brings. */
+export const LIKERS_PAGE_SIZE = 50;
+
+export interface LikersPage {
+  likers: Liker[];
+  /** Where the next page starts; none when this page ended the list. */
+  next?: Cursor;
+}
+
+/** Pages of nobody readable read through in one call of fetchLikersPage. */
+const HIDDEN_LIKER_PAGES_READ_ON = 10;
+
+/**
+ * Who liked one of your photographs, newest first, LIKERS_PAGE_SIZE at a
+ * time, each page after the last like of the one before (./keyset).
+ *
+ * Asked only for your own (app/likes.tsx), and only answered for your
+ * own: the database gives a member the likes on their own photographs
+ * and their own likes, nobody else's (0042). It was one read of at most
+ * 500, and a photograph liked by more showed 500 and stopped.
+ *
+ * A like whose member the reader may not see (a block either way) is
+ * left out, and the page still counts it, so it never ends the list
+ * early; a page whose every member is left out is read past at once, as
+ * the follow lists do (fetchFollowPage).
+ */
+export async function fetchLikersPage(postId: string, before: Cursor | null): Promise<LikersPage> {
+  if (!postId) return { likers: [] };
+  if (isDemoMode()) {
+    const all = demo.demoFetchLikers(postId);
+    const page = demoKeysetPage(all, (r) => ({ at: r.at, id: r.liker.id }), before, LIKERS_PAGE_SIZE);
+    const last = page[page.length - 1];
+    return {
+      likers: page.map(({ liker: { id, username, full_name, avatar_url } }) => ({ id, username, full_name, avatar_url })),
+      next: page.length < LIKERS_PAGE_SIZE ? undefined : { at: last.at, id: last.liker.id },
+    };
+  }
+  let page = await readLikersPage(postId, before);
+  for (let i = 1; i < HIDDEN_LIKER_PAGES_READ_ON && page.likers.length === 0 && page.next; i++) {
+    page = await readLikersPage(postId, page.next);
+  }
+  return page;
+}
+
+async function readLikersPage(postId: string, before: Cursor | null): Promise<LikersPage> {
+  const query = supabase
     .from("likes")
-    .select("created_at, liker:profiles!likes_user_id_fkey(id, username, full_name, avatar_url)")
-    .eq("post_id", postId)
+    .select("created_at, user_id, liker:profiles!likes_user_id_fkey(id, username, full_name, avatar_url)")
+    .eq("post_id", postId);
+  const { data, error } = await pageAfter(query, "created_at", "user_id", before)
     .order("created_at", { ascending: false })
-    .limit(500);
+    .order("user_id", { ascending: false })
+    .limit(LIKERS_PAGE_SIZE);
   if (error) throw error;
-  return (data ?? [])
-    .map((row) => (row as unknown as { liker: Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url"> | null }).liker)
-    .filter((p): p is Pick<ProfileRow, "id" | "username" | "full_name" | "avatar_url"> => Boolean(p));
+  const rows = (data ?? []) as unknown as { created_at: string; user_id: string; liker: Liker | null }[];
+  const last = rows[rows.length - 1];
+  return {
+    likers: rows.map((r) => r.liker).filter((p): p is Liker => p != null),
+    next: rows.length < LIKERS_PAGE_SIZE ? undefined : { at: last.created_at, id: last.user_id },
+  };
 }
 
 /**

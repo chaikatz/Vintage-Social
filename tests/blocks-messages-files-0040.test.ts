@@ -128,7 +128,7 @@ describe("0040: no comment or like across a block", () => {
     expect(test).toMatch(/\\ir \.\.\/migrations\/0040_blocks_messages_and_files\.sql/);
     expect(test.trim().endsWith("rollback;")).toBe(true);
     expect(read("supabase/tests/08_policy_rewrite.sql")).toMatch(
-      /\('comments', 'comments: none across a block'\),\s+\('likes', 'likes: none across a block'\),\s+\('app_settings', 'app_settings: the push hook is the database''s'\)\)\)\),/,
+      /\('comments', 'comments: none across a block'\),\s+\('likes', 'likes: none across a block'\),\s+\('app_settings', 'app_settings: the push hook is the database''s'\)(\)\)\)|),/,
     );
   });
 });
