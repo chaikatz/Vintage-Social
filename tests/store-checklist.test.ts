@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { firstVisitPage } from "@/components/darkroom/words";
+import { panelWords } from "@/post/panels";
 
 /**
  * The launch checklist is what the owner follows and what goes into App
@@ -593,6 +595,32 @@ describe("a private account's requests, on the phone", () => {
     expect(flat(doc())).toContain("Have a second account (or a second phone) for steps 9–13, 16 and 18.");
     expect(phone).toMatch(/18\. On the second account \(not an admin\), type `vintage:\/\/admin\/members`/);
     expect(phone).toMatch(/20\. On the throwaway account: Settings → Delete account/);
+  });
+});
+
+describe("photo access, as the review notes and the phone checks say it", () => {
+  // The words the reviewer and the owner are told to tap are the words on the screen, so a label
+  // changed in the app (SHOW MY PHOTOGRAPHS became Continue, as Apple asks of a pre-alert button)
+  // cannot leave the checklist pointing at a word that is not there.
+  const ask = panelWords("ask", 18)!.bar!.label;
+  const roomFirst = firstVisitPage("undetermined").words[0].label;
+  const roomGranted = firstVisitPage("granted").words[0].label;
+
+  it("the review notes name the Post tab's own button", () => {
+    const notes = flat(reviewNotes());
+    expect(notes).toContain(`it asks for photo access only when you tap “${ask}”`);
+    expect(notes).not.toMatch(/Show my photographs/i);
+  });
+
+  it("step 7 asks on the Post tab, then enters the room with the word its first page shows once access is given", () => {
+    const phone = flat(between(doc(), "## 6. On your iPhone", "## 7."));
+    const step7 = phone.slice(phone.indexOf(" 7. Post tab"), phone.indexOf(" 8. "));
+    expect(step7).toContain(`7. Post tab → ${ask} → allow access`);
+    expect(step7).toContain(`The Memory Room → ${roomGranted} (its first-visit page; access was already given on the Post tab`);
+    // Continue is the room's word only while iOS has not asked; the step says so, and only so.
+    expect(roomFirst).toBe("Continue");
+    expect(step7).not.toMatch(/The Memory Room → Continue/);
+    expect(phone).not.toMatch(/Show my photographs/i);
   });
 });
 

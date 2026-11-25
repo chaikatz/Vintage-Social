@@ -473,31 +473,34 @@ another; there is no counter. The rules are pure and seeded, in
 `src/darkroom/` (`eligibility.ts`, `discovery.ts`, `labels.ts`).
 
 Privacy is the design. Library access is asked for only from a tap on an
-explanation: CONTINUE on the room's first-visit page, or SHOW MY
-PHOTOGRAPHS on the Post tab. The Post tab reads the library only while it
-is in front and access was given: one bounded page of the newest
-photographs at a time (60, then 120, 1,200 at most), and on the On this
-day door one count per earlier year of today's date (thirty at most) and
-three covers, all through the room's two-at-a-time gate. It keeps no
-listener on the library except for a moment after SHARE MORE. It draws
-every photograph at its view's size and keeps it in that view alone,
-never in the shared cache or on disk; ten seconds after the tab is left,
-and at once when the app goes to the background, it lets go of every
-one out of sight, keeping only those on the screen, and of all of them
-on a memory warning. `app/memories.tsx` never asks, and the ordinary picker
-(`src/utils/pickForCompose.ts`) needs no permission and cuts the picked
-file's EXIF down to its date fields the moment it arrives. The room asks
-the library only bounded questions — counts, pages of at most 150, time
-windows — and never reads location, EXIF, moments or albums. It makes no
-network request of its own; previews of iCloud photographs come through
-iOS at screen size, and a photograph kept in iCloud comes down only after
-DOWNLOAD AND POST. Images are cached in memory only. What it keeps on the phone:
-what was looked at and posted (`darkroom-history.json` in the cache
-folder, two months and a year), the shelf (`darkroom-set-aside.json`: id,
-date, size), the place (`darkroom-place.json`, twelve hours) and that the
-first-visit page was passed and Contents opened. Sign-out deletes all of it; Settings' "Forget
-what the Memory Room has shown me" deletes all but the shelf. The privacy
-policy (`src/legal/documents.ts`, `npm run build:legal`) says exactly this.
+explanation: CONTINUE on the room's first-visit page, or CONTINUE under
+"Your photographs, right here." on the Post tab (Apple asks that the one
+button before its own prompt say Continue or Next). The Post tab reads
+the library only while it is in front and access was given: one bounded
+page of the newest photographs at a time (60, then 120, 1,200 at most),
+and on the On this day door one count per earlier year of today's date
+(thirty at most) and three covers, all through the room's two-at-a-time
+gate. It keeps no listener on the library, except after SHARE MORE,
+until the tab is left. It draws every photograph at its view's size and
+keeps it in that view alone, never in the shared cache or on disk; ten
+seconds after the tab is left, and at once when the app goes to the
+background, it lets go of every one out of sight, keeping only those on
+the screen, and of all of them on a memory warning. `app/memories.tsx`
+never asks, and the ordinary picker (`src/utils/pickForCompose.ts`)
+needs no permission and cuts the picked file's EXIF down to its date
+fields the moment it arrives. The room asks the library only bounded
+questions — counts, pages of at most 150, time windows — and never reads
+location, EXIF, moments or albums. It makes no network request of its
+own; previews of iCloud photographs come through iOS at screen size, and
+a photograph kept in iCloud comes down only after DOWNLOAD AND POST.
+Images are cached in memory only. What it keeps on the phone: what was
+looked at and posted (`darkroom-history.json` in the cache folder, two
+months and a year), the shelf (`darkroom-set-aside.json`: id, date,
+size), the place (`darkroom-place.json`, twelve hours) and that the
+first-visit page was passed and Contents opened. Sign-out deletes all of
+it; Settings' "Forget what the Memory Room has shown me" deletes all but
+the shelf. The privacy policy (`src/legal/documents.ts`, `npm run
+build:legal`) says exactly this.
 
 POST, the word right under each photograph, hands it to the ordinary
 editor (`app/compose.tsx`) with its capture date; there is no second
@@ -634,7 +637,7 @@ deleted. One way in opens at a time; every control rests while it does.
 
 Its states, all on the same mount: before the tab has been in front, an
 empty box and wells; never asked, "Your photographs, right here." and
-SHOW MY PHOTOGRAPHS, which is when iOS asks; refused, the way to Settings
+CONTINUE, which is when iOS asks; refused, the way to Settings
 (LIBRARY, SHORT VIDEO and the camera still work); reading, an empty box
 with a spinner after 400 ms; an empty library, or an empty selection
 with SHARE MORE; a library that would not answer, TRY AGAIN, never shown

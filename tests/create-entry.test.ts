@@ -195,7 +195,7 @@ describe("one tap, one editor", () => {
     // POST's spinner stands in its own box; a cell opening wears the picker's scrim.
     expect(parts.RollHero).toMatch(/\{busy \? \(\s*<ActivityIndicator size="small" color=\{colors\.camera\} \/>/);
     expect(parts.RollCell).toMatch(/const SCRIM = "rgba\(28, 25, 21, 0\.45\)";/);
-    // The mount's bar spins only for its own work: SHOW MY PHOTOGRAPHS waiting on iOS. LIBRARY, in the
+    // The mount's bar spins only for its own work: CONTINUE waiting on iOS. LIBRARY, in the
     // ways row, spins there alone; only where there is no library is the panel's bar the picker's own.
     const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));
     const available = tab.slice(tab.indexOf("const dim"));
@@ -285,7 +285,7 @@ describe("the page's words", () => {
       [panels, '"Your camera roll"'],
       [panels, '"Your photographs, right here."'],
       [panels, '"VINTAGE shows them on this iPhone only. Nothing leaves it until you post one."'],
-      [panels, '"Show my photographs"'],
+      [panels, '"Continue"'],
       [panels, '"Asks to see your photo library."'],
       [panels, '"VINTAGE can’t see your photographs."'],
       [panels, '"Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone."'],

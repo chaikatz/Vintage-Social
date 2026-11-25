@@ -33,7 +33,7 @@ export function MountPanel({
   iosMajor: number;
   H: number;
   narrow: boolean;
-  /** The bar's own work is under way (SHOW MY PHOTOGRAPHS waiting on iOS, the picker opening). */
+  /** The bar's own work is under way (CONTINUE waiting on iOS, the picker opening). */
   busy: boolean;
   held: boolean;
   onAct: (act: PanelAct) => void;

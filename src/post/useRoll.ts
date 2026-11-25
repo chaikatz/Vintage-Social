@@ -43,7 +43,7 @@ import {
  * end; 1,200 at most, after which the roll hands on to the room.
  *
  * Asking for access is only ever done from a tap on the tab's own
- * explanation, SHOW MY PHOTOGRAPHS (`ask`). It keeps no listener on the
+ * explanation, its CONTINUE (`ask`). It keeps no listener on the
  * library: only after SHARE MORE, while the tab is in front, does it
  * listen for the selection to change, and it stops when the tab is left.
  *
@@ -75,7 +75,7 @@ export interface Roll {
   selected: Print | null;
   end: RollEnd;
   loadingMore: boolean;
-  /** SHOW MY PHOTOGRAPHS is waiting on iOS. */
+  /** CONTINUE, on the mount's first panel, is waiting on iOS. */
   asking: boolean;
   /** What of the tab's camera-roll images is let go. */
   release: Release;

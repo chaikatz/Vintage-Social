@@ -760,7 +760,7 @@ to check)
 > under a photograph in Home) were made by script when the accounts were
 > made, not written by people. The Terms of Use say so. Search finds members. The Post tab shows your newest
 > photographs, the one you tap large above them with POST under it (it
-> asks for photo access only when you tap “Show my photographs”; limited
+> asks for photo access only when you tap “Continue”; limited
 > access works; nothing from the library leaves the phone unless you post
 > it). Above them, The Memory Room shows photographs from further back,
 > one at a time, and On this day shows what you posted and photographed
@@ -882,10 +882,13 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 **Every day**
 6. Sign in with your own account. Home scrolls and pulls to refresh;
    photographs come in sharp; nothing stutters.
-7. Post tab → Show my photographs → allow access. Tap a photograph, then
+7. Post tab → Continue → allow access (if VINTAGE was allowed before, the
+   roll is already there and iOS does not ask). Tap a photograph, then
    POST → editor → Share to VINTAGE; it appears at the top of Home. Then
-   The Memory Room → Continue; turn a few pages; open CONTENTS; POST
-   one → editor → Share to VINTAGE.
+   The Memory Room → Enter (its first-visit page; access was already
+   given on the Post tab, so it does not ask again; on a phone where the
+   room is opened first, the page says Continue and iOS asks there); turn
+   a few pages; open CONTENTS; POST one → editor → Share to VINTAGE.
 8. Post a photograph from Library, and a short film. Both play
    and show when opened.
 9. From the second account: like and comment on it. Activity shows both;

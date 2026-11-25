@@ -398,7 +398,7 @@ describe("the Post tab", () => {
     expect(asking.sort()).toEqual(["src/post/dayDoor.ts", "src/post/openPrint.ts", "src/post/useDayDoor.ts", "src/post/useRoll.ts"]);
   });
 
-  it("reads the library only once the tab is in front, and asks for it only from SHOW MY PHOTOGRAPHS", () => {
+  it("reads the library only once the tab is in front, and asks for it only from the panel's CONTINUE", () => {
     // What access there is is read in `front`, which goes no further when the tab is not in front.
     expect(roll.match(/readAccess\(\)/g)).toHaveLength(1);
     const front = roll.slice(roll.indexOf("const front = useCallback"), roll.indexOf("focusedRef.current = focused;"));
@@ -513,7 +513,7 @@ describe("the Post tab", () => {
       'accessibilityHint="Opens your photographs, one at a time, from further back."',
       'accessibilityHint="Opens the photographs you set aside."',
       'accessibilityHint="Opens what you posted and photographed on this date in other years."',
-      '"Show my photographs"',
+      'label: "Continue", hint: "Asks to see your photo library.", act: "ask"',
       'label="Library"',
     ]) {
       expect(all).toContain(words);

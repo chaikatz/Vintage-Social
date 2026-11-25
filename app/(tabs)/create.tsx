@@ -78,7 +78,7 @@ export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
  *
  * The roll is read from the library only while the tab is in front, and
  * only with the access the member already gave; the tab asks for it only
- * from a tap on its own explanation, SHOW MY PHOTOGRAPHS. Everything it
+ * from a tap on its own explanation's CONTINUE. Everything it
  * reads stays on this phone, a bounded page at a time. Ten seconds after
  * the tab is left, and at once when the app goes to the background, it
  * lets go of every photograph out of sight, keeping the rows on the

@@ -66,7 +66,7 @@ export function panelWords(kind: PanelKind, iosMajor: number): PanelWords | null
         eyebrow: ROLL,
         headline: "Your photographs, right here.",
         body: "VINTAGE shows them on this iPhone only. Nothing leaves it until you post one.",
-        bar: { label: "Show my photographs", hint: "Asks to see your photo library.", act: "ask" },
+        bar: { label: "Continue", hint: "Asks to see your photo library.", act: "ask" },
         path: null,
         quiet: null,
       };

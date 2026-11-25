@@ -13,7 +13,7 @@ import { isDemoMode } from "@/lib/env";
  *   full           the whole library
  *
  * Asking is only ever done from a tap on an explanation: the room's
- * first-visit page, or the Post tab's SHOW MY PHOTOGRAPHS. Never on the
+ * first-visit page, or the Post tab's CONTINUE. Never on the
  * way past either.
  */
 export type LibraryAccess = "unavailable" | "undetermined" | "denied" | "limited" | "full";
