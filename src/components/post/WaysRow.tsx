@@ -45,7 +45,13 @@ export function WaysRow({
   return (
     <View style={[styles.row, { minHeight: narrow ? 44 : 48 }, !recent && styles.rowAlone]}>
       {recent ? (
-        <Text style={[styles.recent, large && styles.recentLarge]} accessibilityRole="header" maxFontSizeMultiplier={BAR_TYPE_CAP}>
+        <Text
+          style={[styles.recent, large && styles.recentLarge]}
+          accessibilityRole="header"
+          // The roll is photographs only (films are SHORT VIDEO's), so VoiceOver hears what it lists.
+          accessibilityLabel="Recent photographs"
+          maxFontSizeMultiplier={BAR_TYPE_CAP}
+        >
           Recent
         </Text>
       ) : null}
@@ -68,7 +74,7 @@ export function WaysRow({
           icon="image"
           size={15}
           label="Library"
-          hint="Opens your photo library. Nothing is shared until you post."
+          hint="Opens your photo library. Nothing is shared until you choose Share to VINTAGE."
           busy={busy === "photo"}
           held={held}
           onPress={onLibrary}

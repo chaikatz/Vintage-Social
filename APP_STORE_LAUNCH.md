@@ -397,6 +397,12 @@ notice, and how to undo it. If you approve, in the merged branch:
    0042 adds one restrictive read policy on likes (a like is read by the
    member who made it and the photograph's author, nobody else); its way
    back is the one line at the end of its header. Neither needs the other.
+   Run both before build 59 (or any build from round 26) goes to external
+   TestFlight testers or to App Review: the app says "Only you can see who
+   liked your photograph." and the Privacy Policy that who liked a
+   photograph is shown only to its author, and until 0042 runs that is
+   true of the screens but not of the database, which still answers any
+   member who asks it directly.
    If 0039 is ever run again, run 0041 again after it: 0039 takes back
    the switch's column.
 4. Then run each verify script in `supabase/production` numbered **12 or
@@ -762,7 +768,7 @@ to check)
 > under a photograph in Home) were made by script when the accounts were
 > made, not written by people. The Terms of Use say so. Search finds members. The Post tab shows your newest
 > photographs, the one you tap large above them with POST under it (it
-> asks for photo access only when you tap “Show my photographs”; limited
+> asks for photo access only when you tap “Continue”; limited
 > access works; nothing from the library leaves the phone unless you post
 > it). Above them, The Memory Room shows photographs from further back,
 > one at a time, and On this day shows what you posted and photographed
@@ -884,9 +890,14 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 **Every day**
 6. Sign in with your own account. Home scrolls and pulls to refresh;
    photographs come in sharp; nothing stutters.
-7. Post tab → Show my photographs → allow access. Tap a photograph, then
-   POST → editor → Share to VINTAGE; it appears at the top of Home. Then
-   The Memory Room → Continue; turn a few pages; open CONTENTS; POST
+7. Post tab → Continue → allow access (if VINTAGE was allowed before, the
+   roll is already there and iOS does not ask). Tap a photograph, then
+   POST → editor → Share to VINTAGE; it appears at the top of Home. Back
+   on the Post tab, the mount shows the newest photograph not yet posted,
+   not the one just posted. Then The Memory Room → Enter (its first-visit
+   page; access was already given on the Post tab, so it does not ask
+   again; on a phone where the room is opened first, the page says
+   Continue and iOS asks there); turn a few pages; open CONTENTS; POST
    one → editor → Share to VINTAGE.
 8. Post a photograph from Library, and a short film. Both play
    and show when opened.

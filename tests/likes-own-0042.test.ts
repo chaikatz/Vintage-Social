@@ -96,8 +96,9 @@ describe("every surface that shows a photograph's actions", () => {
     for (const file of ["src/components/PostCard.tsx", "app/post/[id].tsx"]) {
       const src = code(file);
       expect(src, file).toMatch(/likes: \{[^}]*fontSize: 13,[^}]*lineHeight: 18,/);
-      // The quiet line changes the weight and colour only.
-      expect(src, file).toMatch(/noLikes: \{ fontWeight: "400", color: colors\.inkFaint \},/);
+      // The quiet line changes the weight and colour only: the secondary ink, which reads at AA on paper
+      // and on black (tests/likes-contrast.test.ts).
+      expect(src, file).toMatch(/noLikes: \{ fontWeight: "400", color: colors\.inkSoft \},/);
     }
   });
 

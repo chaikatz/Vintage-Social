@@ -398,7 +398,7 @@ describe("the Post tab", () => {
     expect(asking.sort()).toEqual(["src/post/dayDoor.ts", "src/post/openPrint.ts", "src/post/useDayDoor.ts", "src/post/useRoll.ts"]);
   });
 
-  it("reads the library only once the tab is in front, and asks for it only from SHOW MY PHOTOGRAPHS", () => {
+  it("reads the library only once the tab is in front, and asks for it only from the panel's CONTINUE", () => {
     // What access there is is read in `front`, which goes no further when the tab is not in front.
     expect(roll.match(/readAccess\(\)/g)).toHaveLength(1);
     const front = roll.slice(roll.indexOf("const front = useCallback"), roll.indexOf("focusedRef.current = focused;"));
@@ -406,7 +406,8 @@ describe("the Post tab", () => {
     // The focus effect goes no further than letting go while the tab is not in front; once in front, after its animation.
     const focus = roll.slice(roll.indexOf("focusedRef.current = focused;"), roll.indexOf("const change = AppState"));
     expect(focus).toMatch(/if \(!focused\) \{[\s\S]*?return;\s*\}/);
-    expect(focus.indexOf("if (!focused)")).toBeLessThan(focus.indexOf("runAfterInteractions"));
+    expect(focus.indexOf("if (!focused)")).toBeLessThan(focus.indexOf("afterTabSettles"));
+    expect(focus).toMatch(/return afterTabSettles\(\(\) => \{\s*void front\(false, chosenElsewhere\);\s*\}\);/);
     // A return from the background reads only while the tab is in front.
     expect(roll).toMatch(/onReturnFromBackground\(\(\) => \{\s*if \(!focusedRef\.current\) \{\s*heard\.current = true;\s*return;\s*\}/);
     // Asking, only from the tap.
@@ -513,7 +514,7 @@ describe("the Post tab", () => {
       'accessibilityHint="Opens your photographs, one at a time, from further back."',
       'accessibilityHint="Opens the photographs you set aside."',
       'accessibilityHint="Opens what you posted and photographed on this date in other years."',
-      '"Show my photographs"',
+      'label: "Continue", hint: "Asks to see your photo library.", act: "ask"',
       'label="Library"',
     ]) {
       expect(all).toContain(words);
@@ -606,10 +607,13 @@ describe("the privacy policy", () => {
     expect(text).toContain("can be included in your phone’s own backup");
     expect(text).not.toMatch(/only the library’?'?s own identifiers|never backed up|excluded from/i);
     expect(text).toContain("VINTAGE downloads the photograph itself only when you open it to post.");
-    // The Post tab reads on the phone, while it is open, and keeps nothing.
+    // The Post tab reads on the phone, while it is open, and writes down only which ones are posted:
+    // a post from the roll goes into the Memory Room's list (src/darkroom/posted.ts), so the policy
+    // cannot say it keeps nothing.
     expect(text).toContain(
-      "The Post tab shows your newest photographs first, and counts the photographs you took on today’s date in earlier years; it reads them on your phone while the tab is open and keeps nothing about them.",
+      "The Post tab shows your newest photographs first, and counts the photographs you took on today’s date in earlier years; it reads them on your phone while the tab is open and writes nothing down about them except which ones you post, in the list below.",
     );
+    expect(text).not.toContain("keeps nothing about them");
     expect(text).toContain("photographs you posted from either, for a year");
     expect(text).not.toMatch(/'/);
   });

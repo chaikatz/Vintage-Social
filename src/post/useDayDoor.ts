@@ -1,11 +1,12 @@
 import { useEffect, useMemo } from "react";
-import { AppState, InteractionManager } from "react-native";
+import { AppState } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TodaysPrint } from "@/components/onThisDayPrint";
 import type { LibraryAccess } from "@/darkroom/access";
 import { inBackground } from "@/darkroom/discovery";
 import { darkroomSource } from "@/darkroom/source";
 import { dayDoorFace, readDayDoor, type DayDoorFace } from "./dayDoor";
+import { tabSettled } from "./settle";
 
 /**
  * The On this day door's face, read once a day.
@@ -56,7 +57,8 @@ export function useDayDoor(p: {
   const library = useQuery({
     queryKey: ["post-on-this-day", dayKey, p.access],
     queryFn: async ({ signal }) => {
-      await new Promise<void>((resolve) => InteractionManager.runAfterInteractions(() => resolve()));
+      // After the tab's own slide (src/post/settle.ts); a reading stopped meanwhile asks nothing.
+      await tabSettled(signal);
       if (!source) throw new Error("No library here.");
       return readDayDoor(source, new Date(p.today), signal);
     },

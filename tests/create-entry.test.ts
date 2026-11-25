@@ -195,7 +195,7 @@ describe("one tap, one editor", () => {
     // POST's spinner stands in its own box; a cell opening wears the picker's scrim.
     expect(parts.RollHero).toMatch(/\{busy \? \(\s*<ActivityIndicator size="small" color=\{colors\.camera\} \/>/);
     expect(parts.RollCell).toMatch(/const SCRIM = "rgba\(28, 25, 21, 0\.45\)";/);
-    // The mount's bar spins only for its own work: SHOW MY PHOTOGRAPHS waiting on iOS. LIBRARY, in the
+    // The mount's bar spins only for its own work: CONTINUE waiting on iOS. LIBRARY, in the
     // ways row, spins there alone; only where there is no library is the panel's bar the picker's own.
     const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));
     const available = tab.slice(tab.indexOf("const dim"));
@@ -267,11 +267,11 @@ describe("the page's words", () => {
       [parts.PostDoors, 'accessibilityHint="Opens the photographs you set aside."'],
       [parts.RollHero, '"In iCloud"'],
       [parts.RollHero, "Post"],
-      [parts.RollHero, 'accessibilityHint="Opens the selected photograph in the editor. Nothing is shared until you post."'],
+      [parts.RollHero, 'accessibilityHint="Opens the selected photograph in the editor. Nothing is shared until you choose Share to VINTAGE."'],
       [parts.WaysRow, "Recent"],
       [parts.WaysRow, 'label="Short video"'],
       [parts.WaysRow, 'label="Library"'],
-      [parts.WaysRow, 'hint="Opens your photo library. Nothing is shared until you post."'],
+      [parts.WaysRow, 'hint="Opens your photo library. Nothing is shared until you choose Share to VINTAGE."'],
       [parts.WaysRow, "VINTAGE sees only the photographs you chose."],
       [parts.WaysRow, "Share more"],
       [parts.WaysRow, 'accessibilityHint="Opens iOS’s list of the photographs VINTAGE may see."'],
@@ -285,7 +285,7 @@ describe("the page's words", () => {
       [panels, '"Your camera roll"'],
       [panels, '"Your photographs, right here."'],
       [panels, '"VINTAGE shows them on this iPhone only. Nothing leaves it until you post one."'],
-      [panels, '"Show my photographs"'],
+      [panels, '"Continue"'],
       [panels, '"Asks to see your photo library."'],
       [panels, '"VINTAGE can’t see your photographs."'],
       [panels, '"Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone."'],
@@ -337,6 +337,8 @@ describe("the page's words", () => {
 
   it("names its headers for VoiceOver: RECENT, a panel's headline, the roll's foot", () => {
     expect(parts.WaysRow).toMatch(/accessibilityRole="header"[^>]*>\s*Recent\s*</);
+    // The roll lists photographs only, and VoiceOver hears so.
+    expect(parts.WaysRow).toMatch(/accessibilityRole="header"\s+accessibilityLabel="Recent photographs"/);
     expect(parts.MountPanel).toMatch(/<Text style=\{\[styles\.headline, narrow && styles\.headlineNarrow\]\} accessibilityRole="header"/);
     expect(parts.RollFooter).toMatch(/accessibilityRole="header"[^>]*>\s*Further back\s*</);
   });
@@ -372,9 +374,28 @@ describe("what a cell is to VoiceOver", () => {
     expect(cell).toMatch(/accessibilityIgnoresInvertColors/);
   });
 
+  it("keeps one full-size image on the mount, so a new selection stops the last one's request", () => {
+    // A view taken off the screen lets its Photos request run on until it is answered (expo-image's
+    // ImageView is held by its own load until then); a view given a new source cancels the last.
+    // So only the proof is made afresh for each photograph; the full image is one view, its
+    // recycling key clearing the last picture the moment the selection moves.
+    const hero = parts.RollHero;
+    expect(hero).toMatch(/<Proof key=\{print\.id\} print=\{print\} width=\{frame\.width\} released=\{released\} \/>/);
+    const full = hero.slice(hero.indexOf("<Proof key="), hero.indexOf("</Pressable>", hero.indexOf("<Proof key=")));
+    expect(full).toMatch(/\{released \|\| heroReleased \? null : \(\s*<Image\s+source=\{printSource\(print\.uri\)\}/);
+    expect(full).toMatch(/recyclingKey=\{print\.id\}/);
+    expect(full).not.toMatch(/<Image[^]*?key=/);
+    // Nothing keyed by the photograph holds the full image.
+    const proof = hero.slice(hero.indexOf("function Proof("));
+    expect(proof.match(/<Image/g)).toHaveLength(1);
+    expect(proof).toMatch(/transition=\{0\}/);
+    expect(hero).not.toMatch(/function Picture\(/);
+  });
+
   it("hears the mount's words as one line and POST on its own, and not the photograph", () => {
     expect(parts.RollHero).toMatch(/accessible accessibilityLabel=\{`Selected: \$\{date\}\. \$\{age\}\.`\}/);
-    const photo = parts.RollHero.slice(parts.RollHero.indexOf('testID="post-hero-photo"'), parts.RollHero.indexOf("<Picture"));
+    const photo = parts.RollHero.slice(parts.RollHero.indexOf('testID="post-hero-photo"'), parts.RollHero.indexOf("<Proof"));
+    expect(photo.length).toBeGreaterThan(0);
     expect(photo).toMatch(/accessibilityElementsHidden/);
     expect(photo).toMatch(/importantForAccessibility="no-hide-descendants"/);
   });

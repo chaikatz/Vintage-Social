@@ -40,6 +40,7 @@ import { discardPrintCopy, openPrint, postHaptic } from "@/post/openPrint";
 import { panelFor, type PanelAct } from "@/post/panels";
 import {
   cellSize,
+  footShown,
   GAP,
   heroFrame,
   heroHeight,
@@ -78,7 +79,7 @@ export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
  *
  * The roll is read from the library only while the tab is in front, and
  * only with the access the member already gave; the tab asks for it only
- * from a tap on its own explanation, SHOW MY PHOTOGRAPHS. Everything it
+ * from a tap on its own explanation's CONTINUE. Everything it
  * reads stays on this phone, a bounded page at a time. Ten seconds after
  * the tab is left, and at once when the app goes to the background, it
  * lets go of every photograph out of sight, keeping the rows on the
@@ -416,8 +417,10 @@ export default function Create() {
     </View>
   );
 
-  // Where the roll ends, the room hands on; an empty roll has nothing further back to hand on to.
-  const footer = ready && roll.end !== "more" && roll.prints.length > 0 ? <RollFooter held={held} onEnter={openRoom} /> : null;
+  // Where the roll ends, the room hands on; an empty roll, or a limited selection read to its end, has nothing further back.
+  const footer = footShown({ ready, end: roll.end, count: roll.prints.length, access: roll.access }) ? (
+    <RollFooter held={held} onEnter={openRoom} />
+  ) : null;
 
   return (
     <Screen padded={false}>

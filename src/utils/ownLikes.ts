@@ -37,6 +37,15 @@ export const LIKERS_NOTE = "Only you can see who liked your photograph.";
 export const LIKES_HINT = "Shows who liked it. Only you can see this.";
 
 /**
+ * The count's reach past what it draws, on the card and the photograph's
+ * page: the line is 26 points (8 above an 18-point line), and 9 more above
+ * and below make the 44 a finger needs, with nothing on the page moved.
+ * A touch that also lands on the caption under it goes to the caption,
+ * the later of the two.
+ */
+export const LIKES_SLOP = { top: 9, bottom: 9, left: 6, right: 6 } as const;
+
+/**
  * Whether the reader is the photograph's author: the one member who sees
  * its likes. A reader not yet known (signed out, a session still being
  * read) is nobody's author.

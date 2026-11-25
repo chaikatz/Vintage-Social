@@ -273,11 +273,18 @@ check(
 );
 
 // --- 3. a photograph tapped ------------------------------------------------------------------------------
+// The mount's full image is one view for every photograph: a new selection gives it a new source,
+// which stops the last one's request, rather than a new view that would leave it running.
+const fullBefore = await page.evaluateHandle(() =>
+  [...document.querySelectorAll('[data-testid="post-hero-full"]')].find((e) => e.getBoundingClientRect().width > 0) ?? null,
+);
 await cell(2).click();
 await wait(700);
 const thirdDate = await textOf("post-hero-date");
 check("A photograph tapped is shown large, by its own date", thirdDate !== firstDate && /^[A-Z]+ \d{1,2}, \d{4}$/.test(thirdDate), `${firstDate} → ${thirdDate}`);
 check("…and wears the box", (await selectedCell()) === 2);
+const fullKept = await fullBefore.evaluate((el) => el != null && el.isConnected && el.getBoundingClientRect().width > 0);
+check("…in the same full-size image view, given the new photograph", fullKept);
 await shot("selected");
 
 // --- 3b. sent to the background, and back ----------------------------------------------------------------

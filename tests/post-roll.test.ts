@@ -27,6 +27,7 @@ import {
   RELEASE_AFTER_BLUR_MS,
   rollRows,
   ROLL_CAP,
+  footShown,
   ROLL_FIRST,
   ROLL_MIN_VISIBLE,
   ROLL_PAGE,
@@ -268,6 +269,24 @@ describe("reading the roll", () => {
     expect(shouldRefresh(now - 61_000, now, false)).toBe(true);
     expect(shouldRefresh(now - 1_000, now, true)).toBe(true);
     expect(shouldRefresh(null, now, false)).toBe(true);
+  });
+});
+
+describe("the foot of the roll", () => {
+  const at = (end: "more" | "done" | "capped", access: "full" | "limited" | null, count = 12, ready = true) =>
+    footShown({ ready, end, count, access });
+  it("hands on to the Memory Room where the whole library's roll ends, read to its end or to the cap", () => {
+    expect(at("done", "full")).toBe(true);
+    expect(at("capped", "full")).toBe(true);
+    expect(at("more", "full")).toBe(false);
+    expect(at("done", "full", 0)).toBe(false);
+    expect(at("done", "full", 12, false)).toBe(false);
+  });
+  it("says nothing of further back where a limited selection has been read to its end", () => {
+    // The room sees the same few photographs: FURTHER BACK would promise what is not there.
+    expect(at("done", "limited")).toBe(false);
+    // A selection larger than the roll's cap does go further back in the room.
+    expect(at("capped", "limited")).toBe(true);
   });
 });
 

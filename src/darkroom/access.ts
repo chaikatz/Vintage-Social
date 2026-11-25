@@ -13,7 +13,7 @@ import { isDemoMode } from "@/lib/env";
  *   full           the whole library
  *
  * Asking is only ever done from a tap on an explanation: the room's
- * first-visit page, or the Post tab's SHOW MY PHOTOGRAPHS. Never on the
+ * first-visit page, or the Post tab's CONTINUE. Never on the
  * way past either.
  */
 export type LibraryAccess = "unavailable" | "undetermined" | "denied" | "limited" | "full";
@@ -56,9 +56,22 @@ export async function requestAccess(): Promise<LibraryAccess> {
   }
 }
 
+/** How many times iOS's sheet for the limited selection has been opened, from anywhere in the app. */
+let selectionSheets = 0;
+
+/**
+ * Each opening of the sheet counted: the Post tab, back in front, reads
+ * its whole roll again when the selection may have changed meanwhile (in
+ * the Memory Room, say), instead of waiting a minute to notice.
+ */
+export function selectionSheetsOpened(): number {
+  return selectionSheets;
+}
+
 /** iOS's own sheet for changing a limited selection. */
 export async function chooseMorePhotographs(): Promise<void> {
   if (Platform.OS !== "ios") return;
+  selectionSheets += 1;
   try {
     await MediaLibrary.presentPermissionsPickerAsync(["photo"]);
   } catch {

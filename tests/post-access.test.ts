@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { settingsPath } from "@/components/darkroom/words";
+import { firstVisitPage, settingsPath } from "@/components/darkroom/words";
 import { panelFor, panelWords, type PanelKind } from "@/post/panels";
 
 /**
@@ -46,7 +46,7 @@ describe("what each panel says", () => {
       eyebrow: "Your camera roll",
       headline: "Your photographs, right here.",
       body: "VINTAGE shows them on this iPhone only. Nothing leaves it until you post one.",
-      bar: { label: "Show my photographs", hint: "Asks to see your photo library.", act: "ask" },
+      bar: { label: "Continue", hint: "Asks to see your photo library.", act: "ask" },
       path: null,
       quiet: null,
     });
@@ -58,7 +58,8 @@ describe("what each panel says", () => {
       eyebrow: "Your camera roll",
       headline: "VINTAGE can’t see your photographs.",
       body: "Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone.",
-      bar: null,
+      // Refused, the mount's one bar still leads to a post: the picker, which needs no access.
+      bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
       path: "Settings\u00A0› Apps\u00A0› VINTAGE\u00A0› Photos\u00A0› Full\u00A0Access",
       quiet: { label: "Open Settings", hint: "Opens VINTAGE’s page in Settings." },
     });
@@ -94,7 +95,7 @@ describe("what each panel says", () => {
       eyebrow: "From your library",
       headline: "Share a photograph.",
       body: "The one you have in mind.",
-      bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you post.", act: "choose" },
+      bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
     });
     const tab = code("app/(tabs)/create.tsx");
     const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));
@@ -109,7 +110,7 @@ describe("what each panel says", () => {
 });
 
 describe("asking iOS for the library", () => {
-  it("is reachable only from SHOW MY PHOTOGRAPHS", () => {
+  it("is reachable only from the panel's CONTINUE", () => {
     const roll = code("src/post/useRoll.ts");
     expect(roll.match(/requestAccess\(/g)).toHaveLength(1);
     const ask = roll.slice(roll.indexOf("const ask = useCallback"), roll.indexOf("const shareMore = useCallback"));
@@ -120,5 +121,31 @@ describe("asking iOS for the library", () => {
     expect(tab).toMatch(/if \(act === "ask"\) roll\.ask\(\);/);
     const acts = (["ask", "denied", "empty-full", "empty-limited", "failed", "unavailable"] as PanelKind[]).map((k) => panelWords(k, 18)?.bar?.act);
     expect(acts.filter((a) => a === "ask")).toHaveLength(1);
+  });
+});
+
+describe("the one button before iOS's own prompt", () => {
+  // Apple's Human Interface Guidelines (Privacy, pre-alert screens) and App Review's 5.1.1
+  // rejections ask that the single button on a custom screen shown before the permission
+  // alert say "Continue" or "Next", so it reads as a step to the alert and not as a second
+  // "Allow". The app has two such screens: the Post tab's first panel and the room's first page.
+  const neutral = /^(Continue|Next)$/;
+
+  it("says Continue on the Post tab's panel, and is that panel's only control", () => {
+    const ask = panelWords("ask", 18)!;
+    expect(ask.bar?.act).toBe("ask");
+    expect(ask.bar?.label).toMatch(neutral);
+    expect(ask.quiet).toBeNull();
+    // Every bar that leads to iOS's prompt is titled that way, whatever the panel.
+    for (const k of ["ask", "denied", "empty-full", "empty-limited", "failed", "unavailable"] as PanelKind[]) {
+      const bar = panelWords(k, 18)?.bar;
+      if (bar?.act === "ask") expect(bar.label, k).toMatch(neutral);
+    }
+  });
+
+  it("says Continue on the room's first page while iOS has not asked yet", () => {
+    const words = firstVisitPage("undetermined").words;
+    expect(words).toHaveLength(1);
+    expect(words[0].label).toMatch(neutral);
   });
 });

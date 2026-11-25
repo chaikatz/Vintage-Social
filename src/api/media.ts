@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as ImageManipulator from "expo-image-manipulator";
 import { supabase } from "@/lib/supabase";
+import { isDemoMode } from "@/lib/env";
 import { DEMO_PREFIX } from "@/demo/photos";
 import { PHOTOS } from "@/demo/photoAssets";
 import { prepareImage } from "@/media/nativeMedia";
@@ -233,6 +234,9 @@ export function mediaUrl(bucket: Bucket, path: string | null): string | number |
   // module id, which the image components accept directly.
   if (path.startsWith(DEMO_PREFIX)) return PHOTOS[path.slice(DEMO_PREFIX.length)] ?? null;
   if (/^(https?:|blob:|data:|file:)/.test(path)) return path;
+  // The browser demo keeps a photograph posted from the roll or the room as the page's own
+  // address for its bundled picture ("/assets/…"); a storage key never starts with "/".
+  if (path.startsWith("/") && isDemoMode()) return path;
   return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }
 
