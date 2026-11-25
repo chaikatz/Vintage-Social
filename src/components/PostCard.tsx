@@ -8,6 +8,7 @@ import { postedAgo, postedAgoSpoken, shortDate } from "@/utils/time";
 import { useMinute } from "@/utils/useMinute";
 import { mentionedUsernames } from "@/utils/mentions";
 import { nameActions, nameFromAction } from "@/utils/nameActions";
+import { LIKES_HINT, likesLine } from "@/utils/ownLikes";
 import { Avatar } from "./Avatar";
 import { MentionText, NameLink } from "./MemberText";
 import { PostMedia } from "./PostMedia";
@@ -20,6 +21,11 @@ export const INLINE_COMMENTS = 2;
 
 interface Props {
   post: PostWithAuthor;
+  /**
+   * Who is reading: the count under a photograph, and who liked it, are
+   * shown to its author only (src/utils/ownLikes.ts).
+   */
+  viewerId: string;
   likedByMe: boolean;
   onToggleLike: (post: PostWithAuthor, nextLiked: boolean) => void;
   onOpenComments: (post: PostWithAuthor) => void;
@@ -28,7 +34,7 @@ interface Props {
   onMore: (post: PostWithAuthor) => void;
   /** Send this photograph to a member. Omitted where sharing makes no sense. */
   onShare?: (post: PostWithAuthor) => void;
-  /** The names behind the count — the hook shows them for your own posts only. */
+  /** The names behind the count, on your own photograph (the only one with a count). */
   onOpenLikes?: (post: PostWithAuthor) => void;
   /** The newest comments, shown under the caption. */
   comments?: CommentWithAuthor[];
@@ -65,6 +71,7 @@ interface Props {
  */
 export const PostCard = React.memo(function PostCard({
   post,
+  viewerId,
   likedByMe,
   onToggleLike,
   onOpenComments,
@@ -91,6 +98,9 @@ export const PostCard = React.memo(function PostCard({
     if (next && !likedByMe) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (next !== likedByMe) onToggleLike(post, next);
   };
+
+  // Your own photograph's count (or "No likes yet", in the same place); nothing on anyone else's.
+  const likes = likesLine(post, viewerId, post.like_count);
 
   // A comment whose author the reader may not see is left out, as on the comments screen.
   const preview = withAuthors(comments ?? []).slice(-INLINE_COMMENTS);
@@ -157,12 +167,24 @@ export const PostCard = React.memo(function PostCard({
         </Pressable>
       </View>
 
-      {post.like_count > 0 ? (
-        <Pressable onPress={() => onOpenLikes?.(post)} disabled={!onOpenLikes} hitSlop={6}>
-          <Text style={styles.likes}>
-            {post.like_count} {post.like_count === 1 ? "like" : "likes"}
+      {/* The count is the author's alone; on anyone else's photograph there is no line at all. */}
+      {likes ? (
+        likes.opens ? (
+          <Pressable
+            onPress={() => onOpenLikes?.(post)}
+            disabled={!onOpenLikes}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={likes.label}
+            accessibilityHint={LIKES_HINT}
+          >
+            <Text style={styles.likes}>{likes.text}</Text>
+          </Pressable>
+        ) : (
+          <Text style={[styles.likes, styles.noLikes]} accessibilityLabel={likes.label}>
+            {likes.text}
           </Text>
-        </Pressable>
+        )
       ) : null}
 
       {post.caption ? (
@@ -306,13 +328,17 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   spacer: { flex: 1 },
+  // One height for the count and for "No likes yet", so the first like
+  // changes the words and not the card.
   likes: {
     fontSize: 13,
+    lineHeight: 18,
     fontWeight: "600",
     color: colors.ink,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
   },
+  noLikes: { fontWeight: "400", color: colors.inkFaint },
   caption: {
     ...type.body,
     fontSize: 14,

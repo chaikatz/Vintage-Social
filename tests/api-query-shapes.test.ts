@@ -179,6 +179,7 @@ const LINKS: Record<string, { child: string; parent: string; childColumn: string
   reports_reporter_id_fkey: { child: "reports", parent: "profiles", childColumn: "reporter_id", parentColumn: "id" },
   reports_profile_id_fkey: { child: "reports", parent: "profiles", childColumn: "profile_id", parentColumn: "id" },
   reports_comment_id_fkey: { child: "reports", parent: "comments", childColumn: "comment_id", parentColumn: "id" },
+  likes_user_id_fkey: { child: "likes", parent: "profiles", childColumn: "user_id", parentColumn: "id" },
 };
 
 function answer(url: URL): Row[] {
@@ -1083,6 +1084,79 @@ describe("this phone's push token", () => {
     const all = h.requests.filter((r) => r.method === "DELETE").at(-1)!;
     expect(all.url.searchParams.get("user_id")).toBe(`eq.${ME}`);
     expect(all.url.searchParams.get("select")).toBe("token");
+  });
+});
+
+describe("who liked one of your photographs", () => {
+  const PHOTO = id("a7", 0);
+  /** `n` likes on PHOTO, many in the same second, one member in nine since unreadable (a block). */
+  function liked(n: number) {
+    const likers = Array.from({ length: n }, (_, i) => id("a8", i));
+    h.tables.profiles = likers.filter((_, i) => i % 9 !== 4).map((p, i) => ({
+      id: p, username: `l${i}`, full_name: null, avatar_url: null, bio: "long", city: "far",
+    }));
+    h.tables.likes = likers.map((user_id, i) => ({ post_id: PHOTO, user_id, created_at: at(Math.floor(i / 3)) }));
+    return likers;
+  }
+  /** Who the database says, newest like first, readable members only. */
+  function truth(readableOnly = true) {
+    const readable = new Set(h.tables.profiles.map((p) => p.id));
+    return h.tables.likes
+      .slice()
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || String(b.user_id).localeCompare(String(a.user_id)))
+      .map((l) => String(l.user_id))
+      .filter((m) => !readableOnly || readable.has(m));
+  }
+  async function walk() {
+    const ids: string[] = [];
+    let cursor: import("@/api/keyset").Cursor | null = null;
+    for (let i = 0; i < 100; i++) {
+      const page: import("@/api/posts").LikersPage = await posts.fetchLikersPage(PHOTO, cursor);
+      ids.push(...page.likers.map((m) => m.id));
+      if (!page.next) break;
+      cursor = page.next;
+    }
+    return ids;
+  }
+
+  it("comes fifty at a time, newest first, every liker once, where it stopped at 500", async () => {
+    liked(620);
+    const all = await walk();
+    expect(all).toEqual(truth());
+    expect(all.length).toBeGreaterThan(500);
+    expect(new Set(all).size).toBe(all.length);
+    const reads = h.requests.filter((r) => r.url.pathname === "/rest/v1/likes");
+    expect(reads.length).toBe(Math.floor(truth(false).length / 50) + 1);
+    for (const r of reads) {
+      expect(r.url.searchParams.get("post_id")).toBe(`eq.${PHOTO}`);
+      expect(r.url.searchParams.get("limit")).toBe("50");
+      expect(r.url.searchParams.get("order")).toBe("created_at.desc,user_id.desc");
+      // Only what a row draws: no bio, no city, no counts.
+      expect(r.url.searchParams.get("select")).toBe(
+        "created_at,user_id,liker:profiles!likes_user_id_fkey(id,username,full_name,avatar_url)",
+      );
+    }
+    // After the first, each page starts from the last like held, the time on its own for the index.
+    expect(reads[1].url.searchParams.get("created_at")).toMatch(/^lte\./);
+    expect(reads[1].url.searchParams.get("or")).toMatch(
+      /^\(created_at\.lt\."[^"]+",and\(created_at\.eq\."[^"]+",user_id\.lt\."[0-9a-f-]+"\)\)$/,
+    );
+  });
+
+  it("a page whose members cannot be read does not end the list, nor show it empty", async () => {
+    liked(160);
+    const newest = truth(false);
+    h.tables.profiles = h.tables.profiles.filter((p) => !newest.slice(0, 50).includes(String(p.id)));
+    h.requests.length = 0;
+    const first = await posts.fetchLikersPage(PHOTO, null);
+    expect(first.likers.length).toBeGreaterThan(0);
+    expect(first.likers.map((m) => m.id)).toEqual(truth().slice(0, first.likers.length));
+    expect(h.requests.filter((r) => r.url.pathname === "/rest/v1/likes").length).toBe(2);
+  });
+
+  it("no photograph, no request", async () => {
+    expect(await posts.fetchLikersPage("", null)).toEqual({ likers: [] });
+    expect(h.requests).toEqual([]);
   });
 });
 

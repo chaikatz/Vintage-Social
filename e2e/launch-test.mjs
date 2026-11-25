@@ -9,7 +9,8 @@
 // screen mounted.
 import { chromium } from "playwright";
 const out = process.env.SHOT_DIR;
-const B = "http://127.0.0.1:8090";
+// E2E_BASE points it at a build served elsewhere (the default is e2e/serve.mjs's), as in darkroom-test.mjs.
+const B = process.env.E2E_BASE ?? "http://127.0.0.1:8090";
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await ctx.newPage();
@@ -305,9 +306,14 @@ const postedShown = (await posted.count()) ? await posted.first().evaluate((el) 
 check("The posted line is drawn as it is said, not in capitals", /^(Just now|\d+[mhd] ago|[A-Z][a-z]{2} \d{1,2}(, \d{4})?)$/.test(postedShown), postedShown);
 await shot("11-feed");
 
+// The heart is everyone's and shows the like at once; the count is the
+// photograph's author's alone (src/utils/ownLikes.ts), so it is not what
+// says a like on someone else's photograph registered.
+const unlikes = () => seen(page.getByLabel("Unlike", { exact: true })).count();
+const likedBefore = await unlikes();
 await byLabel("Like").first().click();
 await wait(1500);
-check("Like registers", /\d+ likes?/.test(await text()));
+check("Like registers", (await unlikes()) > likedBefore);
 
 await byLabel("Comments").first().click();
 await wait(2500);

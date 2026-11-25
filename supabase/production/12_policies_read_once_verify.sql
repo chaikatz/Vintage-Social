@@ -1,4 +1,4 @@
--- VINTAGE · production · verify 0023-0041 (policies read the caller once;
+-- VINTAGE · production · verify 0023-0042 (policies read the caller once;
 -- block checks answer only for the caller; the home feed in one piece,
 -- paged by cursor; a photograph's followers in order; Expo's receipts;
 -- comments, likes and tags only with their photograph; decisions reach
@@ -10,11 +10,12 @@
 -- accounts; members write only what the app writes; a block that holds
 -- for comments and likes and reaches the admins, messages notified,
 -- portraits only in avatars, and the push function's own header; a
--- member's number shown only if they choose)
+-- member's number shown only if they choose; a like read by its member
+-- and the photograph's author only)
 --
 -- Run after applying, in number order, every file in supabase/migrations
 -- from 0023_policies_read_once.sql to
--- 0041_member_number_shown_by_choice.sql. Paste the whole file into
+-- 0042_likes_read_by_the_liker_and_the_author.sql. Paste the whole file into
 -- the SQL editor and run it once. Read-only: the block at the start only plans a query (EXPLAIN
 -- without ANALYZE runs nothing) as a member and keeps what it saw in a
 -- setting of this session, and the one SELECT at the end reads the
@@ -28,7 +29,7 @@
 -- ship the build that relies on them; the rollbacks are
 -- supabase/tests/0023_rollback.sql, supabase/tests/0038_rollback.sql,
 -- supabase/tests/0039_rollback.sql and the notes at the top of 0024-0037,
--- 0040 and 0041, and none of 0023-0028, 0030-0037 or 0039-0041 changes any
+-- 0040-0042, and none of 0023-0028, 0030-0037 or 0039-0042 changes any
 -- member's data (0041 adds a column, false for every member; 0029
 -- repairs profiles left at "applied", 0034 the house photographs'
 -- thumbnails, 0038 recounts follower and following counts that are off,
@@ -117,8 +118,9 @@ with checks as (
   --    (the followee's two, and a request seen by its two members), and
   --    the five restrictive ones 0039 adds, and the three restrictive
   --    ones 0040 adds (no comment or like across a block, and the push
-  --    hook kept from the API): 85.
-  select 4, 'policies on public', count(*)::text, '85'
+  --    hook kept from the API), and the restrictive one 0042 adds (a like
+  --    read by its member and the photograph's author): 86.
+  select 4, 'policies on public', count(*)::text, '86'
   from pg_policies where schemaname = 'public'
   union all
   select 5, 'policies on storage.objects (VINTAGE''s own)', count(*)::text, '8'
@@ -126,7 +128,7 @@ with checks as (
   where schemaname = 'storage' and tablename = 'objects'
     and policyname ~ '^(avatars|media): '
   union all
-  select 6, 'restrictive policies (blocking, 0028, 0033, 0038, 0039, 0040)', count(*)::text, '27'
+  select 6, 'restrictive policies (blocking, 0028, 0033, 0038, 0039, 0040, 0042)', count(*)::text, '28'
   from pg_policies where schemaname = 'public' and permissive = 'RESTRICTIVE'
   union all
   -- 4. 0023's three helpers: in the schema private, which the API does not
@@ -831,6 +833,16 @@ with checks as (
                  and split_part(x::text, '=', 1) in ('anon', 'authenticated')
                  and split_part(split_part(x::text, '=', 2), '/', 1) ~ '[aw]'), 'nobody'),
          'boolean not null default false, changed by authenticated'
+  union all
+  -- 28. 0042: a like is read by the member who made it and the
+  --     photograph's author, nobody else: one restrictive read policy, for
+  --     every role, the caller read once a statement.
+  select 70, '0042: a like is read only by its member and the photograph''s author (restrictive, the caller read once a statement)', count(*)::text, '1'
+  from pg_policies
+  where schemaname = 'public' and tablename = 'likes' and policyname = 'likes: the liker''s and the author''s'
+    and permissive = 'RESTRICTIVE' and cmd = 'SELECT' and roles = '{public}'
+    and qual ~ '^\(\(user_id = \( SELECT auth\.uid\(\) AS uid\)\) OR \(EXISTS'
+    and qual ~ 'p\.author_id = \( SELECT auth\.uid\(\) AS uid\)'
 )
 select n, what, found, expected, coalesce(found = expected, false) as ok
 from checks

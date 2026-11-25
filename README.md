@@ -626,6 +626,35 @@ then on:
 Declining a request deletes the row rather than recording a rejection — a
 request that was turned down can simply be made again.
 
+## Likes
+
+A photograph's likes are its author's to see. Everyone has the heart, the
+double tap and their own "liked it"; only the author sees how many, and
+who.
+
+- **The count is on your own photographs only**, on every surface that
+  shows a photograph's actions: a card on Home and in a member's gallery
+  (`src/components/PostCard.tsx`, told who is reading by `viewerId`) and a
+  photograph's own page (`app/post/[id].tsx`). Under anyone else's there
+  is no line at all — no number, nothing for VoiceOver. The rule is one
+  helper, `src/utils/ownLikes.ts` (`seesLikes`, `likesLine`), which the
+  Editorial card uses too.
+- **"No likes yet"** stands quietly in the count's place on your own
+  photograph until the first like, at the count's own height, so the first
+  like changes the words and never moves the card.
+- **Tap the count for who liked it** (`app/likes.tsx`), newest first, fifty
+  at a time as you scroll (`fetchLikersPage`, a keyset on the like's time
+  and member), with "Only you can see who liked your photograph." above the
+  names. A member on the other side of a block is not listed; a page whose
+  every member is hidden is read past, so the list never ends early or
+  reads empty. The screen refuses a photograph that is not yours.
+- **The database holds the same line** (0042,
+  `supabase/migrations/0042_likes_read_by_the_liker_and_the_author.sql`):
+  a member reads a like only when it is their own or the photograph is
+  theirs, on top of 0028 (only with its photograph) and the block rules.
+  `posts.like_count` is a column of the photograph and is still readable
+  with it; the app draws it only for the author.
+
 ## Explore
 
 A second surface under Search: every photograph the viewer is allowed to
@@ -808,7 +837,8 @@ these need accounts or values that are intentionally not in this repo:
   film), and the print's app icon carries a faint shadow so it reads as an icon. Place search merges
   Apple's type-ahead completions with the full search, so "bar pi" already offers Bar Pitti. Pinch a
   photograph in the feed or on its page to look closer; it springs back. The count under your own
-  photograph opens who liked it (`app/likes.tsx`), on your own posts only. Member search puts the people
+  photograph opens who liked it (`app/likes.tsx`), on your own posts only (since round 26 only your own
+  posts show a count at all: see "Likes"). Member search puts the people
   you were just looking at first, then who you follow, then who follows you (`src/utils/searchRank.ts`).
 - **The darkroom's keyboard goes away with a drag** down the page (`keyboardDismissMode="interactive"`),
   and the caption is kept above it while it is up; the Done bar remains. **A new portrait shows at once

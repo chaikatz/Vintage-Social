@@ -381,6 +381,7 @@ export default function Gallery() {
           <View ref={item.id === postId ? tapped : undefined} onLayout={(e) => onCardLayout(item.id, e)}>
             <PostCard
               post={counted(item, likeCountFor(item))}
+              viewerId={userId}
               likedByMe={isLiked(item)}
               onToggleLike={toggleLike}
               onOpenComments={onOpenComments}
