@@ -1,0 +1,116 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { panelFor, panelWords, type PanelKind } from "@/post/panels";
+
+/**
+ * What the Post tab's mount says in each state of the library's access,
+ * word for word; that full and limited access with a roll to show have no
+ * panel at all; and that the tab's one way of asking iOS for the library
+ * is the tap on its own explanation.
+ */
+
+const root = path.resolve(import.meta.dirname, "..");
+const code = (f: string) =>
+  readFileSync(path.join(root, f), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+describe("which panel the mount shows", () => {
+  const at = (phase: Parameters<typeof panelFor>[0]["phase"], access: Parameters<typeof panelFor>[0]["access"], empty = false, available = true) =>
+    panelFor({ available, phase, access, empty });
+
+  it("shows the photograph, and no panel, when there is a roll to show", () => {
+    expect(at("ready", "full")).toBeNull();
+    expect(at("ready", "limited")).toBeNull();
+  });
+
+  it("shows a panel for every other state", () => {
+    expect(at("waiting", null)).toBe("waiting");
+    expect(at("loading", "full")).toBe("loading");
+    expect(at("undetermined", "undetermined")).toBe("ask");
+    expect(at("denied", "denied")).toBe("denied");
+    expect(at("failed", "full")).toBe("failed");
+    expect(at("ready", "full", true)).toBe("empty-full");
+    expect(at("ready", "limited", true)).toBe("empty-limited");
+    expect(at("unavailable", "unavailable")).toBe("unavailable");
+    expect(at("waiting", null, false, false)).toBe("unavailable");
+  });
+});
+
+describe("what each panel says", () => {
+  it("explains before iOS asks, and asks only from the tap", () => {
+    expect(panelWords("ask", 18)).toEqual({
+      kind: "ask",
+      eyebrow: "Your camera roll",
+      headline: "Your photographs, right here.",
+      body: "VINTAGE shows them on this iPhone only. Nothing leaves it until you post one.",
+      bar: { label: "Show my photographs", hint: "Asks to see your photo library.", act: "ask" },
+      path: null,
+      quiet: null,
+    });
+  });
+
+  it("says where Settings keeps the way in, on the iOS it is", () => {
+    const denied = panelWords("denied", 18)!;
+    expect(denied).toMatchObject({
+      eyebrow: "Your camera roll",
+      headline: "VINTAGE can’t see your photographs.",
+      body: "Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone.",
+      bar: null,
+      path: "Settings › Apps › VINTAGE › Photos › Full Access",
+      quiet: { label: "Open Settings", hint: "Opens VINTAGE’s page in Settings." },
+    });
+    expect(panelWords("denied", 17)!.path).toBe("Settings › VINTAGE › Photos › Full Access");
+  });
+
+  it("tells an empty library from an empty selection, and the empty selection how to share more", () => {
+    expect(panelWords("empty-full", 18)).toMatchObject({ headline: "Nothing here yet.", body: "Take one, and it will be the first.", bar: null });
+    expect(panelWords("empty-limited", 18)).toMatchObject({
+      headline: "Nothing shared with VINTAGE yet.",
+      body: "Choose the photographs it may see. Nothing leaves this iPhone until you post one.",
+      bar: { label: "Share more", hint: "Opens iOS’s list of the photographs VINTAGE may see.", act: "shareMore" },
+    });
+  });
+
+  it("never shows a library that would not answer as an empty one", () => {
+    expect(panelWords("failed", 18)).toMatchObject({
+      headline: "Your photographs didn’t load.",
+      body: "Try again in a moment.",
+      bar: { label: "Try again", hint: "Reads your photographs again.", act: "retry" },
+    });
+  });
+
+  it("is the picker's own page where there is no library to read, with the clip's limit under the ways", () => {
+    expect(panelWords("unavailable", 0)).toMatchObject({
+      eyebrow: "From your library",
+      headline: "Share a photograph.",
+      body: "The one you have in mind.",
+      bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you post.", act: "choose" },
+    });
+    const tab = code("app/(tabs)/create.tsx");
+    const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));
+    expect(alone).toMatch(/kind="unavailable"/);
+    expect(alone).toMatch(/\{clipNote\}/);
+    expect(tab).toMatch(/Platform\.OS !== "ios" \? \(/);
+  });
+
+  it("has no words for the two that are only a box", () => {
+    for (const kind of ["loading", "waiting"] as PanelKind[]) expect(panelWords(kind, 18)).toBeNull();
+  });
+});
+
+describe("asking iOS for the library", () => {
+  it("is reachable only from SHOW MY PHOTOGRAPHS", () => {
+    const roll = code("src/post/useRoll.ts");
+    expect(roll.match(/requestAccess\(/g)).toHaveLength(1);
+    const ask = roll.slice(roll.indexOf("const ask = useCallback"), roll.indexOf("const shareMore = useCallback"));
+    expect(ask).toContain("requestAccess()");
+    // The mount's bar is the one way to `ask`, and only the ask panel's bar says so.
+    const tab = code("app/(tabs)/create.tsx");
+    expect(tab.match(/roll\.ask\(\)/g)).toHaveLength(1);
+    expect(tab).toMatch(/if \(act === "ask"\) roll\.ask\(\);/);
+    const acts = (["ask", "denied", "empty-full", "empty-limited", "failed", "unavailable"] as PanelKind[]).map((k) => panelWords(k, 18)?.bar?.act);
+    expect(acts.filter((a) => a === "ask")).toHaveLength(1);
+  });
+});

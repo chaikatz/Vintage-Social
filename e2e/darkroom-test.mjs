@@ -200,7 +200,7 @@ const signIn = async (p) => {
 const enterRoom = async (p) => {
   await p.goto(B + "/create", { waitUntil: "networkidle" });
   await p.waitForTimeout(2200);
-  const bar = seen(p.getByRole("button", { name: /^Enter the Memory Room/i })).first();
+  const bar = seen(p.getByRole("button", { name: /^The Memory Room/ })).first();
   if (await bar.count()) await bar.click();
   else await p.goto(B + "/darkroom", { waitUntil: "networkidle" });
   await seen(p.locator('[data-testid="darkroom-word-enter"]')).first().click({ timeout: 10000 });
@@ -219,13 +219,13 @@ check(
   "The Post tab offers the Memory Room",
   /The Memory Room/.test(post) && /Rediscover something worth sharing\.|You left off in /.test(post),
 );
-check("The ordinary picker is still one tap away", /From your library/.test(post) && /Choose a photograph/.test(post));
+check("The ordinary picker is still one tap away", (await seen(page.getByRole("button", { name: /^Library$/ })).count()) > 0);
 await shot("entry");
 
 // --- the first visit ----------------------------------------------------------------
-// The bar's name is its words (and the arrow drawn after them).
-const door = seen(page.getByRole("button", { name: /^Enter the Memory Room/i })).first();
-check("The Memory Room has its own bar on the Post tab", (await door.count()) > 0);
+// The door is named by its eyebrow, then its line.
+const door = seen(page.getByRole("button", { name: /^The Memory Room/ })).first();
+check("The Memory Room has its own door on the Post tab", (await door.count()) > 0);
 if (await door.count()) await door.click();
 else await page.goto(B + "/darkroom", { waitUntil: "networkidle" });
 const firstVisit = await appears("darkroom-page-firstVisit");

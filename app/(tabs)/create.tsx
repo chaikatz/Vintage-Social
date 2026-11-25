@@ -1,346 +1,239 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { Image } from "expo-image";
-import Feather from "@expo/vector-icons/Feather";
+import {
+  AppState,
+  FlatList,
+  Platform,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
-import { GateButton } from "@/components/gate/GateButton";
 import { todaysPrint } from "@/components/onThisDayPrint";
-import { colors, spacing, type } from "@/theme";
+import { useOnline } from "@/components/darkroom/useOnline";
+import { MountPanel } from "@/components/post/MountPanel";
+import { OnThisDayDoor, PostDoors } from "@/components/post/PostDoors";
+import { RollFooter } from "@/components/post/RollFooter";
+import { RollHero } from "@/components/post/RollHero";
+import { RollRow } from "@/components/post/RollCell";
+import { LimitedLine, WaysRow } from "@/components/post/WaysRow";
+import { colors, spacing } from "@/theme";
 import { showAlert } from "@/utils/alert";
 import { fetchUserPosts } from "@/api/posts";
 import { useSession } from "@/providers/SessionProvider";
 import { pickFromLibrary, takeForCompose, type PickedParams } from "@/utils/pickForCompose";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
+import { useReducedMotion } from "@/utils/useReducedMotion";
 import { darkroomAvailable } from "@/darkroom/source";
-import { countLabel } from "@/darkroom/labels";
-import { placeLine } from "@/darkroom/session";
+import { placeCover, placeLine } from "@/darkroom/session";
 import { useSetAside } from "@/darkroom/setAside";
+import type { Print } from "@/darkroom/types";
+import { onPostAgain } from "@/post/again";
+import { discardPrintCopy, openPrint, postHaptic } from "@/post/openPrint";
+import { panelFor, type PanelAct } from "@/post/panels";
+import {
+  cellSize,
+  heroHeight,
+  NARROW,
+  pageHeight,
+  roomDoorFace,
+  rollRows,
+  SECOND_TAP_MS,
+  wellRows,
+  type RollRow as Row,
+} from "@/post/roll";
+import { useDayDoor } from "@/post/useDayDoor";
+import { useRoll } from "@/post/useRoll";
 
 // A page that breaks as it draws breaks only this tab (src/navigation/Recover.tsx).
 export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 
 /**
- * Where a post begins.
+ * Where a post begins: the member's own photographs, and the one they
+ * tap, large, one tap from the editor.
  *
  * One photograph per post. Short videos are allowed but live in the same
  * feed and grid as everything else — there is no separate video surface.
  *
- * The page's one serif line says what it is for. Under it are the two
- * ways in, each set the same way so it can be found at a glance: a small
- * mono eyebrow that names it, one short line that says when to take it,
- * and one bar. The two bars are the same size to the thumb and do not
- * look alike. The Memory Room comes first, since it is the thing only
- * VINTAGE does, and its bar is the invitation card's dark stock, ruled
- * and lettered in its ink: brown and gold on paper, and in Dark a card a
- * step up from the black, lettered in white. The library's is the
- * house's ruled bar in ink (solid where it is the page's only bar), one
- * tap to the system picker as it always was; the camera and a short clip
- * are two smaller ruled boxes under it, side by side, each with its mark
- * and its word in ink, with the clip's limit beneath them. Then On this
- * day, one line at the foot.
+ * Top to bottom. The two doors: the Memory Room's, in the invitation
+ * card's stock, carrying the print the member left off on and where that
+ * was; and On this day's, this date in earlier years, in their
+ * photographs and the member's own posts. SET ASIDE · 3 under them when
+ * anything is set aside. Then the selected photograph on the camera's
+ * dark mount, in the frame the editor will give it, with the print's
+ * signature line under it and POST beside it. Then RECENT, with SHORT
+ * VIDEO and LIBRARY (the iPhone's own picker) on the same line, and the
+ * roll: newest first, four to a row, the camera first on the iPhone. At
+ * its foot, further back, the Memory Room again.
  *
- * This tab never reads the photo library. It may be on screen, or
- * preloaded beside one, without the member having gone near the Memory
- * Room, so it cannot be the thing that asks iOS for the library or looks
- * through it. What it says about the room it reads from the room's own
- * small files on this phone. The one photograph it may show is one the
- * member has already posted, read from the server once the tab is in
- * front.
+ * The roll is read from the library only while the tab is in front, and
+ * only with the access the member already gave; the tab asks for it only
+ * from a tap on its own explanation, SHOW MY PHOTOGRAPHS. Everything it
+ * reads stays on this phone, a bounded page at a time, and every
+ * photograph it draws is let go ten seconds after the tab is left
+ * (`src/post/useRoll.ts`). What it says about the room it reads from the
+ * room's own small files. The one posted photograph On this day may show
+ * is read from the server once the tab is in front.
+ *
+ * Where there is no library to read (Android, a browser outside the
+ * demo) the page is On this day, the picker's bar, the camera and the
+ * clip.
  */
 export default function Create() {
   const router = useRouter();
-  // Reading the capture date and decoding the photograph take a moment,
-  // and a button only goes quiet once React has rendered: two taps in the
-  // same frame both got through and opened the editor twice. The ref is
-  // checked and set in the tap itself, before anything awaits. `busy` is
-  // for the eye only: it says which way in is opening, so only that one
-  // shows it, and the others rest until it is done.
+  // Opening a photograph takes a moment (a rendition from Photos, a
+  // capture date, a decode), and a control only goes quiet once React has
+  // rendered: two taps in one frame both got through and opened the
+  // editor twice. The ref is checked and set in the tap itself, before
+  // anything awaits, for every way in, the roll's photographs included.
+  // `busy` is for the eye only: it says which way in is opening, so only
+  // that one shows it, and the others rest until it is done.
   const opening = useRef(false);
-  const [busy, setBusy] = useState<Way | null>(null);
-
-  const openWith = async (way: Way, get: () => Promise<PickedParams | null>) => {
-    if (opening.current) return;
-    opening.current = true;
-    setBusy(way);
-    try {
-      const params = await get();
-      if (params) router.push({ pathname: "/compose", params });
-    } catch {
-      // The picker or the camera can refuse outright (an iCloud original
-      // that would not come down, a clip that could not be exported). The
-      // tap used to end in silence, as if it had not been made.
-      showAlert("Couldn’t open that", "It couldn’t be read here. Try again in a moment, or choose another.");
-    } finally {
-      opening.current = false;
-      setBusy(null);
-    }
-  };
+  const [busy, setBusy] = useState<{ way: Way; id?: string } | null>(null);
+  // Only a photograph from the roll can be stopped: a picker presented
+  // over the app may send it to the background, and is never stopped.
+  const printStop = useRef<AbortController | null>(null);
+  const front = useRef(false);
 
   const native = Platform.OS !== "web";
+  const ios = Platform.OS === "ios";
   const door = darkroomAvailable();
   const held = busy !== null;
   // On this day's date turns over with the clock, and it waits for focus
   // before asking the server for anything.
   const today = useToday();
   const focused = useIsFocused();
+  const reduceMotion = useReducedMotion();
+  const reduceMotionRef = useRef(reduceMotion);
+  reduceMotionRef.current = reduceMotion;
+  const online = useOnline();
+  const { width: W, height: windowH, fontScale } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const narrow = W < NARROW;
+  const short = windowH < 700;
+  const large = fontScale >= 1.35;
+  const H = heroHeight(pageHeight(windowH, insets.top, insets.bottom));
+  const size = cellSize(W);
+  const iosMajor = parseInt(String(Platform.Version), 10);
 
-  return (
-    <Screen padded={false} scroll>
-      <View style={styles.body}>
-        <Text style={styles.title} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TITLE_CAP}>
-          Share a photograph.
-        </Text>
+  const roll = useRoll(focused);
+  const allowed = roll.access === "full" || roll.access === "limited";
 
-        {/* Without the room (Android) the library is the page, and the line above still says it. */}
-        {door ? <MemoryRoomDoor held={held} /> : null}
-
-        <View style={styles.section}>
-          <Text style={styles.eyebrow} accessibilityRole="header" maxFontSizeMultiplier={TYPE_CAP}>
-            From your library
-          </Text>
-          <Text style={styles.line} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
-            The one you have in mind.
-          </Text>
-          {/* Ruled beside the room's bar, so the two are told apart; alone it is the page's one bar, and solid. */}
-          <GateButton
-            title="Choose a photograph"
-            variant={door ? "outline" : "solid"}
-            onPress={() => openWith("photo", () => pickFromLibrary("photo"))}
-            loading={busy === "photo"}
-            disabled={held}
-            accessibilityHint="Opens your photo library. Nothing is shared until you post."
-            maxFontSizeMultiplier={BAR_TYPE_CAP}
-            style={styles.bar}
-          />
-          <View style={styles.boxes}>
-            {native ? (
-              <BoxedWay
-                icon="camera"
-                label="Camera"
-                hint="Take one now"
-                busy={busy === "camera"}
-                held={held}
-                onPress={() => openWith("camera", takeForCompose)}
-              />
-            ) : null}
-            <BoxedWay
-              icon="video"
-              label="Short video"
-              hint={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`}
-              busy={busy === "video"}
-              held={held}
-              onPress={() => openWith("video", () => pickFromLibrary("video"))}
-            />
-          </View>
-          {/* On the page as well as in the hint: off iOS no trimmer holds a clip to the limit. */}
-          {/* A View, not the Text, refuses the taps: Android's Text ignores pointerEvents. */}
-          <View style={styles.waysNote} pointerEvents="none">
-            <Text style={styles.waysNoteText} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
-              Clips up to {MAX_VIDEO_SECONDS} seconds.
-            </Text>
-          </View>
-        </View>
-
-        <OnThisDay held={held} focused={focused} day={today} />
-      </View>
-    </Screen>
+  const openWith = useCallback(
+    async (way: Way, get: (signal?: AbortSignal) => Promise<PickedParams | null>, id?: string) => {
+      if (opening.current) return;
+      opening.current = true;
+      setBusy({ way, id });
+      const stop = way === "print" ? new AbortController() : null;
+      printStop.current = stop;
+      try {
+        const params = await get(stop?.signal);
+        // Asked as the photograph arrives: the tab may have been left while it came.
+        if (params && (stop?.signal.aborted || !front.current)) {
+          discardPrintCopy(params.uri);
+          return;
+        }
+        if (params) router.push({ pathname: "/compose", params });
+      } catch {
+        // The picker or the camera can refuse outright (an iCloud original
+        // that would not come down, a clip that could not be exported). The
+        // tap used to end in silence, as if it had not been made.
+        showAlert("Couldn’t open that", "It couldn’t be read here. Try again in a moment, or choose another.");
+      } finally {
+        if (printStop.current === stop) printStop.current = null;
+        opening.current = false;
+        setBusy(null);
+      }
+    },
+    [router],
   );
-}
 
-type Way = "photo" | "camera" | "video";
-
-/** The page's type stops growing here, as the Memory Room's own word pages do. */
-const TYPE_CAP = 2.4;
-/** The serif line stops growing sooner: here "photograph." still fits on one line of a 320 pt phone, so it is never broken in two. */
-const TITLE_CAP = 1.8;
-/** The bars' capitals, and the boxes' under them, stop growing here. At the largest sizes a label takes two lines, and its bar grows to hold them. */
-const BAR_TYPE_CAP = 1.8;
-/** GateButton's arrow is 18 wide, 16 in from the edge: the label keeps clear of it on both sides, so it stays centred. */
-const BAR_INSET = 36;
-const TOUCH = 44;
-/** The camera's and the clip's boxes: taller than a touch needs, and each half the column of the narrowest phone. */
-const BOX_HEIGHT = 48;
-const BOX_BASIS = 132;
-/** Their marks, a size up from the field's and the row's 15. */
-const BOX_MARK = 17;
-/** The print on the On this day line: a small 4 × 5, the shape the feed gives a portrait. */
-const PRINT_WIDTH = 44;
-const PRINT_HEIGHT = 55;
-
-/**
- * The way into the Memory Room: its name, one line, and its bar.
- *
- * When the member left the room within the last twelve hours the line
- * becomes where they were — "You left off in August 2018." — read from
- * the place the room keeps on disk, which knows the month without asking
- * the library. Under the bar, as the camera and the clip stand under the
- * library's: TODAY IN OTHER YEARS, one tap into the room's On this day,
- * every photograph of this day in other years (named apart from the On
- * this day at the foot of the page, which is the member's own posts);
- * and, when anything is set aside, SET ASIDE, which opens the shelf.
- */
-function MemoryRoomDoor({ held }: { held: boolean }) {
-  const router = useRouter();
-  const shelf = useSetAside();
-  const [returnLine, setReturnLine] = useState<string | null>(null);
+  // Leaving the tab, or the app going to the background, stops a photograph opening.
   useFocusEffect(
     useCallback(() => {
-      try {
-        setReturnLine(placeLine());
-      } catch {
-        setReturnLine(null);
-      }
+      front.current = true;
+      return () => {
+        front.current = false;
+        printStop.current?.abort();
+      };
     }, []),
   );
-  const n = shelf.length;
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "background") printStop.current?.abort();
+    });
+    return () => sub.remove();
+  }, []);
 
-  return (
-    <View style={styles.section}>
-      <Text style={[styles.eyebrow, styles.roomEyebrow]} accessibilityRole="header" maxFontSizeMultiplier={TYPE_CAP}>
-        The Memory Room
-      </Text>
-      <Text style={styles.line} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
-        {returnLine ?? "Rediscover something worth sharing."}
-      </Text>
-      <GateButton
-        title="Enter the Memory Room"
-        variant="card"
-        onPress={() => router.push("/darkroom")}
-        disabled={held}
-        accessibilityHint="Opens your photographs, one at a time, from further back."
-        maxFontSizeMultiplier={BAR_TYPE_CAP}
-        style={styles.bar}
-      />
-      <View style={[styles.ways, styles.shelf]}>
-        <QuietWay
-          label="Today in other years"
-          spoken="Today in other years, in the Memory Room"
-          hint="Opens every photograph from this day in other years, year by year."
-          busy={false}
-          held={held}
-          onPress={() => router.push({ pathname: "/darkroom", params: { mode: "on-this-day" } })}
-        />
-        {n > 0 ? (
-          // Counted as the room's Contents counts it.
-          <QuietWay
-            label={`Set aside · ${countLabel(n)}`}
-            spoken={`Set aside, ${n} ${n === 1 ? "photograph" : "photographs"}`}
-            hint="Opens the photographs you set aside."
-            busy={false}
-            held={held}
-            onPress={() => router.push({ pathname: "/darkroom", params: { mode: "set-aside" } })}
-          />
-        ) : null}
-      </View>
-    </View>
+  /** POST, the photograph on the mount, or a second tap on the selected cell: the editor. */
+  const post = useCallback(
+    (print: Print) => {
+      if (opening.current) return;
+      postHaptic();
+      void openWith("print", (signal) => openPrint(print, signal), print.id);
+    },
+    [openWith],
   );
-}
 
-/**
- * The camera, or a short clip: a smaller ruled box under the library's
- * bar, on the raised paper, square-cornered as the bars are, ruled in the
- * secondary ink where the bar is ruled in ink, with its mark and its word
- * in ink, so both can be seen at a glance on paper and on black. The two
- * share the column half and half (the clip alone, where there is no
- * camera, takes all of it). While it is the one opening, a small spinner
- * stands where its mark and word were, in a box the same size, so nothing
- * beside it moves. Its word is never held to one line: at the largest
- * text sizes it takes two, and the box grows to hold them. Its letters
- * stop growing where the bars' do (BAR_TYPE_CAP): iOS grows the letters
- * but not the tracking between them, and at the page's own cap CAMERA is
- * wider than half the column of a 320 pt phone, and broken in two.
- */
-function BoxedWay({
-  icon,
-  label,
-  hint,
-  busy,
-  held,
-  onPress,
-}: {
-  icon: "camera" | "video";
-  label: string;
-  hint: string;
-  busy: boolean;
-  held: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={held}
-      style={({ pressed }) => [styles.box, pressed && styles.boxPressed]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={hint}
-      accessibilityState={{ busy, disabled: held }}
-    >
-      <View style={[styles.boxInside, busy && styles.hidden]}>
-        <Feather name={icon} size={BOX_MARK} color={colors.ink} />
-        <Text style={styles.boxWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
-          {label}
-        </Text>
-      </View>
-      {busy ? <ActivityIndicator size="small" color={colors.ink} style={StyleSheet.absoluteFill} /> : null}
-    </Pressable>
+  const listRef = useRef<FlatList<Row>>(null);
+  const offset = useRef(0);
+  const heroBottom = useRef(Number.POSITIVE_INFINITY);
+  const onMountLayout = useCallback((e: LayoutChangeEvent) => {
+    heroBottom.current = e.nativeEvent.layout.y + e.nativeEvent.layout.height;
+  }, []);
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    offset.current = e.nativeEvent.contentOffset.y;
+  }, []);
+  const toTop = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: !reduceMotionRef.current });
+  }, []);
+
+  const { select, selection } = roll;
+  /** A photograph of the roll: selected, and seen large; tapped again once it is, opened. */
+  const onCell = useCallback(
+    (print: Print) => {
+      if (opening.current) return;
+      const sel = selection();
+      if (sel?.id === print.id) {
+        // A quick double tap selects; it does not post.
+        if (Date.now() - sel.at >= SECOND_TAP_MS) post(print);
+        return;
+      }
+      select(print.id);
+      // Scrolled away from the mount, the photograph is brought up to it, with POST under it.
+      if (offset.current > heroBottom.current) toTop();
+    },
+    [post, select, selection, toTop],
   );
-}
-
-/**
- * One of the quieter ways in, as a line of capitals: the shelf of prints
- * set aside. While it is the one opening, a small spinner stands where its
- * letters were, in a box the same size, so nothing beside it moves. Its
- * letters are never held to one line: a word in tracked capitals cut short
- * reads as "SET ASID…".
- */
-function QuietWay({
-  label,
-  spoken,
-  hint,
-  busy,
-  held,
-  onPress,
-}: {
-  label: string;
-  /** What VoiceOver says, where it says more than the word. */
-  spoken?: string;
-  hint: string;
-  busy: boolean;
-  held: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={held}
-      hitSlop={{ left: 8, right: 8 }}
-      style={({ pressed }) => [styles.way, pressed && styles.pressed]}
-      accessibilityRole="button"
-      accessibilityLabel={spoken ?? label}
-      accessibilityHint={hint}
-      accessibilityState={{ busy, disabled: held }}
-    >
-      <Text style={[styles.wayWord, busy && styles.hidden]} maxFontSizeMultiplier={TYPE_CAP}>
-        {label}
-      </Text>
-      {busy ? <ActivityIndicator size="small" color={colors.inkSoft} style={StyleSheet.absoluteFill} /> : null}
-    </Pressable>
+  const onCellPost = useCallback(
+    (print: Print) => {
+      if (opening.current) return;
+      select(print.id);
+      post(print);
+    },
+    [post, select],
   );
-}
 
-/**
- * On this day, as one line at the foot of the page. When the member
- * posted a photograph on this date in an earlier year, that memory's
- * sentence goes under it and the photograph stands at its end as one
- * small print. It is read from the posts the profile and On this day
- * already share, only once the tab is in front; on a day with no memory
- * nothing more is drawn.
- */
-function OnThisDay({ held, focused, day }: { held: boolean; focused: boolean; day: number }) {
-  const router = useRouter();
+  // Tapping Post again: the top, the newest, and the newest page read once.
+  const { selectNewest, refresh } = roll;
+  useEffect(
+    () =>
+      onPostAgain(() => {
+        toTop();
+        selectNewest();
+        refresh();
+      }),
+    [refresh, selectNewest, toTop],
+  );
+
+  // The posts the profile shares, for the day's memory.
   const { session } = useSession();
   const userId = session?.user?.id ?? "";
   const posts = useQuery({
@@ -350,43 +243,190 @@ function OnThisDay({ held, focused, day }: { held: boolean; focused: boolean; da
     // A memory changes once a day, and a new post reaches this cache on its own.
     staleTime: 10 * 60_000,
   });
-  const print = useMemo(() => todaysPrint(posts.data, new Date(day)), [posts.data, day]);
+  const memory = useMemo(() => todaysPrint(posts.data, new Date(today)), [posts.data, today]);
+  const day = useDayDoor({ focused, access: roll.access, ready: roll.phase === "ready", today, memory });
 
-  return (
-    <View style={styles.daySection}>
-      <View style={styles.hairline} />
-      <Pressable
-        onPress={() => router.push("/memories")}
-        disabled={held}
-        style={({ pressed }) => [styles.day, pressed && styles.pressed]}
-        accessibilityRole="button"
-        accessibilityLabel={print ? `On this day. ${print.headline}` : "On this day"}
-        accessibilityHint="Opens what you posted on this date in other years."
-      >
-        <View style={styles.dayText}>
-          <Text style={styles.dayTitle} maxFontSizeMultiplier={TYPE_CAP}>
-            On this day →
-          </Text>
-          {print ? (
-            <Text style={styles.dayLine} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
-              {print.headline}
-            </Text>
-          ) : null}
+  // Where the member left off in the room, from its own small file; and the shelf, from its own.
+  const [place, setPlace] = useState<{ line: string | null; cover: ReturnType<typeof placeCover> }>({ line: null, cover: null });
+  useFocusEffect(
+    useCallback(() => {
+      try {
+        setPlace({ line: placeLine(), cover: placeCover() });
+      } catch {
+        setPlace({ line: null, cover: null });
+      }
+    }, []),
+  );
+  const shelf = useSetAside();
+  const pictures = allowed && !roll.released;
+  const room = roomDoorFace(place.line, place.cover, shelf[0] ?? null, pictures);
+
+  const openRoom = useCallback(() => router.push("/darkroom"), [router]);
+  const openDay = useCallback(() => router.push("/memories"), [router]);
+  const openShelf = useCallback(() => router.push({ pathname: "/darkroom", params: { mode: "set-aside" } }), [router]);
+  const onCamera = useMemo(() => (native ? () => openWith("camera", takeForCompose) : undefined), [native, openWith]);
+  const onVideo = () => openWith("video", () => pickFromLibrary("video"));
+  const onLibrary = () => openWith("photo", () => pickFromLibrary("photo"));
+
+  const ready = roll.phase === "ready";
+  // Rows are made again only when the roll changes, so a row whose photographs did not change is not drawn again.
+  const rows = useMemo<Row[]>(() => (ready ? rollRows(roll.prints, { camera: ios }) : wellRows({ camera: ios })), [ready, roll.prints, ios]);
+
+  const onAct = (act: PanelAct) => {
+    if (act === "ask") roll.ask();
+    else if (act === "shareMore") roll.shareMore();
+    else if (act === "retry") roll.retry();
+    else void openWith("photo", () => pickFromLibrary("photo"));
+  };
+
+  const ways = busy && busy.way !== "print" ? busy.way : null;
+  const panel = panelFor({ available: door, phase: roll.phase, access: roll.access, empty: roll.prints.length === 0 });
+  // The clip's limit, where no trimmer holds a clip to it.
+  const clipNote =
+    Platform.OS !== "ios" ? (
+      <View style={styles.note} pointerEvents="none">
+        <Text style={styles.noteText} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
+          Clips up to {MAX_VIDEO_SECONDS} seconds.
+        </Text>
+      </View>
+    ) : null;
+
+  if (!door) {
+    return (
+      <Screen padded={false} scroll>
+        <View style={[styles.alone, { paddingVertical: short ? spacing.sm : spacing.md }]}>
+          <OnThisDayDoor face={day} narrow={narrow} short={short} large={large} pictures={false} reduceMotion={reduceMotion} held={held} onPress={openDay} />
         </View>
-        {print?.source != null ? (
-          <Image
-            source={print.source}
-            style={[styles.print, print.filter ? ({ filter: print.filter } as object) : null]}
-            contentFit="cover"
-            transition={200}
-            recyclingKey={print.id}
-            accessibilityIgnoresInvertColors
+        <MountPanel
+          kind="unavailable"
+          iosMajor={iosMajor}
+          H={H}
+          narrow={narrow}
+          busy={ways === "photo"}
+          held={held}
+          onAct={onAct}
+          onOpenSettings={roll.openSettings}
+        />
+        <WaysRow recent={false} camera={native} library={false} narrow={narrow} large={large} busy={ways} held={held} onCamera={onCamera} onVideo={onVideo} />
+        {clipNote}
+      </Screen>
+    );
+  }
+
+  const dim = roll.phase === "undetermined" || roll.phase === "denied";
+  const selectedId = roll.selected?.id ?? null;
+  const busyId = busy?.way === "print" ? (busy.id ?? null) : null;
+  const drawnOut = roll.released;
+
+  const header = (
+    <View>
+      <PostDoors
+        room={room}
+        day={day}
+        shelf={shelf.length}
+        narrow={narrow}
+        short={short}
+        large={large}
+        pictures={pictures}
+        reduceMotion={reduceMotion}
+        held={held}
+        onRoom={openRoom}
+        onDay={openDay}
+        onShelf={openShelf}
+      />
+      <View onLayout={onMountLayout}>
+        {panel === null && roll.selected ? (
+          <RollHero
+            print={roll.selected}
+            W={W}
+            H={H}
+            large={large}
+            busy={busy?.way === "print"}
+            held={held}
+            released={drawnOut}
+            heroReleased={roll.heroReleased}
+            reduceMotion={reduceMotion}
+            focused={focused}
+            online={online}
+            now={today}
+            onPost={() => roll.selected && post(roll.selected)}
           />
-        ) : null}
-      </Pressable>
+        ) : (
+          <MountPanel
+            kind={panel ?? "loading"}
+            iosMajor={iosMajor}
+            H={H}
+            narrow={narrow}
+            busy={roll.asking || ways === "photo"}
+            held={held}
+            onAct={onAct}
+            onOpenSettings={roll.openSettings}
+          />
+        )}
+      </View>
+      <WaysRow
+        recent
+        camera={false}
+        library
+        narrow={narrow}
+        large={large}
+        busy={ways}
+        held={held}
+        onVideo={onVideo}
+        onLibrary={onLibrary}
+      />
+      {roll.access === "limited" && ready && roll.prints.length > 0 ? <LimitedLine held={held} onShareMore={roll.shareMore} /> : null}
+      {clipNote}
     </View>
   );
+
+  const footer = ready && roll.end !== "more" ? <RollFooter held={held} onEnter={openRoom} /> : null;
+
+  return (
+    <Screen padded={false}>
+      <FlatList
+        ref={listRef}
+        testID="post-roll"
+        data={rows}
+        keyExtractor={(row) => row.key}
+        renderItem={({ item }) => (
+          <RollRow
+            row={item}
+            size={size}
+            selectedId={selectedId && item.items.some((i) => i.key === selectedId) ? selectedId : null}
+            busyId={busyId && item.items.some((i) => i.key === busyId) ? busyId : null}
+            cameraBusy={busy?.way === "camera"}
+            released={drawnOut}
+            held={held}
+            dim={dim}
+            reduceMotion={reduceMotion}
+            onCell={onCell}
+            onPost={onCellPost}
+            onCamera={onCamera}
+          />
+        )}
+        extraData={[selectedId, busy, held, drawnOut, dim]}
+        ListHeaderComponent={header}
+        ListFooterComponent={footer}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={3}
+        removeClippedSubviews={false}
+        onEndReached={roll.loadMore}
+        onEndReachedThreshold={1.5}
+        scrollEventThrottle={16}
+        onScroll={onScroll}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+      />
+    </Screen>
+  );
 }
+
+type Way = "photo" | "camera" | "video" | "print";
+
+/** The page's type stops growing here, as the Memory Room's own word pages do. */
+const TYPE_CAP = 2.4;
 
 /**
  * Today, from its first moment, local time: the date On this day reads.
@@ -428,71 +468,9 @@ function tomorrow(ms: number): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
 }
 
-const caps = { textTransform: "uppercase" as const };
-
 const styles = StyleSheet.create({
-  body: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
-  pressed: { opacity: 0.6 },
-  hidden: { opacity: 0 },
-
-  // The page's one serif line, under the screen's title.
-  title: { fontFamily: type.serif, fontSize: 28, lineHeight: 34, letterSpacing: 0.2, color: colors.ink, marginTop: spacing.xl },
-
-  section: { marginTop: spacing.xxl + spacing.sm },
-  eyebrow: { fontFamily: type.mono, fontSize: 10, letterSpacing: 2.4, ...caps, color: colors.inkFaint },
-  // The room's name, in the page's one accent: burnt sienna on paper, white on black.
-  roomEyebrow: { color: colors.accent },
-  line: { fontSize: 15, lineHeight: 21, color: colors.inkSoft, marginTop: spacing.sm },
-  bar: {
-    height: undefined,
-    minHeight: 52,
-    paddingVertical: spacing.md,
-    paddingHorizontal: BAR_INSET,
-    marginTop: spacing.lg,
-  },
-  // The shelf's line of capitals: it wraps rather than running off the page at the largest sizes.
-  ways: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.xl + spacing.xs, rowGap: spacing.xs, marginTop: spacing.xs },
-  // The library is drawn up into the empty foot of SET ASIDE's touch box,
-  // so the two ways in sit about as far apart with the shelf as without it.
-  shelf: { marginBottom: -spacing.md },
-  way: { minHeight: TOUCH, justifyContent: "center" },
-  // Its trailing tracking is kept (no negative margin): the box is as wide as its letters.
-  wayWord: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 2.2, ...caps, color: colors.inkSoft },
-  // The camera and the clip, side by side under the library's bar.
-  boxes: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.md, rowGap: spacing.md, marginTop: spacing.md },
-  box: {
-    flexGrow: 1,
-    flexBasis: BOX_BASIS,
-    minHeight: BOX_HEIGHT,
-    justifyContent: "center",
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.paperRaised,
-    // The secondary ink, a step down from the library bar's rule in ink: an
-    // edge that can be seen on paper and on black, where the hairline greys
-    // could not.
-    borderWidth: 1,
-    borderColor: colors.inkSoft,
-  },
-  boxPressed: { backgroundColor: colors.paperSunken },
-  boxInside: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
-  // The bars' own letters (mono, 11, in ink), tracked a little less to sit beside the mark in half the column of a 320 pt phone.
-  boxWord: { flexShrink: 1, fontFamily: type.mono, fontSize: 11, letterSpacing: 1.6, ...caps, color: colors.ink, textAlign: "center" },
-  // Under the boxes it glosses, in the page's secondary ink, and never takes their taps.
-  waysNote: { marginTop: spacing.sm },
-  waysNoteText: { fontSize: 12, lineHeight: 17, color: colors.inkSoft },
-
-  hairline: { height: 1, backgroundColor: colors.border },
-  daySection: { marginTop: spacing.xl + spacing.xs },
-  day: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.lg,
-    minHeight: TOUCH + spacing.sm * 2,
-    paddingVertical: spacing.md,
-  },
-  dayText: { flex: 1 },
-  dayTitle: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 2.2, ...caps, color: colors.inkSoft },
-  dayLine: { fontSize: 12, lineHeight: 17, color: colors.inkFaint, marginTop: spacing.xs },
-  print: { width: PRINT_WIDTH, height: PRINT_HEIGHT, backgroundColor: colors.paperSunken },
+  list: { paddingBottom: spacing.xxl },
+  alone: { paddingHorizontal: spacing.lg, flexDirection: "row" },
+  note: { paddingHorizontal: spacing.lg, paddingBottom: 10 },
+  noteText: { fontSize: 12, lineHeight: 17, color: colors.inkSoft },
 });

@@ -92,9 +92,10 @@ export function GateButton({
  * leaves it 184 between the two clearances, so it stays on one line in
  * the same place. At 44 it took two lines there.
  *
- * The card is the Post tab's Memory Room bar, and that page gives both its
- * bars their size and their own clearance (app/(tabs)/create.tsx, its
- * `bar` style), which overrides these; the card keeps none of its own.
+ * The card is the Post tab's Memory Room bar, at the foot of its roll, and
+ * that page gives it its size and its own clearance
+ * (src/components/post/RollFooter.tsx, its `bar` style), which overrides
+ * these; the card keeps none of its own.
  */
 const ARROW_CLEARANCE = 40;
 

@@ -50,11 +50,14 @@ describe("at the door", () => {
     // Symmetric, so the centred label does not move; the quiet way has no arrow and no padding.
     expect(style(button, "quiet")).not.toMatch(/padding(Horizontal|Left|Right)/);
     for (const bar of ["solid", "outline"]) expect(style(button, bar), bar).not.toMatch(/padding(Left|Right)/);
-    // The card's one page (the Post tab) gives every bar of its own a clearance that keeps clear of the arrow.
+    // The card's one page (the Post tab) gives its bar, at the foot of the roll, a clearance that keeps clear of the arrow.
     const create = read("app/(tabs)/create.tsx");
-    expect(create.match(/variant="card"/g)).toHaveLength(1);
-    expect(Number(create.match(/const BAR_INSET = (\d+);/)?.[1])).toBeGreaterThanOrEqual(16 + 18);
-    expect(style(create, "bar")).toMatch(/paddingHorizontal: BAR_INSET/);
+    const footer = read("src/components/post/RollFooter.tsx");
+    expect(create).toMatch(/<RollFooter\b/);
+    expect(create.match(/variant="card"/g)).toBeNull();
+    expect(footer.match(/variant="card"/g)).toHaveLength(1);
+    expect(Number(footer.match(/const BAR_INSET = (\d+);/)?.[1])).toBeGreaterThanOrEqual(16 + 18);
+    expect(style(footer, "bar")).toMatch(/paddingHorizontal: BAR_INSET/);
     // At the default size the longest label at the door still fits on one line between the clearances
     // of the narrowest phone's bar: 320 points (the first iPhone SE, on iOS 15, inside Expo SDK 54's
     // 15.1 minimum; or a mini or an SE with Display Zoom) less the page's two margins. Courier New is 0.6 em

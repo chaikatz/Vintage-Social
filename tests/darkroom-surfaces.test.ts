@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -376,46 +376,136 @@ function code(file: string): string {
 
 describe("the Post tab", () => {
   const tab = code("app/(tabs)/create.tsx");
+  const dir = path.join(root, "src/components/post");
+  const partFiles = readdirSync(dir).map((f) => `src/components/post/${f}`);
+  const parts = partFiles.map((f) => [f, code(f)] as const);
+  const roll = code("src/post/useRoll.ts");
+  const postFiles = readdirSync(path.join(root, "src/post")).map((f) => `src/post/${f}`);
+  /** The one function's body in a file, from its name to the next `const … = useCallback`. */
+  const body = (src: string, name: string) => {
+    const at = src.indexOf(`const ${name} = useCallback`);
+    const next = src.indexOf("= useCallback", at + name.length + 20);
+    return at < 0 ? "" : src.slice(at, next < 0 ? undefined : next);
+  };
 
-  it("never reads the photo library, or asks for it", () => {
-    expect(tab).not.toMatch(/expo-media-library|@\/darkroom\/access|@\/utils\/library|darkroomSource|nativeSource/);
-    expect(tab).not.toMatch(/readAccess|\.oldest\(|getPermissionsAsync|requestPermissionsAsync|getAssetsAsync|libraryGranted/);
+  it("draws the page without reading the library itself: its reads live in src/post", () => {
+    for (const [f, src] of [["app/(tabs)/create.tsx", tab] as const, ...parts]) {
+      expect(src, f).not.toMatch(/expo-media-library|@\/darkroom\/access"|@\/utils\/library|darkroomSource|nativeSource/);
+      expect(src, f).not.toMatch(/readAccess|requestAccess|\.oldest\(|getPermissionsAsync|requestPermissionsAsync|getAssetsAsync|libraryGranted|watchLibrary/);
+    }
+    // Only these four ask the library anything, or open one of its photographs.
+    const asking = postFiles.filter((f) => /darkroomSource|readDayDoor\(|source\.(page|count|oldest)\(|composeParamsFor|readAccess|requestAccess/.test(code(f)));
+    expect(asking.sort()).toEqual(["src/post/dayDoor.ts", "src/post/openPrint.ts", "src/post/useDayDoor.ts", "src/post/useRoll.ts"]);
+  });
+
+  it("reads the library only once the tab is in front, and asks for it only from SHOW MY PHOTOGRAPHS", () => {
+    // What access there is is read in `front`, which goes no further when the tab is not in front.
+    expect(roll.match(/readAccess\(\)/g)).toHaveLength(1);
+    const front = roll.slice(roll.indexOf("const front = useCallback"), roll.indexOf("focusedRef.current = focused;"));
+    expect(front).toMatch(/if \(!source \|\| !focusedRef\.current\) return;\s*const before = accessRef\.current;\s*const now = await readAccess\(\);/);
+    // The focus effect goes no further than letting go while the tab is not in front; once in front, after its animation.
+    const focus = roll.slice(roll.indexOf("focusedRef.current = focused;"), roll.indexOf("const change = AppState"));
+    expect(focus).toMatch(/if \(!focused\) \{[\s\S]*?return;\s*\}/);
+    expect(focus.indexOf("if (!focused)")).toBeLessThan(focus.indexOf("runAfterInteractions"));
+    // A return from the background reads only while the tab is in front.
+    expect(roll).toMatch(/onReturnFromBackground\(\(\) => \{\s*if \(!focusedRef\.current\) \{\s*heard\.current = true;\s*return;\s*\}/);
+    // Asking, only from the tap.
+    expect(roll.match(/requestAccess\(\)/g)).toHaveLength(1);
+    expect(body(roll, "ask")).toMatch(/const now = await requestAccess\(\);/);
+    expect(roll.match(/chooseMorePhotographs\(\)/g)).toHaveLength(1);
+    expect(body(roll, "shareMore")).toMatch(/await chooseMorePhotographs\(\);/);
+    for (const f of postFiles) {
+      const src = code(f);
+      expect(src, f).not.toMatch(/libraryGranted\(true\)|requestPermissionsAsync|presentPermissionsPickerAsync/);
+    }
+  });
+
+  it("keeps no listener on the library, but for a moment after SHARE MORE, while in front", () => {
+    expect(roll.match(/watchLibrary\(/g)).toHaveLength(1);
+    expect(body(roll, "shareMore")).toMatch(/watching\.current = watchLibrary\(/);
+    // Let go on blur, and when the tab goes.
+    const focus = roll.slice(roll.indexOf("focusedRef.current = focused;"), roll.indexOf("const change = AppState"));
+    expect(focus).toMatch(/if \(!focused\) \{\s*leftAt\.current = Date\.now\(\);\s*watching\.current\?\.\(\);\s*watching\.current = null;/);
+    for (const f of postFiles.filter((f) => f !== "src/post/useRoll.ts")) expect(code(f), f).not.toMatch(/watchLibrary|addListener/);
+  });
+
+  it("reads through the room's own gate, in bounded pages and with no cursor", () => {
+    expect(roll).toMatch(/return s \? gated\(s\) : null;/);
+    expect(code("src/post/useDayDoor.ts")).toMatch(/return s \? inBackground\(s\) : null;/);
+    for (const f of postFiles) expect(code(f), f).not.toMatch(/\bafter\s*:/);
+    expect(roll).toMatch(/first: ROLL_FIRST, order: "desc"/);
+    expect(roll).toMatch(/first: ROLL_PAGE, order: "desc"/);
+  });
+
+  it("keeps every photograph of the library in its own view: never in the shared cache, never on disk", () => {
+    let images = 0;
+    for (const [f, src] of parts) {
+      for (const image of src.match(/<Image\b[\s\S]*?\/>/g) ?? []) {
+        // The one photograph the member posted is the server's thumbnail; every other is the library's.
+        if (/source=\{face\.memory\.source\}/.test(image)) continue;
+        images += 1;
+        expect(image, f).toMatch(/source=\{[^}]*printSource\(/);
+        expect(image, f).toContain('cachePolicy="none"');
+        expect(image, f).not.toMatch(/cachePolicy="(memory|disk|memory-disk)"/);
+        // All but the proof, which is asked for small and scaled up.
+        if (!/transition=\{0\}\s*accessibilityIgnoresInvertColors/.test(image) || /recyclingKey/.test(image)) {
+          expect(image, f).toMatch(/allowDownscaling=\{false\}/);
+          expect(image, f).toMatch(/priority="normal"/);
+          expect(image, f).toMatch(/recyclingKey=\{print\.id\}/);
+        }
+      }
+      expect(src, f).not.toMatch(/prefetch/i);
+    }
+    // The cells, the mount's proof and photograph, and the doors' prints.
+    expect(images).toBe(4);
+    for (const f of postFiles) expect(code(f), f).not.toMatch(/prefetch/i);
+    expect(tab).not.toMatch(/prefetch/i);
+  });
+
+  it("lets every photograph go ten seconds after the tab is left, at once in the background", () => {
+    expect(roll).toMatch(/releaseTimer\.current = setTimeout\(\(\) => setReleased\(true\), RELEASE_AFTER_BLUR_MS\);/);
+    expect(roll).toMatch(/if \(state === "background"\) setReleased\(true\);/);
+    expect(roll).toMatch(/AppState\.addEventListener\("memoryWarning", \(\) => setHeroReleased\(true\)\)/);
+    // Nothing is drawn before the tab is first in front.
+    expect(roll).toMatch(/const \[released, setReleased\] = useState\(true\);/);
+    const cell = parts.find(([f]) => f.endsWith("RollCell.tsx"))![1];
+    expect(cell).toMatch(/source=\{released \? null : printSource\(print\.uri\)\}/);
+    const hero = parts.find(([f]) => f.endsWith("RollHero.tsx"))![1];
+    expect(hero).toMatch(/source=\{released \|\| heroReleased \? null : printSource\(print\.uri\)\}/);
+    expect(tab).toMatch(/const pictures = allowed && !roll\.released;/);
   });
 
   it("reads where the member left off from the place file, and the shelf from its own", () => {
-    expect(tab).toMatch(/import \{ placeLine \} from "@\/darkroom\/session"/);
+    expect(tab).toMatch(/import \{ placeCover, placeLine \} from "@\/darkroom\/session"/);
     expect(tab).toMatch(/import \{ useSetAside \} from "@\/darkroom\/setAside"/);
-    expect(tab).toMatch(/useFocusEffect\([\s\S]*placeLine\(\)/);
+    expect(tab).toMatch(/useFocusEffect\([\s\S]*setPlace\(\{ line: placeLine\(\), cover: placeCover\(\) \}\)/);
   });
 
-  it("opens the Darkroom, its shelf and On this day", () => {
+  it("opens the room, its shelf and On this day", () => {
     expect(tab).toMatch(/router\.push\("\/darkroom"\)/);
     expect(tab).toMatch(/params: \{ mode: "set-aside" \}/);
     expect(tab).toMatch(/router\.push\("\/memories"\)/);
-    expect(tab).toMatch(/<Screen padded=\{false\} scroll>/);
     expect(tab).toMatch(/darkroomAvailable\(\)/);
   });
 
-  it("says what the spec says, by the room's new name", () => {
+  it("says the room's name, never the old one, and only what the spec says", () => {
+    const all = [tab, ...parts.map(([, src]) => src), code("src/post/panels.ts"), code("src/post/dayDoor.ts"), code("src/post/roll.ts")].join("\n");
     for (const words of [
-      "Share a photograph.",
       "The Memory Room",
       '"Rediscover something worth sharing."',
       'title="Enter the Memory Room"',
       'accessibilityHint="Opens your photographs, one at a time, from further back."',
-      "From your library",
-      'title="Choose a photograph"',
-      'hint="Opens the photographs you set aside."',
-      'accessibilityHint="Opens what you posted on this date in other years."',
+      'accessibilityHint="Opens the photographs you set aside."',
+      'accessibilityHint="Opens what you posted and photographed on this date in other years."',
+      '"Show my photographs"',
+      'label="Library"',
     ]) {
-      expect(tab).toContain(words);
+      expect(all).toContain(words);
     }
-    // The visible name and every spoken one: the route alone keeps the old word.
-    expect(tab).not.toMatch(/Darkroom/);
-    expect(tab).not.toMatch(/Find me something|randomOldPhoto|Something worth remembering/);
-    expect(tab).not.toMatch(/!["'`]/);
-    // Typographer's apostrophes, never the typewriter's, in anything the page says.
-    expect(tab).not.toMatch(/"[^"\n]*\w'\w[^"\n]*"|>[^<{]*\w'\w[^<{]*</);
+    expect(all).not.toMatch(/Darkroom/);
+    expect(all).not.toMatch(/Find me something|randomOldPhoto|Something worth remembering|Today in other years/);
+    expect(all).not.toMatch(/!["'`]/);
+    expect(all).not.toMatch(/"[^"\n]*\w'\w[^"\n]*"|>[^<{]*\w'\w[^<{]*</);
   });
 });
 
@@ -485,7 +575,7 @@ describe("the purpose string", () => {
 describe("the privacy policy", () => {
   it("says what the Darkroom keeps, and no more than it does", async () => {
     const { PRIVACY_POLICY } = await import("@/legal/documents");
-    const darkroom = PRIVACY_POLICY.split(/\n\n+/).find((p) => p.startsWith("Your photo library, in the Memory Room."));
+    const darkroom = PRIVACY_POLICY.split(/\n\n+/).find((p) => p.startsWith("Your photo library, in the Memory Room and on the Post tab."));
     expect(darkroom).toBeDefined();
     const text = darkroom ?? "";
     // The place is never read, the Hidden album never looked through.
@@ -499,7 +589,12 @@ describe("the privacy policy", () => {
     // Ordinary app data on the phone: no promise that a backup leaves it out.
     expect(text).toContain("can be included in your phone’s own backup");
     expect(text).not.toMatch(/only the library’?'?s own identifiers|never backed up|excluded from/i);
-    expect(text).toContain("VINTAGE downloads the photograph itself only when you ask it to develop it.");
+    expect(text).toContain("VINTAGE downloads the photograph itself only when you open it to post.");
+    // The Post tab reads on the phone, while it is open, and keeps nothing.
+    expect(text).toContain(
+      "The Post tab shows your newest photographs first, and counts the photographs you took on today’s date in earlier years; it reads them on your phone while the tab is open and keeps nothing about them.",
+    );
+    expect(text).toContain("photographs you posted from either, for a year");
     expect(text).not.toMatch(/'/);
   });
 

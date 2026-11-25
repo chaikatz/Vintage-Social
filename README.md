@@ -183,6 +183,10 @@ builds, and most only to demo mode:
   the CSS approximation, not the GL snapshot.
 - **Camera:** hidden on web (library picking works, including for the
   compose flow).
+- **The Post tab:** its roll reads the demo library (about thirty bundled
+  photographs, the newest some hundred days old; no camera tile), and the
+  On this day door counts the demo's six anniversaries; `/memories`'
+  library section stays off on web.
 - **Video thumbnails:** not generated on web; the grid falls back to the
   raw media.
 - **Dialogs:** native action sheets become `window.confirm`/`prompt`.
@@ -423,16 +427,18 @@ modal, because the editor has to open above it and come back to it. It is
 printed on the app's own page, light or dark as the appearance is, and
 each photograph carries the print's signature line under it, the caption
 hung beneath. Back is the left edge or the chevron;
-anywhere else a swipe turns the page. The way in is the first of the Post
-tab's two bars, ENTER THE MEMORY ROOM, printed as the invitation card is
-(brown and gold on the light print; on the dark one a grey card a step up
-from the black, lettered in white): TODAY IN OTHER YEARS stands under it,
-one tap into the room's On this day, and SET ASIDE · 3 beside it when
-anything is set aside, and "You left off in August 2018." replaces its
-line when the member was in the room
-within twelve hours. The "In your library" part of On this day
-(`app/memories.tsx`) opens it too, at every photograph of the day or at
-one year's. It exists on iOS and in the web demo only.
+anywhere else a swipe turns the page. The way in is the Memory Room door
+at the top of the Post tab, printed as the invitation card is (brown and
+gold on the light print; on the dark one a grey card a step up from the
+black, lettered in white), carrying the print the member left off on and
+"You left off in August 2018." when they were in the room within twelve
+hours (`placeLine` and `placeCover`, read from the place file alone).
+SET ASIDE · 3 stands under it when anything is set aside, one tap into
+the shelf, and ENTER THE MEMORY ROOM closes the Post tab's roll. TODAY IN
+OTHER YEARS is folded into the On this day door beside it, which opens
+`app/memories.tsx`, whose library rows open the room's On this day, at
+every photograph of the day or at one year's. It exists on iOS and in the
+web demo only.
 
 There are four ways in, chosen in Contents (the chapter name, or the
 CONTENTS tab in the running head, which says what is inside until it is
@@ -466,9 +472,17 @@ otherwise Surprise me. Each chapter ends on an end page that hands on to
 another; there is no counter. The rules are pure and seeded, in
 `src/darkroom/` (`eligibility.ts`, `discovery.ts`, `labels.ts`).
 
-Privacy is the design. Library access is asked for in one place only,
-CONTINUE on the room's first-visit page; the Post tab never reads the
-library, `app/memories.tsx` never asks, and the ordinary picker
+Privacy is the design. Library access is asked for only from a tap on an
+explanation: CONTINUE on the room's first-visit page, or SHOW MY
+PHOTOGRAPHS on the Post tab. The Post tab reads the library only while it
+is in front and access was given: one bounded page of the newest
+photographs at a time (60, then 120, 1,200 at most), and on the On this
+day door one count per earlier year of today's date (thirty at most) and
+three covers, all through the room's two-at-a-time gate. It keeps no
+listener on the library except for a moment after SHARE MORE. It draws
+every photograph at its view's size and keeps it in that view alone,
+never in the shared cache or on disk, and lets all of them go ten seconds
+after the tab is left. `app/memories.tsx` never asks, and the ordinary picker
 (`src/utils/pickForCompose.ts`) needs no permission and cuts the picked
 file's EXIF down to its date fields the moment it arrives. The room asks
 the library only bounded questions — counts, pages of at most 150, time
@@ -537,6 +551,70 @@ its preview stood the photograph and caption, set aside, a year with its
 month marks, Surprise me dealing on as the strip nears its end, the shelf,
 an end page, develop into the editor and back, and a 320-point phone, with
 a glide landing there too. The unit tests are `tests/darkroom*.test.ts`.
+
+## The Post tab
+
+`app/(tabs)/create.tsx`, composed from `src/components/post/` with its
+rules in `src/post/`, is where a post begins, and it is the member's own
+photographs. Top to bottom:
+
+- **The doors.** The Memory Room's, in the invitation card's stock, with
+  the print the member left off on and where that was; and On this day's,
+  on paper: this date's photographs in earlier years fanned out with how
+  many and which years ("6 photographs", "2014 – 2023"), or else the
+  member's own post from this date, or else the leaf of a desk calendar
+  ("Every year, on this date."). Each is a ruled card with a chevron, so
+  neither reads as a heading over nothing. SET ASIDE · 3 under them when
+  anything is set aside. Narrower than 360 points they keep their words
+  and let their pictures go; at the larger text sizes they stack.
+- **The mount.** The selected photograph large, on the camera's dark, in
+  the frame the editor will give it (compose's own 4:5 to 1.91:1 clamp),
+  with the print's signature line under it — the date in tracked
+  capitals, how long ago in words — and POST, the page's one primary
+  action. POST, a tap on the photograph, or a second tap on the selected
+  cell (400 ms after selecting, so a double tap does not post) opens the
+  editor. It is half the page, between 230 and 400 points tall, and
+  every panel that stands in for it is the same box.
+- **The ways.** RECENT, then SHORT VIDEO (up to 60 seconds) and LIBRARY,
+  the iPhone's own picker, which needs no permission.
+- **The roll.** Newest first, four to a row, edge to edge, the camera
+  first on the iPhone, the selected one in the room's grease-pencil box.
+  Tapping a photograph selects it; tapped from far down the roll, the
+  page goes back up to it. Under full access screenshots are left out,
+  as the room leaves them out; under limited access every photograph the
+  member chose shows, with "VINTAGE sees only the photographs you chose."
+  and SHARE MORE above the roll.
+- **The foot.** Where the roll ends — the library's end, or 1,200 —
+  FURTHER BACK and ENTER THE MEMORY ROOM.
+
+Tapping the Post tab again goes back to the top and selects the newest.
+
+A photograph from the roll is opened as the library picker's are
+(`composeParamsFor`): a 2048 px rendition from Photos, brought down from
+iCloud when it must be, never the original or a Live Photo's video, with
+the library's identifier, so a post from the roll is remembered as the
+room's are (taken off the shelf, the room's place moved on past it).
+Leaving the tab or the app stops it, and a copy that still arrives is
+deleted. One way in opens at a time; every control rests while it does.
+
+Its states, all on the same mount: before the tab has been in front, an
+empty box and wells; never asked, "Your photographs, right here." and
+SHOW MY PHOTOGRAPHS, which is when iOS asks; refused, the way to Settings
+(LIBRARY, SHORT VIDEO and the camera still work); reading, an empty box
+with a spinner after 400 ms; an empty library, or an empty selection
+with SHARE MORE; a library that would not answer, TRY AGAIN, never shown
+as empty; offline, a photograph kept only in iCloud says "In iCloud"
+under its proof. Without a library (Android, a browser outside the demo)
+it is the On this day door, CHOOSE A PHOTOGRAPH, the camera and the clip.
+
+It reads nothing before it is first in front — the pager mounts it
+beside Search and Activity — and draws no photograph until then. Every
+photograph it draws is let go ten seconds after the tab is left, at once
+when the app goes to the background, and the mount's on a memory
+warning. The rules and numbers are pure, in `src/post/roll.ts`,
+`dayDoor.ts` and `panels.ts`; `tests/post-*.test.ts` and
+`tests/create-entry.test.ts` hold them, and `e2e/post-test.mjs` walks the
+tab in the web demo.
 
 ## Media pipeline
 
