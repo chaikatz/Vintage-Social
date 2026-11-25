@@ -113,6 +113,7 @@ function room() {
   let list: { detach(): void } | null = null;
   let count = 0;
   let page = 0;
+  let turning = false;
   const r = {
     native,
     scrollX,
@@ -123,7 +124,7 @@ function room() {
       if (p.count != null) count = p.count;
       if (p.page != null) page = p.page;
       start.setValue(fadeStart(count, W));
-      const shown = wordOnPage({ prints: p.prints ?? true, photograph: page < count, card: p.card ?? false });
+      const shown = wordOnPage({ prints: p.prints ?? true, photograph: page < count, turning, count, card: p.card ?? false });
       on.setValue(shown ? 1 : 0);
     },
     /** A new chapter: the pager's list is mounted afresh, its scroll attached, and put on its first page. */
@@ -141,12 +142,20 @@ function room() {
       native.scroll(pager, at * W);
       r.show({ count: n, page: at });
     },
-    /** The pager scrolled to `x` and, if it lands there, settled: `Stage` puts the scroll value on the page. */
+    /**
+     * The pager scrolled to `x` and, if it lands there, settled: `Stage` puts the scroll value on the page.
+     * Not settled, the page is being turned (the finger still down), as `Stage` tells the room.
+     */
     scroll(x: number, settle = true) {
+      if (!settle && !turning) {
+        turning = true;
+        r.show({});
+      }
       native.scroll(pager, x);
       if (!settle) return;
       const i = Math.round(x / W);
       scrollX.setValue(i * W);
+      turning = false;
       r.show({ page: i });
     },
     /** The word as the native driver draws it, and whether the pager's scroll still drives what it reads. */
@@ -182,6 +191,53 @@ describe("the room's word now", () => {
       r.scroll(i * W);
       expect(r.seen(), `page ${i}`).toEqual({ opacity: 1, driven: true });
     }
+  });
+
+  it("comes back with the finger as a page is swiped back off the end page, and stays gone if it goes back there", () => {
+    const r = room();
+    r.chapter(6, 0);
+    r.scroll(6 * W);
+    expect(r.seen()).toEqual({ opacity: 0, driven: true });
+    // The finger down on the end page, nothing moved yet: still nothing.
+    r.scroll(6 * W, false);
+    expect(r.seen().opacity).toBe(0);
+    // A quarter and then half way back to the last photograph: the word comes in with it.
+    r.scroll(5.75 * W, false);
+    expect(r.seen()).toEqual({ opacity: 0.25, driven: true });
+    r.scroll(5.5 * W, false);
+    expect(r.seen()).toEqual({ opacity: 0.5, driven: true });
+    // Let go and it swings back to the end page: gone, and off once settled there.
+    r.scroll(6 * W);
+    expect(r.seen()).toEqual({ opacity: 0, driven: true });
+    // Swiped all the way back this time: whole on the last photograph, and on every one after.
+    r.scroll(5.5 * W, false);
+    r.scroll(5 * W);
+    expect(r.seen()).toEqual({ opacity: 1, driven: true });
+    r.scroll(4.5 * W, false);
+    expect(r.seen().opacity).toBe(1);
+    r.scroll(4 * W);
+    expect(r.seen()).toEqual({ opacity: 1, driven: true });
+  });
+
+  it("comes back with the finger off the waiting card too, and never shows in a chapter left with no photographs", () => {
+    const r = room();
+    r.chapter(12, 0);
+    r.scroll(12 * W);
+    expect(r.seen().opacity).toBe(0);
+    r.scroll(11.5 * W, false);
+    expect(r.seen().opacity).toBe(0.5);
+    r.scroll(12 * W);
+    expect(r.seen().opacity).toBe(0);
+    // The shelf emptied under the member: its end page is the only page, at 0. A drag there, and the bounce
+    // either side of it, shows nothing.
+    r.rebase(0, 0);
+    expect(r.seen().opacity).toBe(0);
+    for (const x of [-0.2 * W, 0, 0.2 * W]) {
+      r.scroll(x, false);
+      expect(r.seen().opacity, `scrolled to ${x}`).toBe(0);
+    }
+    r.scroll(0);
+    expect(r.seen().opacity).toBe(0);
   });
 
   it("goes under a title card and comes back with the next chapter, its scroll still its own", () => {
@@ -238,12 +294,24 @@ describe("the room's word now", () => {
     expect(r.seen().opacity).toBe(1);
   });
 
-  it("is on the page only with a photograph settled in front and no title card", () => {
-    expect(wordOnPage({ prints: true, photograph: true, card: false })).toBe(true);
+  it("is on the page with a photograph settled in front, or a page being turned among photographs, and no title card", () => {
     for (const p of [
-      { prints: false, photograph: true, card: false },
-      { prints: true, photograph: false, card: false },
-      { prints: true, photograph: true, card: true },
+      { prints: true, photograph: true, turning: false, count: 6, card: false },
+      { prints: true, photograph: true, turning: true, count: 6, card: false },
+      // Turning off the end page or the waiting card: on, and the scroll's fade decides.
+      { prints: true, photograph: false, turning: true, count: 6, card: false },
+    ]) {
+      expect(wordOnPage(p), JSON.stringify(p)).toBe(true);
+    }
+    for (const p of [
+      { prints: false, photograph: true, turning: false, count: 6, card: false },
+      { prints: false, photograph: false, turning: true, count: 6, card: false },
+      // Settled on the end page or the waiting card.
+      { prints: true, photograph: false, turning: false, count: 6, card: false },
+      { prints: true, photograph: true, turning: false, count: 6, card: true },
+      { prints: true, photograph: false, turning: true, count: 6, card: true },
+      // A chapter with no photographs left.
+      { prints: true, photograph: false, turning: true, count: 0, card: false },
     ]) {
       expect(wordOnPage(p), JSON.stringify(p)).toBe(false);
     }
@@ -265,7 +333,11 @@ describe("the word, in the room's source", () => {
     expect(screen.match(/<Develop\s/g)).toHaveLength(1);
     const develop = screen.slice(screen.indexOf("<Develop"), screen.indexOf("/>", screen.indexOf("<Develop")));
     expect(develop).toMatch(/opacity=\{wordOpacity\}/);
-    expect(screen).toMatch(/const wordShown = wordOnPage\(\{ prints: state\.view\.kind === "prints", photograph: current != null, card: fades\.card != null \}\);/);
+    expect(screen).toMatch(
+      /const wordShown = wordOnPage\(\{\s*prints: state\.view\.kind === "prints",\s*photograph: current != null,\s*turning: dragging,\s*count: n,\s*card: fades\.card != null,\s*\}\);/,
+    );
+    // `dragging` is what the stage says while a page turns, from the first touch (or a turn it made) to the settle.
+    expect(screen).toMatch(/onDragging=\{setDragging\}/);
     expect(screen).toMatch(/const wordOpacity = useWordFade\(scrollX, n, width, wordShown, reduceMotion\);/);
     // Nothing else reads the scroll value but the pager (`scrollX={scrollX}`) and the word.
     expect(screen.match(/\bscrollX\b/g)).toHaveLength(4);

@@ -8,7 +8,8 @@
 // direct URL, which is steadier than fighting a stack that keeps every
 // screen mounted.
 import { chromium } from "playwright";
-const out = process.env.SHOT_DIR;
+// SHOT_DIR=… keeps screenshots; without it none are taken (never into ./undefined/), as in darkroom-test.mjs.
+const out = process.env.SHOT_DIR ?? null;
 // E2E_BASE points it at a build served elsewhere (the default is e2e/serve.mjs's), as in darkroom-test.mjs.
 const B = process.env.E2E_BASE ?? "http://127.0.0.1:8090";
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
@@ -61,7 +62,7 @@ const check = (name, ok, detail = "") => {
 };
 const wait = (ms) => page.waitForTimeout(ms);
 const text = () => page.textContent("body");
-const shot = (n) => page.screenshot({ path: `${out}/${n}.png` });
+const shot = (n) => (out ? page.screenshot({ path: `${out}/${n}.png` }) : Promise.resolve());
 const seen = (l) => l.locator("visible=true");
 const byText = (t) => seen(page.getByText(t, { exact: true }));
 const byLabel = (t) => seen(page.getByLabel(t, { exact: true }));

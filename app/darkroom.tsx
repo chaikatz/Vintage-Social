@@ -632,9 +632,16 @@ export default function Darkroom() {
   const headName = inside && headWhere?.mode ? chapterName(headWhere.mode, headWhere.year, headWhere.span) : null;
   const n = chapter?.prints.length ?? 0;
   const showsDevelop = state.view.kind === "prints" && current != null;
-  // POST is on every photograph's page settled in front, and fades toward the end page with the scroll: one
-  // graph for as long as the room is open, never handed over to another value (wordFade.ts says why).
-  const wordShown = wordOnPage({ prints: state.view.kind === "prints", photograph: current != null, card: fades.card != null });
+  // POST is on every photograph's page settled in front, and fades toward the end page with the scroll and back
+  // with it while a page is turned: one graph for as long as the room is open, never handed over to another
+  // value (wordFade.ts says why).
+  const wordShown = wordOnPage({
+    prints: state.view.kind === "prints",
+    photograph: current != null,
+    turning: dragging,
+    count: n,
+    card: fades.card != null,
+  });
   const wordOpacity = useWordFade(scrollX, n, width, wordShown, reduceMotion);
 
   return (

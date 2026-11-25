@@ -728,7 +728,7 @@ describe("a clip, start to finish", () => {
     await enqueuePost(draft);
     await idle();
     expect(getPendingPosts()[0]).toMatchObject({ id: draft.id, state: "waiting-foreground" });
-    expect(stateLine("waiting-foreground", null, "video")).toBe("Will finish when VINTAGE is open");
+    expect(stateLine("waiting-foreground", null, "video")).toBe("Finishes when VINTAGE is open");
     expect(h.uploads).toHaveLength(0);
 
     setAppState("active");

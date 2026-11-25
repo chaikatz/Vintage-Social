@@ -30,7 +30,8 @@ export function stateLine(state: PendingState, progress: number | null, kind: Po
     case "waiting-network":
       return "Waiting for a connection";
     case "waiting-foreground":
-      return "Will finish when VINTAGE is open";
+      // Short enough to stand beside Discard on one line on a 320-point screen, in either look.
+      return "Finishes when VINTAGE is open";
     case "failed":
       return "Couldn’t post.";
     case "done":

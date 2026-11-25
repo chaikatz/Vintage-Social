@@ -12,9 +12,10 @@ const kit = {
  * long as the room is open, built again only if the page width changes,
  * and never handed over to another value (`wordFade.ts` says why that is
  * what kept losing the word). `shown` — a photograph's page settled in
- * front, no title card — fades it in and out over WORD_FADE_MS, a cut
- * under Reduce Motion; the pager's scroll fades it toward the end page
- * from the chapter's last photograph, `count` of them, as it always has.
+ * front, or a page being turned, and no title card (`wordOnPage`) — fades
+ * it in and out over WORD_FADE_MS, a cut under Reduce Motion; the pager's
+ * scroll fades it toward the end page from the chapter's last photograph,
+ * `count` of them, and back with the finger, as it always has.
  */
 export function useWordFade(
   scrollX: Animated.Value,

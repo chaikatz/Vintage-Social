@@ -491,7 +491,7 @@ function decide(live: Live, step: JobStep, err: unknown): "retry" | "stop" {
     if (appState !== "active") return waitForForeground(live);
     // Still unreadable with the app open and the retries spent: not the
     // locked phone after all. Say so, with Retry and Discard, rather than
-    // "Will finish when VINTAGE is open" on an open VINTAGE.
+    // "Finishes when VINTAGE is open" on an open VINTAGE.
     return fail(live, step === "insert" && live.insertUnanswered ? "unconfirmed" : reasonFor(live, step), step, err);
   }
   if (err instanceof NotSignedInError) return fail(live, "signed-out", step, err);

@@ -509,7 +509,8 @@ always on the page: nothing hides them. POST is whole on every
 photograph's page, however the room came to it — a swipe, a tap, a glide,
 a frame, back from the end page, a chapter changed, a batch dealt — and
 goes only on a word page, the end page and the waiting card (fading with
-the finger as the page goes on to them) and under a title card. Its
+the finger as the page goes on to them, and coming back with it as the
+page is swiped back off them) and under a title card. Its
 opacity is one Animated graph for as long as the room is open, never
 swapped for another value: build 58 handed it a zero on the end page,
 which made React Native drop the scroll value's native node while the
@@ -646,8 +647,11 @@ who.
   at a time as you scroll (`fetchLikersPage`, a keyset on the like's time
   and member), with "Only you can see who liked your photograph." above the
   names. A member on the other side of a block is not listed; a page whose
-  every member is hidden is read past, so the list never ends early or
-  reads empty. The screen refuses a photograph that is not yours.
+  every member is hidden is read past, so a page of them never ends the
+  list early. Their likes still count, though (a block takes no like
+  away), so the list can be shorter than the count, and a photograph liked
+  only by members you have since blocked says "No likes yet" here under a
+  count of one or more. The screen refuses a photograph that is not yours.
 - **The database holds the same line** (0042,
   `supabase/migrations/0042_likes_read_by_the_liker_and_the_author.sql`):
   a member reads a like only when it is their own or the photograph is
