@@ -642,7 +642,7 @@ describe("the editorial card", () => {
   it("shows your own photograph's count under the label, and opens who liked it; on anyone else's, nothing", () => {
     const line = body.slice(at("{likes ? ("), at("{post.caption ? ("));
     expect(line).toMatch(
-      /\{likes \? \(\s*likes\.opens \? \(\s*<Pressable\s+onPress=\{\(\) => onOpenLikes\?\.\(post\)\}\s+disabled=\{!onOpenLikes\}\s+hitSlop=\{6\}\s+accessibilityRole="button"\s+accessibilityLabel=\{likes\.label\}\s+accessibilityHint=\{LIKES_HINT\}\s*>\s*<Text style=\{styles\.likes\}>\{likes\.text\}<\/Text>\s*<\/Pressable>\s*\) : \(\s*<Text style=\{\[styles\.likes, styles\.noLikes\]\} accessibilityLabel=\{likes\.label\}>\s*\{likes\.text\}\s*<\/Text>\s*\)\s*\) : null\}/,
+      /\{likes \? \(\s*likes\.opens \? \(\s*<Pressable\s+onPress=\{\(\) => onOpenLikes\?\.\(post\)\}\s+disabled=\{!onOpenLikes\}\s+hitSlop=\{6\}\s+accessibilityRole="button"\s+accessibilityLabel=\{likes\.label\}\s+accessibilityHint=\{LIKES_HINT\}\s*>\s*<Text maxFontSizeMultiplier=\{LABEL_CAP\} style=\{styles\.likes\}>\s*\{likes\.text\}\s*<\/Text>\s*<\/Pressable>\s*\) : \(\s*<Text maxFontSizeMultiplier=\{LABEL_CAP\} style=\{\[styles\.likes, styles\.noLikes\]\} accessibilityLabel=\{likes\.label\}>\s*\{likes\.text\}\s*<\/Text>\s*\)\s*\) : null\}/,
     );
     // One height for the count and for "No likes yet", so the first like changes the words and not the card; the
     // words' size, from the edge the words start at.
@@ -1062,6 +1062,21 @@ describe("a post on its way up, under Editorial", () => {
       expect(rule(pending, name), name).toMatch(/lineHeight: LIKES_LINE,/);
     }
     expect(rule(card, "likes")).toMatch(/lineHeight: LIKES_LINE,/);
+    // With Larger Text the line grows as far as the count's line and the label do, no further, so it keeps their
+    // height at every size: every word in it is capped at LABEL_CAP, as the count and the lines it hands off to are.
+    expect(pending).toMatch(/const STATUS: StatusLook = \{[^}]*\n {2}cap: LABEL_CAP,\n\};/);
+    expect(original).toMatch(/\n {2}cap\?: number;\n\}/);
+    const status = original.slice(original.indexOf("export function PendingStatus("), original.indexOf("export function ProgressRule("));
+    const words = status.match(/<Text\b[^>]*>/g) ?? [];
+    expect(words).toHaveLength(4);
+    for (const t of words) expect(t, t).toMatch(/^<Text maxFontSizeMultiplier=\{set\.cap\} /);
+    const likes = card.match(/<Text[^>]*styles\.likes\b[^>]*>/g) ?? [];
+    expect(likes).toHaveLength(2);
+    for (const t of likes) expect(t, t).toMatch(/maxFontSizeMultiplier=\{LABEL_CAP\}/);
+    expect(body).toMatch(/<Text\s+maxFontSizeMultiplier=\{LABEL_CAP\}\s+style=\{printStyles\.posted\}/);
+    // The original card's line sets no cap: ORIGINAL_STATUS has none.
+    const originalLook = original.slice(original.indexOf("const ORIGINAL_STATUS: StatusLook = {"));
+    expect(originalLook.slice(0, originalLook.indexOf("};"))).not.toMatch(/cap:/);
     // The hairline is the card's rule, holding the accent as it fills, faint while it waits.
     expect(pending).toMatch(/const RULE = \{ track: \[printStyles\.rule, styles\.track\], fill: styles\.fill, paused: styles\.paused \};/);
     expect(rule(pending, "track")).toBe("overflow: \"hidden\"");

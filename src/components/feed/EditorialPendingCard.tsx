@@ -143,6 +143,8 @@ const styles = StyleSheet.create({
   paused: { backgroundColor: colors.inkFaint },
 });
 
+// Its words grow with Larger Text as far as the label's and the count's that take its place, so the line keeps
+// the count's height at every size the label reaches.
 const STATUS: StatusLook = {
   row: styles.row,
   state: styles.state,
@@ -150,6 +152,7 @@ const STATUS: StatusLook = {
   action: styles.action,
   discard: styles.discard,
   dot: styles.dot,
+  cap: LABEL_CAP,
 };
 
 const RULE = { track: [printStyles.rule, styles.track], fill: styles.fill, paused: styles.paused };

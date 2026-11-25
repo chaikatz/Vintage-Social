@@ -224,6 +224,8 @@ export interface StatusLook {
   action: StyleProp<TextStyle>;
   discard: StyleProp<TextStyle>;
   dot: StyleProp<TextStyle>;
+  // How far its words grow with Larger Text, to match the line the post will have in its place; no cap if unset.
+  cap?: number;
 }
 
 /**
@@ -258,7 +260,7 @@ export function PendingStatus({
         accessibilityValue={spoken.value}
         accessibilityLiveRegion={focused ? "polite" : "none"}
       >
-        <Text style={[set.state, failed && set.stateFailed]} accessible={false}>
+        <Text maxFontSizeMultiplier={set.cap} style={[set.state, failed && set.stateFailed]} accessible={false}>
           {line}
         </Text>
       </View>
@@ -269,11 +271,13 @@ export function PendingStatus({
           accessibilityRole="button"
           accessibilityLabel="Retry posting"
         >
-          <Text style={set.action}>Retry</Text>
+          <Text maxFontSizeMultiplier={set.cap} style={set.action}>
+            Retry
+          </Text>
         </Pressable>
       ) : null}
       {retry && discard ? (
-        <Text style={set.dot} accessible={false}>
+        <Text maxFontSizeMultiplier={set.cap} style={set.dot} accessible={false}>
           ·
         </Text>
       ) : null}
@@ -284,7 +288,9 @@ export function PendingStatus({
           accessibilityRole="button"
           accessibilityLabel="Discard this post"
         >
-          <Text style={[set.action, set.discard]}>Discard</Text>
+          <Text maxFontSizeMultiplier={set.cap} style={[set.action, set.discard]}>
+            Discard
+          </Text>
         </Pressable>
       ) : null}
     </View>

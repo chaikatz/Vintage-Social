@@ -173,10 +173,12 @@ export const EditorialPostCard = React.memo(function EditorialPostCard({
             accessibilityLabel={likes.label}
             accessibilityHint={LIKES_HINT}
           >
-            <Text style={styles.likes}>{likes.text}</Text>
+            <Text maxFontSizeMultiplier={LABEL_CAP} style={styles.likes}>
+              {likes.text}
+            </Text>
           </Pressable>
         ) : (
-          <Text style={[styles.likes, styles.noLikes]} accessibilityLabel={likes.label}>
+          <Text maxFontSizeMultiplier={LABEL_CAP} style={[styles.likes, styles.noLikes]} accessibilityLabel={likes.label}>
             {likes.text}
           </Text>
         )
@@ -405,7 +407,10 @@ const NAME = nameStyle(WORDS);
 /**
  * How far the label's typewriter lines grow with Larger Text. At twice
  * their size the longest date still fits across a 320 pt screen, on a
- * line of its own under the buttons; any larger and it would not.
+ * line of its own under the buttons; any larger and it would not. The line
+ * of likes and the line under the caption grow as far, and no further, as
+ * does the line a post on its way up shows in the place of the likes
+ * (EditorialPendingCard), so the hand-off keeps its height at every size.
  */
 export const LABEL_CAP = 2;
 
@@ -552,7 +557,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   // Your own photograph's count, in the words' size, and "No likes yet" in
-  // its place at the same height, quieter.
+  // its place at the same height, quieter; with Larger Text both grow up to
+  // LABEL_CAP, as the label does.
   likes: {
     fontSize: WORDS,
     lineHeight: LIKES_LINE,

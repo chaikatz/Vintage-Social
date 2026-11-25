@@ -79,7 +79,9 @@ while it waits or has failed. The line under the label, where your own
 post's `No likes yet` will be, says what is happening (`Uploading…`,
 `Waiting for a connection`, `Couldn't post.`) in the label's typewriter
 face, with Retry and Discard, at that line's height; why it failed goes
-under it. The last line, where the post will say when it went up, says who
+under it. With Larger Text its words grow as far as the label's and the
+count's do (`LABEL_CAP`, through `PendingStatus`'s `cap`), so it keeps the
+count's height at every size. The last line, where the post will say when it went up, says who
 was there (`With one member`), or is left as paper. Nothing on it can be
 liked, commented on or sent, and nothing reads as posted until the server
 has it.
@@ -332,8 +334,9 @@ the `PendingCard` line with the comment above it, and `<PendingCard`, which
 goes back to `<PendingPostCard`; `FeedCard` goes from the list after
 `renderItem`, and `viewerId={userId}` and `userId` in that list stay (they
 are `claude/product-polish`'s). In `src/components/PendingPostCard.tsx`
-`usePendingCard`, `PendingStatus`, `ProgressRule`'s `look` and
-`ORIGINAL_STATUS` go back into the card's body as they were. In
+`usePendingCard`, `PendingStatus` (with `StatusLook`'s `cap` and the
+`maxFontSizeMultiplier={set.cap}` on its words), `ProgressRule`'s `look`
+and `ORIGINAL_STATUS` go back into the card's body as they were. In
 `app/gallery.tsx` those are the three
 imports (`EditorialPostCard`, `useFeedLayout`, `useFeedBackground`), the
 `FeedCard` and `paper` lines with the comment above them, `style={paper}` on
