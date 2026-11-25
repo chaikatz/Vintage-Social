@@ -6,7 +6,8 @@
  * settled in front, and nowhere else (a word page, the end page, the
  * waiting card, a title card over the stage). As a page is swiped from the
  * last photograph toward the end page it fades with the finger, as it
- * always has.
+ * always has, and as one is swiped back from the end page it comes back
+ * with the finger, as it did in build 58 whenever the word was there.
  *
  * Build 58 lost it. Its opacity was the pager's scroll interpolated, and
  * on the end page, the waiting card or under a title card the view was
@@ -26,7 +27,10 @@
  *
  * Now the word reads one graph, built once (again only if the page width
  * changes), never swapped: `on × fade(scrollX + start)`. `on` follows the
- * settled page (`wordOnPage`); `start` moves the fade to the chapter's
+ * settled page (`wordOnPage`), and is on too while a page is being turned
+ * in a chapter with photographs, so the fade alone carries the word with
+ * the finger off the end page and the waiting card, where it is nothing
+ * until the scroll leaves them; `start` moves the fade to the chapter's
  * last photograph as prints are dealt or taken out; the scroll value keeps
  * its one consumer for as long as the room is open. And the pager sets the
  * scroll value to the page it settled on (`Stage`), so even a scroll event
@@ -44,13 +48,26 @@ export interface WordPage {
   prints: boolean;
   /** The page settled in front is a photograph (not the end page or the waiting card). */
   photograph: boolean;
+  /** A page is being turned: a finger on the pager, or a turn the stage made, until it settles. */
+  turning: boolean;
+  /** The chapter's photographs. */
+  count: number;
   /** A title card is over the stage while a chapter comes. */
   card: boolean;
 }
 
-/** The word is on the page: a photograph's page settled in front, with no title card over it. */
+/**
+ * The word is on the page: a photograph's page settled in front, with no
+ * title card over it. While a page is being turned in a chapter that has
+ * photographs it is on as well, wherever the turn began: the scroll's fade
+ * then holds it at nothing on the end page and the waiting card (both a
+ * page past the last photograph), and brings it in with the finger as the
+ * page comes back onto a photograph. Settled on either of them, it is off
+ * again, so neither ever shows it however the scroll value stands. A
+ * chapter with no photographs left (the shelf emptied) never shows it.
+ */
 export function wordOnPage(p: WordPage): boolean {
-  return p.prints && p.photograph && !p.card;
+  return p.prints && !p.card && (p.photograph || (p.turning && p.count > 0));
 }
 
 /**

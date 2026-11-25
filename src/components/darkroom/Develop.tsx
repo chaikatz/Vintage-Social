@@ -23,7 +23,8 @@ const WORD_TOP = 6;
  *
  * Its opacity is handed in (`useWordFade`): whole on every photograph's
  * page settled in front, fading with the pager's scroll toward the end
- * page, and gone on the end page, the waiting card and under a title card.
+ * page and back with it, and gone on the end page, the waiting card and
+ * under a title card.
  * It cannot be pressed while a page is being turned, by a swipe or a tap.
  * While a print develops its rule draws out from 26 pt to the width of
  * the letters (not under Reduce Motion), and draws back when the room is
@@ -91,7 +92,9 @@ export function Develop({
 const styles = StyleSheet.create({
   block: { alignItems: "center", justifyContent: "center", height: DEVELOP_HEIGHT },
   slot: { alignItems: "center" },
-  // The letters near the top of their 48-point press, so the word sits closer to the caption above than to the
-  // strip below, and reads as the photograph's; the press keeps its height, and reaches down toward the strip.
+  // The letters near the top of their 48-point press, nearer the photograph's area above than the strip below;
+  // the press keeps its height, and reaches down toward the strip. The block itself stands at a fixed place
+  // over the strip, not under the caption: under a tall photograph it is close to the caption, and under a
+  // square or a landscape one, whose plate and caption end higher, it stands further below them.
   word: { minWidth: 116, justifyContent: "flex-start", paddingTop: WORD_TOP },
 });
