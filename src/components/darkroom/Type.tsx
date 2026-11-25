@@ -50,7 +50,7 @@ export const RoomText = forwardRef<Text, RoomTextProps>(function RoomText(props,
 /**
  * The short rule: 1 pt of the print's ink, unless a colour is given,
  * `width` long. Never read aloud. `scaleX` draws it out from its centre,
- * as DEVELOP's does while a print develops.
+ * as POST's does while a print develops.
  */
 export function Rule({
   width,

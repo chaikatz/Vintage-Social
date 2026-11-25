@@ -275,6 +275,7 @@ export default function Home() {
     ({ item, index }: { item: (typeof posts)[number]; index: number }) => (
       <FeedCard
         post={counted(item, likeCountFor(item))}
+        viewerId={userId}
         likedByMe={isLiked(item)}
         onToggleLike={toggleLike}
         onOpenComments={onOpenComments}
@@ -290,7 +291,7 @@ export default function Home() {
         priority={index < FIRST_SCREEN ? "high" : "normal"}
       />
     ),
-    [FeedCard, counted, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onCommentLongPress, more, openProfile, visibleId, focused],
+    [FeedCard, counted, userId, likeCountFor, isLiked, toggleLike, onOpenComments, onShare, onOpenLikes, commentsFor, onCommentLongPress, more, openProfile, visibleId, focused],
   );
 
   // Only one clip plays at a time. A pending one may when it is the

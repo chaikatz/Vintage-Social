@@ -475,7 +475,7 @@ the library only bounded questions — counts, pages of at most 150, time
 windows — and never reads location, EXIF, moments or albums. It makes no
 network request of its own; previews of iCloud photographs come through
 iOS at screen size, and a photograph kept in iCloud comes down only after
-DOWNLOAD AND DEVELOP. Images are cached in memory only. What it keeps on the phone:
+DOWNLOAD AND POST. Images are cached in memory only. What it keeps on the phone:
 what was looked at and posted (`darkroom-history.json` in the cache
 folder, two months and a year), the shelf (`darkroom-set-aside.json`: id,
 date, size), the place (`darkroom-place.json`, twelve hours) and that the
@@ -483,8 +483,13 @@ first-visit page was passed and Contents opened. Sign-out deletes all of it; Set
 what the Memory Room has shown me" deletes all but the shelf. The privacy
 policy (`src/legal/documents.ts`, `npm run build:legal`) says exactly this.
 
-DEVELOP hands one photograph to the ordinary editor (`app/compose.tsx`)
-with its capture date; there is no second posting path. The photograph is
+POST, the word right under each photograph, hands it to the ordinary
+editor (`app/compose.tsx`) with its capture date; there is no second
+posting path, and nothing is posted until the editor's Share to VINTAGE.
+(The code still calls this develop — `Develop.tsx`, `useDevelop`, the
+`darkroom-develop` test id — as it still calls the room the Darkroom.)
+While the photograph is read off the phone, or brought down from iCloud,
+the word says OPENING…. The photograph is
 made by a small local module, `modules/vintage-library`: a 2048 px upright
 rendition through PhotoKit, local first, with progress and a STOP, no
 metadata, and never a Live Photo's video or the full-size original. The
@@ -499,11 +504,26 @@ on, its left half back, by the pager's own scroll
 (`src/components/darkroom/turn.ts` decides). Not while the print is
 zoomed in, while a develop state is showing, or under VoiceOver, which
 turns the page with its own swipes up and down; quick taps turn one page
-at a time. The running head, the captions, the glide strip and DEVELOP
-are always on the page: nothing hides them.
+at a time. The running head, the captions, POST and the glide strip are
+always on the page: nothing hides them. POST is whole on every
+photograph's page, however the room came to it — a swipe, a tap, a glide,
+a frame, back from the end page, a chapter changed, a batch dealt — and
+goes only on a word page, the end page and the waiting card (fading with
+the finger as the page goes on to them) and under a title card. Its
+opacity is one Animated graph for as long as the room is open, never
+swapped for another value: build 58 handed it a zero on the end page,
+which made React Native drop the scroll value's native node while the
+pager's scroll stayed bound to the old one, and the word stayed at nothing
+on every photograph after (`src/components/darkroom/wordFade.ts`;
+`tests/darkroom-word.test.ts` shows it with Animated's own code).
 
-Under the caption, on every page of every chapter, is the glide strip:
-Photos' sliding bar, set as a strip cut from a contact sheet. Every
+Under POST, at the foot of every page of every chapter, is the glide
+strip: Photos' sliding bar, set as a strip cut from a contact sheet. The
+page reads running head, photograph and caption, POST, then the strip,
+with a gap between the word and the strip so the word reads as the
+photograph's and the strip as the control beneath it; the photograph's
+area kept the height it had when POST sat under the strip, so every plate
+is the size it was. Every
 photograph of the chapter is a small frame, in the chapter's order, with a
 blank frame after the last for the end page; a grease-pencil box in the
 accent is fixed over the middle, and the frame of the photograph in front
@@ -513,7 +533,7 @@ on the shelf. Sliding across it is how a chapter is played through: the
 page follows the frame under the box at the finger's pace — soft at once,
 sharp the moment the finger slows on it — and a flick glides on and comes
 to rest on one. Letting go turns the room to that photograph as a page turn
-would, and DEVELOP, SET ASIDE and the caption are its; only the photograph
+would, and POST, SET ASIDE and the caption are its; only the photograph
 landed on counts as looked at. A frame tapped goes straight to it. Swipes
 and taps on the photograph turn the pages as before, and the strip follows
 each turn. In a chapter still being dealt — a roll of Surprise me, a year —
@@ -531,12 +551,15 @@ To review it in a browser, the web demo reads a small bundled library
 (`src/darkroom/demoSource.ts`) with six photographs on today's date in
 earlier years, so On this day always opens.
 `npm run build:web && npm run test:darkroom` walks it end to end: the
-first-visit page, entering, the strip under the caption, a page turn and
-the strip following it, taps, a frame tapped, a glide landing just where
-its preview stood the photograph and caption, set aside, a year with its
-month marks, Surprise me dealing on as the strip nears its end, the shelf,
-an end page, develop into the editor and back, and a 320-point phone, with
-a glide landing there too. The unit tests are `tests/darkroom*.test.ts`.
+first-visit page, entering, POST under the caption and the strip under
+POST, a page turn and the strip following it, taps, a frame tapped, a
+glide landing just where its preview stood the photograph and caption,
+set aside, a year with its month marks, Surprise me dealing on as the
+strip nears its end, the shelf, an end page, POST back on the photograph
+every way there is of coming back from it (a frame, a swipe, a glide) and
+after a title card, POST into the editor and back, and a 320-point phone,
+with a glide landing there too. The unit tests are
+`tests/darkroom*.test.ts`.
 
 ## Media pipeline
 
@@ -602,6 +625,35 @@ then on:
 
 Declining a request deletes the row rather than recording a rejection — a
 request that was turned down can simply be made again.
+
+## Likes
+
+A photograph's likes are its author's to see. Everyone has the heart, the
+double tap and their own "liked it"; only the author sees how many, and
+who.
+
+- **The count is on your own photographs only**, on every surface that
+  shows a photograph's actions: a card on Home and in a member's gallery
+  (`src/components/PostCard.tsx`, told who is reading by `viewerId`) and a
+  photograph's own page (`app/post/[id].tsx`). Under anyone else's there
+  is no line at all — no number, nothing for VoiceOver. The rule is one
+  helper, `src/utils/ownLikes.ts` (`seesLikes`, `likesLine`), which the
+  Editorial card uses too.
+- **"No likes yet"** stands quietly in the count's place on your own
+  photograph until the first like, at the count's own height, so the first
+  like changes the words and never moves the card.
+- **Tap the count for who liked it** (`app/likes.tsx`), newest first, fifty
+  at a time as you scroll (`fetchLikersPage`, a keyset on the like's time
+  and member), with "Only you can see who liked your photograph." above the
+  names. A member on the other side of a block is not listed; a page whose
+  every member is hidden is read past, so the list never ends early or
+  reads empty. The screen refuses a photograph that is not yours.
+- **The database holds the same line** (0042,
+  `supabase/migrations/0042_likes_read_by_the_liker_and_the_author.sql`):
+  a member reads a like only when it is their own or the photograph is
+  theirs, on top of 0028 (only with its photograph) and the block rules.
+  `posts.like_count` is a column of the photograph and is still readable
+  with it; the app draws it only for the author.
 
 ## Explore
 
@@ -785,7 +837,8 @@ these need accounts or values that are intentionally not in this repo:
   film), and the print's app icon carries a faint shadow so it reads as an icon. Place search merges
   Apple's type-ahead completions with the full search, so "bar pi" already offers Bar Pitti. Pinch a
   photograph in the feed or on its page to look closer; it springs back. The count under your own
-  photograph opens who liked it (`app/likes.tsx`), on your own posts only. Member search puts the people
+  photograph opens who liked it (`app/likes.tsx`), on your own posts only (since round 26 only your own
+  posts show a count at all: see "Likes"). Member search puts the people
   you were just looking at first, then who you follow, then who follows you (`src/utils/searchRank.ts`).
 - **The darkroom's keyboard goes away with a drag** down the page (`keyboardDismissMode="interactive"`),
   and the caption is kept above it while it is up; the Done bar remains. **A new portrait shows at once

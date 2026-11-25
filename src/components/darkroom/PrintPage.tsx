@@ -39,7 +39,7 @@ import { placeholderWords, type PlateTrouble } from "./words";
 const PROOF_WIDTH = 48;
 /** Past this the plate counts as zoomed in, and a tap on it turns no page. */
 const ZOOMED = 1.02;
-/** A download's rule follows each step of iCloud's progress over this, as DOWNLOAD AND DEVELOP's does. */
+/** A download's rule follows each step of iCloud's progress over this, as DOWNLOAD AND POST's does. */
 const CLOUD_STEP_MS = 120;
 /** What the pages before have measured, so each page after is laid out — and its photograph asked for — once. */
 const captions = new CaptionHeights();
@@ -92,7 +92,7 @@ export function knownCaptionHeight(fontScale: number, long: boolean): number {
  * props loads it again, cancelling what was still coming in, so nothing
  * about it changes as the member turns to it. While a print comes down
  * from iCloud, the plate in front draws the download along its signature
- * line, as DOWNLOAD AND DEVELOP's does; and a plate in front that hears
+ * line, as DOWNLOAD AND POST's does; and a plate in front that hears
  * nothing at all asks again once, then says why it has no photograph,
  * rather than leaving its soft proof in place for good — patiently while
  * iCloud is heard sending it, and asking again when the member turns back

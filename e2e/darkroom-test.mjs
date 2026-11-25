@@ -1,8 +1,8 @@
 // The Darkroom, walked through the real interface in the demo web build:
 // the door on the Post tab → the first-visit page → On this day, on the
 // app's own page, each plate with its signature line, CONTENTS a tab with
-// a line under it on a first visit, and the glide strip under the caption,
-// over DEVELOP, with nothing pressed → a page turn, and the strip
+// a line under it on a first visit, POST under the caption and the glide
+// strip under POST, with nothing pressed → a page turn, and the strip
 // following it → taps on the photograph, either half → a frame tapped →
 // a glide across the strip, the page following it and landing where it
 // comes to rest, the photograph and its caption just where the preview
@@ -10,9 +10,13 @@
 // Contents, read as an index, and its years → a year's months → a year
 // chapter, its months along the strip → Surprise me, dealt on as the strip
 // nears its end → the Set aside chapter → the end of On this day, its
-// blank frame under the box → DEVELOP into the editor, and back to the
-// same print → the room on a 320-point phone, and a glide landing there
-// just where its preview stood, its caption's word on a line of its own.
+// blank frame under the box → POST back on the photograph every way there
+// is of coming back from the end page (a frame, a swipe, a glide), which is
+// where build 58 lost it on the phone → POST into the editor, and back to
+// the same print → the room on a 320-point phone, and a glide landing
+// there just where its preview stood, its caption's word on a line of its
+// own. POST is checked on every photograph's page the walk comes to: a
+// chapter changed, a roll dealt on, the shelf.
 //
 //   npm run build:web && npm run test:darkroom      (SHOT_DIR=… to keep screenshots)
 //
@@ -157,6 +161,10 @@ const seenOpacityOn = (p, id) =>
     return Math.round(o * 100) / 100;
   }, id);
 const seenOpacity = (id) => seenOpacityOn(page, id);
+/** What POST says: the word under the photograph (its test id is still the code's, develop). */
+const postSays = async () => ((await byId("darkroom-develop").first().textContent().catch(() => "")) ?? "").trim();
+/** POST is under the photograph in front, whole and saying POST; it comes in over 160 ms as a page settles. */
+const postShown = () => until(async () => /^Post$/i.test(await postSays()) && (await seenOpacity("darkroom-develop")) > 0.99, 1500);
 /** Where a view stands on the phone: the one on screen, left to right. */
 const boxOn = (p, id) =>
   p.evaluate((testId) => {
@@ -241,7 +249,7 @@ const opened = await appears("darkroom-caption-date", 10000);
 await wait(900);
 const firstDate = await dateLabel();
 check("Entering opens On this day, on today’s date", opened && /on this day/i.test(await chapterHead()) && /years ago today/.test(await text()), firstDate);
-check("DEVELOP is the page’s one ruled word", (await byId("darkroom-develop").count()) > 0);
+check("POST is the page’s one ruled word, and says POST", (await byId("darkroom-develop").count()) > 0 && (await postShown()), await postSays());
 await shot("discovery");
 
 // --- the room's page: the app's own, and the light print in the browser -----------------
@@ -318,7 +326,7 @@ check("The line keeps off the photograph", invite != null && plateBelow != null 
 await shot("contents-tab");
 
 // --- the glide strip ---------------------------------------------------------------------
-// Under the caption on every page, over DEVELOP, with nothing to press to reach it.
+// Under POST on every page, at the page's foot, with nothing to press to reach it.
 check("The glide strip comes onto the page by itself", await appears("darkroom-glide-strip-row", 3000));
 await wait(400);
 const stripRow = await box("darkroom-glide-strip-row");
@@ -326,16 +334,19 @@ const stripBox = await box("darkroom-glide-box");
 const caption0 = await box("darkroom-caption");
 const develop0 = await box("darkroom-develop");
 check(
-  "The strip runs the page's width less its gutters, 68 pt high, under the caption and over DEVELOP",
+  "POST stands under the caption, and the strip under POST: the page's width less its gutters, 68 pt high, at the foot",
   stripRow != null &&
     caption0 != null &&
     develop0 != null &&
+    caption0.bottom <= develop0.y &&
+    Math.abs(develop0.height - 48) <= 1 &&
+    Math.abs(develop0.x + develop0.width / 2 - W / 2) <= 1 &&
+    Math.abs(stripRow.y - develop0.bottom - 12) <= 1 &&
     Math.abs(stripRow.x - 16) <= 1 &&
     Math.abs(stripRow.width - (W - 32)) <= 1 &&
     Math.abs(stripRow.height - 68) <= 1 &&
-    caption0.bottom <= stripRow.y &&
-    stripRow.bottom <= develop0.y &&
-    develop0.y <= stripRow.bottom + 9,
+    // The browser has no safe area: the strip stands 4 above the 16 the page keeps at its foot.
+    Math.abs(H - stripRow.bottom - 20) <= 1,
   JSON.stringify({ stripRow, caption0, develop0 }),
 );
 check(
@@ -546,6 +557,7 @@ const chosenYear = yearTitles[Math.min(2, yearTitles.length - 1)];
 await yearLines.nth(Math.min(2, yearCount - 1)).click();
 await wait(2600);
 check("A year opens as a chapter", (await chapterHead()) === String(chosenYear), await chapterHead());
+check("…with POST under its photograph", await postShown(), await postSays());
 await shot("year-chapter");
 // light.inkFaint, #9C927F: the print's firm line.
 check(
@@ -592,6 +604,7 @@ await byId("darkroom-contents-surprise-me").first().click();
 await wait(2800);
 const surprise = await text();
 check("Surprise me deals an older photograph", /surprise me/i.test(await chapterHead()) && /(years ago|Last year)/.test(surprise));
+check("…with POST under it", await postShown(), await postSays());
 check("Surprise me has the strip, with nothing printed along it", (await appears("darkroom-glide-strip-row", 2000)) && (await marksShown()) === 0);
 await shot("surprise");
 // Glided onto the blank frame at the end of what has been dealt: the next few are dealt meanwhile, and the room
@@ -606,6 +619,11 @@ check(
   dealtOn && restsOn && (await byId("darkroom-glide-sheet").count()) === 0,
   `${dealt0} → ${await stripFrames()} frames · ${await dateLabel()}`,
 );
+check(
+  "…with POST under the photograph it rests on, and none over the waiting card",
+  (await dateLabel()) !== "" ? await postShown() : (await seenOpacity("darkroom-develop")) === 0,
+  `${await dateLabel()} · ${await seenOpacity("darkroom-develop")}`,
+);
 await shot("surprise-dealt");
 await byId("darkroom-glide-cell-0").first().click();
 await wait(800);
@@ -618,6 +636,7 @@ await wait(2200);
 const shelfWord = ((await byId("darkroom-caption-word").first().textContent().catch(() => "")) ?? "").trim();
 check("The shelf opens as its own chapter, with PUT BACK", /set aside/i.test(await chapterHead()) && /put back/i.test(shelfWord), shelfWord);
 check("The shelf has the strip, with nothing printed along it", (await appears("darkroom-glide-strip-row", 2000)) && (await marksShown()) === 0);
+check("…and POST under its photograph", await postShown(), await postSays());
 await shot("set-aside");
 
 // --- the end of On this day ---------------------------------------------------------------------------
@@ -636,27 +655,46 @@ const endWords = await seen(page.locator('[data-testid^="darkroom-word-"]')).eva
 );
 check("Its first word hands on, and nothing says play", endWords.length > 0 && endWords[0]?.id !== "darkroom-word-play" && !/play/i.test(JSON.stringify(endWords)), JSON.stringify(endWords));
 check(
-  "On the end page the strip stays, its blank frame under the box, and DEVELOP has gone",
+  "On the end page the strip stays, its blank frame under the box, and POST has gone",
   Math.abs((await stripLeft()) - 216) <= 1 && (await seenOpacity("darkroom-glide-box")) === 1 && (await seenOpacity("darkroom-develop")) === 0,
   `${await stripLeft()} · box ${await seenOpacity("darkroom-glide-box")} · develop ${await seenOpacity("darkroom-develop")}`,
 );
 await byId("darkroom-glide-cell-0").first().click();
 await wait(800);
 check("A frame from the end page goes back to the first photograph", (await dateLabel()) === firstDate, await dateLabel());
+
+// --- POST, back from the end page --------------------------------------------------------------------------
+// The ways back that lost the word on the phone in build 58: it stayed at nothing on every photograph after.
+check("…and POST is under it again", await postShown(), await postSays());
+await turn(1);
+check("…and on the next photograph, swiped to", await postShown(), `${await dateLabel()} · ${await postSays()}`);
+await toEnd();
+await turn(-1);
+check("Swiped back from the end page, POST is under the last photograph", (await dateLabel()) !== "" && (await postShown()), await postSays());
+await turn(-1);
+check("…and under the one before it", await postShown(), await postSays());
+await toEnd();
+// Two frames back: a cut further than the pages the browser has drawn lands among its unrendered spacer, which
+// has no snap points there, and snaps back to the first (the phone has no such limit).
+await glideTo(144);
+await wait(1500);
+check("Glided back from the end page, POST is under the photograph the glide landed on", (await pagerPage()) === 4 && (await postShown()), `${await pagerPage()} · ${await postSays()}`);
+await tapPlate(0.85);
+check("…and stays as the pages turn on", await postShown(), await postSays());
 await toEnd();
 
-// --- DEVELOP into the editor, and back --------------------------------------------------------------------
+// --- POST into the editor, and back --------------------------------------------------------------------
 await turn(-1);
 const developed = await dateLabel();
 await byId("darkroom-develop").first().click();
 await wait(4500);
 const editor = await text();
-check("DEVELOP opens the existing editor", /Share to VINTAGE/.test(editor) && /Film|FILM/.test(editor));
+check("POST opens the existing editor", /Share to VINTAGE/.test(editor) && /Film|FILM/.test(editor));
 check("The editor knows when the shutter fired", /Read from the file/.test(editor));
 await shot("editor");
 await page.goBack();
 await wait(2200);
-check("Back from the editor, the room is as it was", (await dateLabel()) === developed && (await byId("darkroom-develop").count()) > 0, developed);
+check("Back from the editor, the room is as it was, POST and all", (await dateLabel()) === developed && (await postShown()), `${developed} · ${await postSays()}`);
 
 // --- a 320-point phone ----------------------------------------------------------------------------------
 const small = await phone(320, 568);
@@ -682,14 +720,17 @@ const smallBoxes = await small.evaluate(() => {
 });
 const sb = smallBoxes;
 check(
-  "On a 320-point phone the strip, the caption and DEVELOP keep clear of each other, and nothing runs off the page",
+  "On a 320-point phone the caption, POST and the strip stand in that order, clear of each other, and nothing runs off the page",
   sb.strip != null &&
     sb.caption != null &&
     sb.develop != null &&
-    sb.caption.bottom <= sb.strip.y &&
-    sb.strip.bottom <= sb.develop.y &&
+    sb.caption.bottom <= sb.develop.y &&
+    Math.abs(sb.strip.y - sb.develop.bottom - 12) <= 1 &&
+    sb.develop.x >= 0 &&
+    sb.develop.right <= 320 &&
     sb.strip.x >= 15.5 &&
     sb.strip.right <= 304.5 &&
+    Math.abs(568 - sb.strip.bottom - 20) <= 1 &&
     sb.scrollWidth <= 320,
   JSON.stringify(sb),
 );

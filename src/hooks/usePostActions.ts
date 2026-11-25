@@ -13,6 +13,7 @@ import { holdPost, notePostDeleted } from "@/uploads";
 import { INLINE_COMMENTS } from "@/components/PostCard";
 import { useSession } from "@/providers/SessionProvider";
 import { useEraEdits } from "@/hooks/useEraEdits";
+import { seesLikes } from "@/utils/ownLikes";
 import type { CommentWithAuthor, PostWithAuthor } from "@/types/db";
 
 /**
@@ -112,11 +113,11 @@ export function usePostActions(userId: string, postIds: string[]) {
     [router, seed],
   );
 
-  // The names behind the count, for your own photographs only. On anyone
-  // else's the count stays a number.
+  // Who liked it, for your own photographs only: on anyone else's there is
+  // no count to tap, and the database answers only their author (0042).
   const onOpenLikes = useCallback(
     (post: PostWithAuthor) => {
-      if (post.author_id !== userId) return;
+      if (!seesLikes(post, userId)) return;
       router.push({ pathname: "/likes", params: { postId: post.id, authorId: post.author_id } });
     },
     [router, userId],

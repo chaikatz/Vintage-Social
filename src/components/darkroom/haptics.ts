@@ -2,7 +2,7 @@ import * as Haptics from "expo-haptics";
 
 /**
  * The room's haptics, and only these (§5.6). None on a page turn, an end
- * page, a title card, a load, a failure, a zoom or DOWNLOAD AND DEVELOP:
+ * page, a title card, a load, a failure, a zoom or DOWNLOAD AND POST:
  * the room is quiet, and a failure is said in words, not felt. The
  * glide strip is never felt: it glides silently, as Photos' does, and
  * lands on a photograph as quietly as a page turn.
@@ -12,7 +12,7 @@ const quietly = (p: Promise<void>) => {
 };
 
 export const haptics = {
-  /** DEVELOP tapped, once per attempt. */
+  /** POST tapped, once per attempt. */
   develop: () => quietly(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid)),
   /** SET ASIDE turned on. */
   setAside: () => quietly(Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)),

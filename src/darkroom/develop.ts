@@ -29,7 +29,7 @@ import type { Print } from "./types";
  * it, the original's local file is decoded the way a picked photograph is
  * (`localFile.ts`). When the original lives only in iCloud the answer is
  * `inCloud`, and the room says so and waits. Only after DOWNLOAD AND
- * DEVELOP does `developFromCloud` bring it down: first a look at the
+ * POST does `developFromCloud` bring it down: first a look at the
  * connection, so an offline phone hears so at once, then the download, with
  * its progress when the module can measure it.
  *

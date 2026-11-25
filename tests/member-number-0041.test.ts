@@ -67,8 +67,9 @@ describe("0041, as a file", () => {
 
   it("is proven by the policy harness, after 0040's test, and checked by verify script 12, row 69", () => {
     const runner = read("supabase/tests/run.mjs");
-    expect(runner).toMatch(/"19_blocks_messages_files_0040\.sql",\s+"20_member_number_0041\.sql",\s+\]\) \{/);
-    expect(runner).toMatch(/rows\.length !== 69/);
+    expect(runner).toMatch(/"19_blocks_messages_files_0040\.sql",\s+"20_member_number_0041\.sql",\s+("21_likes_0042\.sql",\s+)?\]\) \{/);
+    // Every row the verify script has, 0042's row 70 too (tests/likes-own-0042.test.ts).
+    expect(runner).toMatch(/rows\.length !== 70/);
     const test = read("supabase/tests/20_member_number_0041.sql");
     expect(test).toMatch(/\\ir \.\.\/migrations\/0041_member_number_shown_by_choice\.sql/);
     // 0039 again, then 0041 again: the order the header names.
@@ -83,10 +84,10 @@ describe("0041, as a file", () => {
     expect(writes).toContain("profiles UPDATE avatar_url,bio,city,full_name,is_private,show_member_no; ");
     const verify = sqlCode(read("supabase/production/12_policies_read_once_verify.sql"));
     expect(verify).toMatch(/select 69, '0041:/);
-    expect(verify).toMatch(/'boolean not null default false, changed by authenticated'\n\)/);
+    expect(verify).toMatch(/'boolean not null default false, changed by authenticated'\n(\)|  union all\n)/);
     // Row 50 is 0039's columns; the one 0041 adds is row 69's.
     expect(verify).toMatch(/and a\.attname <> 'show_member_no'/);
-    expect(read("supabase/production/12_policies_read_once_verify.sql").split("\n")[0]).toMatch(/verify 0023-0041 /);
+    expect(read("supabase/production/12_policies_read_once_verify.sql").split("\n")[0]).toMatch(/verify 0023-004[1-9] /);
   });
 });
 

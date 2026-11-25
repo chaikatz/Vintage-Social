@@ -102,9 +102,11 @@ insert into plans values
   ('did I like these', tests.plan_as(:'me', format(
      'select post_id from public.likes where user_id = %L
         and post_id = any (array(select id from public.posts where author_id = %L limit 12))', :'me', :'author'))),
-  ('who liked it', tests.plan_as(:'me', format(
-     'select l.created_at, p.id, p.username from public.likes l join public.profiles p on p.id = l.user_id
-      where l.post_id = %L order by l.created_at desc limit 500', :'post'))),
+  -- The likers list, as the photograph's author reads it (0042: nobody
+  -- else is answered), a page of fifty (src/api/posts.ts fetchLikersPage).
+  ('who liked it', tests.plan_as(:'author', format(
+     'select l.created_at, l.user_id, p.id, p.username from public.likes l left join public.profiles p on p.id = l.user_id
+      where l.post_id = %L order by l.created_at desc, l.user_id desc limit 50', :'post'))),
   ('who I follow', tests.plan_as(:'me', format(
      'select followee_id from public.follows where follower_id = %L and status = ''accepted''', :'me'))),
   ('their followers', tests.plan_as(:'me', format(

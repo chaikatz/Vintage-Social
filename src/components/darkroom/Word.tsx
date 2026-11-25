@@ -8,11 +8,11 @@ import { RoomText, Rule } from "./Type";
  * capitals. Each page has exactly one primary word, and only it carries
  * the short rule signed beneath (`ruleWidth`, 7 below the letters); the
  * rest are smaller, softer and unruled. In the room the primary word is
- * almost always DEVELOP.
+ * almost always POST.
  *
  * `dim` is the 0.4 of a word that cannot be used just now, which always
  * comes with a reason for VoiceOver; `disabled` alone is a word that is
- * briefly inert (DEVELOP while a page is being dragged, or while it
+ * briefly inert (POST while a page is being dragged, or while it
  * develops) and keeps its full ink.
  */
 export function Word({
@@ -39,7 +39,7 @@ export function Word({
   onPress: () => void;
   /** The page's one ruled word. */
   primary?: boolean;
-  /** The rule beneath; a primary word has it unless it is briefly put by (DEVELOPING… while it downloads). */
+  /** The rule beneath; a primary word has it unless it is briefly put by (OPENING… while it downloads). */
   ruled?: boolean;
   disabled?: boolean;
   dim?: boolean;
@@ -48,7 +48,7 @@ export function Word({
   accessibilityLabel?: string;
   accessibilityHint?: string;
   maxFontSizeMultiplier?: number;
-  /** DEVELOP's rule draws out under the word as it develops. */
+  /** POST's rule draws out under the word as it develops. */
   ruleScale?: Animated.Value | Animated.AnimatedInterpolation<number>;
   /** The letters' own width, for a rule that draws out to it. */
   onLabelWidth?: (width: number) => void;

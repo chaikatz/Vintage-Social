@@ -449,7 +449,7 @@ describe("the pager the tap turns", () => {
     expect(stage).toMatch(/goTo,\s*tap\(/);
   });
 
-  it("is turning from a tap or a swipe until the list settles, and DEVELOP waits with it", () => {
+  it("is turning from a tap or a swipe until the list settles, and POST waits with it", () => {
     expect(turn).toMatch(/turning\.current = true;\s*onDragging\(true\);/);
     expect(turn.indexOf("turning.current = true")).toBeLessThan(turn.indexOf("scrollToIndex"));
     expect(stage).toMatch(/onScrollBeginDrag=\{\(\) => \{[\s\S]*?turning\.current = true;\s*onDragging\(true\);\s*\}\}/);
@@ -468,7 +468,7 @@ describe("the pager the tap turns", () => {
   it("puts the list on the page, and settles there, should the list never say it landed", () => {
     expect(turn).toMatch(/turnHeld\.current = setTimeout\(\(\) => \{\s*turnHeld\.current = null;\s*snapTo\(to\);\s*\}, TURN_HELD_MS\);/);
     expect(stage).toMatch(/const TURN_HELD_MS = 1000;/);
-    // Never onto a new chapter: it starts where it starts, and DEVELOP is let go.
+    // Never onto a new chapter: it starts where it starts, and POST is let go.
     expect(stage).toMatch(
       /turning\.current = false;\s*if \(turnHeld\.current\) \{\s*clearTimeout\(turnHeld\.current\);\s*turnHeld\.current = null;\s*onDragging\(false\);\s*\}\s*scrollX\.setValue\(index \* width\);/,
     );
@@ -558,12 +558,11 @@ describe("the room's words", () => {
     expect(room).toMatch(/<RunningHead\s+top=\{insets\.top\}/);
   });
 
-  it("keep each caption at full strength, and DEVELOP fading only onto the end page", () => {
+  it("keep each caption at full strength, and POST fading only onto the end page", () => {
     expect(page).not.toMatch(/captionOpacity|opacity:/);
     expect(page).toMatch(/<View style=\{\[styles\.caption, \{ top: top \+ box\.height, left: \(width - captionW\) \/ 2 \}\]\}>/);
-    expect(room).toMatch(
-      /const developOpacity = useMemo\(\s*\(\) => scrollX\.interpolate\(\{ inputRange: \[\(n - 1\) \* width, n \* width\], outputRange: \[1, 0\], extrapolate: "clamp" \}\),/,
-    );
+    // Faded by the scroll from the last photograph's page, on one graph (tests/darkroom-word.test.ts holds it).
+    expect(room).toMatch(/const wordOpacity = useWordFade\(scrollX, n, width, wordShown, reduceMotion\);/);
     expect(room).toMatch(/interactive=\{showsDevelop && !atTail && !state\.loading && !fades\.card\}/);
   });
 });

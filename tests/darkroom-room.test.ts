@@ -359,33 +359,34 @@ describe("geometry", () => {
 describe("the develop states (§6.3)", () => {
   const ctx = (over: Partial<StateContext> = {}): StateContext => ({ setAside: false, shelfChapter: false, limited: false, ...over });
 
-  it("is DEVELOP and SET ASIDE at rest; PUT BACK on the shelf", () => {
+  it("is POST and SET ASIDE at rest; PUT BACK on the shelf", () => {
     const w = stateWords({ kind: "idle" }, ctx());
-    expect([w.line1, w.line2, w.right?.label, w.bottom.label, w.bottom.ruled]).toEqual([null, null, "Set aside", "Develop", true]);
+    expect([w.line1, w.line2, w.right?.label, w.bottom.label, w.bottom.ruled]).toEqual([null, null, "Set aside", "Post", true]);
     expect(stateWords({ kind: "idle" }, ctx({ shelfChapter: true, setAside: true })).right?.label).toBe("Put back");
     // Put back on the shelf, it offers to undo until the page turns.
     expect(stateWords({ kind: "idle" }, ctx({ shelfChapter: true, setAside: false })).right?.label).toBe("Set aside");
   });
 
-  it("draws the rule first, then says DEVELOPING… and drops the caption word", () => {
+  it("draws the rule first, then says OPENING… and drops the caption word", () => {
     const early = stateWords({ kind: "working", slow: false }, ctx());
     expect(early.right).toEqual({ label: "Set aside", act: "toggle", inert: true });
-    expect(early.bottom).toMatchObject({ label: "Develop", act: "none", busy: true, dim: false });
+    expect(early.bottom).toMatchObject({ label: "Post", act: "none", busy: true, dim: false });
     const late = stateWords({ kind: "working", slow: true }, ctx());
     expect(late.right).toBeNull();
-    expect(late.bottom.label).toBe("Developing…");
-    expect(late.announce).toBe("Developing");
+    // It opens the editor; nothing is posted until Share to VINTAGE, so it never says POSTING….
+    expect(late.bottom.label).toBe("Opening…");
+    expect(late.announce).toBe("Opening");
   });
 
   it("asks before iCloud, and says when it will use mobile data", () => {
     const wifi = stateWords({ kind: "inCloud", network: "wifi" }, ctx());
     expect([wifi.line1, wifi.line2, wifi.right?.label, wifi.bottom.label]).toEqual([
       "Kept in iCloud",
-      "Developing it will download it.",
+      "Posting it will download it.",
       "Not now",
-      "Download and develop",
+      "Download and post",
     ]);
-    expect(stateWords({ kind: "inCloud", network: "cellular" }, ctx()).line2).toBe("Developing it will use mobile data.");
+    expect(stateWords({ kind: "inCloud", network: "cellular" }, ctx()).line2).toBe("Posting it will use mobile data.");
   });
 
   it("brings it down with a rule in place of the line, and STOP", () => {
@@ -393,10 +394,10 @@ describe("the develop states (§6.3)", () => {
     expect(w.line1).toBe("Bringing it down from iCloud");
     expect(w.progress).toBe(true);
     expect(w.right?.label).toBe("Stop");
-    expect(w.bottom).toMatchObject({ label: "Developing…", dim: true, act: "none" });
+    expect(w.bottom).toMatchObject({ label: "Opening…", dim: true, act: "none" });
   });
 
-  it("dims DEVELOP offline, with the reason VoiceOver reads", () => {
+  it("dims POST offline, with the reason VoiceOver reads", () => {
     const w = stateWords({ kind: "offline" }, ctx());
     expect(w.line2).toBe("This iPhone is offline. Set it aside for later.");
     expect(w.bottom).toMatchObject({ dim: true, disabled: true, reason: "Kept in iCloud; this iPhone is offline." });
@@ -480,11 +481,11 @@ describe("a print's caption", () => {
 
   it("puts a develop state's words in the caption's place", () => {
     const c = captionWords({ ...base, state: { kind: "inCloud", network: "wifi" } });
-    expect([c.label, c.line, c.word?.label, c.hold]).toEqual(["Kept in iCloud", "Developing it will download it.", "Not now", true]);
+    expect([c.label, c.line, c.word?.label, c.hold]).toEqual(["Kept in iCloud", "Posting it will download it.", "Not now", true]);
   });
 
   it("gives VoiceOver the stage's four actions", () => {
-    expect(stageActions(day(2014, 7, 1), false).map((a) => a.label)).toEqual(["Develop", "Set aside", "More from 2014", "Contents"]);
+    expect(stageActions(day(2014, 7, 1), false).map((a) => a.label)).toEqual(["Post", "Set aside", "More from 2014", "Contents"]);
     expect(stageActions(day(2014, 7, 1), true)[1].label).toBe("Put back");
   });
 
@@ -499,7 +500,7 @@ describe("a print's caption", () => {
     const actions = actionsIn({ kind: "idle" }, true);
     // No "increment", "decrement" or "setAside": swiping up and down reaches the adjustable stage unlisted.
     expect(spokenActions(actions)).toEqual([
-      { name: "Develop", label: "Develop" },
+      { name: "Post", label: "Post" },
       { name: "Put back", label: "Put back" },
       { name: "More from 2014", label: "More from 2014" },
       { name: "Contents", label: "Contents" },
@@ -515,7 +516,7 @@ describe("a print's caption", () => {
     // Pages and Contents are held, the caption thread too: STOP is the way out (§6.3).
     expect(down.map((a) => [a.name, a.label])).toEqual([["stop", "Stop"]]);
     const cloud = actionsIn({ kind: "inCloud", network: "cellular" });
-    expect(cloud.map((a) => a.label)).toEqual(["Download and develop", "Not now", "Contents"]);
+    expect(cloud.map((a) => a.label)).toEqual(["Download and post", "Not now", "Contents"]);
     const gone = actionsIn({ kind: "missing" }, true);
     expect(gone.map((a) => a.label)).toEqual(["Remove", "Contents"]);
     // With nothing in front of the member, only Contents.
@@ -524,9 +525,9 @@ describe("a print's caption", () => {
 
   it("says the mobile-data line before a download, in the announcement and in the stage's value", () => {
     const cellular = stateWords({ kind: "inCloud", network: "cellular" }, ctx);
-    expect(cellular.announce).toBe("Kept in iCloud. Developing it will use mobile data.");
+    expect(cellular.announce).toBe("Kept in iCloud. Posting it will use mobile data.");
     expect(stageValue(day(2019, 9, 22), "Seven years ago today", false, null, cellular)).toBe(
-      "October 22, 2019. Seven years ago today. Kept in iCloud. Developing it will use mobile data.",
+      "October 22, 2019. Seven years ago today. Kept in iCloud. Posting it will use mobile data.",
     );
     const down = stateWords({ kind: "downloading", progress: null }, ctx);
     expect(stageValue(day(2019, 9, 22), "Seven years ago today", false, null, down)).toBe(

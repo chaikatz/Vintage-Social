@@ -5,9 +5,12 @@
  *
  * On the reference phone (393 × 852, insets 59/34) the running head runs
  * from 59 to 103, the photograph's area (the stage) from 103 to 686, 583
- * high, the glide strip from 686 to 754, and DEVELOP's block from 762 to
- * 810; on an SE (375 × 667, insets 20/0) the stage runs from 64 to 519,
- * 455 high. Until Contents is first opened the running head carries a
+ * high, POST's block from 686 to 734, right under the photograph's
+ * caption, and the glide strip from 746 to 814, the control beneath it,
+ * 4 above the home indicator's inset; on an SE (375 × 667, insets 20/0)
+ * the stage runs from 64 to 519, 455 high. When the word and the strip
+ * changed places the stage kept its height, so every plate is the size it
+ * was. Until Contents is first opened the running head carries a
  * second line, about 23 more, and the stage is that much shorter. The
  * screen lays these out with flex and measures the stage; the numbers here
  * are what it is measured against.
@@ -30,22 +33,29 @@ import type { PlateTrouble } from "./words";
 
 /** The running head's height; a minimum, so it grows with Dynamic Type. */
 export const HEAD_HEIGHT = 44;
-/** DEVELOP's block; a minimum for the same reason. */
+/**
+ * POST's block, right under the stage: the photograph's word. Its height
+ * is fixed, whatever a develop state puts in its place, so the stage keeps
+ * one height on every page; the longest word, DOWNLOAD AND POST, keeps to
+ * one line at the largest type the word allows, on a 320-point phone.
+ */
 export const DEVELOP_HEIGHT = 48;
-/** DEVELOP's block stands this far above the bottom inset (or 16, without one). */
-export const DEVELOP_LIFT = 8;
+/**
+ * The glide strip's slot under POST, on every page: the marks' row, 2 pt,
+ * and the grease-pencil box's row (`STRIP` in replay.ts, which the tests
+ * hold this to). A gap over it, between POST and the strip, so the word
+ * reads as the photograph's and the strip as the control beneath; the
+ * strip's own gutters at either side, the plate's, which keep its left
+ * end clear of the back swipe at the left edge; and under it, the strip
+ * stands this far above the bottom inset (or 16, without one).
+ */
+export const GLIDE_HEIGHT = 68;
+export const GLIDE_GAP = 12;
+export const GLIDE_INSET = 16;
+export const GLIDE_LIFT = 4;
 export const MIN_BOTTOM_INSET = 16;
 /** The plate keeps this far from each side of the page. */
 export const PLATE_GUTTER = 16;
-/**
- * The glide strip's slot between the stage and DEVELOP, on every page:
- * the marks' row, 2 pt, and the grease-pencil box's row (`STRIP` in
- * replay.ts, which the tests hold this to). Then a gap over DEVELOP, and
- * the strip's own gutters at either side, the plate's.
- */
-export const GLIDE_HEIGHT = 68;
-export const GLIDE_GAP = 8;
-export const GLIDE_INSET = 16;
 
 /** A square print, as it is exported: the paper under its photograph, measured. */
 const PRINT = exportLayout(1, "print", PRINT_WIDTH);
@@ -68,10 +78,10 @@ const MIN_TOP = 8;
 /** A caption is never narrower than this, even under a narrow print. */
 export const MIN_CAPTION_WIDTH = 240;
 
-/** The stage between the running head and the glide strip over DEVELOP, for a window and its insets. */
+/** The stage between the running head and POST over the glide strip, for a window and its insets. */
 export function stageFrame(height: number, insets: { top: number; bottom: number }): { top: number; height: number } {
   const top = insets.top + HEAD_HEIGHT;
-  const bottom = height - Math.max(insets.bottom, MIN_BOTTOM_INSET) - DEVELOP_LIFT - DEVELOP_HEIGHT - GLIDE_HEIGHT - GLIDE_GAP;
+  const bottom = height - Math.max(insets.bottom, MIN_BOTTOM_INSET) - GLIDE_LIFT - GLIDE_HEIGHT - GLIDE_GAP - DEVELOP_HEIGHT;
   return { top, height: Math.max(0, bottom - top) };
 }
 

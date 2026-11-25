@@ -312,7 +312,7 @@ let renditions = 0;
  * a Live Photo's video, and never a full-size render of an edited one,
  * which is what reading the photograph's own file asked Photos for.
  *
- * A download is watched for a stall, as DOWNLOAD AND DEVELOP's is
+ * A download is watched for a stall, as DOWNLOAD AND POST's is
  * (`src/darkroom/develop.ts`): each step of progress Photos reports starts
  * `OPEN_TIMEOUT_MS` afresh, so a photograph still coming in on a slow
  * connection is waited for, up to `OPEN_LONGEST_MS` in all. A screen that

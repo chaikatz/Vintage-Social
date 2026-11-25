@@ -321,6 +321,7 @@ describe("Home", () => {
     expect(cards).toHaveLength(1);
     expect(props(cards[0], "FeedCard")).toEqual([
       "post={counted(item, likeCountFor(item))}",
+      "viewerId={userId}",
       "likedByMe={isLiked(item)}",
       "onToggleLike={toggleLike}",
       "onOpenComments={onOpenComments}",
@@ -337,7 +338,7 @@ describe("Home", () => {
 
   it("draws the chosen card the moment the choice changes", () => {
     const render = home.slice(home.indexOf("const renderItem = useCallback("), home.indexOf("const header ="));
-    expect(render).toMatch(/\[FeedCard, counted, likeCountFor, isLiked, toggleLike,/);
+    expect(render).toMatch(/\[FeedCard, counted, userId, likeCountFor, isLiked, toggleLike,/);
   });
 
   it("keeps the list itself as it was", () => {
@@ -386,6 +387,7 @@ describe("the gallery", () => {
     expect(cards).toHaveLength(1);
     expect(props(cards[0], "FeedCard")).toEqual([
       "post={counted(item, likeCountFor(item))}",
+      "viewerId={userId}",
       "likedByMe={isLiked(item)}",
       "onToggleLike={toggleLike}",
       "onOpenComments={onOpenComments}",
