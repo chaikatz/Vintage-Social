@@ -477,11 +477,14 @@ for (let t = 0; t < 8; t++) {
 }
 const pausedOn = await sheetDate();
 const sharp = (await page.locator('[data-testid="darkroom-glide-sharp"]').count()) > 0;
+// Read before the screenshot: with SHOT_DIR set, the shot takes long enough that the strip has been
+// still long enough to count as let go, and the room has landed by the time it returns.
+const pausedPage = await pagerPage();
 await shot("glide-paused");
 check(
   "Paused on a frame mid-glide, its photograph is drawn sharp, and the pager still waits",
-  pausedOn !== "" && ![firstDate, secondDate, thirdDate].includes(pausedOn) && sharp && (await pagerPage()) === 2,
-  `${pausedOn} sharp=${sharp} page ${await pagerPage()}`,
+  pausedOn !== "" && ![firstDate, secondDate, thirdDate].includes(pausedOn) && sharp && pausedPage === 2,
+  `${pausedOn} sharp=${sharp} page ${pausedPage}`,
 );
 await wait(1500);
 check(
