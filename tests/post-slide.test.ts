@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   claimsSlide,
   createRoomDoor,
+  holdsSideways,
   FLICK_SHARE,
   FLICK_SPEED,
   holdWhileInFront,
@@ -64,6 +65,16 @@ describe("a drag on Recent", () => {
     expect(claimsSlide({ dx: Number.NaN, dy: 0 })).toBe(false);
   });
 
+  it("is held by the pager either way once plainly sideways, so it never ends as a tap; only to the left does it move", () => {
+    expect(holdsSideways({ dx: -12, dy: 0 })).toBe(true);
+    expect(holdsSideways({ dx: 80, dy: 10 })).toBe(true);
+    expect(holdsSideways({ dx: 11, dy: 0 })).toBe(false);
+    expect(holdsSideways({ dx: 40, dy: 40 })).toBe(false);
+    expect(holdsSideways({ dx: -4, dy: -120 })).toBe(false);
+    expect(claimsSlide({ dx: 80, dy: 10 })).toBe(false);
+    expect(slideProgress(80, 390)).toBe(0);
+  });
+
   it("carries the page with it, from Recent (0) to the door (1), never past either", () => {
     expect(slideProgress(0, 390)).toBe(0);
     expect(slideProgress(-195, 390)).toBe(0.5);
@@ -97,10 +108,11 @@ describe("letting the slide go", () => {
 
   it("is the browser pager's rule, and the iPhone's pager is UIKit's own", () => {
     const web = code("src/components/post/PostPager.web.tsx");
-    expect(web).toMatch(/claimsSlide\(\{ dx, dy \}\)/);
+    expect(web).toMatch(/holdsSideways\(\{ dx, dy \}\)/);
     expect(web).toMatch(/slideOpens\(\{ dx: g\.dx, vx: g\.vx, width: width\.current \}\) \? 1 : 0/);
-    // Only from Recent, only while the page may move.
-    expect(web).toMatch(/enabled\.current && page\.current === 0 && claimsSlide/);
+    // Only from Recent, only while the page may move; never to the right of Recent.
+    expect(web).toMatch(/enabled\.current && page\.current === 0 && holdsSideways/);
+    expect(web).toMatch(/x\.setValue\(Math\.max\(-w, Math\.min\(0, g\.dx \+ SLIDE_SLOP\)\)\)/);
     // In the capture phase, so a cell that took the press gives the drag up.
     expect(web).toMatch(/onMoveShouldSetPanResponderCapture: \(_, g\) => wants\(g\.dx, g\.dy\)/);
     expect(web).toMatch(/onPanResponderTerminationRequest: \(\) => false/);

@@ -44,6 +44,17 @@ export function claimsSlide(g: { dx: number; dy: number }): boolean {
   return Math.abs(g.dx) >= SLIDE_LOCK * Math.abs(g.dy);
 }
 
+/**
+ * Whether a drag on Recent is sideways enough for the pager to take it,
+ * either way: to the left it is the slide; to the right it moves nothing,
+ * but the pager still holds it, as UIKit's does, so a sideways drag never
+ * ends as a tap on what it started on.
+ */
+export function holdsSideways(g: { dx: number; dy: number }): boolean {
+  if (!(Math.abs(g.dx) >= SLIDE_SLOP)) return false;
+  return Math.abs(g.dx) >= SLIDE_LOCK * Math.abs(g.dy);
+}
+
 /** How far the slide has carried the page, 0 (Recent) to 1 (the door), for a drag `dx` across a page `width` wide. */
 export function slideProgress(dx: number, width: number): number {
   if (!(width > 0)) return 0;

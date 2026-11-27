@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { Animated, Easing, PanResponder, StyleSheet, View, type ViewStyle } from "react-native";
 import { pageOffset, pagePosition } from "@/post/pages";
-import { claimsSlide, SLIDE_SLOP, slideOpens, slideProgress } from "@/post/slide";
+import { holdsSideways, SLIDE_SLOP, slideOpens, slideProgress } from "@/post/slide";
 import type { PagerScrollState, PostPagerHandle } from "./PostPager";
 
 /**
@@ -10,7 +10,8 @@ import type { PagerScrollState, PostPagerHandle } from "./PostPager";
  * (`src/post/slide.ts`). A drag on Recent becomes the slide only once it
  * has gone 12 points to the left and plainly sideways; the page then
  * follows the finger, and on release it goes on to the door past half the
- * width or on a clear flick, and otherwise back. The roll inside scrolls
+ * width or on a clear flick, and otherwise back. A drag as plainly to the
+ * right is held too, and moves nothing. The roll inside scrolls
  * as the browser scrolls it; a cell pressed and then dragged sideways
  * lets the slide have the drag, and selects nothing.
  *
@@ -83,7 +84,8 @@ export const PostPager = forwardRef<
   );
 
   const responder = useMemo(() => {
-    const wants = (dx: number, dy: number) => enabled.current && page.current === 0 && claimsSlide({ dx, dy });
+    // Sideways either way: to the left it is the slide; to the right the page stays, and nothing under it is tapped.
+    const wants = (dx: number, dy: number) => enabled.current && page.current === 0 && holdsSideways({ dx, dy });
     return PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
@@ -95,7 +97,7 @@ export const PostPager = forwardRef<
         told.current.onScrollState("dragging");
       },
       onPanResponderMove: (_, g) => {
-        // From where the slide began, so the page does not jump by the slop.
+        // From where the slide began, so the page does not jump by the slop; never to the right of Recent.
         const w = width.current;
         x.setValue(Math.max(-w, Math.min(0, g.dx + SLIDE_SLOP)));
       },
