@@ -22,7 +22,10 @@ import { holdsSideways, SLIDE_SLOP, slideOpens, slideProgress } from "@/post/sli
  * The roll inside Recent scrolls up and down natively: a vertical list's
  * own pan gives way to a drag more sideways than up or down, and only
  * then does this responder see it, in the capture phase, so a cell that
- * took the press gives the drag up and selects nothing. While the slide
+ * took the press gives the drag up and selects nothing. Once the roll is
+ * scrolling, its list holds the touch and will not give it up (React
+ * Native's ScrollView, once it has scrolled), so a scroll that turns
+ * sideways under the finger stays a scroll. While the slide
  * moves, its work is one value set per touch move, on the JavaScript
  * thread; at rest it does nothing at all.
  *
