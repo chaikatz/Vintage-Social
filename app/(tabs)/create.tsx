@@ -11,90 +11,94 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import { useFocusEffect, useIsFocused } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused, useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
 import { Screen } from "@/components/Screen";
-import { todaysPrint } from "@/components/onThisDayPrint";
 import { useOnline } from "@/components/darkroom/useOnline";
+import { DoorPage } from "@/components/post/DoorPage";
 import { MountPanel } from "@/components/post/MountPanel";
-import { OnThisDayDoor, PostDoors } from "@/components/post/PostDoors";
-import { RollFooter } from "@/components/post/RollFooter";
+import { PostPager, type PagerScrollState, type PostPagerHandle } from "@/components/post/PostPager";
 import { RollHero } from "@/components/post/RollHero";
 import { RollRow } from "@/components/post/RollCell";
-import { LimitedLine, WaysRow } from "@/components/post/WaysRow";
-import { colors, spacing } from "@/theme";
+import { WaysRow } from "@/components/post/WaysRow";
+import { colors } from "@/theme";
 import { showAlert } from "@/utils/alert";
-import { fetchUserPosts } from "@/api/posts";
-import { useSession } from "@/providers/SessionProvider";
 import { pickFromLibrary, takeForCompose, type PickedParams } from "@/utils/pickForCompose";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 import { useReducedMotion } from "@/utils/useReducedMotion";
 import { darkroomAvailable } from "@/darkroom/source";
-import { placeCover, placeLine } from "@/darkroom/session";
-import { useSetAside } from "@/darkroom/setAside";
 import type { Print } from "@/darkroom/types";
 import { onPostAgain } from "@/post/again";
 import { discardPrintCopy, openPrint, postHaptic } from "@/post/openPrint";
+import { onPageAsked, postPage, setPostPage } from "@/post/pages";
 import { panelFor, type PanelAct } from "@/post/panels";
 import {
   cellSize,
-  footShown,
   GAP,
-  heroFrame,
-  heroHeight,
+  HEADER_BELOW,
   NARROW,
-  pageHeight,
-  roomDoorFace,
+  photoRect,
+  previewFrame,
+  recentHeight,
   rollRows,
   rowsInSight,
   SECOND_TAP_MS,
   wellRows,
   type RollRow as Row,
 } from "@/post/roll";
-import { useDayDoor } from "@/post/useDayDoor";
+import { createRoomDoor, holdWhileInFront } from "@/post/slide";
+import { stampedParams } from "@/post/stamp";
 import { useRoll } from "@/post/useRoll";
 
 // A page that breaks as it draws breaks only this tab (src/navigation/Recover.tsx).
 export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
 
 /**
- * Where a post begins: the member's own photographs, and the one they
- * tap, large, one tap from the editor.
+ * Where a post begins, as the owner's mock draws it: the member's own
+ * photographs, and the one they tap, large, one tap from the editor.
  *
  * One photograph per post. Short videos are allowed but live in the same
  * feed and grid as everything else — there is no separate video surface.
  *
- * Top to bottom. The two doors: the Memory Room's, in the invitation
- * card's stock, carrying the print the member left off on and where that
- * was; and On this day's, this date in earlier years, in their
- * photographs and the member's own posts. SET ASIDE · 3 under them when
- * anything is set aside. Then the selected photograph on the camera's
- * dark mount, in the frame the editor will give it, with the print's
- * signature line under it and POST beside it. Then RECENT, with SHORT
- * VIDEO and LIBRARY (the iPhone's own picker) on the same line, and the
- * roll: newest first, four to a row, the camera first on the iPhone. At
- * its foot, further back, the Memory Room again.
+ * Two pages, side by side, named in the header the tabs share
+ * (`PostHeader`): RECENT, which this is, and MEMORY ROOM. Recent, top to
+ * bottom: the selected photograph on the paper, in a 4:5 frame 27 points
+ * in from either edge, at the shape the editor will post it, with
+ * VINTAGE's date stamp on it as its post will carry it; LIBRARY (the
+ * iPhone's own picker) and VIDEO at the left of the line under it, POST →
+ * at the right; then the roll: newest first, four to a row, edge to edge,
+ * the camera first on the iPhone. Every state without a photograph to
+ * show (never asked, refused, empty, failed, loading) is a panel in the
+ * same frame, so the page keeps one shape.
+ *
+ * The Memory Room is reached by tapping MEMORY ROOM, or by sliding Recent
+ * to the left, deliberately (`src/post/slide.ts`): a scroll of the roll, a
+ * diagonal drift, a tap or a nudge never moves the page. Past half the
+ * width, or on a clear flick, the pager comes to rest on the room's door
+ * — its own paper, nothing read — and the room is pushed, once, and fades
+ * in over it; once the room covers the tab the pager goes back to Recent
+ * without animation, so the way back from the room lands here. While the
+ * tab is in front the tabs' own pager is held still, so the two never
+ * take the same drag: a slide to the left no longer goes to Activity, and
+ * one to the right does nothing (the tabs are a tap away).
  *
  * The roll is read from the library only while the tab is in front, and
  * only with the access the member already gave; the tab asks for it only
- * from a tap on its own explanation's CONTINUE. Everything it
- * reads stays on this phone, a bounded page at a time. Ten seconds after
- * the tab is left, and at once when the app goes to the background, it
- * lets go of every photograph out of sight, keeping the rows on the
- * screen and the mount, so the page is just as it was whenever it is
- * seen again (`src/post/useRoll.ts`). What it says about the room it
- * reads from the room's own small files, from the first frame. The one
- * posted photograph On this day may show is read from the server once
- * the tab is in front.
+ * from a tap on its own explanation's CONTINUE. Everything it reads stays
+ * on this phone, a bounded page at a time. Ten seconds after the tab is
+ * left, and at once when the app goes to the background, it lets go of
+ * every photograph out of sight, keeping the rows on the screen and the
+ * frame, so the page is just as it was whenever it is seen again
+ * (`src/post/useRoll.ts`).
  *
  * Where there is no library to read (Android, a browser outside the
- * demo) the page is On this day, the picker's bar, the camera and the
- * clip.
+ * demo) there is no room and no roll: the page is the picker's panel, the
+ * picker, the clip and the camera, under the plain "Post" title.
  */
 export default function Create() {
   const router = useRouter();
+  const navigation = useNavigation();
   // Opening a photograph takes a moment (a rendition from Photos, a
   // capture date, a decode), and a control only goes quiet once React has
   // rendered: two taps in one frame both got through and opened the
@@ -111,27 +115,21 @@ export default function Create() {
 
   const native = Platform.OS !== "web";
   const ios = Platform.OS === "ios";
-  const door = darkroomAvailable();
+  const room = darkroomAvailable();
   const held = busy !== null;
-  // On this day's date turns over with the clock, and it waits for focus
-  // before asking the server for anything.
-  const today = useToday();
   const focused = useIsFocused();
   const reduceMotion = useReducedMotion();
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
   const online = useOnline();
-  const { width: W, height: windowH, fontScale } = useWindowDimensions();
+  const { width: W, height: windowH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const narrow = W < NARROW;
-  const short = windowH < 700;
-  const large = fontScale >= 1.35;
-  const H = heroHeight(pageHeight(windowH, insets.top, insets.bottom));
+  const frame = useMemo(() => previewFrame(W, recentHeight(windowH, insets.top, insets.bottom)), [W, windowH, insets.top, insets.bottom]);
   const size = cellSize(W);
   const iosMajor = parseInt(String(Platform.Version), 10);
 
   const roll = useRoll(focused);
-  const allowed = roll.access === "full" || roll.access === "limited";
 
   const openWith = useCallback(
     async (way: Way, get: (signal?: AbortSignal) => Promise<PickedParams | null>, id?: string) => {
@@ -147,7 +145,8 @@ export default function Create() {
           discardPrintCopy(params.uri);
           return;
         }
-        if (params) router.push({ pathname: "/compose", params });
+        // A photograph of the roll was shown stamped, so the editor starts with the stamp on.
+        if (params) router.push({ pathname: "/compose", params: way === "print" ? stampedParams(params) : params });
       } catch {
         // The picker or the camera can refuse outright (an iCloud original
         // that would not come down, a clip that could not be exported). The
@@ -162,24 +161,84 @@ export default function Create() {
     [router],
   );
 
-  // Leaving the tab, or the app going to the background, stops a photograph opening.
+  // The two pages, and the room pushed once from the second.
+  const pager = useRef<PostPagerHandle>(null);
+  const scrollState = useRef<PagerScrollState>("idle");
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  const [door] = useState(() =>
+    createRoomDoor({
+      isFront: () => front.current && AppState.currentState === "active",
+      push: () => routerRef.current.push("/darkroom"),
+      reset: () => pager.current?.setPageWithoutAnimation(0),
+      later: (run, ms) => {
+        const timer = setTimeout(run, ms);
+        return () => clearTimeout(timer);
+      },
+    }),
+  );
+  const toRecent = useCallback(() => {
+    if (postPage() !== 0) pager.current?.setPageWithoutAnimation(0);
+  }, []);
+
+  // In front: the tabs' pager held still, so only this one slides. Leaving the tab, or the app going
+  // to the background, stops a photograph opening; leaving lets the tabs' pager go.
   useFocusEffect(
     useCallback(() => {
       front.current = true;
+      const release = holdWhileInFront(room);
+      door.focused();
+      toRecent();
       return () => {
         front.current = false;
         printStop.current?.abort();
+        release();
       };
-    }, []),
+    }, [door, room, toRecent]),
   );
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "background") printStop.current?.abort();
+      // Back with the pager left on the door (it came to rest while the app was away, and pushed nothing): Recent.
+      else if (state === "active" && door.phase() === "closed") toRecent();
     });
     return () => sub.remove();
+  }, [door, toRecent]);
+
+  // The room covers the tabs once its fade is over: the stack says so as the tabs disappear.
+  useEffect(() => {
+    const parent = navigation.getParent();
+    if (!parent) return;
+    const listen = parent.addListener as unknown as (type: string, cb: (e: { data?: { closing?: boolean } }) => void) => () => void;
+    return listen("transitionEnd", (e) => {
+      if (e.data?.closing) door.covered();
+    });
+  }, [door, navigation]);
+
+  const onPageSelected = useCallback(
+    (page: number) => {
+      setPostPage(page);
+      if (page === 1) door.settled();
+    },
+    [door],
+  );
+  const onScrollState = useCallback((state: PagerScrollState) => {
+    scrollState.current = state;
   }, []);
 
-  /** POST, the photograph on the mount, or a second tap on the selected cell: the editor. */
+  // The header's MEMORY ROOM (and RECENT): only in front, at rest, with nothing opening, and the room not on its way.
+  useEffect(
+    () =>
+      onPageAsked((page) => {
+        if (!front.current || opening.current || scrollState.current !== "idle" || door.phase() !== "closed") return;
+        if (page === postPage()) return;
+        if (reduceMotionRef.current) pager.current?.setPageWithoutAnimation(page);
+        else pager.current?.setPage(page);
+      }),
+    [door],
+  );
+
+  /** POST, the photograph in the frame, or a second tap on the selected cell: the editor. */
   const post = useCallback(
     (print: Print) => {
       if (opening.current) return;
@@ -191,7 +250,7 @@ export default function Create() {
 
   const listRef = useRef<FlatList<Row>>(null);
   const offset = useRef(0);
-  // Where the mount stands in the list's header, how tall the header is, and how much of the list shows.
+  // Where the frame stands in the list's header, how tall the header is, and how much of the list shows.
   const heroTop = useRef(0);
   const heroBottom = useRef(Number.POSITIVE_INFINITY);
   const headerHeight = useRef(0);
@@ -214,6 +273,8 @@ export default function Create() {
   }, []);
 
   const { select, selection } = roll;
+  const frameW = frame.width;
+  const frameH = frame.height;
   /** A photograph of the roll: selected, and seen large; tapped again once it is, opened. */
   const onCell = useCallback(
     (print: Print) => {
@@ -225,10 +286,10 @@ export default function Create() {
         return;
       }
       select(print.id);
-      // With any of its frame out of view, the photograph is brought up to the mount, with POST under it.
-      if (offset.current > heroTop.current + heroFrame(print, W, H).top) toTop();
+      // With any of it out of view, the photograph is brought up to the frame, with POST under it.
+      if (offset.current > heroTop.current + photoRect(print, { width: frameW, height: frameH }).top) toTop();
     },
-    [post, select, selection, toTop, W, H],
+    [post, select, selection, toTop, frameW, frameH],
   );
   const onCellPost = useCallback(
     (print: Print) => {
@@ -239,60 +300,30 @@ export default function Create() {
     [post, select],
   );
 
-  // Tapping Post again: the top, the newest, and the newest page read once.
+  // Tapping Post again: Recent, the top, the newest, and the newest page read once.
   const { selectNewest, refresh } = roll;
   useEffect(
     () =>
       onPostAgain(() => {
+        if (door.phase() === "closed") toRecent();
         toTop();
         selectNewest();
         refresh();
       }),
-    [refresh, selectNewest, toTop],
+    [door, refresh, selectNewest, toRecent, toTop],
   );
 
-  // The posts the profile shares, for the day's memory.
-  const { session } = useSession();
-  const userId = session?.user?.id ?? "";
-  const posts = useQuery({
-    queryKey: ["user-posts", userId],
-    queryFn: () => fetchUserPosts(userId),
-    enabled: Boolean(userId) && focused,
-    // A memory changes once a day, and a new post reaches this cache on its own.
-    staleTime: 10 * 60_000,
-  });
-  const memory = useMemo(() => todaysPrint(posts.data, new Date(today)), [posts.data, today]);
-  const day = useDayDoor({ focused, access: roll.access, ready: roll.phase === "ready", today, memory });
-
-  // Where the member left off in the room, from its own small file, from the first frame and again
-  // each time the tab is in front; and the shelf, from its own.
-  const [place, setPlace] = useState<Place>(readPlaceFile);
-  useFocusEffect(
-    useCallback(() => {
-      try {
-        setPlace({ line: placeLine(), cover: placeCover() });
-      } catch {
-        setPlace({ line: null, cover: null });
-      }
-    }, []),
-  );
-  const shelf = useSetAside();
-  // The doors' prints stand where they will be while access is still being read, and their
-  // photographs come into them once it was given. They stay while the tab rests (they are a few
-  // points across), so the doors are the same whenever the page is seen again.
-  const pictures = allowed;
-  const room = roomDoorFace(place.line, place.cover, shelf[0] ?? null, allowed || roll.access === null);
-
-  const openRoom = useCallback(() => router.push("/darkroom"), [router]);
-  const openDay = useCallback(() => router.push("/memories"), [router]);
-  const openShelf = useCallback(() => router.push({ pathname: "/darkroom", params: { mode: "set-aside" } }), [router]);
   const onCamera = useMemo(() => (native ? () => openWith("camera", takeForCompose) : undefined), [native, openWith]);
   const onVideo = () => openWith("video", () => pickFromLibrary("video"));
   const onLibrary = () => openWith("photo", () => pickFromLibrary("photo"));
 
   const ready = roll.phase === "ready";
+  const more = roll.access === "limited" && roll.prints.length > 0;
   // Rows are made again only when the roll changes, so a row whose photographs did not change is not drawn again.
-  const rows = useMemo<Row[]>(() => (ready ? rollRows(roll.prints, { camera: ios }) : wellRows({ camera: ios })), [ready, roll.prints, ios]);
+  const rows = useMemo<Row[]>(
+    () => (ready ? rollRows(roll.prints, { camera: ios, more }) : wellRows({ camera: ios })),
+    [ready, roll.prints, ios, more],
+  );
 
   const onAct = (act: PanelAct) => {
     if (act === "ask") roll.ask();
@@ -302,19 +333,19 @@ export default function Create() {
   };
 
   const ways = busy && busy.way !== "print" ? busy.way : null;
-  const panel = panelFor({ available: door, phase: roll.phase, access: roll.access, empty: roll.prints.length === 0 });
+  const panel = panelFor({ available: room, phase: roll.phase, access: roll.access, empty: roll.prints.length === 0 });
   // The clip's limit, where no trimmer holds a clip to it.
   const clipNote =
     Platform.OS !== "ios" ? (
-      <View style={styles.note} pointerEvents="none">
-        <Text style={styles.noteText} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
+      <View style={[styles.note, { marginLeft: frame.left, width: frame.width }]} pointerEvents="none">
+        <Text testID="post-clip-note" style={styles.noteText} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
           Clips up to {MAX_VIDEO_SECONDS} seconds.
         </Text>
       </View>
     ) : null;
 
   // What stays drawn when the tab lets go of what is out of sight: the rows on the screen, one
-  // either side, and the mount when it shows — read from where the list stood as it was let go.
+  // either side, and the frame when it shows — read from where the list stood as it was let go.
   const release = roll.release;
   const sight = useMemo(
     () =>
@@ -329,23 +360,32 @@ export default function Create() {
   const rowReleased = (index: number) => release === "all" || (sight != null && (index < sight.first || index > sight.last));
   const heroLetGo = release === "all" || (sight != null && !sight.hero);
 
-  if (!door) {
+  if (!room) {
     return (
       <Screen padded={false} scroll>
-        <View style={[styles.alone, { paddingVertical: short ? spacing.sm : spacing.md }]}>
-          <OnThisDayDoor face={day} narrow={narrow} short={short} large={large} pictures={false} reduceMotion={reduceMotion} held={held} onPress={openDay} />
-        </View>
+        <View style={styles.below} />
         <MountPanel
           kind="unavailable"
           iosMajor={iosMajor}
-          H={H}
+          frame={frame}
           narrow={narrow}
           busy={ways === "photo"}
           held={held}
           onAct={onAct}
           onOpenSettings={roll.openSettings}
         />
-        <WaysRow recent={false} camera={native} library={false} narrow={narrow} large={large} busy={ways} held={held} onCamera={onCamera} onVideo={onVideo} />
+        <WaysRow
+          frame={frame}
+          camera={native}
+          canPost={false}
+          posting={false}
+          busy={ways}
+          held={held}
+          onLibrary={onLibrary}
+          onVideo={onVideo}
+          onCamera={onCamera}
+          onPost={noop}
+        />
         {clipNote}
       </Screen>
     );
@@ -354,45 +394,28 @@ export default function Create() {
   const dim = roll.phase === "undetermined" || roll.phase === "denied";
   const selectedId = roll.selected?.id ?? null;
   const busyId = busy?.way === "print" ? (busy.id ?? null) : null;
+  const shown = panel === null ? roll.selected : null;
 
   const header = (
     <View onLayout={onHeaderLayout}>
-      <PostDoors
-        room={room}
-        day={day}
-        shelf={shelf.length}
-        narrow={narrow}
-        short={short}
-        large={large}
-        pictures={pictures}
-        reduceMotion={reduceMotion}
-        held={held}
-        onRoom={openRoom}
-        onDay={openDay}
-        onShelf={openShelf}
-      />
       <View onLayout={onMountLayout}>
-        {panel === null && roll.selected ? (
+        {shown ? (
           <RollHero
-            print={roll.selected}
-            W={W}
-            H={H}
-            large={large}
-            busy={busy?.way === "print"}
+            print={shown}
+            frame={frame}
             held={held}
             released={heroLetGo}
             heroReleased={roll.heroReleased}
             reduceMotion={reduceMotion}
             focused={focused}
             online={online}
-            now={today}
             onPost={() => roll.selected && post(roll.selected)}
           />
         ) : (
           <MountPanel
             kind={panel ?? "loading"}
             iosMajor={iosMajor}
-            H={H}
+            frame={frame}
             narrow={narrow}
             busy={roll.asking}
             held={held}
@@ -402,127 +425,82 @@ export default function Create() {
         )}
       </View>
       <WaysRow
-        recent
+        frame={frame}
         camera={false}
-        library
-        narrow={narrow}
-        large={large}
+        canPost={shown != null}
+        posting={busy?.way === "print"}
         busy={ways}
         held={held}
-        onVideo={onVideo}
         onLibrary={onLibrary}
+        onVideo={onVideo}
+        onPost={() => roll.selected && post(roll.selected)}
       />
-      {roll.access === "limited" && ready && roll.prints.length > 0 ? <LimitedLine held={held} onShareMore={roll.shareMore} /> : null}
       {clipNote}
     </View>
   );
 
-  // Where the roll ends, the room hands on; an empty roll, or a limited selection read to its end, has nothing further back.
-  const footer = footShown({ ready, end: roll.end, count: roll.prints.length, access: roll.access }) ? (
-    <RollFooter held={held} onEnter={openRoom} />
-  ) : null;
-
   return (
     <Screen padded={false}>
-      <FlatList
-        ref={listRef}
-        testID="post-roll"
-        data={rows}
-        keyExtractor={(row) => row.key}
-        renderItem={({ item, index }) => (
-          <RollRow
-            row={item}
-            size={size}
-            selectedId={selectedId && item.items.some((i) => i.key === selectedId) ? selectedId : null}
-            busyId={busyId && item.items.some((i) => i.key === busyId) ? busyId : null}
-            cameraBusy={busy?.way === "camera"}
-            released={rowReleased(index)}
-            held={held}
-            dim={dim}
-            reduceMotion={reduceMotion}
-            onCell={onCell}
-            onPost={onCellPost}
-            onCamera={onCamera}
+      {/* The header's band reaches this far into the page: its two words are centred over it. */}
+      <View style={styles.below} />
+      <PostPager ref={pager} scrollEnabled={!held} onPageSelected={onPageSelected} onScrollState={onScrollState}>
+        <View key="recent" style={styles.page} collapsable={false}>
+          <FlatList
+            ref={listRef}
+            testID="post-roll"
+            data={rows}
+            keyExtractor={(row) => row.key}
+            renderItem={({ item, index }) => (
+              <RollRow
+                row={item}
+                size={size}
+                selectedId={selectedId && item.items.some((i) => i.key === selectedId) ? selectedId : null}
+                busyId={busyId && item.items.some((i) => i.key === busyId) ? busyId : null}
+                cameraBusy={busy?.way === "camera"}
+                released={rowReleased(index)}
+                held={held}
+                dim={dim}
+                reduceMotion={reduceMotion}
+                onCell={onCell}
+                onPost={onCellPost}
+                onCamera={onCamera}
+                onShareMore={roll.shareMore}
+              />
+            )}
+            extraData={[selectedId, busy, held, release, sight, dim]}
+            ListHeaderComponent={header}
+            initialNumToRender={4}
+            maxToRenderPerBatch={4}
+            windowSize={3}
+            removeClippedSubviews={false}
+            onEndReached={roll.loadMore}
+            onEndReachedThreshold={1.5}
+            scrollEventThrottle={16}
+            onScroll={onScroll}
+            onLayout={onListLayout}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
           />
-        )}
-        extraData={[selectedId, busy, held, release, sight, dim]}
-        ListHeaderComponent={header}
-        ListFooterComponent={footer}
-        initialNumToRender={4}
-        maxToRenderPerBatch={4}
-        windowSize={3}
-        removeClippedSubviews={false}
-        onEndReached={roll.loadMore}
-        onEndReachedThreshold={1.5}
-        scrollEventThrottle={16}
-        onScroll={onScroll}
-        onLayout={onListLayout}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-      />
+        </View>
+        <View key="door" style={styles.page} collapsable={false}>
+          <DoorPage />
+        </View>
+      </PostPager>
     </Screen>
   );
 }
 
 type Way = "photo" | "camera" | "video" | "print";
 
-type Place = { line: string | null; cover: ReturnType<typeof placeCover> };
-
-/** Where the member left off in the room, from its own small file; nothing when it cannot be read. */
-function readPlaceFile(): Place {
-  try {
-    return { line: placeLine(), cover: placeCover() };
-  } catch {
-    return { line: null, cover: null };
-  }
-}
+const noop = () => undefined;
 
 /** The page's type stops growing here, as the Memory Room's own word pages do. */
 const TYPE_CAP = 2.4;
 
-/**
- * Today, from its first moment, local time: the date On this day reads.
- * It turns over at midnight, and is read again each time the app comes
- * back to the front, since a phone put away overnight holds its timers
- * until then.
- */
-function useToday(): number {
-  const [today, setToday] = useState(() => startOfDay(Date.now()));
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // A timer that wakes a moment early sets the same day and waits again.
-    const turn = () => {
-      const now = Date.now();
-      setToday(startOfDay(now));
-      clearTimeout(timer);
-      timer = setTimeout(turn, tomorrow(now) - now);
-    };
-    turn();
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") turn();
-    });
-    return () => {
-      clearTimeout(timer);
-      sub.remove();
-    };
-  }, []);
-  return today;
-}
-
-function startOfDay(ms: number): number {
-  const d = new Date(ms);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-
-/** The first moment of the next day, local time, however long a day the clocks make it. */
-function tomorrow(ms: number): number {
-  const d = new Date(ms);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
-}
-
 const styles = StyleSheet.create({
-  list: { paddingBottom: spacing.xxl },
-  alone: { paddingHorizontal: spacing.lg, flexDirection: "row" },
-  note: { paddingHorizontal: spacing.lg, paddingBottom: 10 },
+  below: { height: HEADER_BELOW },
+  page: { flex: 1 },
+  list: { paddingBottom: 32 },
+  note: { paddingBottom: 10 },
   noteText: { fontSize: 12, lineHeight: 17, color: colors.inkSoft },
 });

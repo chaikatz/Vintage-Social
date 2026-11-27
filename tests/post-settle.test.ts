@@ -53,11 +53,10 @@ describe("waiting for the tab to settle", () => {
     expect(early).toBe(true);
   });
 
-  it("is how the roll and the On this day door wait, never InteractionManager", () => {
-    for (const f of ["src/post/useRoll.ts", "src/post/useDayDoor.ts", "app/(tabs)/create.tsx"]) {
+  it("is how the roll waits, never InteractionManager", () => {
+    for (const f of ["src/post/useRoll.ts", "app/(tabs)/create.tsx"]) {
       expect(code(f), f).not.toMatch(/InteractionManager/);
     }
     expect(code("src/post/useRoll.ts").match(/afterTabSettles\(/g)).toHaveLength(2);
-    expect(code("src/post/useDayDoor.ts")).toMatch(/queryFn: async \(\{ signal \}\) => \{\s*await tabSettled\(signal\);/);
   });
 });

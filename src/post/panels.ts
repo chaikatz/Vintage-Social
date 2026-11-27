@@ -2,10 +2,11 @@ import { settingsPath } from "@/components/darkroom/words";
 import type { LibraryAccess } from "@/darkroom/access";
 
 /**
- * What stands on the Post tab's mount when there is no photograph to put
- * on it: the same dark box, the same height, with a few words and at most
- * one thing to tap. Word for word, kept apart from the screen so the
- * words can be held without a phone.
+ * What stands in the Post tab's frame when there is no photograph to put
+ * in it: the same 4:5 box on the paper, ruled in the strong line, with a
+ * few words and at most one thing to tap, so the page keeps one shape in
+ * every state. Word for word, kept apart from the screen so the words can
+ * be held without a phone.
  *
  *   ask             access never asked: explain, then let iOS ask, only from the tap
  *   denied          refused: CHOOSE A PHOTOGRAPH (the picker), then the way to Settings
@@ -48,7 +49,7 @@ const SHARE_MORE_HINT = "Opens iOS’s list of the photographs VINTAGE may see."
 /**
  * The way through Settings, made to break only after a "›": each step,
  * "Full Access" and all, stays on one line, and its arrow with it, so a
- * narrow mount never leaves a word of a step alone on the next line.
+ * narrow frame never leaves a word of a step alone on the next line.
  */
 export function unbrokenPath(path: string): string {
   return path
@@ -76,7 +77,7 @@ export function panelWords(kind: PanelKind, iosMajor: number): PanelWords | null
         eyebrow: ROLL,
         headline: "VINTAGE can’t see your photographs.",
         body: "Choose one at a time from Library, or let VINTAGE in from Settings. It only ever reads on this iPhone.",
-        // The mount still points at posting: the picker needs no access. Settings is the quieter way, under it.
+        // The frame still points at posting: the picker needs no access. Settings is the quieter way, under it.
         bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
         path: unbrokenPath(settingsPath(iosMajor)),
         quiet: { label: "Open Settings", hint: "Opens VINTAGE’s page in Settings." },
@@ -127,7 +128,7 @@ export function panelWords(kind: PanelKind, iosMajor: number): PanelWords | null
 }
 
 /**
- * Which panel the mount shows, or null when it shows the selected
+ * Which panel the frame shows, or null when it shows the selected
  * photograph: full and limited access with a roll to show have no panel.
  */
 export function panelFor(s: { available: boolean; phase: RollPhase; access: LibraryAccess | null; empty: boolean }): PanelKind | null {

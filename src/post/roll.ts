@@ -7,12 +7,15 @@ import type { Print, TimeRange } from "@/darkroom/types";
  * The Post tab's rules, kept apart from the screen so they can be held to
  * their numbers without a phone: how big each part of the page is, how
  * the roll is read a bounded page at a time and merged, which photograph
- * is selected, and the words under it.
+ * is selected, and the words VoiceOver hears for it.
  *
- * The page, top to bottom: the doors (the Memory Room, On this day), the
- * selected photograph large on the camera's dark mount in the frame the
- * editor will give it, the ways row (RECENT, SHORT VIDEO, LIBRARY), then
- * the member's own photographs, newest first, four to a row.
+ * The page is the owner's mock (390 × 797 points, the status bar cropped
+ * off), measured, top to bottom: RECENT and MEMORY ROOM side by side in
+ * the serif; the selected photograph large on the paper, in a 4:5 frame
+ * 27 points in from either edge, with VINTAGE's date stamp on it as its
+ * post will carry it; LIBRARY at the left and POST → at the right under
+ * it; then the member's own photographs, newest first, four to a row,
+ * edge to edge, the camera first.
  */
 
 const DAY_MS = 86_400_000;
@@ -25,7 +28,7 @@ const DAY_MS = 86_400_000;
 export const ROLL_FIRST = 60;
 /** Each read after that, as the roll is scrolled toward its end. At most MAX_PAGE (150). */
 export const ROLL_PAGE = 120;
-/** The roll holds no more than this; past it, the footer hands on to the Memory Room. */
+/** The roll holds no more than this; further back is the Memory Room's, one tap away in the header. */
 export const ROLL_CAP = 1200;
 /** The first read goes on, up to three pages, until at least this many are shown. */
 export const ROLL_MIN_VISIBLE = 24;
@@ -40,36 +43,90 @@ export const SECOND_TAP_MS = 400;
 /** The editor's own clamp on a photograph's shape (app/compose.tsx, `previewRatio`). */
 export const PREVIEW_MIN = 4 / 5;
 export const PREVIEW_MAX = 1.91;
-/** The mount takes half the page, within these. */
-export const HERO_SHARE = 0.5;
-export const HERO_MIN = 230;
-export const HERO_MAX = 400;
-/** The tab header (8 + 20 + 8) and the tab bar (its item and hairline), less the safe areas. */
-const HEADER = 36;
-const TAB_BAR = 44;
-/** Rows of the roll, and the space between cells and rows. */
+/** Phones narrower than this get the panels' smaller type. */
+export const NARROW = 360;
+
+// ---------------------------------------------------------------------------
+// The mock, measured
+// ---------------------------------------------------------------------------
+
+/**
+ * The header's band, from the top of the safe area to the top of the
+ * photograph's frame: the two words are centred in it (their caps from
+ * 21 to 34 in the mock, Recent from x 82, Memory Room to x 307).
+ */
+export const HEADER_BAND = 56;
+/** TabHeader's own band (8 + the 17-point title + 8), which the words share with the other tabs' titles. */
+export const TAB_HEADER = 36;
+/** The rest of the band, drawn by the Post tab itself under TabHeader, so the frame starts where the mock's does. */
+export const HEADER_BELOW = HEADER_BAND - TAB_HEADER;
+/** The two words: the serif at 20 points, 20 apart (the mock's 22 between the inks, less the side bearings), centred as a pair. */
+export const HEAD_WORDS = { size: 20, gap: 20 } as const;
+/** The photograph's frame: 27 points in from either edge (x 27 to 363 at 390), 4:5 (420 tall). */
+export const FRAME_INSET = 27;
+export const FRAME_RATIO = 4 / 5;
+/** From the frame's foot to the roll's top (y 476 to 522): LIBRARY and POST centred in it. */
+export const LINE_HEIGHT = 46;
+/**
+ * The line's type, in the typewriter: LIBRARY at 10 points, 4.5 apart
+ * (a letter every 10.5 points, caps 6 tall), in the soft ink; POST in
+ * bold at 11, 5.1 apart (every 11.7, caps 7 tall), in ink, and its arrow
+ * 12 points long with a head 9 tall, 9 points past POST's own spacing
+ * (15 from the T), ending on the frame's right edge.
+ */
+export const LINE_TYPE = {
+  library: { size: 10, tracking: 4.5 },
+  post: { size: 11, tracking: 5.1 },
+  arrow: { length: 12, head: 4.5, stroke: 1.25, gap: 9 },
+  /** LIBRARY and the clip's way beside it. */
+  between: 22,
+} as const;
+/** The roll: four square columns, 2 points between (96 at 390). */
 export const COLUMNS = 4;
 export const GAP = 2;
-/** Phones narrower than this get the smaller mount and doors without pictures. */
-export const NARROW = 360;
+/** The selected cell's rust border, drawn inside it so nothing shifts (3 points in the mock). */
+export const SELECTED_BORDER = 3;
+/** The camera tile: the paper, a 1-point line in the strong border's colour, and the camera's mark, 20 points across. */
+export const CAMERA_LINE = 1;
+export const CAMERA_MARK = 20;
+/** The tab bar: its item and hairline, less the safe area. */
+export const TAB_BAR = 49;
 
 // ---------------------------------------------------------------------------
 // Measurements
 // ---------------------------------------------------------------------------
 
-/** The height between the tab header and the tab bar. */
-export function pageHeight(windowH: number, insetTop: number, insetBottom: number): number {
-  return windowH - (insetTop + HEADER) - (TAB_BAR + insetBottom);
+/** Recent's height: between the header's band and the tab bar. */
+export function recentHeight(windowH: number, insetTop: number, insetBottom: number): number {
+  return windowH - insetTop - HEADER_BAND - TAB_BAR - insetBottom;
 }
 
-/** The mount: half the page, never under 230 or over 400. */
-export function heroHeight(pageH: number): number {
-  return Math.min(HERO_MAX, Math.max(HERO_MIN, Math.round(HERO_SHARE * pageH)));
+/** A cell of the roll: four to a row, two points between, edge to edge. */
+export function cellSize(W: number): number {
+  return (W - (COLUMNS - 1) * GAP) / COLUMNS;
 }
 
-/** The mount's inset around the frame, the strip under it, and POST's height. */
-export function heroMetrics(W: number): { mount: number; strip: number; button: number } {
-  return W < NARROW ? { mount: 10, strip: 52, button: 36 } : { mount: 12, strip: 56, button: 40 };
+export interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The photograph's frame on a phone `W` wide, with `recentH` between the
+ * header and the tab bar: 27 points in from either edge and 4:5, as the
+ * mock has it (336 × 420 at 390). Only on a phone too short to show a
+ * full row of the roll under it and the line (a 320 × 568 iPhone SE) is
+ * it made smaller, still 4:5 and centred, so the roll always begins on
+ * the first screen.
+ */
+export function previewFrame(W: number, recentH: number): Box {
+  const full = Math.max(0, W - 2 * FRAME_INSET);
+  const tallest = recentH - LINE_HEIGHT - (cellSize(W) + GAP);
+  const height = Math.max(0, Math.min(full / FRAME_RATIO, tallest > 0 ? tallest : full / FRAME_RATIO));
+  const width = height * FRAME_RATIO;
+  return { left: (W - width) / 2, top: 0, width, height };
 }
 
 /** A photograph's shape as the editor will frame it: 4:5 at the tallest, 1.91:1 at the widest. */
@@ -79,37 +136,31 @@ export function frameRatio(print: { width: number; height: number }): number {
 }
 
 /**
- * Where the selected photograph stands on the mount: as tall as the box
- * over the strip allows, narrower than the box's width, centred.
+ * Where the photograph stands in the frame: at the shape the editor will
+ * post it, as wide as the frame, centred up and down. A portrait fills
+ * the frame; a square or a landscape stands in the middle of it on the
+ * paper, so nothing under the frame moves when the selection does.
  */
-export function heroFrame(
-  print: { width: number; height: number },
-  W: number,
-  H: number,
-): { left: number; top: number; width: number; height: number } {
-  const { mount, strip } = heroMetrics(W);
-  const boxW = W - 2 * mount;
-  const boxH = H - mount - strip;
+export function photoRect(print: { width: number; height: number }, frame: Pick<Box, "width" | "height">): Box {
   const r = frameRatio(print);
-  let height = boxH;
-  let width = height * r;
-  if (width > boxW) {
-    width = boxW;
-    height = boxW / r;
+  let width = frame.width;
+  let height = width / r;
+  if (height > frame.height) {
+    height = frame.height;
+    width = height * r;
   }
-  return { left: (W - width) / 2, top: mount + (boxH - height) / 2, width, height };
-}
-
-/** A cell of the roll: four to a row, two points between, edge to edge. */
-export function cellSize(W: number): number {
-  return (W - (COLUMNS - 1) * GAP) / COLUMNS;
+  return { left: (frame.width - width) / 2, top: (frame.height - height) / 2, width, height };
 }
 
 // ---------------------------------------------------------------------------
 // Rows
 // ---------------------------------------------------------------------------
 
-export type RollItem = { kind: "camera"; key: "camera" } | { kind: "print"; key: string; print: Print } | { kind: "well"; key: string };
+export type RollItem =
+  | { kind: "camera"; key: "camera" }
+  | { kind: "more"; key: "more" }
+  | { kind: "print"; key: string; print: Print }
+  | { kind: "well"; key: string };
 
 export interface RollRow {
   key: string;
@@ -136,8 +187,8 @@ function chunk(items: RollItem[], columns: number): RollRow[] {
  * The rows on the screen, one either side to spare, from where the roll
  * is scrolled to: what stays drawn when the tab lets the rest of its
  * photographs go, so the page is as it was whenever it is seen again.
- * `header` is the height above the first row (the doors, the mount, the
- * ways), `row` a row's height with the space under it.
+ * `header` is the height above the first row (the photograph's frame and
+ * the line under it), `row` a row's height with the space under it.
  */
 export function rowsInSight(p: { offset: number; header: number; viewport: number; row: number; margin?: number }): {
   first: number;
@@ -150,10 +201,15 @@ export function rowsInSight(p: { offset: number; header: number; viewport: numbe
   return { first: Math.max(0, Math.floor(top / p.row) - margin), last: Math.max(-1, Math.ceil(bottom / p.row) - 1 + margin) };
 }
 
-/** The roll as rows of four, the camera first when asked for. */
-export function rollRows(prints: readonly Print[], opts: { camera: boolean; columns?: number }): RollRow[] {
+/**
+ * The roll as rows of four: the camera first when asked for, then, under
+ * a limited selection (`more`), the way to share more, then the
+ * photographs.
+ */
+export function rollRows(prints: readonly Print[], opts: { camera: boolean; more?: boolean; columns?: number }): RollRow[] {
   const items: RollItem[] = [];
   if (opts.camera) items.push({ kind: "camera", key: "camera" });
+  if (opts.more) items.push({ kind: "more", key: "more" });
   for (const p of prints) items.push({ kind: "print", key: p.id, print: p });
   return chunk(items, opts.columns ?? COLUMNS);
 }
@@ -234,22 +290,9 @@ export function mergeNewest(prev: readonly Print[], page: { prints: readonly Pri
 export type RollEnd = "more" | "done" | "capped";
 
 /**
- * Whether the foot of the roll — FURTHER BACK, and the way into the
- * Memory Room — stands under it: where the roll has ended and shown
- * something. Not where a limited selection has been read to its end: the
- * room sees those same photographs and nothing further back, and SHARE
- * MORE above the roll is the way to more. Read to the cap, a large
- * selection still has more in the room.
- */
-export function footShown(s: { ready: boolean; end: RollEnd; count: number; access: LibraryAccess | null }): boolean {
-  if (!s.ready || s.end === "more" || s.count === 0) return false;
-  return !(s.access === "limited" && s.end === "done");
-}
-
-/**
  * What the tab has let go of its photographs: nothing; those out of
  * sight (ten seconds after it is left, at once in the background), the
- * rows on the screen and the mount staying drawn so the page is the same
+ * rows on the screen and the frame staying drawn so the page is the same
  * whenever it is seen again; or all of them (before it is first in
  * front, and on a memory warning while it is not).
  */
@@ -291,7 +334,7 @@ export function newerArrived(
 /**
  * Where the selection goes once the photograph it stood on has been
  * posted from this phone (`postedAt`, when): the newest that has not
- * been, else the newest, so the mount never sits offering the same
+ * been, else the newest, so the frame never sits offering the same
  * photograph again.
  */
 export function afterPosting(
@@ -360,53 +403,4 @@ export function cellLabel(print: Pick<Print, "takenAt">): string {
   const hours = d.getHours();
   const time = `${hours % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")} ${hours < 12 ? "AM" : "PM"}`;
   return `Photograph, ${fullDate(print.takenAt)}, ${time}`;
-}
-
-// ---------------------------------------------------------------------------
-// The Memory Room's door
-// ---------------------------------------------------------------------------
-
-/** The doors' serif line: 13.5 on 17, and 13 on 16 narrower than 360 points. */
-export const DOOR_LINE = { size: 13.5, height: 17, narrowSize: 13, narrowHeight: 16 } as const;
-/** Lines of the serif each door keeps room for, whatever face it shows. */
-export const DOOR_LINES = 3;
-/** The tallest picture a door carries (the room's stack, the day's fan). */
-export const DOOR_PICTURE = 42;
-/** The day door's sub-line under its count: the typewriter, 9.5 on 12, three points down. */
-export const DOOR_SUB = { size: 9.5, height: 12, gap: 3 } as const;
-/** The serif stops growing with the text size here, as the page's other lines do. */
-const DOOR_TYPE_CAP = 2.4;
-
-/**
- * How tall a door's words may grow before the door does: three lines of
- * the serif at the member's text size. Every face fits in it from the
- * first frame — the leaf's two lines, a count of a thousand on two lines
- * with its years under it, the member's own post's sentence on three —
- * so a face that arrives after the page is up (the count once the roll
- * is read, the post once the server answers) never moves the page under
- * the member's thumb.
- */
-export function doorWordsHeight(narrow: boolean, fontScale = 1): number {
-  const scale = Math.min(Math.max(fontScale, 1), DOOR_TYPE_CAP);
-  const line = narrow ? DOOR_LINE.narrowHeight : DOOR_LINE.height;
-  return Math.ceil(DOOR_LINES * line * scale);
-}
-
-/**
- * What the Memory Room's door carries: where the member left off, in
- * words, and the print they left off on with the one beside it; failing
- * that, the newest print set aside, alone; failing that, words alone. No
- * picture at all unless the library may be shown.
- */
-export function roomDoorFace(
-  placeLine: string | null,
-  cover: { front: Print; back: Print | null } | null,
-  newestShelf: Print | null,
-  allowed: boolean,
-): { line: string; front: Print | null; back: Print | null } {
-  const line = placeLine ?? "Rediscover something worth sharing.";
-  if (!allowed) return { line, front: null, back: null };
-  if (cover) return { line, front: cover.front, back: cover.back };
-  if (newestShelf) return { line, front: newestShelf, back: null };
-  return { line, front: null, back: null };
 }

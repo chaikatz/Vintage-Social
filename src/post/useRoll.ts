@@ -48,7 +48,7 @@ import { afterTabSettles } from "./settle";
  * Room's own gate, which keeps no more than two questions outstanding.
  * Each page after that is one more bounded question, a stretch of time
  * older than the last photograph read, as the member scrolls toward the
- * end; 1,200 at most, after which the roll hands on to the room.
+ * end; 1,200 at most: further back is the Memory Room's, a tap or a slide away.
  *
  * Asking for access is only ever done from a tap on the tab's own
  * explanation, its CONTINUE (`ask`). It keeps no listener on the
@@ -59,7 +59,7 @@ import { afterTabSettles } from "./settle";
  * after the tab is left, and at once when the app goes to the
  * background, every photograph out of sight goes ("unseen"): the screen
  * says which rows stay — those on it, and one either side — with the
- * mount when it is in view, so whenever the tab is seen again, swiped
+ * frame when it is in view, so whenever the tab is seen again, swiped
  * back to or come back to from the editor or the Home screen, it is just
  * as it was. On a memory warning while the tab is not in front, all of
  * them go ("all"), as they are before it is first in front; in front,
@@ -83,7 +83,7 @@ export interface Roll {
   selected: Print | null;
   end: RollEnd;
   loadingMore: boolean;
-  /** CONTINUE, on the mount's first panel, is waiting on iOS. */
+  /** CONTINUE, on the frame's first panel, is waiting on iOS. */
   asking: boolean;
   /** What of the tab's camera-roll images is let go. */
   release: Release;

@@ -98,9 +98,11 @@ describe("what each panel says", () => {
       bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
     });
     const tab = code("app/(tabs)/create.tsx");
-    const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));
+    const alone = tab.slice(tab.indexOf("if (!room) {"), tab.indexOf("const dim"));
     expect(alone).toMatch(/kind="unavailable"/);
     expect(alone).toMatch(/\{clipNote\}/);
+    // No roll there, so the camera is a word on the line, beside LIBRARY and VIDEO.
+    expect(alone).toMatch(/<WaysRow[\s\S]*?camera=\{native\}[\s\S]*?canPost=\{false\}/);
     expect(tab).toMatch(/Platform\.OS !== "ios" \? \(/);
   });
 

@@ -59,6 +59,9 @@ export const colors = {
   ink: dyn(light.ink, dark.ink), // primary text
   inkSoft: dyn(light.inkSoft, dark.inkSoft), // secondary text
   inkFaint: dyn(light.inkFaint, dark.inkFaint), // tertiary text, placeholders
+  // The other page's name in a pair of pages (the Post tab's Recent and Memory Room): the soft ink
+  // on paper, where the faint ink falls under 3:1, and the faint ink on black, where it does not.
+  inkOther: dyn(light.inkSoft, dark.inkFaint),
 
   // Lines
   border: dyn(light.border, dark.border), // hairline borders

@@ -616,10 +616,11 @@ describe("photo access, as the review notes and the phone checks say it", () => 
     const phone = flat(between(doc(), "## 6. On your iPhone", "## 7."));
     const step7 = phone.slice(phone.indexOf(" 7. Post tab"), phone.indexOf(" 8. "));
     expect(step7).toContain(`7. Post tab → ${ask} → allow access`);
-    expect(step7).toContain(`The Memory Room → ${roomGranted} (its first-visit page; access was already given on the Post tab`);
+    // The room is reached from the Post tab's header, by its name there.
+    expect(step7).toContain(`tap Memory Room → ${roomGranted} (its first-visit page; access was already given on the Post tab`);
     // Continue is the room's word only while iOS has not asked; the step says so, and only so.
     expect(roomFirst).toBe("Continue");
-    expect(step7).not.toMatch(/The Memory Room → Continue/);
+    expect(step7).not.toMatch(/Memory Room → Continue/);
     expect(phone).not.toMatch(/Show my photographs/i);
   });
 });

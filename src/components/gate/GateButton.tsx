@@ -10,11 +10,6 @@ import { ruleWidth } from "./rule";
  * with an arrow, a ruled bar with an arrow, or a line of capitals with
  * nothing around it. No rounded corners — ink on paper, not a button in
  * a browser.
- *
- * The fourth, `card`, is the bar in the invitation card's stock, ruled and
- * lettered in its ink: the way into the Memory Room. On paper that is
- * printed brown and gold; on the black page it is a card a step up from
- * the black, lettered in white, with the grey rule drawing its edge.
  */
 export function GateButton({
   title,
@@ -28,7 +23,7 @@ export function GateButton({
 }: {
   title: string;
   onPress: () => void;
-  variant?: "solid" | "outline" | "quiet" | "card";
+  variant?: "solid" | "outline" | "quiet";
   loading?: boolean;
   /** Inert without looking it: something else on the screen is opening. */
   disabled?: boolean;
@@ -38,19 +33,13 @@ export function GateButton({
   style?: ViewStyle;
 }) {
   const solid = variant === "solid";
-  const card = variant === "card";
   const quiet = variant === "quiet";
-  const ink = solid
-    ? (GATE_ON_BUTTON as unknown as string)
-    : card
-      ? colors.gold
-      : (colors.ink as unknown as string);
+  const ink = solid ? (GATE_ON_BUTTON as unknown as string) : (colors.ink as unknown as string);
   return (
     <Pressable
       style={({ pressed }) => [
         styles.base,
         solid && styles.solid,
-        card && styles.card,
         variant === "outline" && styles.outline,
         quiet && styles.quiet,
         pressed && styles.pressed,
@@ -70,7 +59,7 @@ export function GateButton({
         <ActivityIndicator size="small" color={ink} />
       ) : (
         <>
-          <Text style={[styles.label, solid && styles.labelSolid, card && styles.labelCard]} maxFontSizeMultiplier={maxFontSizeMultiplier}>
+          <Text style={[styles.label, solid && styles.labelSolid]} maxFontSizeMultiplier={maxFontSizeMultiplier}>
             {title}
           </Text>
           {quiet ? <View style={[styles.quietRule, { width: ruleWidth(title) }]} /> : <Feather name="arrow-right" size={18} color={ink} style={styles.arrow} />}
@@ -91,11 +80,6 @@ export function GateButton({
  * (the first iPhone SE, or a mini or an SE with Display Zoom), the bar
  * leaves it 184 between the two clearances, so it stays on one line in
  * the same place. At 44 it took two lines there.
- *
- * The card is the Post tab's Memory Room bar, at the foot of its roll, and
- * that page gives it its size and its own clearance
- * (src/components/post/RollFooter.tsx, its `bar` style), which overrides
- * these; the card keeps none of its own.
  */
 const ARROW_CLEARANCE = 40;
 
@@ -104,7 +88,6 @@ const styles = StyleSheet.create({
   // lines and the bar grows to hold them, where a fixed height cut them off.
   base: { minHeight: 44, alignItems: "center", justifyContent: "center" },
   solid: { backgroundColor: GATE_BUTTON, paddingHorizontal: ARROW_CLEARANCE },
-  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.goldSoft },
   outline: { borderWidth: 1, borderColor: colors.ink, paddingHorizontal: ARROW_CLEARANCE },
   quiet: { minHeight: 0, paddingVertical: spacing.md },
   pressed: { opacity: 0.75 },
@@ -118,7 +101,6 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   labelSolid: { color: GATE_ON_BUTTON },
-  labelCard: { color: colors.gold },
   arrow: { position: "absolute", right: 16 },
   quietRule: { width: 26, height: 1, backgroundColor: colors.ink, marginTop: 7, opacity: 0.8 },
 });

@@ -4,38 +4,44 @@ import { describe, expect, it } from "vitest";
 import {
   afterPosting,
   ageWords,
+  CAMERA_LINE,
+  CAMERA_MARK,
   cellLabel,
   cellSize,
-  heroFrame,
-  heroHeight,
-  heroMetrics,
-  DOOR_LINE,
-  DOOR_LINES,
-  DOOR_PICTURE,
-  DOOR_SUB,
-  doorWordsHeight,
+  COLUMNS,
+  FRAME_INSET,
+  FRAME_RATIO,
+  frameRatio,
   GAP,
+  HEAD_WORDS,
+  HEADER_BAND,
+  HEADER_BELOW,
   keepSelection,
   KEEP_SELECTION_MS,
+  LINE_HEIGHT,
+  LINE_TYPE,
   mergeNewest,
   mergeOlder,
   newerArrived,
   nextRange,
-  pageHeight,
+  photoRect,
   PREVIEW_MAX,
   PREVIEW_MIN,
+  previewFrame,
+  recentHeight,
   RELEASE_AFTER_BLUR_MS,
   rollRows,
   ROLL_CAP,
-  footShown,
   ROLL_FIRST,
   ROLL_MIN_VISIBLE,
   ROLL_PAGE,
   ROLL_STALE_MS,
-  roomDoorFace,
   rowsInSight,
   SECOND_TAP_MS,
+  SELECTED_BORDER,
   shouldRefresh,
+  TAB_BAR,
+  TAB_HEADER,
   visibleOf,
   wellRows,
 } from "@/post/roll";
@@ -43,10 +49,10 @@ import { MAX_PAGE } from "@/darkroom/eligibility";
 import type { Print } from "@/darkroom/types";
 
 /**
- * The Post tab's rules, without a phone: the page's measurements on the
- * three phone sizes it is drawn for, the roll's rows, how it is read and
- * merged a bounded page at a time, which photograph is selected, and the
- * words under the one on the mount.
+ * The Post tab's rules, without a phone: the owner's mock, measured, and
+ * the page's measurements on the three phone sizes it is drawn for; the
+ * roll's rows; how it is read and merged a bounded page at a time; which
+ * photograph is selected; and the words VoiceOver hears for it.
  */
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -66,60 +72,123 @@ const prints = (count: number) => Array.from({ length: count }, (_, i) => print(
 
 /** The three phones: 320 × 568 (insets 20/0), 390 × 844 (47/34), 440 × 956 (62/34). */
 const PHONES = [
-  { W: 320, H: 568, top: 20, bottom: 0, page: 468, hero: 234 },
-  { W: 390, H: 844, top: 47, bottom: 34, page: 683, hero: 342 },
-  { W: 440, H: 956, top: 62, bottom: 34, page: 780, hero: 390 },
+  { W: 320, H: 568, top: 20, bottom: 0, recent: 443 },
+  { W: 390, H: 844, top: 47, bottom: 34, recent: 658 },
+  { W: 440, H: 956, top: 62, bottom: 34, recent: 755 },
 ];
 
+/**
+ * The owner's mock (owner/post-mock.png, 390 × 797 at 1x, the status bar
+ * cropped off, so y is from the top of the safe area), as measured from
+ * its pixels: the header's caps from y 21 to 34, Recent from x 82 and
+ * Memory Room to x 307 (the pair centred on 195); the photograph from
+ * (27, 56) to (363, 476); LIBRARY's caps from x 27, a letter every 10.5
+ * points, 6 tall, and POST's every 11.7, 7 tall, its arrow ending at x 361;
+ * the roll from y 522, cells 96 square at x 0, 98, 196 and 294; the
+ * camera tile's line 1 point, its mark 18 × 16 around the cell's middle;
+ * the selected cell's rust 3 points inside its edge.
+ */
+const MOCK = {
+  width: 390,
+  frame: { left: 27, top: 56, width: 336, height: 420 },
+  rollTop: 522,
+  cells: [0, 98, 196, 294],
+  cell: 96,
+  libraryPitch: 10.5,
+  postPitch: 11.7,
+  camera: { line: 1, mark: 18 },
+  border: 3,
+  words: { capTop: 21, baseline: 34 },
+};
+
+describe("the mock's measurements", () => {
+  it("are the page's own numbers", () => {
+    expect(HEADER_BAND).toBe(MOCK.frame.top);
+    expect(FRAME_INSET).toBe(MOCK.frame.left);
+    expect(FRAME_RATIO).toBe(MOCK.frame.width / MOCK.frame.height);
+    expect(LINE_HEIGHT).toBe(MOCK.rollTop - (MOCK.frame.top + MOCK.frame.height));
+    expect(COLUMNS).toBe(4);
+    expect(GAP).toBe(MOCK.cells[1] - MOCK.cells[0] - MOCK.cell);
+    expect(SELECTED_BORDER).toBe(MOCK.border);
+    expect(CAMERA_LINE).toBe(MOCK.camera.line);
+    // Feather's camera is 22 of its 24 across: 20 points draws the mock's 18.
+    expect(Math.round((CAMERA_MARK * 22) / 24)).toBe(MOCK.camera.mark);
+  });
+
+  it("set the line's typewriter as the mock spaces it: a letter's width (0.6 of its size) and its spacing make its pitch", () => {
+    expect(LINE_TYPE.library.size * 0.6 + LINE_TYPE.library.tracking).toBeCloseTo(MOCK.libraryPitch, 1);
+    expect(LINE_TYPE.post.size * 0.6 + LINE_TYPE.post.tracking).toBeCloseTo(MOCK.postPitch, 1);
+    expect(LINE_TYPE.arrow.length).toBe(12);
+  });
+
+  it("set the header's words at 20 points, their caps (0.69 of the serif's size) as tall as the mock's", () => {
+    expect(HEAD_WORDS.size).toBe(20);
+    // Rows 21 to 34 of the mock are inked: 14 points of capital.
+    expect(Math.round(HEAD_WORDS.size * 0.69)).toBe(MOCK.words.baseline - MOCK.words.capTop + 1);
+    // The shared header's 36 points and the Post tab's own 20 make the mock's band.
+    expect(TAB_HEADER + HEADER_BELOW).toBe(HEADER_BAND);
+  });
+
+  it("put the frame, the line and the roll where the mock has them at 390", () => {
+    const recent = recentHeight(844, 47, 34);
+    const frame = previewFrame(390, recent);
+    expect(frame).toEqual({ left: 27, top: 0, width: 336, height: 420 });
+    // From the top of the safe area: the header's band, then the frame, then the line.
+    expect(HEADER_BAND + frame.top).toBe(MOCK.frame.top);
+    expect(HEADER_BAND + frame.height + LINE_HEIGHT).toBe(MOCK.rollTop);
+    expect(cellSize(390)).toBe(MOCK.cell);
+    expect([0, 1, 2, 3].map((i) => i * (cellSize(390) + GAP))).toEqual(MOCK.cells);
+  });
+});
+
 describe("the page's measurements", () => {
-  it("are taken between the tab header and the tab bar, from the window and its insets", () => {
-    for (const p of PHONES) expect(pageHeight(p.H, p.top, p.bottom), `${p.W}`).toBe(p.page);
+  it("give Recent the height between the header's band and the tab bar", () => {
+    for (const p of PHONES) expect(recentHeight(p.H, p.top, p.bottom), `${p.W}`).toBe(p.recent);
+    expect(TAB_BAR).toBe(49);
   });
 
-  it("give the mount half the page, no less than 230 and no more than 400", () => {
-    for (const p of PHONES) expect(heroHeight(p.page)).toBe(p.hero);
-    expect(heroHeight(300)).toBe(230);
-    expect(heroHeight(1200)).toBe(400);
-  });
-
-  it("set the narrow phone's mount a little tighter", () => {
-    expect(heroMetrics(320)).toEqual({ mount: 10, strip: 52, button: 36 });
-    expect(heroMetrics(390)).toEqual({ mount: 12, strip: 56, button: 40 });
-    expect(heroMetrics(440)).toEqual({ mount: 12, strip: 56, button: 40 });
-  });
-
-  it("frame the photograph as the editor will, centred on the mount", () => {
-    const shape = (w: number, h: number) => ({ width: w, height: h });
-    const sizes: [number, number, [number, number], [number, number]][] = [
-      // W, H, shape, frame
-      [390, 342, [4, 5], [219.2, 274]],
-      [390, 342, [1, 1], [274, 274]],
-      [390, 342, [5, 4], [342.5, 274]],
-      [390, 342, [3, 2], [366, 244]],
-      [390, 342, [1.91, 1], [366, 191.623]],
-      [320, 234, [4, 5], [137.6, 172]],
-      [320, 234, [1, 1], [172, 172]],
-      [320, 234, [3, 2], [258, 172]],
-      [320, 234, [1.91, 1], [300, 157.068]],
-      [440, 390, [4, 5], [257.6, 322]],
-      [440, 390, [1, 1], [322, 322]],
-      [440, 390, [3, 2], [416, 277.333]],
-      [440, 390, [1.91, 1], [416, 217.801]],
-      // Taller than 4:5 is framed 4:5, wider than 1.91 is framed 1.91, as compose frames them.
-      [390, 342, [9, 16], [219.2, 274]],
-      [390, 342, [3, 1], [366, 191.623]],
-    ];
-    for (const [W, H, [w, h], [fw, fh]] of sizes) {
-      const f = heroFrame(shape(w, h), W, H);
-      const { mount, strip } = heroMetrics(W);
-      expect(f.width, `${W} ${w}:${h}`).toBeCloseTo(fw, 2);
-      expect(f.height, `${W} ${w}:${h}`).toBeCloseTo(fh, 2);
-      expect(f.left).toBeCloseTo((W - f.width) / 2, 5);
-      expect(f.top).toBeCloseTo(mount + (H - mount - strip - f.height) / 2, 5);
-      expect(f.width).toBeLessThanOrEqual(W - 2 * mount + 1e-9);
+  it("keep the frame 27 in from either edge and 4:5, but on a phone too short to show a row of the roll under it", () => {
+    const at = (p: (typeof PHONES)[number]) => previewFrame(p.W, p.recent);
+    // 440: the mock's inset, taller.
+    expect(at(PHONES[2])).toEqual({ left: 27, top: 0, width: 386, height: 482.5 });
+    // 320 × 568: the frame gives way so the first row of the roll shows under the line.
+    const small = at(PHONES[0]);
+    expect(small.height).toBeCloseTo(PHONES[0].recent - LINE_HEIGHT - (cellSize(320) + GAP), 5);
+    expect(small.width / small.height).toBeCloseTo(4 / 5, 9);
+    expect(small.left).toBeCloseTo((320 - small.width) / 2, 9);
+    expect(small.width).toBeLessThan(320 - 2 * 27);
+    // A 320-point window with room to spare (the browser's, with no insets) keeps the mock's inset.
+    expect(previewFrame(320, 568 - HEADER_BAND - TAB_BAR)).toEqual({ left: 27, top: 0, width: 266, height: 332.5 });
+    for (const p of PHONES) {
+      const f = at(p);
+      expect(f.height + LINE_HEIGHT + cellSize(p.W) + GAP, `${p.W}`).toBeLessThanOrEqual(p.recent + 1e-9);
     }
-    // A print with no size is framed square.
-    expect(heroFrame(shape(0, 0), 390, 342).width).toBe(274);
+  });
+
+  it("stand the photograph in the frame at the shape the editor posts it, centred, so nothing under the frame moves", () => {
+    const frame = { width: 336, height: 420 };
+    const table: [number, number, [number, number, number, number]][] = [
+      // shape, then left, top, width, height in the frame
+      [4, 5, [0, 0, 336, 420]],
+      [3, 4, [0, 0, 336, 420]], // taller than 4:5 is posted 4:5
+      [9, 16, [0, 0, 336, 420]],
+      [1, 1, [0, 42, 336, 336]],
+      [4, 3, [0, 84, 336, 252]],
+      [3, 2, [0, 98, 336, 224]],
+      [1.91, 1, [0, 122.03, 336, 175.92]],
+      [3, 1, [0, 122.03, 336, 175.92]], // wider than 1.91 is posted 1.91
+    ];
+    for (const [w, h, [left, top, width, height]] of table) {
+      const r = photoRect({ width: w, height: h }, frame);
+      expect(r.left, `${w}:${h}`).toBeCloseTo(left, 1);
+      expect(r.top, `${w}:${h}`).toBeCloseTo(top, 1);
+      expect(r.width, `${w}:${h}`).toBeCloseTo(width, 1);
+      expect(r.height, `${w}:${h}`).toBeCloseTo(height, 1);
+      expect(r.top * 2 + r.height).toBeCloseTo(frame.height, 6);
+      expect(r.width / r.height).toBeCloseTo(frameRatio({ width: w, height: h }), 6);
+    }
+    // A print with no size is posted square.
+    expect(photoRect({ width: 0, height: 0 }, frame)).toMatchObject({ width: 336, height: 336 });
   });
 
   it("keep the editor's own clamp on a photograph's shape", () => {
@@ -146,6 +215,9 @@ describe("the roll's rows", () => {
     expect(without[0].items.every((i) => i.kind === "print")).toBe(true);
     expect(rollRows([], { camera: true })).toEqual([{ key: "row-0", items: [{ kind: "camera", key: "camera" }] }]);
     expect(rollRows([], { camera: false })).toEqual([]);
+    // Under a limited selection SHARE MORE stands after the camera, and the photographs after it.
+    expect(rollRows(prints(3), { camera: true, more: true })[0].items.map((i) => i.key)).toEqual(["camera", "more", "p0", "p1"]);
+    expect(rollRows(prints(3), { camera: false, more: true })[0].items.map((i) => i.kind)).toEqual(["more", "print", "print", "print"]);
     // Every row has its own key.
     const keys = rollRows(prints(40), { camera: true }).map((r) => r.key);
     expect(new Set(keys).size).toBe(keys.length);
@@ -272,24 +344,6 @@ describe("reading the roll", () => {
   });
 });
 
-describe("the foot of the roll", () => {
-  const at = (end: "more" | "done" | "capped", access: "full" | "limited" | null, count = 12, ready = true) =>
-    footShown({ ready, end, count, access });
-  it("hands on to the Memory Room where the whole library's roll ends, read to its end or to the cap", () => {
-    expect(at("done", "full")).toBe(true);
-    expect(at("capped", "full")).toBe(true);
-    expect(at("more", "full")).toBe(false);
-    expect(at("done", "full", 0)).toBe(false);
-    expect(at("done", "full", 12, false)).toBe(false);
-  });
-  it("says nothing of further back where a limited selection has been read to its end", () => {
-    // The room sees the same few photographs: FURTHER BACK would promise what is not there.
-    expect(at("done", "limited")).toBe(false);
-    // A selection larger than the roll's cap does go further back in the room.
-    expect(at("capped", "limited")).toBe(true);
-  });
-});
-
 describe("the selection", () => {
   const list = prints(5);
   const now = 10_000_000;
@@ -355,39 +409,7 @@ describe("what stays drawn while the tab rests", () => {
   });
 });
 
-describe("the doors' room for words", () => {
-  it("holds every face from the first frame: three lines of the serif, never less than the picture", () => {
-    const two = 2 * DOOR_LINE.height + DOOR_SUB.gap + DOOR_SUB.height;
-    expect(DOOR_LINES).toBe(3);
-    for (const narrow of [false, true]) {
-      const room = doorWordsHeight(narrow);
-      const line = narrow ? DOOR_LINE.narrowHeight : DOOR_LINE.height;
-      // A count of a thousand on two lines with its years under it.
-      expect(room).toBeGreaterThanOrEqual(2 * line + DOOR_SUB.gap + DOOR_SUB.height);
-      // The member's own post's sentence on three.
-      expect(room).toBeGreaterThanOrEqual(3 * line);
-    }
-    expect(doorWordsHeight(false)).toBeGreaterThanOrEqual(Math.max(DOOR_PICTURE, two));
-    expect(doorWordsHeight(false)).toBe(51);
-    expect(doorWordsHeight(true)).toBe(48);
-  });
-
-  it("grows with the member's text size, as far as the serif does", () => {
-    expect(doorWordsHeight(false, 1.3)).toBe(Math.ceil(51 * 1.3));
-    expect(doorWordsHeight(false, 3.1)).toBe(Math.ceil(51 * 2.4));
-    expect(doorWordsHeight(false, 0.8)).toBe(51);
-  });
-
-  it("is what the doors draw with", () => {
-    const doors = readFileSync(path.join(root, "src/components/post/PostDoors.tsx"), "utf8");
-    expect(doors).toMatch(/minHeight: Math\.max\(narrow \? 0 : DOOR_PICTURE, doorWordsHeight\(narrow, fontScale\)\)/);
-    expect(doors).toMatch(/fontSize: DOOR_LINE\.size, lineHeight: DOOR_LINE\.height/);
-    expect(doors).toMatch(/fontSize: DOOR_SUB\.size, lineHeight: DOOR_SUB\.height/);
-    expect(doors).not.toMatch(/rowPictured/);
-  });
-});
-
-describe("the words under the photograph", () => {
+describe("the words VoiceOver hears for the photograph", () => {
   const now = new Date(2026, 10, 25, 15, 0).getTime();
   const at = (y: number, m: number, d: number, h = 12) => new Date(y, m, d, h).getTime();
 
@@ -430,25 +452,5 @@ describe("the words under the photograph", () => {
   it("name a cell for VoiceOver by its date and time", () => {
     expect(cellLabel({ takenAt: new Date(2019, 9, 14, 18, 42).getTime() })).toBe("Photograph, October 14, 2019, 6:42 PM");
     expect(cellLabel({ takenAt: new Date(2019, 9, 14, 0, 5).getTime() })).toBe("Photograph, October 14, 2019, 12:05 AM");
-  });
-});
-
-describe("the Memory Room's door", () => {
-  const cover = { front: print(1), back: print(2) };
-  const shelf = print(9);
-
-  it("says where the member left off, or what the room is for", () => {
-    expect(roomDoorFace("You left off in July 2021.", null, null, true).line).toBe("You left off in July 2021.");
-    expect(roomDoorFace(null, null, null, true).line).toBe("Rediscover something worth sharing.");
-  });
-
-  it("carries the print left off on and its neighbour; else the newest set aside; else words alone", () => {
-    expect(roomDoorFace("x", cover, shelf, true)).toMatchObject({ front: cover.front, back: cover.back });
-    expect(roomDoorFace(null, null, shelf, true)).toMatchObject({ front: shelf, back: null });
-    expect(roomDoorFace(null, null, null, true)).toMatchObject({ front: null, back: null });
-  });
-
-  it("draws no photograph where the library may not be shown", () => {
-    expect(roomDoorFace("x", cover, shelf, false)).toEqual({ line: "x", front: null, back: null });
   });
 });

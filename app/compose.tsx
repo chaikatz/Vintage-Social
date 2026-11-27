@@ -26,6 +26,7 @@ import { DateStamp } from "@/components/DateStamp";
 import { colors, hairline, radii, spacing, type } from "@/theme";
 import { BAKE_MAX_SIDE, FILTERS, FilteredImage, dateStampStartsOn, getFilter } from "@/filters";
 import { isNoFilter } from "@/filters/presets";
+import { startsStamped } from "@/post/stamp";
 import type { FilteredImageHandle, FilterSpec } from "@/filters";
 import { FilterOverlay } from "@/components/FilterOverlay";
 import { cssFilterFor } from "@/filters/cssFilter";
@@ -119,6 +120,8 @@ export default function Compose() {
     /** Set when the Darkroom opened the editor: the library identifier of the photograph. */
     assetId?: string;
     from?: string;
+    /** "on" when the photograph was shown stamped (the Post tab's frame): the stamp starts on. */
+    stamp?: string;
   }>();
 
   const uri = params.uri ?? "";
@@ -128,7 +131,8 @@ export default function Compose() {
 
   const [filterId, setFilterId] = useState(FILTERS[0].id);
   const filter = getFilter(filterId);
-  const [stampOn, setStampOn] = useState(dateStampStartsOn(FILTERS[0].id));
+  // The first film's own choice, unless the photograph was shown stamped on the way here (src/post/stamp.ts).
+  const [stampOn, setStampOn] = useState(() => startsStamped(params.stamp, params.takenAt) || dateStampStartsOn(FILTERS[0].id));
   const [caption, setCaption] = useState("");
   // An @name in the caption: the members it could be, over the Share button while it is written.
   const captionField = useMentionField(caption, setCaption, MAX_CAPTION_LENGTH);

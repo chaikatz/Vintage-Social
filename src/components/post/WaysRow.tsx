@@ -1,94 +1,115 @@
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import Feather from "@expo/vector-icons/Feather";
-import { colors, spacing, type } from "@/theme";
+import { LINE_HEIGHT, LINE_TYPE, type Box } from "@/post/roll";
+import { colors, type } from "@/theme";
 import { MAX_VIDEO_SECONDS } from "@/utils/validation";
 
 /**
- * The line between the mount and the roll: the roll's name, RECENT, and
- * the two other ways in, each a mark and its word in ink — SHORT VIDEO
- * (a clip, up to a minute, in the same feed and grid) and LIBRARY (the
- * iPhone's own picker, which needs no permission). Where there is no
- * roll (Android, a browser outside the demo) RECENT goes, and the camera
- * stands here instead. At the larger text sizes the name takes a line of
- * its own and the ways wrap under it.
+ * The line under the photograph, as the owner's mock sets it, from the
+ * frame's left edge to its right: LIBRARY at the left, in small, widely
+ * spaced capitals in the soft ink (the iPhone's own picker, which needs
+ * no permission), and POST → at the right, in bold, widely spaced
+ * capitals in ink, which opens the selected photograph in the editor.
+ *
+ * Beside LIBRARY, in its type, VIDEO: the clip's way in (up to a minute,
+ * in the same feed and grid). The picker the clip needs is the iPhone's
+ * own with its trimmer (expo-image-picker's UIImagePickerController,
+ * `allowsEditing`), which holds a clip to the minute; LIBRARY's is the
+ * photo picker (PHPicker), which has no trimmer and would crop a
+ * photograph square if it were asked to edit. One picker for both would
+ * hand the editor a different file for a clip and lose the trimmer, so
+ * the two stay two words on the one line. Where there is no roll on a
+ * phone (Android) the camera is a word here too.
+ *
+ * POST stands only while there is a photograph to post; in every other
+ * state its place is kept empty, so the line keeps its shape. At the
+ * larger text sizes the words on the left wrap under one another, and
+ * POST stays at the right.
  */
 
 const BAR_TYPE_CAP = 1.8;
-const TYPE_CAP = 2.4;
 
 export type WayName = "camera" | "video" | "photo";
 
 export function WaysRow({
-  recent,
+  frame,
   camera,
-  library,
-  narrow,
-  large,
+  canPost,
+  posting,
   busy,
   held,
-  onCamera,
-  onVideo,
   onLibrary,
+  onVideo,
+  onCamera,
+  onPost,
 }: {
-  recent: boolean;
+  frame: Box;
+  /** The camera as a word: where there is no roll to carry the camera's tile. */
   camera: boolean;
-  library: boolean;
-  narrow: boolean;
-  large: boolean;
+  /** There is a photograph to post. */
+  canPost: boolean;
+  /** The photograph is opening in the editor. */
+  posting: boolean;
   busy: WayName | null;
   held: boolean;
-  onCamera?: () => void;
+  onLibrary: () => void;
   onVideo: () => void;
-  onLibrary?: () => void;
+  onCamera?: () => void;
+  onPost: () => void;
 }) {
   return (
-    <View style={[styles.row, { minHeight: narrow ? 44 : 48 }, !recent && styles.rowAlone]}>
-      {recent ? (
-        <Text
-          style={[styles.recent, large && styles.recentLarge]}
-          accessibilityRole="header"
-          // The roll is photographs only (films are SHORT VIDEO's), so VoiceOver hears what it lists.
-          accessibilityLabel="Recent photographs"
-          maxFontSizeMultiplier={BAR_TYPE_CAP}
-        >
-          Recent
-        </Text>
-      ) : null}
-      {camera && onCamera ? (
-        <Way testID="post-way-camera" icon="camera" size={16} label="Camera" hint="Take one now" busy={busy === "camera"} held={held} onPress={onCamera} />
-      ) : null}
-      <Way
-        testID="post-way-video"
-        icon="video"
-        size={16}
-        label="Short video"
-        hint={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`}
-        busy={busy === "video"}
-        held={held}
-        onPress={onVideo}
-      />
-      {library && onLibrary ? (
+    <View testID="post-line" style={[styles.line, { marginLeft: frame.left, width: frame.width }]}>
+      <View style={styles.ways}>
         <Way
           testID="post-way-library"
-          icon="image"
-          size={15}
           label="Library"
           hint="Opens your photo library. Nothing is shared until you choose Share to VINTAGE."
           busy={busy === "photo"}
           held={held}
           onPress={onLibrary}
         />
-      ) : null}
+        <Way
+          testID="post-way-video"
+          word="Video"
+          label="Short video"
+          hint={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`}
+          busy={busy === "video"}
+          held={held}
+          onPress={onVideo}
+        />
+        {camera && onCamera ? (
+          <Way testID="post-way-camera" label="Camera" hint="Take one now" busy={busy === "camera"} held={held} onPress={onCamera} />
+        ) : null}
+      </View>
+      <Pressable
+        testID="post-post"
+        onPress={onPost}
+        disabled={held || !canPost}
+        hitSlop={{ top: 6, bottom: 6, left: 12, right: 6 }}
+        style={({ pressed }) => [styles.post, !canPost && styles.gone, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel="Post"
+        accessibilityHint="Opens the selected photograph in the editor. Nothing is shared until you choose Share to VINTAGE."
+        accessibilityState={{ busy: posting, disabled: held || !canPost }}
+        accessibilityElementsHidden={!canPost}
+        importantForAccessibility={canPost ? "auto" : "no-hide-descendants"}
+      >
+        <View style={[styles.postInside, posting && styles.hidden]}>
+          <Text style={styles.postWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
+            Post
+          </Text>
+          <Arrow />
+        </View>
+        {posting ? <ActivityIndicator size="small" color={colors.ink} style={StyleSheet.absoluteFill} /> : null}
+      </Pressable>
     </View>
   );
 }
 
-/** One way in: its mark and its word; while it is the one opening, a spinner in a box the same size. */
+/** One way in: its word; while it is the one opening, a spinner in the word's place. */
 function Way({
   testID,
-  icon,
-  size,
+  word,
   label,
   hint,
   busy,
@@ -96,8 +117,8 @@ function Way({
   onPress,
 }: {
   testID: string;
-  icon: "camera" | "video" | "image";
-  size: number;
+  /** What the line prints, when it is not what VoiceOver hears. */
+  word?: string;
   label: string;
   hint: string;
   busy: boolean;
@@ -109,45 +130,36 @@ function Way({
       testID={testID}
       onPress={onPress}
       disabled={held}
-      hitSlop={{ left: 6, right: 6 }}
+      hitSlop={{ left: 8, right: 8 }}
       style={({ pressed }) => [styles.way, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}
       accessibilityState={{ busy, disabled: held }}
     >
-      <View style={[styles.wayInside, busy && styles.hidden]}>
-        <Feather name={icon} size={size} color={colors.ink} />
-        <Text style={styles.wayWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
-          {label}
-        </Text>
-      </View>
-      {busy ? <ActivityIndicator size="small" color={colors.ink} style={StyleSheet.absoluteFill} /> : null}
+      <Text style={[styles.wayWord, busy && styles.hidden]} maxFontSizeMultiplier={BAR_TYPE_CAP}>
+        {word ?? label}
+      </Text>
+      {busy ? <ActivityIndicator size="small" color={colors.inkSoft} style={StyleSheet.absoluteFill} /> : null}
     </Pressable>
   );
 }
 
-/** Under limited access: that VINTAGE sees only what was chosen, and the way to choose more. */
-export function LimitedLine({ held, onShareMore }: { held: boolean; onShareMore: () => void }) {
+/** POST's arrow, as the mock draws it: a long thin stroke and a small head, 12 points long, in ink. */
+function Arrow() {
+  const { length, head, stroke } = LINE_TYPE.arrow;
+  // Each half of the head is a short stroke turned 45 degrees about its middle, its outer end on the tip.
+  const half = head * Math.SQRT2;
+  const reach = (half / 2) * Math.SQRT1_2;
   return (
-    <View style={styles.limited}>
-      <Text style={styles.limitedText} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
-        VINTAGE sees only the photographs you chose.
-      </Text>
-      <Pressable
-        testID="post-share-more"
-        onPress={onShareMore}
-        disabled={held}
-        hitSlop={6}
-        style={({ pressed }) => [styles.shareMore, pressed && styles.pressed]}
-        accessibilityRole="button"
-        accessibilityLabel="Share more"
-        accessibilityHint="Opens iOS’s list of the photographs VINTAGE may see."
-      >
-        <Text style={styles.shareMoreWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
-          Share more
-        </Text>
-      </Pressable>
+    <View style={[styles.arrow, { width: length, height: head * 2 + stroke }]} pointerEvents="none">
+      <View style={[styles.stroke, { width: length, height: stroke, top: head }]} />
+      <View
+        style={[styles.stroke, { width: half, height: stroke, top: head - reach, left: length - reach - half / 2 - stroke / 2, transform: [{ rotate: "45deg" }] }]}
+      />
+      <View
+        style={[styles.stroke, { width: half, height: stroke, top: head + reach, left: length - reach - half / 2 - stroke / 2, transform: [{ rotate: "-45deg" }] }]}
+      />
     </View>
   );
 }
@@ -155,24 +167,30 @@ export function LimitedLine({ held, onShareMore }: { held: boolean; onShareMore:
 const caps = { textTransform: "uppercase" as const };
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    columnGap: 18,
-    paddingHorizontal: spacing.lg,
-  },
-  // Without the roll's name the ways stand from the left.
-  rowAlone: { columnGap: spacing.xl },
-  recent: { flex: 1, fontFamily: type.mono, fontSize: 10, letterSpacing: 2.4, ...caps, color: colors.inkSoft },
-  recentLarge: { flexBasis: "100%", paddingTop: spacing.sm },
+  line: { minHeight: LINE_HEIGHT, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  ways: { flexShrink: 1, flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: LINE_TYPE.between },
   way: { minHeight: 44, justifyContent: "center" },
-  wayInside: { flexDirection: "row", alignItems: "center", gap: 7 },
-  wayWord: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 1.8, ...caps, color: colors.ink },
+  wayWord: {
+    fontFamily: type.mono,
+    fontSize: LINE_TYPE.library.size,
+    letterSpacing: LINE_TYPE.library.tracking,
+    ...caps,
+    color: colors.inkSoft,
+  },
+  post: { minHeight: 44, justifyContent: "center", flexShrink: 0, marginLeft: 12 },
+  postInside: { flexDirection: "row", alignItems: "center" },
+  postWord: {
+    fontFamily: type.mono,
+    fontSize: LINE_TYPE.post.size,
+    fontWeight: "700",
+    letterSpacing: LINE_TYPE.post.tracking,
+    ...caps,
+    color: colors.ink,
+  },
+  // POST's own spacing follows its T, as the typewriter's does; the arrow stands this far past it.
+  arrow: { marginLeft: LINE_TYPE.arrow.gap },
+  stroke: { position: "absolute", left: 0, backgroundColor: colors.ink },
+  gone: { opacity: 0 },
   hidden: { opacity: 0 },
   pressed: { opacity: 0.6 },
-  limited: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: spacing.lg, paddingBottom: 10 },
-  limitedText: { flex: 1, fontSize: 12, lineHeight: 16, color: colors.inkSoft },
-  shareMore: { minHeight: 44, justifyContent: "center" },
-  shareMoreWord: { fontFamily: type.mono, fontSize: 10, letterSpacing: 1.8, ...caps, color: colors.accent },
 });

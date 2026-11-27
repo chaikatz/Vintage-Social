@@ -356,7 +356,7 @@ npx vercel --prod
 
 Then open, in Safari:
 
-- `https://vintagesocial.app/privacy` → "Last updated November 25, 2026",
+- `https://vintagesocial.app/privacy` → "Last updated November 27, 2026",
   it says "Memory Room", not "Darkroom", and it names "Delete my account"
   for an application that is waiting.
 - `https://vintagesocial.app/terms` → "no tolerance for objectionable
@@ -768,11 +768,11 @@ to check)
 > photographs, the one you tap large above them with POST under it (it
 > asks for photo access only when you tap “Continue”; limited
 > access works; nothing from the library leaves the phone unless you post
-> it). Above them, The Memory Room shows photographs from further back,
-> one at a time, and On this day shows what you posted and photographed
-> on this date in earlier years. LIBRARY opens the system picker, and
-> SHORT VIDEO a clip of up to 60 seconds. Pick a photograph, choose a
-> filter, then "Share to VINTAGE".
+> it). "Memory Room", beside "Recent" at the top of the Post tab (tap it,
+> or slide the page to the left), shows photographs from further back,
+> one at a time; its Contents also holds On this day and Set aside.
+> LIBRARY opens the system picker, and VIDEO a clip of up to 60 seconds.
+> Pick a photograph, choose a filter, then "Share to VINTAGE".
 > Activity lists likes, comments, follows and tags. Profile shows your
 > photographs by date posted or taken, as a Timeline, as Eras, on a Map and
 > by Places.
@@ -857,7 +857,7 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 1. Delete the app, install from TestFlight, open. The landing page shows
    the V and three ways in, and Privacy · Terms at the foot. No flash of
    the wrong colour, in Light and in Dark.
-2. Privacy, then Terms: both open, dated November 25, 2026, and come back.
+2. Privacy, then Terms: both open, dated November 27, 2026, and come back.
 
 **Joining**
 3. Apply for membership with a throwaway email. It lands on Application
@@ -889,15 +889,21 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
 6. Sign in with your own account. Home scrolls and pulls to refresh;
    photographs come in sharp; nothing stutters.
 7. Post tab → Continue → allow access (if VINTAGE was allowed before, the
-   roll is already there and iOS does not ask). Tap a photograph, then
-   POST → editor → Share to VINTAGE; it appears at the top of Home. Back
-   on the Post tab, the mount shows the newest photograph not yet posted,
-   not the one just posted. Then The Memory Room → Enter (its first-visit
-   page; access was already given on the Post tab, so it does not ask
-   again; on a phone where the room is opened first, the page says
-   Continue and iOS asks there); turn a few pages; open CONTENTS; POST
-   one → editor → Share to VINTAGE.
-8. Post a photograph from Library, and a short film. Both play
+   roll is already there and iOS does not ask). The page is "Recent ·
+   Memory Room" at the top, the newest photograph large with its date
+   stamp, LIBRARY · VIDEO and POST → under it, the roll under that. Tap a
+   photograph, then POST → editor (the stamp is on) → Share to VINTAGE;
+   it appears at the top of Home. Back on the Post tab, the frame shows
+   the newest photograph not yet posted, not the one just posted. Then
+   tap Memory Room → Enter (its first-visit page; access was already
+   given on the Post tab, so it does not ask again; on a phone where the
+   room is opened first, the page says Continue and iOS asks there); turn
+   a few pages; open CONTENTS (On this day and Set aside are there); POST
+   one → editor → Share to VINTAGE. Back (chevron or left edge): the Post
+   tab is on Recent. Slide Recent slowly to the left past half: the room
+   opens again; a short slide, a scroll of the roll or a diagonal drag
+   does not.
+8. Post a photograph from Library, and a short film from Video. Both play
    and show when opened.
 9. From the second account: like and comment on it. Activity shows both;
    a notification arrives if allowed. Under it, your own account reads

@@ -1,21 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
-import Feather from "@expo/vector-icons/Feather";
+import { DateStamp } from "@/components/DateStamp";
 import { DISSOLVE, PLATE_STALL_MS } from "@/components/darkroom/plateImage";
 import { printSource } from "@/darkroom/printSource";
 import type { Print } from "@/darkroom/types";
-import { ageWords, frameRatio, heroFrame, heroMetrics } from "@/post/roll";
-import { colors, spacing, type } from "@/theme";
+import { ageWords, frameRatio, photoRect, type Box } from "@/post/roll";
+import { stampDate } from "@/post/stamp";
+import { colors, type } from "@/theme";
 import { signatureDate } from "@/utils/time";
 
 /**
- * The selected photograph, large, on the camera's dark mount: in the
- * frame the editor will give it (4:5 at the tallest, 1.91:1 at the
- * widest, as compose previews it), with the print's signature line under
- * it as the Memory Room writes one — the date in tracked capitals, how
- * long ago in the serif — and POST beside it, the page's one primary
- * action, in the light of the camera on its dark.
+ * The selected photograph, large, on the paper, as the owner's mock has
+ * it: in a fixed 4:5 frame 27 points in from either edge, at the shape
+ * the editor will post it (4:5 at the tallest, 1.91:1 at the widest, as
+ * compose previews it). A portrait fills the frame; a square or a
+ * landscape stands in the middle of it, so nothing under the frame moves
+ * when the selection does. On it, VINTAGE's date stamp, drawn by the same
+ * `DateStamp` a post draws, in the same corner, reading the photograph's
+ * own capture date (`stampDate`); none when the photograph has no date.
  *
  * The photograph comes in as the room's plates do: first a soft proof,
  * the same photograph asked of Photos at 48 points and scaled up, which
@@ -28,60 +31,46 @@ import { signatureDate } from "@/utils/time";
  * Photos answered), and its recycling key clears the last picture at
  * once, so it is never shown over the next one's proof. Quick taps along
  * the roll leave one full-size request running, not one for each. Let go
- * (`released`: the tab is not in front and the mount is out of sight, or
+ * (`released`: the tab is not in front and the frame is out of sight, or
  * memory is short), both views come off the screen and their pictures
  * with them; on a memory warning in front (`heroReleased`), the full
- * image only, over its proof.
- * Offline, a photograph whose full image has not come after twelve
- * seconds says it is in iCloud, under its proof.
+ * image only, over its proof. Offline, a photograph whose full image has
+ * not come after twelve seconds says IN ICLOUD in its corner, over its
+ * proof.
  *
- * A tap on the photograph posts it, as POST does; VoiceOver hears POST
- * alone, with the date and age read as one line before it.
+ * A tap on the photograph opens it in the editor, as POST does. VoiceOver
+ * hears it as the selected photograph by its date and how long ago.
  */
 
-const TYPE_CAP = 2.4;
 const BAR_TYPE_CAP = 1.8;
-/** The proof is this wide, scaled up to the frame. */
+/** The proof is this wide, scaled up to the photograph. */
 const PROOF_WIDTH = 48;
-/** POST's reach past its edges: the strip's own margin above and below, so it stays on the mount. */
-const POST_SLOP = { top: 8, bottom: 8, left: 6, right: 6 };
 
 export const RollHero = React.memo(function RollHero({
   print,
-  W,
-  H,
-  large,
-  busy,
+  frame,
   held,
   released,
   heroReleased,
   reduceMotion,
   focused,
   online,
-  now,
   onPost,
-  onLayout,
 }: {
   print: Print;
-  W: number;
-  H: number;
-  /** The text is set large: the strip stands under the photograph as a column. */
-  large: boolean;
-  busy: boolean;
+  /** The frame's box on the page (`previewFrame`). */
+  frame: Box;
   held: boolean;
   released: boolean;
   heroReleased: boolean;
   reduceMotion: boolean;
   focused: boolean;
   online: boolean;
-  now: number;
   onPost: () => void;
-  onLayout?: (e: LayoutChangeEvent) => void;
 }) {
-  const { strip, button } = heroMetrics(W);
-  const frame = heroFrame(print, W, H);
+  const rect = photoRect(print, frame);
   const [loadedId, setLoadedId] = useState<string | null>(null);
-  // Decided once for the mount: the full image dissolves in over each proof, or under Reduce Motion simply appears.
+  // Decided once for the frame: the full image dissolves in over each proof, or under Reduce Motion simply appears.
   const [transition] = useState(() => (reduceMotion ? 0 : DISSOLVE));
   const [stalledId, setStalledId] = useState<string | null>(null);
   const loaded = loadedId === print.id;
@@ -97,87 +86,48 @@ export const RollHero = React.memo(function RollHero({
     return () => clearTimeout(timer);
   }, [focused, released, heroReleased, loaded, print.id]);
 
-  const iso = new Date(print.takenAt).toISOString();
-  const date = signatureDate(iso);
-  const age = stalledId === print.id && !loaded && !online ? "In iCloud" : ageWords(print.takenAt, now);
-
-  const words = (
-    <View style={large ? styles.wordsLarge : styles.words} accessible accessibilityLabel={`Selected: ${date}. ${age}.`}>
-      <Text testID="post-hero-date" style={styles.date} maxFontSizeMultiplier={BAR_TYPE_CAP}>
-        {date.toUpperCase()}
-      </Text>
-      <Text testID="post-hero-age" style={styles.age} lineBreakStrategyIOS="push-out" maxFontSizeMultiplier={TYPE_CAP}>
-        {age}
-      </Text>
-    </View>
-  );
-
-  const post = (
-    <Pressable
-      testID="post-post"
-      onPress={onPost}
-      disabled={held}
-      // To 56 points tall within the strip, and a little wider: the page's one primary action, under the thumb.
-      hitSlop={POST_SLOP}
-      style={({ pressed }) => [styles.post, { height: large ? undefined : button }, large && styles.postLarge, pressed && styles.pressed]}
-      accessibilityRole="button"
-      accessibilityLabel="Post"
-      accessibilityHint="Opens the selected photograph in the editor. Nothing is shared until you choose Share to VINTAGE."
-      accessibilityState={{ busy, disabled: held }}
-    >
-      {busy ? (
-        <ActivityIndicator size="small" color={colors.camera} />
-      ) : (
-        <>
-          <Text style={styles.postWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
-            Post
-          </Text>
-          <Feather name="arrow-right" size={14} color={colors.camera} />
-        </>
-      )}
-    </Pressable>
-  );
+  const stamp = stampDate(print);
+  const inCloud = stalledId === print.id && !loaded && !online;
+  const date = signatureDate(new Date(print.takenAt).toISOString());
+  const age = inCloud ? "In iCloud" : ageWords(print.takenAt, Date.now());
 
   return (
-    <View testID="post-hero" style={[styles.mount, { height: large ? undefined : H }]} onLayout={onLayout}>
-      <View style={{ height: large ? H - strip : H }}>
-        <Pressable
-          testID="post-hero-photo"
-          onPress={onPost}
-          disabled={held}
-          style={[styles.frame, frame]}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          <Proof key={print.id} print={print} width={frame.width} released={released} />
-          {released || heroReleased ? null : (
-            <Image
-              source={printSource(print.uri)}
-              testID="post-hero-full"
-              style={styles.fill}
-              contentFit="cover"
-              cachePolicy="none"
-              allowDownscaling={false}
-              priority="normal"
-              recyclingKey={print.id}
-              transition={transition}
-              onLoad={() => setLoadedId(print.id)}
-              accessibilityIgnoresInvertColors
-            />
-          )}
-        </Pressable>
-      </View>
-      {large ? (
-        <View style={styles.stripLarge}>
-          {words}
-          {post}
-        </View>
-      ) : (
-        <View style={[styles.strip, { height: strip }]}>
-          {words}
-          {post}
-        </View>
-      )}
+    <View testID="post-hero" style={[styles.frame, { marginLeft: frame.left, width: frame.width, height: frame.height }]}>
+      <Pressable
+        testID="post-hero-photo"
+        onPress={onPost}
+        disabled={held}
+        style={[styles.photo, rect]}
+        accessibilityRole="imagebutton"
+        accessibilityLabel={`Selected: ${date}. ${age}.`}
+        accessibilityHint="Opens it in the editor."
+        accessibilityState={{ disabled: held }}
+      >
+        <Proof key={print.id} print={print} width={rect.width} released={released} />
+        {released || heroReleased ? null : (
+          <Image
+            source={printSource(print.uri)}
+            testID="post-hero-full"
+            style={styles.fill}
+            contentFit="cover"
+            cachePolicy="none"
+            allowDownscaling={false}
+            priority="normal"
+            recyclingKey={print.id}
+            transition={transition}
+            onLoad={() => setLoadedId(print.id)}
+            accessibilityIgnoresInvertColors
+          />
+        )}
+        {stamp ? <DateStamp iso={stamp} /> : null}
+        {inCloud ? (
+          <View style={styles.cloud} pointerEvents="none">
+            <Text testID="post-hero-cloud" style={styles.cloudWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
+              In iCloud
+            </Text>
+          </View>
+        ) : null}
+      </Pressable>
     </View>
   );
 });
@@ -206,37 +156,16 @@ function Proof({ print, width, released }: { print: Print; width: number; releas
   );
 }
 
-const caps = { textTransform: "uppercase" as const };
+/** What stands behind a photograph until its pixels come: the roll's own well. */
+const WELL = colors.paperSunken;
+/** The corner's note sits on the photograph in the library picker's own scrim. */
+const SCRIM = "rgba(28, 25, 21, 0.55)";
 
 const styles = StyleSheet.create({
-  mount: { backgroundColor: colors.camera, overflow: "hidden" },
-  frame: { position: "absolute", overflow: "hidden" },
+  frame: { overflow: "hidden" },
+  photo: { position: "absolute", overflow: "hidden", backgroundColor: WELL },
   proofSlot: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   fill: { ...StyleSheet.absoluteFillObject },
-  strip: {
-    position: "absolute",
-    left: spacing.lg,
-    right: spacing.lg,
-    bottom: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  stripLarge: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  words: { flex: 1, minWidth: 0 },
-  wordsLarge: {},
-  date: { fontFamily: type.mono, fontSize: 10, lineHeight: 12, letterSpacing: 2.2, color: colors.onCamera, opacity: 0.85 },
-  age: { fontFamily: type.serif, fontSize: 13, lineHeight: 16, color: colors.onCamera, opacity: 0.72, marginTop: 3 },
-  post: {
-    minWidth: 96,
-    paddingHorizontal: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.onCamera,
-  },
-  postLarge: { minHeight: 48, marginTop: spacing.sm, alignSelf: "stretch" },
-  postWord: { fontFamily: type.mono, fontSize: 11, letterSpacing: 2.4, ...caps, color: colors.camera },
-  pressed: { opacity: 0.75 },
+  cloud: { position: "absolute", left: 12, bottom: 12, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: SCRIM },
+  cloudWord: { fontFamily: type.mono, fontSize: 10, letterSpacing: 1.8, textTransform: "uppercase", color: colors.onPhoto },
 });
