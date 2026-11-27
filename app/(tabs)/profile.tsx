@@ -10,6 +10,7 @@ import { Timeline } from "@/components/Timeline";
 import { PostMap } from "@/components/PostMap";
 import { PlaceGroups } from "@/components/PlaceGroups";
 import { EraList } from "@/components/EraList";
+import { OnThisDayLine } from "@/components/OnThisDayLine";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadFailed } from "@/components/LoadFailed";
@@ -22,6 +23,7 @@ import { fetchUserPosts } from "@/api/posts";
 import { fetchTaggedPosts } from "@/api/tags";
 import { seedAuthor, seedPost } from "@/utils/profileSeed";
 import { opensGallery } from "@/utils/profileViews";
+import { onThisDay } from "@/utils/memories";
 import { clipTiming } from "@/utils/videoTiming";
 import { useSession } from "@/providers/SessionProvider";
 import { usePlaceWarmup } from "@/hooks/usePlaceWarmup";
@@ -67,6 +69,9 @@ export default function OwnProfile() {
   const gridRead = readState(posts, tagged);
   // Your eras are your photographs as you arranged them: drawn once both have been read.
   const eraRead = readState(posts, eraEdits);
+  // Your own posts from this date in earlier years, from the posts already here: On this day's way in.
+  const today = new Date().toDateString();
+  const memories = useMemo(() => onThisDay(posts.data ?? [], new Date(today)), [posts.data, today]);
 
   if (!profile) {
     return (
@@ -118,6 +123,7 @@ export default function OwnProfile() {
           </View>
         }
       />
+      {memories.length > 0 ? <OnThisDayLine memory={memories[0]} count={memories.length} onPress={() => router.push("/memories")} /> : null}
       {rows.length > 0 ? <GridSortToggle value={view} onChange={setView} /> : null}
     </View>
   );
