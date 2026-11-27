@@ -59,9 +59,11 @@ export const colors = {
   ink: dyn(light.ink, dark.ink), // primary text
   inkSoft: dyn(light.inkSoft, dark.inkSoft), // secondary text
   inkFaint: dyn(light.inkFaint, dark.inkFaint), // tertiary text, placeholders
-  // The other page's name in a pair of pages (the Post tab's Recent and Memory Room): the soft ink
-  // on paper, where the faint ink falls under 3:1, and the faint ink on black, where it does not.
-  inkOther: dyn(light.inkSoft, dark.inkFaint),
+  // The other page's name in a pair of pages (the Post tab's Recent and Memory Room). On paper the
+  // lightest tone in the owner's mock's own hue that still reads at 4.5:1 there (the faint ink and the
+  // mock's #A39A88 fall under 3:1), so it stands plainly apart from the ink (3:1 between the two, where
+  // the soft ink is 2.6:1); on black the faint ink, which already does both.
+  inkOther: dyn("#777063", dark.inkFaint),
 
   // Lines
   border: dyn(light.border, dark.border), // hairline borders
@@ -99,8 +101,6 @@ export const colors = {
   // set on them is light on both prints.
   camera: dyn("#1C1915", "#000000"),
   onCamera: dyn("#F2EBDD", "#FFFFFF"),
-  // The Post tab's camera tile: the camera's dark on paper, a step up from the black on black, where shutter would be a white slab.
-  cameraTile: dyn("#1C1915", dark.paperRaised),
   // A mark set straight on a photograph or a film in the feed — the
   // double-tap heart, the play and sound glyphs on their dark discs. The
   // print's own off-white on paper; on black, white, as every other mark.

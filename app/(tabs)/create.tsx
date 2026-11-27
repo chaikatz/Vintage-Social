@@ -73,9 +73,12 @@ export { RecoverPage as ErrorBoundary } from "@/navigation/Recover";
  * same frame, so the page keeps one shape.
  *
  * The Memory Room is reached by tapping MEMORY ROOM, or by sliding Recent
- * to the left, deliberately (`src/post/slide.ts`): a scroll of the roll, a
- * diagonal drift, a tap or a nudge never moves the page. Past half the
- * width, or on a clear flick, the pager comes to rest on the room's door
+ * to the left, deliberately, by the app's own rule on the iPhone and in
+ * the browser alike (`PostPager`, `src/post/slide.ts`): a scroll of the
+ * roll, a diagonal drift, a tap or a nudge of a few points never moves the
+ * page, and a quick short flick moves it a little and lets it go back.
+ * Past half the width, or on a clear flick that has already carried it a
+ * fifth of the way, the pager comes to rest on the room's door
  * — its own paper, nothing read — and the room is pushed, once, and fades
  * in over it; once the room covers the tab the pager goes back to Recent
  * without animation, so the way back from the room lands here. While the

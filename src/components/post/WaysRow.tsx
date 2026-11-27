@@ -70,8 +70,7 @@ export function WaysRow({
         />
         <Way
           testID="post-way-video"
-          word="Video"
-          label="Short video"
+          label="Video"
           hint={`Up to ${MAX_VIDEO_SECONDS} seconds, same feed, same grid`}
           busy={busy === "video"}
           held={held}
@@ -109,7 +108,6 @@ export function WaysRow({
 /** One way in: its word; while it is the one opening, a spinner in the word's place. */
 function Way({
   testID,
-  word,
   label,
   hint,
   busy,
@@ -117,8 +115,7 @@ function Way({
   onPress,
 }: {
   testID: string;
-  /** What the line prints, when it is not what VoiceOver hears. */
-  word?: string;
+  /** What the line prints and VoiceOver reads: one name, so Voice Control's "Tap Video" finds what the eye sees. */
   label: string;
   hint: string;
   busy: boolean;
@@ -138,7 +135,7 @@ function Way({
       accessibilityState={{ busy, disabled: held }}
     >
       <Text style={[styles.wayWord, busy && styles.hidden]} maxFontSizeMultiplier={BAR_TYPE_CAP}>
-        {word ?? label}
+        {label}
       </Text>
       {busy ? <ActivityIndicator size="small" color={colors.inkSoft} style={StyleSheet.absoluteFill} /> : null}
     </Pressable>

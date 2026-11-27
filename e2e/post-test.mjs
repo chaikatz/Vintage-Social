@@ -10,7 +10,9 @@
 // back lands on Recent; a slow slide past half, by mouse and by finger; a
 // short slide, a quick nudge, a vertical scroll and a diagonal drift that
 // do not; the tabs' own pager held still while the tab is in front, and
-// let go when it is left; once, however it is asked → the Post tab tapped
+// let go when it is left; once, however it is asked; a finger's quick
+// short flick and a 40-degree drift, which a UIPageViewController's paging
+// would take, do not either; a tap just after a slide is a tap → the Post tab tapped
 // again → the photograph library's every state (never asked, refused,
 // limited, empty, failed, reading), the camera tile as the iPhone draws it
 // → 320 and 440 points → the tab at rest: sent to the background, left for
@@ -293,8 +295,8 @@ const inks = await page.evaluate(() => {
   return { recent: ink("post-head-recent"), room: ink("post-head-room") };
 });
 check(
-  "…Recent in ink, Memory Room in the quieter ink (the soft ink on paper)",
-  inks.recent.includes("rgb(43, 38, 32)@1") && inks.room.includes("rgb(110, 101, 90)@1") && inks.room.includes("rgb(43, 38, 32)@0"),
+  "…Recent in ink, Memory Room in the quieter ink (#777063 on paper)",
+  inks.recent.includes("rgb(43, 38, 32)@1") && inks.room.includes("rgb(119, 112, 99)@1") && inks.room.includes("rgb(43, 38, 32)@0"),
   JSON.stringify(inks),
 );
 const cells = await seen(page.locator('[data-testid="post-cell"]')).count();
@@ -481,7 +483,7 @@ const chooser = async (name) => {
 };
 const library = await chooser(/^Library$/);
 check("LIBRARY opens the browser's own chooser, for a photograph", library != null);
-const video = await chooser(/^Short video$/);
+const video = await chooser(/^Video$/);
 check("VIDEO opens it too, for a clip", video != null);
 check("…and a picker let go with nothing chosen leaves the page as it was", !(await byId("post-post").first().isDisabled()) && path() === "/create");
 
@@ -518,6 +520,34 @@ await touchDrag(page, { x: W * 0.8, y: 300 }, { x: W * 0.8 - 150, y: 300 - 150 }
 check("…nor a diagonal drift", path() === "/create" && (await pagerAt()) === 0, `${path()} · ${await pagerAt()}`);
 await scrollRoll(page, 0);
 await wait(400);
+// The two a UIPageViewController's paging would have taken: a quick short flick, and a drift at 40 degrees.
+await touchDrag(page, { x: W * 0.8, y: 300 }, { x: W * 0.8 - 60, y: 300 }, { steps: 4, pause: 8 });
+check("…nor a finger's quick short flick, 60 points", path() === "/create" && (await pagerAt()) === 0, `${path()} · ${await pagerAt()}`);
+await touchDrag(page, { x: W * 0.8, y: 300 }, { x: W * 0.8 - 150, y: 300 - 126 }, { steps: 12, pause: 12 });
+check("…nor a drift at 40 degrees", path() === "/create" && (await pagerAt()) === 0, `${path()} · ${await pagerAt()}`);
+await scrollRoll(page, 0);
+await wait(400);
+// A finger's slide brings no click after it: the very next tap, a moment later, is a tap.
+{
+  const before = await selectedCell();
+  const target = before === 1 ? 2 : 1;
+  const b = await cell(target).boundingBox();
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  await touch("touchStart", W * 0.8, 300);
+  // 54 points: past the 12 the slide needs to take it, short of the fifth of the width a flick needs to open the room.
+  for (let i = 1; i <= 6; i++) {
+    await touch("touchMove", W * 0.8 - 9 * i, 300);
+    await wait(16);
+  }
+  await touch("touchEnd");
+  await cdp.detach();
+  await wait(60);
+  if (b) await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  await wait(900);
+  check("A tap just after a finger's short slide is not lost", (await selectedCell()) === target && path() === "/create", `${before} → ${await selectedCell()}, wanted ${target}`);
+  await tapCell(before);
+}
 await mouseDrag(page, { x: W * 0.15, y: 300 }, { x: W * 0.15 + 250, y: 300 }, { steps: 20 });
 check("A slide to the right does nothing: not the room, not another tab", path() === "/create" && (await tabIndex()) === 2 && (await pagerAt()) === 0);
 

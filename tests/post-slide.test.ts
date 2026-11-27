@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  claimsSlide,
   createRoomDoor,
   holdsSideways,
   FLICK_SHARE,
@@ -48,21 +47,20 @@ const code = (f: string) =>
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
 
 describe("a drag on Recent", () => {
-  it("is the slide only once it has gone 12 points to the left, and plainly sideways", () => {
+  it("is the slide only once it has gone 12 points, and plainly sideways", () => {
     expect(SLIDE_SLOP).toBe(12);
     expect(SLIDE_LOCK).toBe(1.5);
-    expect(claimsSlide({ dx: -12, dy: 0 })).toBe(true);
-    expect(claimsSlide({ dx: -40, dy: 20 })).toBe(true);
+    expect(holdsSideways({ dx: -12, dy: 0 })).toBe(true);
+    expect(holdsSideways({ dx: -40, dy: 20 })).toBe(true);
     // A nudge, a tap's wobble.
-    expect(claimsSlide({ dx: -11, dy: 0 })).toBe(false);
-    expect(claimsSlide({ dx: -3, dy: 2 })).toBe(false);
-    // A scroll of the roll, and a diagonal drift.
-    expect(claimsSlide({ dx: -4, dy: -120 })).toBe(false);
-    expect(claimsSlide({ dx: -40, dy: 40 })).toBe(false);
-    expect(claimsSlide({ dx: -30, dy: 21 })).toBe(false);
-    // To the right: nothing (the tabs are a tap away).
-    expect(claimsSlide({ dx: 80, dy: 0 })).toBe(false);
-    expect(claimsSlide({ dx: Number.NaN, dy: 0 })).toBe(false);
+    expect(holdsSideways({ dx: -11, dy: 0 })).toBe(false);
+    expect(holdsSideways({ dx: -3, dy: 2 })).toBe(false);
+    // A scroll of the roll, and a diagonal drift: 45 degrees, and 40 (which UIKit's paging would take).
+    expect(holdsSideways({ dx: -4, dy: -120 })).toBe(false);
+    expect(holdsSideways({ dx: -40, dy: 40 })).toBe(false);
+    expect(holdsSideways({ dx: -30, dy: 21 })).toBe(false);
+    expect(holdsSideways({ dx: -60, dy: 50 })).toBe(false);
+    expect(holdsSideways({ dx: Number.NaN, dy: 0 })).toBe(false);
   });
 
   it("is held by the pager either way once plainly sideways, so it never ends as a tap; only to the left does it move", () => {
@@ -71,8 +69,9 @@ describe("a drag on Recent", () => {
     expect(holdsSideways({ dx: 11, dy: 0 })).toBe(false);
     expect(holdsSideways({ dx: 40, dy: 40 })).toBe(false);
     expect(holdsSideways({ dx: -4, dy: -120 })).toBe(false);
-    expect(claimsSlide({ dx: 80, dy: 10 })).toBe(false);
+    // To the right: held, but the page goes nowhere (the tabs are a tap away).
     expect(slideProgress(80, 390)).toBe(0);
+    expect(slideOpens({ dx: 300, vx: 2, width: 390 })).toBe(false);
   });
 
   it("carries the page with it, from Recent (0) to the door (1), never past either", () => {
@@ -106,21 +105,43 @@ describe("letting the slide go", () => {
     expect(slideOpens({ dx: -150, vx: 0.9, width: W })).toBe(false);
   });
 
-  it("is the browser pager's rule, and the iPhone's pager is UIKit's own", () => {
-    const web = code("src/components/post/PostPager.web.tsx");
-    expect(web).toMatch(/holdsSideways\(\{ dx, dy \}\)/);
-    expect(web).toMatch(/slideOpens\(\{ dx: g\.dx, vx: g\.vx, width: width\.current \}\) \? 1 : 0/);
-    // Only from Recent, only while the page may move; never to the right of Recent.
-    expect(web).toMatch(/enabled\.current && page\.current === 0 && holdsSideways/);
-    expect(web).toMatch(/x\.setValue\(Math\.max\(-w, Math\.min\(0, g\.dx \+ SLIDE_SLOP\)\)\)/);
-    // In the capture phase, so a cell that took the press gives the drag up.
-    expect(web).toMatch(/onMoveShouldSetPanResponderCapture: \(_, g\) => wants\(g\.dx, g\.dy\)/);
-    expect(web).toMatch(/onPanResponderTerminationRequest: \(\) => false/);
-    const native = code("src/components/post/PostPager.tsx");
-    expect(native).toMatch(/import PagerView from "react-native-pager-view";/);
-    expect(native).toMatch(/overdrag=\{false\}/);
-    expect(native).toMatch(/useNativeDriver: true/);
-    expect(native).not.toMatch(/PanResponder/);
+  it("is the pager's rule on the iPhone and in the browser alike: no native pager is left to decide", () => {
+    const pager = code("src/components/post/PostPager.tsx");
+    // One pager for every platform: no browser copy beside it, and no UIPageViewController under it.
+    expect(existsSync(path.join(root, "src/components/post/PostPager.web.tsx"))).toBe(false);
+    expect(existsSync(path.join(root, "src/components/post/PostPager.ios.tsx"))).toBe(false);
+    expect(pager).not.toMatch(/react-native-pager-view|PagerView/);
+    expect(pager).toMatch(/import \{ holdsSideways, SLIDE_SLOP, slideOpens, slideProgress \} from "@\/post\/slide";/);
+    expect(pager).toMatch(/holdsSideways\(\{ dx, dy \}\)/);
+    expect(pager).toMatch(/settle\(slideOpens\(\{ dx: g\.dx, vx: g\.vx, width: width\.current \}\) \? 1 : 0, true\);/);
+    // Only from Recent, only while the page may move, one finger; never to the right of Recent.
+    expect(pager).toMatch(/enabled\.current && page\.current === 0 && !\(touches > 1\) && holdsSideways/);
+    expect(pager).toMatch(/x\.setValue\(Math\.max\(-w, Math\.min\(0, g\.dx \+ SLIDE_SLOP\)\)\)/);
+    // In the capture phase, so a cell that took the press gives the drag up; and kept once taken.
+    expect(pager).toMatch(/onMoveShouldSetPanResponderCapture: \(_, g\) => wants\(g\.dx, g\.dy, g\.numberActiveTouches\)/);
+    expect(pager).toMatch(/onPanResponderTerminationRequest: \(\) => false/);
+    // The browser's own helpers stay the browser's: on the phone there is no window to listen to.
+    expect(pager).toMatch(/const web = Platform\.OS === "web";/);
+    expect(pager.match(/if \(web\) swallowClick\(\);/g)).toHaveLength(2);
+    expect(pager).toMatch(/if \(web\) keepDragsForTheSlide\(\);/);
+    expect(pager).toMatch(/style=\{\[styles\.pager, web && WEB_TOUCH\]\}/);
+    // At rest it does nothing: the row moves only under the finger or as it settles.
+    expect(pager).toMatch(/useNativeDriver: false/);
+    // The tabs' pager is a UIPageViewController still, and the only one: the Post tab never mounts one.
+    const tab = code("app/(tabs)/create.tsx");
+    expect(tab).not.toMatch(/react-native-pager-view|PagerView/);
+  });
+
+  it("follows the rule a quick short flick, a slow drag let go short of half and a slow drag past half each meet", () => {
+    const W = 390;
+    // Released a moment after a 60-point flick (UIKit's paging would turn the page).
+    expect(slideOpens({ dx: -60, vx: -1.2, width: W })).toBe(false);
+    // A slow drag to 40%.
+    expect(slideOpens({ dx: -0.4 * W, vx: -0.1, width: W })).toBe(false);
+    // A slow drag past half.
+    expect(slideOpens({ dx: -0.55 * W, vx: -0.1, width: W })).toBe(true);
+    // A deliberate flick, a fifth of the way and quick.
+    expect(slideOpens({ dx: -100, vx: -0.9, width: W })).toBe(true);
   });
 });
 
@@ -286,5 +307,16 @@ describe("the header's taps", () => {
     const asked = tab.slice(tab.indexOf("onPageAsked((page) =>"), tab.indexOf("const post = useCallback"));
     expect(asked).toMatch(/if \(!front\.current \|\| opening\.current \|\| scrollState\.current !== "idle" \|\| door\.phase\(\) !== "closed"\) return;/);
     expect(asked).toMatch(/if \(reduceMotionRef\.current\) pager\.current\?\.setPageWithoutAnimation\(page\);\s*else pager\.current\?\.setPage\(page\);/);
+  });
+
+  it("are one turn at a time: Memory Room tapped twice moves the page once, since the pager says it is settling as it starts", () => {
+    const pager = code("src/components/post/PostPager.tsx");
+    const settle = pager.slice(pager.indexOf("const settle = useRef("), pager.indexOf("useImperativeHandle("));
+    // Said before the animation starts, in the same call, so the tab's next ask finds it not idle.
+    expect(settle).toMatch(/told\.current\.onScrollState\("settling"\);\s*Animated\.timing\(x,/);
+    // And idle again only once the page is at rest, before the page is named.
+    expect(settle).toMatch(/told\.current\.onScrollState\("idle"\);\s*told\.current\.onPageSelected\(target\);/);
+    const tab = code("app/(tabs)/create.tsx");
+    expect(tab).toMatch(/const onScrollState = useCallback\(\(state: PagerScrollState\) => \{\s*scrollState\.current = state;\s*\}, \[\]\);/);
   });
 });

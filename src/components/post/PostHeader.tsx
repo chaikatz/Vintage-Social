@@ -16,15 +16,17 @@ import { colors, type } from "@/theme";
  *
  * As the pager moves, the two inks cross over with it: each word is drawn
  * twice, in the quieter ink and in ink over it, and the ink's opacity
- * follows `pageProgress`, natively on the iPhone. Tapping MEMORY ROOM
+ * follows `pageProgress`. Tapping MEMORY ROOM
  * slides to the room's door (a cut under Reduce Motion), which opens the
  * room; RECENT is where you are. VoiceOver hears "Recent, selected" and
  * "Memory Room, button, opens the Memory Room".
  *
  * The quieter ink: the mock's (#A39A88) and the theme's faint ink
  * (#9C927F, 2.9:1) are both under 3:1 on the paper, so on paper it is
- * the soft ink (5.3:1), the nearest that reaches it; on black the faint
- * ink already does (6.4:1), and stays.
+ * the lightest tone of the mock's hue that reads at 4.5:1 (#777063,
+ * 4.55:1), which also stands 3:1 apart from the ink, as the soft ink
+ * (2.6:1) did not; on black the faint ink already does both (6.4:1), and
+ * stays.
  */
 
 /** The words grow with the text size only this far, so the two stay on one line in the band. */
@@ -80,7 +82,8 @@ function Word({
     <Pressable
       testID={testID}
       onPress={onPress}
-      hitSlop={{ top: 10, bottom: 10, left: HEAD_WORDS.gap / 2, right: HEAD_WORDS.gap / 2 }}
+      // A 20-point serif line is 23 tall: 12 above and below make the 44 a finger needs, and more.
+      hitSlop={{ top: 12, bottom: 12, left: HEAD_WORDS.gap / 2, right: HEAD_WORDS.gap / 2 }}
       accessibilityRole={role}
       accessibilityLabel={word}
       accessibilityHint={hint}

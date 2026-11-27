@@ -11,20 +11,22 @@ import { holdTabSwipe } from "@/utils/tabSwipe";
  *
  *   - It only begins as a slide once the finger has gone 12 points to the
  *     left and at least one and a half times as far sideways as up or
- *     down. Scrolling the roll, a diagonal drift, a tap or a small nudge
- *     never moves the page at all.
+ *     down. Scrolling the roll, a diagonal drift, a tap or a nudge of a
+ *     few points never moves the page at all.
  *   - Once moving, the page follows the finger, and on release the room
  *     opens only past half the width, or on a clear flick (0.6 points a
  *     millisecond) that has already carried the page a fifth of the way.
- *     Anything less, and Recent slides back.
+ *     Anything less, a quick short flick included, and Recent slides back.
  *   - A slide to the right does nothing: the tabs are a tap away.
  *
- * On the iPhone the two pages are a native pager (react-native-pager-view,
- * a UIPageViewController): UIKit decides the release by the same rule —
- * the nearer page, or the next on a flick — and its scroll view locks to
- * one direction, so a vertical scroll of the roll never pages. In the
- * browser the pager is the app's own (`PostPager.web.tsx`) and these
- * numbers are its rule.
+ * These numbers are the rule on the iPhone and in the browser alike: the
+ * two pages are the app's own pager (`PostPager`), which decides when a
+ * drag is the slide and where its release lands by the functions below,
+ * and leaves neither to UIKit. (A UIPageViewController, as the tabs'
+ * pager is, turns its page on any quick flick however short, and takes a
+ * drag nearer the diagonal than this.) The roll's vertical scroll is the
+ * list's own, and gives way only to a drag more sideways than up or
+ * down, so a scroll of the roll never reaches the slide.
  */
 
 /** The page moves with the finger only once it has gone this far to the left… */
@@ -38,16 +40,11 @@ export const FLICK_SPEED = 0.6;
 /** …having carried the page at least this share of the way. */
 export const FLICK_SHARE = 0.2;
 
-/** Whether a drag on Recent is the slide: far enough, to the left, and plainly sideways. */
-export function claimsSlide(g: { dx: number; dy: number }): boolean {
-  if (!(g.dx <= -SLIDE_SLOP)) return false;
-  return Math.abs(g.dx) >= SLIDE_LOCK * Math.abs(g.dy);
-}
-
 /**
  * Whether a drag on Recent is sideways enough for the pager to take it,
- * either way: to the left it is the slide; to the right it moves nothing,
- * but the pager still holds it, as UIKit's does, so a sideways drag never
+ * either way: far enough (12 points) and at least one and a half times as
+ * far sideways as up or down. To the left it is the slide; to the right it
+ * moves nothing, but the pager still holds it, so a sideways drag never
  * ends as a tap on what it started on.
  */
 export function holdsSideways(g: { dx: number; dy: number }): boolean {
@@ -70,9 +67,9 @@ export function slideOpens(s: { dx: number; vx: number; width: number }): boolea
 
 /**
  * The Post tab in front: the tabs' own pager held still, where there is a
- * room to slide to, so the two pagers never take the same drag (a
- * UIPageViewController turning its page sets its own view aside for the
- * moment, and the tabs' pager under it would have the drag). The function
+ * room to slide to, so the two pagers never take the same drag. The tabs'
+ * pager is a UIPageViewController, whose pan would take any sideways drag
+ * natively, before the Post tab's own pager could see it. The function
  * returned lets go, once, as the tab leaves. Where there is no room the
  * tabs swipe as they always have.
  */

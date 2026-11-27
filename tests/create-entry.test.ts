@@ -35,10 +35,8 @@ const page = [tab, ...Object.values(parts)].join("\n");
 const open = tab.slice(tab.indexOf("const openWith"), tab.indexOf("// The two pages, and the room pushed once"));
 
 describe("the page's parts", () => {
-  it("are the header, the two pagers, the door's page, the frame, its panels, the line and the roll, and nothing else", () => {
-    expect(Object.keys(parts).sort()).toEqual(
-      ["DoorPage", "MountPanel", "PostHeader", "PostPager", "PostPager.web", "RollCell", "RollHero", "WaysRow"].sort(),
-    );
+  it("are the header, the pager, the door's page, the frame, its panels, the line and the roll, and nothing else", () => {
+    expect(Object.keys(parts).sort()).toEqual(["DoorPage", "MountPanel", "PostHeader", "PostPager", "RollCell", "RollHero", "WaysRow"].sort());
     // The doors band, its shelf line and the roll's foot are gone.
     for (const gone of ["PostDoors", "RollFooter", "OnThisDayDoor", "useDayDoor", "dayDoor", "todaysPrint", "LimitedLine", "footShown"]) {
       expect(page, gone).not.toContain(gone);
@@ -65,7 +63,9 @@ describe("the ways in", () => {
     expect(picker).toMatch(/videoMaxDuration: MAX_VIDEO_SECONDS,/);
     expect(picker).toMatch(/if \(isVideo && clipTooLong\(asset\.duration\)\)/);
     expect(parts.WaysRow).toMatch(/testID="post-way-library"[\s\S]*?onPress=\{onLibrary\}/);
-    expect(parts.WaysRow).toMatch(/testID="post-way-video"\s+word="Video"\s+label="Short video"/);
+    // One name for the eye, VoiceOver and Voice Control ("Tap Video"); the 60 seconds are its hint.
+    expect(parts.WaysRow).toMatch(/testID="post-way-video"\s+label="Video"\s+hint=\{`Up to \$\{MAX_VIDEO_SECONDS\} seconds, same feed, same grid`\}/);
+    expect(parts.WaysRow).not.toMatch(/word=|Short video/);
   });
 
   it("keep the camera to the phone: the roll's first tile on the iPhone, a word on the line where there is no roll", () => {
@@ -203,12 +203,13 @@ describe("the two pages", () => {
     expect(head).toMatch(/columnGap: HEAD_WORDS\.gap/);
   });
 
-  it("cross their two inks with the pager, natively on the iPhone", () => {
+  it("cross their two inks with the pager as it moves", () => {
     const head = parts.PostHeader;
     expect(head).toMatch(/const recentInk = pageProgress\.interpolate\(\{ inputRange: \[0, 1\], outputRange: \[1, 0\], extrapolate: "clamp" \}\);/);
     expect(head).toMatch(/const roomInk = pageProgress\.interpolate\(\{ inputRange: \[0, 1\], outputRange: \[0, 1\], extrapolate: "clamp" \}\);/);
     expect(head).toMatch(/<Animated\.Text style=\{\[styles\.word, styles\.ink, \{ opacity: ink \}\]\}/);
-    expect(parts.PostPager).toMatch(/Animated\.event\(\[\{ nativeEvent: \{ position: pagePosition, offset: pageOffset \} \}\], \{ useNativeDriver: true \}\)/);
+    // The row's place, as a share of the way to the door: set only while it moves.
+    expect(parts.PostPager).toMatch(/const id = x\.addListener\(\(\{ value \}\) => \{\s*pagePosition\.setValue\(0\);\s*pageOffset\.setValue\(slideProgress\(value, width\.current\)\);/);
   });
 
   it("are a pair of tabs to VoiceOver: Recent, selected; Memory Room, a button that opens the room", () => {
@@ -218,14 +219,19 @@ describe("the two pages", () => {
     expect(head).toMatch(/accessibilityLabel=\{word\}/);
     expect(head).toMatch(/accessibilityState=\{\{ selected \}\}/);
     expect(head).toMatch(/onPress=\{\(\) => askPage\(1\)\}/);
+    // Each word a 44-point target at least: its 23-point line and 12 above and below.
+    expect(head).toMatch(/hitSlop=\{\{ top: 12, bottom: 12, left: HEAD_WORDS\.gap \/ 2, right: HEAD_WORDS\.gap \/ 2 \}\}/);
   });
 
-  it("let the browser's mouse slide them: no picture dragged, no words selected, no click after a slide", () => {
-    const web = parts["PostPager.web"];
-    expect(web).toMatch(/-webkit-user-drag: none/);
-    expect(web).toMatch(/user-select: none/);
-    expect(web.match(/swallowClick\(\);/g)).toHaveLength(2);
-    expect(web).toMatch(/window\.addEventListener\("click", take, true\);/);
+  it("let the browser's mouse slide them: no picture dragged, no words selected, no click after a slide, and no later tap lost", () => {
+    const pager = parts.PostPager;
+    expect(pager).toMatch(/-webkit-user-drag: none/);
+    expect(pager).toMatch(/user-select: none/);
+    expect(pager.match(/if \(web\) swallowClick\(\);/g)).toHaveLength(2);
+    expect(pager).toMatch(/window\.addEventListener\("click", take, true\);/);
+    // A slide with no click after it (a finger's) leaves nothing to take the next tap: the next press lets it go.
+    expect(pager).toMatch(/window\.addEventListener\("pointerdown", done, true\);/);
+    expect(pager).toMatch(/window\.removeEventListener\("pointerdown", done, true\);/);
   });
 
   it("draw the door's page in the room's own paper, with nothing of the library on it", () => {
@@ -313,8 +319,7 @@ describe("the page's words", () => {
       [parts.WaysRow, "Post"],
       [parts.WaysRow, 'accessibilityHint="Opens the selected photograph in the editor. Nothing is shared until you choose Share to VINTAGE."'],
       [parts.WaysRow, 'label="Library"'],
-      [parts.WaysRow, 'word="Video"'],
-      [parts.WaysRow, 'label="Short video"'],
+      [parts.WaysRow, 'label="Video"'],
       [parts.WaysRow, 'hint="Opens your photo library. Nothing is shared until you choose Share to VINTAGE."'],
       [parts.RollCell, 'accessibilityLabel="Camera"'],
       [parts.RollCell, 'accessibilityHint="Take one now"'],

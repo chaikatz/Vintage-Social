@@ -72,10 +72,10 @@ export function MountPanel({
             <ActivityIndicator size="small" color={colors.onShutter} />
           ) : (
             <>
-              <Text style={styles.barWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
+              <Text style={[styles.barWord, narrow && styles.barWordNarrow]} maxFontSizeMultiplier={BAR_TYPE_CAP}>
                 {words.bar.label}
               </Text>
-              <Feather name="arrow-right" size={16} color={colors.onShutter} style={styles.arrow} />
+              <Feather name="arrow-right" size={16} color={colors.onShutter} style={[styles.arrow, narrow && styles.arrowNarrow]} />
             </>
           )}
         </Pressable>
@@ -147,9 +147,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  barNarrow: { minHeight: 44, marginTop: 14, paddingHorizontal: 32 },
+  barNarrow: { minHeight: 44, marginTop: 14, paddingHorizontal: 26 },
   barWord: { fontFamily: type.mono, fontSize: 11, letterSpacing: 2.2, ...caps, color: colors.onShutter, textAlign: "center" },
+  // On an SE the frame is 253 wide and the bar 219: CHOOSE A PHOTOGRAPH at 2.2 apart is 167 in Courier New,
+  // wider than the 155 the bar had inside, so it broke onto two lines; at 1.4 it is 152, inside 167, and the
+  // arrow, 10 in from the end, is clear of the padding either side of it.
+  barWordNarrow: { letterSpacing: 1.4 },
   arrow: { position: "absolute", right: 14 },
+  arrowNarrow: { right: 10 },
   path: { fontFamily: type.mono, fontSize: 9.5, lineHeight: 13, letterSpacing: 1, color: colors.inkSoft, marginTop: spacing.md },
   quiet: { marginTop: 6, minHeight: 44, justifyContent: "center", alignSelf: "flex-start" },
   quietWord: { fontFamily: type.mono, fontSize: 10.5, letterSpacing: 2, ...caps, color: colors.ink, textDecorationLine: "underline" },

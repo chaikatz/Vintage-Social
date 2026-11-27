@@ -103,14 +103,18 @@ describe("the Post tab, on paper and on black", () => {
     expect(token(style(cells, "tile"), "borderColor")).toBe("borderStrong");
   });
 
-  it("raises the other page's name from the faint ink, which falls under 3:1 on paper, to the nearest that does not", () => {
+  it("raises the other page's name from the faint ink, which falls under 3:1 on paper, only as far as 4.5:1, in the mock's hue", () => {
     // The mock's own faint ink, and the theme's, on the paper: both under 3:1.
     expect(ratio("#A39A88", print("paper").light)).toBeLessThan(3);
     expect(ratio(print("inkFaint").light, print("paper").light)).toBeLessThan(3);
-    // On paper the soft ink, the next one up; on black the faint ink, which already reaches it.
-    expect(print("inkOther")).toEqual({ light: print("inkSoft").light, dark: print("inkFaint").dark });
+    // On paper the lightest tone of the mock's hue that reads at 4.5:1; on black the faint ink, which already reaches it.
+    expect(print("inkOther")).toEqual({ light: "#777063", dark: print("inkFaint").dark });
     expect(ratio(print("inkOther").light, print("paper").light)).toBeGreaterThanOrEqual(4.5);
     expect(ratio(print("inkOther").dark, print("paper").dark)).toBeGreaterThanOrEqual(4.5);
+    // Lighter than the soft ink, so the page you are on stands apart from the other by 3:1, as the mock's two do by more.
+    expect(ratio(print("inkOther").light, print("paper").light)).toBeLessThan(ratio(print("inkSoft").light, print("paper").light));
+    expect(ratio(print("inkOther").light, print("ink").light)).toBeGreaterThanOrEqual(3);
+    expect(ratio(print("inkSoft").light, print("ink").light)).toBeLessThan(3);
     // And still plainly the quieter of the two.
     for (const side of ["light", "dark"] as const) {
       expect(ratio(print("inkOther")[side], print("paper")[side])).toBeLessThan(ratio(print("ink")[side], print("paper")[side]));

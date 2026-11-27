@@ -6,11 +6,10 @@ import { Animated } from "react-native";
  * the pager, and the header the tabs share (`TabHeader` in
  * app/(tabs)/_layout.tsx), which draws RECENT and MEMORY ROOM over it.
  *
- * `pagePosition` and `pageOffset` are the pager's own scroll, as
- * react-native-pager-view reports it: on the iPhone they are driven
- * natively (`Animated.event` with the native driver), so the header's two
- * inks cross over as the finger moves without a frame of JavaScript. Their
- * sum, `pageProgress`, is 0 on Recent and 1 on the door.
+ * `pagePosition` and `pageOffset` are how far the pager has gone, set by
+ * the pager (`PostPager`) as its row moves, while it is dragged or
+ * settling and never at rest, so the header's two inks cross over with
+ * the finger. Their sum, `pageProgress`, is 0 on Recent and 1 on the door.
  *
  * `postPage` is the page the pager last came to rest on, for VoiceOver's
  * "selected"; `askPage` is the header's tap, which the tab answers.
