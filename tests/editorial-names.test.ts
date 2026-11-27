@@ -241,7 +241,7 @@ describe("a bar titled with a username", () => {
     // The member's username, once known; "Profile" before it is, and every other tab's title, keep the serif.
     expect(tabs).toMatch(/const title = tab === "profile" \? username \?\? "Profile" : TITLES\[tab\] \?\? null;/);
     expect(tabs).toMatch(/const titleStyle = useNameTitleStyle\(tab === "profile" && username != null\);/);
-    expect(tabs).toMatch(/<Text style=\{\[styles\.headerTitle, titleStyle, nameTitle\]\}>\{title\}<\/Text>/);
+    expect(tabs).toMatch(/<Text\s+style=\{\[styles\.headerTitle, titleStyle, nameTitle, pages && styles\.unseen\]\}[^>]*>\s*\{title\}\s*<\/Text>/);
     // Under Original the title style is the tab title's own family and size, so nothing changes.
     const own = rule("app/(tabs)/_layout.tsx", "headerTitle");
     expect(own).toEqual({ fontFamily: type.serif, fontSize: 17, color: colors.ink });

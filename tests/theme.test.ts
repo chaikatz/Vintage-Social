@@ -65,6 +65,8 @@ describe("the light print", () => {
       wash: light.paperSunken,
       // A member's name and the ring round their picture on the Editorial card: the owner's warm near-black.
       nameInk: "#2A2826",
+      // The other page's name in the Post tab's header: the mock's hue at 4.5:1, the faint ink being under 3:1 on paper.
+      inkOther: "#777063",
       like: "#B3402E",
       danger: "#A03B2E",
       success: "#5C7048",
@@ -80,8 +82,6 @@ describe("the light print", () => {
       // The camera's two are the shutter's own on paper, and a knob is the raised paper.
       camera: "#1C1915",
       onCamera: "#F2EBDD",
-      // The Post tab's camera tile is the camera's own dark on paper.
-      cameraTile: "#1C1915",
       // A mark on a photograph in the feed keeps the off-white it was always drawn in.
       onPhoto: "#F6F1E8",
       knob: light.paperRaised,

@@ -184,9 +184,14 @@ builds, and most only to demo mode:
 - **Camera:** hidden on web (library picking works, including for the
   compose flow).
 - **The Post tab:** its roll reads the demo library (about thirty bundled
-  photographs, the newest some hundred days old; no camera tile), and the
-  On this day door counts the demo's six anniversaries; `/memories`'
-  library section stays off on web.
+  photographs, the newest some hundred days old; no camera tile, and the
+  clip's limit is written under the line, since the browser's picker has
+  no trimmer). Recent slides to the Memory Room's door under a mouse or a
+  finger in the same pager, by the same rule, as on the phone (`PostPager`,
+  `src/post/slide.ts`); in the browser only, a mouse dragged across it
+  picks up no picture and selects no words, and the click that ends a
+  slide is not taken as a tap. `/memories`' library section stays off on
+  web.
 - **Video thumbnails:** not generated on web; the grid falls back to the
   raw media.
 - **Dialogs:** native action sheets become `window.confirm`/`prompt`.
@@ -427,18 +432,15 @@ modal, because the editor has to open above it and come back to it. It is
 printed on the app's own page, light or dark as the appearance is, and
 each photograph carries the print's signature line under it, the caption
 hung beneath. Back is the left edge or the chevron;
-anywhere else a swipe turns the page. The way in is the Memory Room door
-at the top of the Post tab, printed as the invitation card is (brown and
-gold on the light print; on the dark one a grey card a step up from the
-black, lettered in white), carrying the print the member left off on and
-"You left off in August 2018." when they were in the room within twelve
-hours (`placeLine` and `placeCover`, read from the place file alone).
-SET ASIDE · 3 stands under it when anything is set aside, one tap into
-the shelf, and ENTER THE MEMORY ROOM closes the Post tab's roll. TODAY IN
-OTHER YEARS is folded into the On this day door beside it, which opens
-`app/memories.tsx`, whose library rows open the room's On this day, at
-every photograph of the day or at one year's. It exists on iOS and in the
-web demo only.
+anywhere else a swipe turns the page. The way in is the Post tab's
+second page: MEMORY ROOM in its header, tapped, or Recent slid to the
+left, deliberately (see The Post tab, below); the room fades in over the
+door's page, in the room's own paper. On this day and Set aside are
+chapters in its own Contents. `app/memories.tsx` (reached from its
+notification, and from ON THIS DAY on your own profile on a day you
+posted from in an earlier year, `OnThisDayLine`) opens the room's On
+this day from its library rows, at every photograph of the day or at one
+year's. It exists on iOS and in the web demo only.
 
 There are four ways in, chosen in Contents (the chapter name, or the
 CONTENTS tab in the running head, which says what is inside until it is
@@ -478,9 +480,8 @@ explanation: CONTINUE on the room's first-visit page, or CONTINUE under
 button before its own prompt say Continue or Next). The Post tab reads
 the library only while it is in front and access was given: one bounded
 page of the newest photographs at a time (60, then 120, 1,200 at most),
-and on the On this day door one count per earlier year of today's date
-(thirty at most) and three covers, all through the room's two-at-a-time
-gate. It keeps no listener on the library, except after SHARE MORE,
+through the room's two-at-a-time gate. It keeps no listener on the
+library, except after SHARE MORE,
 until the tab is left. It draws every photograph at its view's size and
 keeps it in that view alone, never in the shared cache or on disk; ten
 seconds after the tab is left, and at once when the app goes to the
@@ -585,51 +586,87 @@ with a glide landing there too. The unit tests are
 
 `app/(tabs)/create.tsx`, composed from `src/components/post/` with its
 rules in `src/post/`, is where a post begins, and it is the member's own
-photographs. Top to bottom:
+photographs, as the owner's mock draws them (its measurements are the
+constants at the top of `src/post/roll.ts`). Two pages, named in the
+header the tabs share: RECENT, which is this page, and MEMORY ROOM, the
+room's door. Top to bottom:
 
-- **The doors.** The Memory Room's, in the invitation card's stock, with
-  the print the member left off on and where that was; and On this day's,
-  on paper: this date's photographs in earlier years fanned out with how
-  many and which years ("6 photographs", "2014 – 2023"), or else the
-  member's own post from this date, or else the leaf of a desk calendar
-  ("Every year, on this date."). Each is a ruled card with a chevron, so
-  neither reads as a heading over nothing. SET ASIDE · 3 under them when
-  anything is set aside. Narrower than 360 points they keep their words
-  and let their pictures go; at the larger text sizes they stack. A door
-  is one size whatever it carries: its words have room for three lines
-  of the serif from the first frame, and its prints stand as
-  paper-edged frames until their photographs come into them, so a face
-  that arrives once the page is up never moves the page.
-- **The mount.** The selected photograph large, on the camera's dark, in
-  the frame the editor will give it (compose's own 4:5 to 1.91:1 clamp),
-  with the print's signature line under it — the date in tracked
-  capitals, how long ago in words — and POST, the page's one primary
-  action. POST, a tap on the photograph, or a second tap on the selected
-  cell (400 ms after selecting, so a double tap does not post) opens the
-  editor. It is half the page, between 230 and 400 points tall, and
-  every panel that stands in for it is the same box.
-- **The ways.** RECENT, then SHORT VIDEO (up to 60 seconds) and LIBRARY,
-  the iPhone's own picker, which needs no permission.
-- **The roll.** Photographs only (films are SHORT VIDEO's; VoiceOver
-  hears the header as "Recent photographs"), newest first, four to a
-  row, edge to edge, the camera
-  first on the iPhone, the selected one in the room's grease-pencil box.
-  Tapping a photograph selects it; tapped from far down the roll, the
-  page goes back up to it. Under full access screenshots are left out,
-  as the room leaves them out; under limited access every photograph the
-  member chose shows, with "VINTAGE sees only the photographs you chose."
-  and SHARE MORE above the roll.
-- **The foot.** Where the roll ends — the library's end, or 1,200 —
-  FURTHER BACK and ENTER THE MEMORY ROOM; not under a limited selection
-  read to its end, where the room has the same photographs and nothing
-  further back (SHARE MORE, above the roll, is the way to more).
+- **The header.** "Recent" and "Memory Room" side by side in the serif at
+  20 points, the page you are on in ink and the other in the quieter ink
+  (`colors.inkOther`: on paper #777063, the lightest tone of the mock's
+  hue that reads at 4.5:1, since the faint ink and the mock's own are
+  under 3:1 there; the faint ink on black). They stand in
+  `TabHeader` where the other tabs' titles stand (`PostHeader`), the
+  Post title kept there unseen so the header is the same height on every
+  tab, in the mock's 56-point band, which reaches 20 points below the
+  shared header into the tab's own top. They do not scroll away, and
+  their inks cross over as the pager moves. VoiceOver hears "Recent,
+  selected" and "Memory Room, button, opens the Memory Room".
+- **The photograph.** The selected one, large, on the paper, in a fixed
+  4:5 frame 27 points in from either edge (336 × 420 at 390 points),
+  at the shape the editor will post it (compose's own 4:5 to 1.91:1
+  clamp): a portrait fills the frame, a square or a landscape stands in
+  its middle, so nothing under it moves when the selection does. Only on
+  a phone too short to show a row of the roll under it (a 320 × 568 SE)
+  is the frame made smaller. On it, VINTAGE's date stamp, the posts' own
+  `DateStamp` in their corner, reading the photograph's capture date
+  (none where it has none, `src/post/stamp.ts`); the editor opened from
+  here starts with the stamp on, so the post is as it was shown. It comes
+  in as a soft proof and then the full image; offline, one kept only in
+  iCloud says IN ICLOUD in its corner after twelve seconds. A tap on it
+  opens the editor.
+- **The line.** LIBRARY at the left, the iPhone's own picker, which needs
+  no permission, in small, widely spaced capitals in the soft ink; VIDEO
+  beside it, the clip's picker, up to 60 seconds (it stays its own word:
+  its picker is the one with the trimmer, and one picker for both would
+  have lost the trimmer and handed the editor a different file); and
+  POST → at the right, in bold capitals in ink, which opens the selected
+  photograph in the editor. POST, a tap on the photograph, or a second
+  tap on the selected cell (400 ms after selecting, so a double tap does
+  not post) opens the editor. Under the line, only where there is no
+  trimmer (a browser), "Clips up to 60 seconds."
+- **The roll.** Newest first, four to a row, edge to edge, two points
+  between; on the iPhone the camera first, a tile of paper ruled in the
+  strong line with the camera's small mark; the selected photograph in a
+  three-point rust border drawn inside its cell. Tapping a photograph
+  selects it; tapped from far down the roll, the page goes back up to it.
+  Under full access screenshots are left out, as the room leaves them
+  out; under limited access every photograph the member chose shows, and
+  the tile after the camera is SHARE MORE.
 
-Tapping the Post tab again goes back to the top and selects the newest.
-The selection is kept for five minutes away from the tab, time in the
-background counting as time away; a photograph newer than the newest
-shown (one just taken in the Camera app, or just shared with VINTAGE) is
-selected as it arrives; and once the selected photograph has been
-posted, the selection moves to the newest not yet posted.
+**The Memory Room, by the header or a slide.** The page is a two-page
+pager (`PostPager`), the app's own on the iPhone and in the browser
+alike: the two pages side by side in a row, moved by a responder that
+follows `src/post/slide.ts`. Tapping MEMORY ROOM slides to the second
+page (a cut under Reduce Motion); so does Recent slid to the left,
+deliberately. The page does not move at all until the finger has gone 12
+points to the left and at least one and a half times as far sideways as
+up or down, with one finger; it then follows the finger, and is let go
+to the door only past half the width, or on a clear flick (0.6 points a
+millisecond) that has already carried it a fifth of the way; anything
+less, a quick short flick included, slides back. The roll's vertical
+scroll is the list's own, native, and gives way only to a drag more
+sideways than up or down, so scrolling the roll never moves the page.
+The slide costs one value set per touch move while it moves, on the
+JavaScript thread, and nothing at rest. (It used to be
+react-native-pager-view, a UIPageViewController, whose paging turns the
+page on any quick flick however short; the tabs' own pager still is.)
+When the pager comes to rest on the door's page (the room's paper, its
+name, and nothing read), the room is pushed, once, and only with the tab in front
+(`createRoomDoor`); once the room covers the tab (the stack's
+`transitionEnd`, or 1.2 seconds), the pager goes back to Recent without
+animation, so the room's chevron or the left edge lands on Recent. While
+the tab is in front the tabs' own pager is held still (`holdTabSwipe`),
+so the two never take the same drag: a slide to the left no longer goes
+to Activity, and one to the right does nothing (the tabs are a tap
+away). On this day and Set aside are in the room's own Contents.
+
+Tapping the Post tab again goes back to Recent and the top and selects
+the newest. The selection is kept for five minutes away from the tab,
+time in the background counting as time away; a photograph newer than
+the newest shown (one just taken in the Camera app, or just shared with
+VINTAGE) is selected as it arrives; and once the selected photograph has
+been posted, the selection moves to the newest not yet posted.
 
 A photograph from the roll is opened as the library picker's are
 (`composeParamsFor`): a 2048 px rendition from Photos, brought down from
@@ -641,18 +678,19 @@ deleted. Only if Photos cannot make that rendition is the photograph's
 own file read instead, as the picker's last resort (iOS brings the
 original down for it, and leaving the tab does not stop that read),
 then decoded to the editor's size. One way in opens at a time; every
-control rests while it does.
+control, and the pager, rests while it does.
 
-Its states, all on the same mount: before the tab has been in front, an
-empty box and wells; never asked, "Your photographs, right here." and
-CONTINUE, which is when iOS asks; refused, CHOOSE A PHOTOGRAPH (the
-picker, which needs no access) and under it the way to Settings
-(LIBRARY, SHORT VIDEO and the camera still work); reading, an empty box
-with a spinner after 400 ms; an empty library, or an empty selection
-with SHARE MORE; a library that would not answer, TRY AGAIN, never shown
-as empty; offline, a photograph kept only in iCloud says "In iCloud"
-under its proof. Without a library (Android, a browser outside the demo)
-it is the On this day door, CHOOSE A PHOTOGRAPH, the camera and the clip.
+Its states, all in the same frame, in the paper ruled in the strong
+line: before the tab has been in front, a well and wells; never asked,
+"Your photographs, right here." and CONTINUE, which is when iOS asks;
+refused, CHOOSE A PHOTOGRAPH (the picker, which needs no access) and
+under it the way to Settings (LIBRARY, VIDEO and the camera still work);
+reading, a well with a spinner after 400 ms; an empty library, or an
+empty selection with SHARE MORE; a library that would not answer, TRY
+AGAIN, never shown as empty. Without a library (Android, a browser
+outside the demo) there is no room and no pager: the header keeps the
+plain "Post", and the page is CHOOSE A PHOTOGRAPH, LIBRARY, VIDEO, the
+camera and the clip's limit.
 
 It reads nothing before it is first in front — the pager mounts it
 beside Search and Activity — and draws no photograph until then; once in
@@ -664,13 +702,11 @@ Room is read again in full the next time the tab is in front. Ten
 seconds after the tab is left, and at once when the app goes to the
 background, every photograph out of sight is let go, its view taken off
 the screen with it; the rows on the screen, one either side, and the
-mount stay, so the tab is just as it was whenever it is seen again,
+frame stay, so the tab is just as it was whenever it is seen again,
 swiped back to or come back to. On a memory warning all of them go while
-the tab is not in front, and in front the mount's full image over its
-proof. The doors' little prints stay. Leaving the tab, or the app going
-to the background, also stops the On this day door's reading under way,
-which starts again the next time the tab is in front. The rules and
-numbers are pure, in `src/post/roll.ts`, `dayDoor.ts` and `panels.ts`;
+the tab is not in front, and in front the frame's full image over its
+proof. The door's page holds no photograph. The rules and numbers are
+pure, in `src/post/roll.ts`, `slide.ts`, `stamp.ts` and `panels.ts`;
 `tests/post-*.test.ts` and `tests/create-entry.test.ts` hold them, and
 `e2e/post-test.mjs` walks the tab in the web demo.
 

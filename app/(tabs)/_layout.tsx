@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import Feather from "@expo/vector-icons/Feather";
 import { fetchUnreadMessageCount } from "@/api/messages";
+import { PostHeader } from "@/components/post/PostHeader";
+import { darkroomAvailable } from "@/darkroom/source";
 import { SwipeTabs } from "@/navigation/SwipeTabs";
 import { useTabSwipeEnabled } from "@/utils/tabSwipe";
 import { keepPagerToOneFinger } from "@/utils/pagerTouches";
@@ -26,7 +28,8 @@ import { useNameTitleStyle } from "@/utils/nameFace";
 export default function TabsLayout() {
   const { session, profile, profileLoaded } = useSession();
   const insets = useSafeAreaInsets();
-  // Held still while a screen owns a sideways drag of its own (a magnified timeline).
+  // Held still while a screen owns a sideways drag of its own: a magnified timeline, and the Post
+  // tab while it is in front, whose own pager slides from Recent to the Memory Room.
   const swipeEnabled = useTabSwipeEnabled();
   // Two fingers are a pinch, never a swipe: the pager is told so as soon as
   // it is on screen, before any pinch can begin. See src/utils/pagerTouches.
@@ -107,8 +110,8 @@ export default function TabsLayout() {
             title: "Post",
             tabBarIcon: ({ color }) => <Feather name="plus-square" size={23} color={color} />,
           }}
-          // Tapping Post while already on Post is "again", as Home's is: the
-          // roll back to the top and the newest photograph selected.
+          // Tapping Post while already on Post is "again", as Home's is:
+          // Recent, the roll back to the top and the newest photograph selected.
           listeners={({ navigation }) => ({
             tabPress: () => {
               if (navigation.isFocused()) emitPostAgain();
@@ -143,7 +146,13 @@ const TITLES: Record<string, string> = {
 
 /**
  * The pager has no header of its own, so the tabs share one. Home flies the
- * wordmark; the profile flies the member's username.
+ * wordmark; the profile flies the member's username. The Post tab, where
+ * there is a Memory Room, flies its two pages, RECENT and MEMORY ROOM
+ * (`PostHeader`), in the title's place: the title stays, unseen, so the
+ * header is the same height on every tab and nothing under it moves as the
+ * tabs change, and the two words stand in the owner's mock's band, which
+ * reaches 20 points below the header into the Post tab's own top. The
+ * header is drawn over the tabs for that.
  */
 function TabHeader({ username, userId }: { username?: string; userId: string }) {
   const router = useRouter();
@@ -168,6 +177,7 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
   const titleStyle = useNameTitleStyle(tab === "profile" && username != null);
   const { fontScale } = useWindowDimensions();
   const nameTitle = titleStyle.fontSize !== styles.headerTitle.fontSize ? { marginVertical: styles.nameTitle.marginVertical * fontScale } : undefined;
+  const pages = tab === "create" && darkroomAvailable();
 
   // Messages hang off the feed, the way a letter tray sits beside a desk —
   // not a tab of their own, since they aren't a place you browse.
@@ -182,8 +192,15 @@ function TabHeader({ username, userId }: { username?: string; userId: string }) 
       {title === null ? (
         <Text style={styles.wordmark}>VINTAGE</Text>
       ) : (
-        <Text style={[styles.headerTitle, titleStyle, nameTitle]}>{title}</Text>
+        <Text
+          style={[styles.headerTitle, titleStyle, nameTitle, pages && styles.unseen]}
+          accessibilityElementsHidden={pages}
+          importantForAccessibility={pages ? "no-hide-descendants" : "auto"}
+        >
+          {title}
+        </Text>
       )}
+      {pages ? <PostHeader /> : null}
       {tab === "index" ? (
         <Pressable
           style={styles.headerAction}
@@ -206,6 +223,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingBottom: spacing.sm,
+    // Over the tabs: the Post tab's two words reach below it.
+    zIndex: 1,
   },
   wordmark: { ...type.wordmark, fontSize: 20, letterSpacing: 4 },
   headerAction: { position: "absolute", right: spacing.lg, bottom: spacing.sm },
@@ -224,6 +243,7 @@ const styles = StyleSheet.create({
   // TabHeader scales it with the reader's. (On the web, where the serif's line is the browser's own serif's, 19.5
   // to 20 pt, the Profile tab's bar is up to two thirds of a point shorter than the others.)
   nameTitle: { marginVertical: -4.34 },
+  unseen: { opacity: 0 },
   bar: {
     backgroundColor: colors.paper,
     borderTopWidth: 1,

@@ -394,8 +394,8 @@ describe("the Post tab", () => {
       expect(src, f).not.toMatch(/readAccess|requestAccess|\.oldest\(|getPermissionsAsync|requestPermissionsAsync|getAssetsAsync|libraryGranted|watchLibrary/);
     }
     // Only these four ask the library anything, or open one of its photographs.
-    const asking = postFiles.filter((f) => /darkroomSource|readDayDoor\(|source\.(page|count|oldest)\(|composeParamsFor|readAccess|requestAccess/.test(code(f)));
-    expect(asking.sort()).toEqual(["src/post/dayDoor.ts", "src/post/openPrint.ts", "src/post/useDayDoor.ts", "src/post/useRoll.ts"]);
+    const asking = postFiles.filter((f) => /darkroomSource|source\.(page|count|oldest)\(|composeParamsFor|readAccess|requestAccess/.test(code(f)));
+    expect(asking.sort()).toEqual(["src/post/openPrint.ts", "src/post/useRoll.ts"]);
   });
 
   it("reads the library only once the tab is in front, and asks for it only from the panel's CONTINUE", () => {
@@ -432,7 +432,6 @@ describe("the Post tab", () => {
 
   it("reads through the room's own gate, in bounded pages and with no cursor", () => {
     expect(roll).toMatch(/return s \? gated\(s\) : null;/);
-    expect(code("src/post/useDayDoor.ts")).toMatch(/return s \? inBackground\(s\) : null;/);
     for (const f of postFiles) expect(code(f), f).not.toMatch(/\bafter\s*:/);
     expect(roll).toMatch(/first: ROLL_FIRST, order: "desc"/);
     expect(roll).toMatch(/first: ROLL_PAGE, order: "desc"/);
@@ -442,8 +441,6 @@ describe("the Post tab", () => {
     let images = 0;
     for (const [f, src] of parts) {
       for (const image of src.match(/<Image\b[\s\S]*?\/>/g) ?? []) {
-        // The one photograph the member posted is the server's thumbnail; every other is the library's.
-        if (/source=\{memory\.source\}/.test(image)) continue;
         images += 1;
         expect(image, f).toMatch(/source=\{[^}]*printSource\(/);
         expect(image, f).toContain('cachePolicy="none"');
@@ -457,8 +454,8 @@ describe("the Post tab", () => {
       }
       expect(src, f).not.toMatch(/prefetch/i);
     }
-    // The cells, the mount's proof and photograph, and the doors' prints.
-    expect(images).toBe(4);
+    // The cells, and the frame's proof and photograph: the door's page draws none.
+    expect(images).toBe(3);
     for (const f of postFiles) expect(code(f), f).not.toMatch(/prefetch/i);
     expect(tab).not.toMatch(/prefetch/i);
   });
@@ -487,33 +484,37 @@ describe("the Post tab", () => {
     expect(hero).toMatch(/\{released \? null : \(\s*<Image\s+source=\{printSource\(print\.uri\)\}[^>]*?transition=\{0\}/);
     expect(hero).toMatch(/\{released \|\| heroReleased \? null : \(\s*<Image\s+source=\{printSource\(print\.uri\)\}/);
     for (const [f, src] of parts) expect(src, f).not.toMatch(/source=\{[^}]*\? null :/);
-    // The doors' prints are a few points across: they stay while the tab rests, so the doors never change face.
-    expect(tab).toMatch(/const pictures = allowed;/);
     expect(tab).not.toMatch(/roll\.released/);
   });
 
-  it("reads where the member left off from the place file, and the shelf from its own", () => {
-    expect(tab).toMatch(/import \{ placeCover, placeLine \} from "@\/darkroom\/session"/);
-    expect(tab).toMatch(/import \{ useSetAside \} from "@\/darkroom\/setAside"/);
-    expect(tab).toMatch(/useFocusEffect\([\s\S]*setPlace\(\{ line: placeLine\(\), cover: placeCover\(\) \}\)/);
+  it("reads nothing of the room's own: no place, no shelf, and its door's page draws nothing from the library", () => {
+    expect(tab).not.toMatch(/@\/darkroom\/session|@\/darkroom\/setAside|placeLine|placeCover|useSetAside/);
+    expect(tab).not.toMatch(/fetchUserPosts|useQuery/);
+    const door = parts.find(([f]) => f.endsWith("DoorPage.tsx"))![1];
+    expect(door).not.toMatch(/<Image|printSource|@\/darkroom/);
+    const header = parts.find(([f]) => f.endsWith("PostHeader.tsx"))![1];
+    expect(header).not.toMatch(/<Image|printSource|@\/darkroom/);
   });
 
-  it("opens the room, its shelf and On this day", () => {
-    expect(tab).toMatch(/router\.push\("\/darkroom"\)/);
-    expect(tab).toMatch(/params: \{ mode: "set-aside" \}/);
-    expect(tab).toMatch(/router\.push\("\/memories"\)/);
+  it("opens the room from its door's page, and leaves On this day and Set aside to the room's own Contents", () => {
+    expect(tab.match(/\.push\("\/darkroom"\)/g)).toHaveLength(1);
+    expect(tab).toMatch(/push: \(\) => routerRef\.current\.push\("\/darkroom"\)/);
+    expect(tab).not.toMatch(/\/memories|set-aside/);
     expect(tab).toMatch(/darkroomAvailable\(\)/);
+    const contents = code("src/components/darkroom/Contents.tsx");
+    expect(contents).toMatch(/title="On this day"/);
+    expect(contents).toMatch(/title="Set aside"/);
+    expect(contents).toMatch(/onChoose\("on-this-day"\)/);
+    expect(contents).toMatch(/onChoose\("set-aside"\)/);
   });
 
   it("says the room's name, never the old one, and only what the spec says", () => {
-    const all = [tab, ...parts.map(([, src]) => src), code("src/post/panels.ts"), code("src/post/dayDoor.ts"), code("src/post/roll.ts")].join("\n");
+    const all = [tab, ...parts.map(([, src]) => src), code("src/post/panels.ts"), code("src/post/roll.ts")].join("\n");
     for (const words of [
       "The Memory Room",
-      '"Rediscover something worth sharing."',
-      'title="Enter the Memory Room"',
-      'accessibilityHint="Opens your photographs, one at a time, from further back."',
-      'accessibilityHint="Opens the photographs you set aside."',
-      'accessibilityHint="Opens what you posted and photographed on this date in other years."',
+      'word="Memory Room"',
+      'hint="Opens the Memory Room."',
+      'word="Recent"',
       'label: "Continue", hint: "Asks to see your photo library.", act: "ask"',
       'label="Library"',
     ]) {
@@ -611,8 +612,10 @@ describe("the privacy policy", () => {
     // a post from the roll goes into the Memory Room's list (src/darkroom/posted.ts), so the policy
     // cannot say it keeps nothing.
     expect(text).toContain(
-      "The Post tab shows your newest photographs first, and counts the photographs you took on today’s date in earlier years; it reads them on your phone while the tab is open and writes nothing down about them except which ones you post, in the list below.",
+      "The Post tab shows your newest photographs first; it reads them on your phone while the tab is open and writes nothing down about them except which ones you post, in the list below.",
     );
+    // It no longer counts this date's photographs in earlier years: that was its On this day door's.
+    expect(text).not.toMatch(/counts the photographs you took on today/);
     expect(text).not.toContain("keeps nothing about them");
     expect(text).toContain("photographs you posted from either, for a year");
     expect(text).not.toMatch(/'/);

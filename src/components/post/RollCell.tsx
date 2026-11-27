@@ -4,17 +4,19 @@ import { Image } from "expo-image";
 import Feather from "@expo/vector-icons/Feather";
 import { printSource } from "@/darkroom/printSource";
 import type { Print } from "@/darkroom/types";
-import { cellLabel, GAP, type RollRow as Row } from "@/post/roll";
+import { CAMERA_LINE, CAMERA_MARK, cellLabel, GAP, SELECTED_BORDER, type RollRow as Row } from "@/post/roll";
 import { colors, type } from "@/theme";
 
 /**
- * The roll, four to a row, edge to edge, two points between: each cell
- * the member's own photograph, drawn straight off the phone at the
- * cell's size and kept by the cell alone (never in the shared image
- * cache, never on disk). The one selected wears the grease-pencil box the
- * Memory Room's glide strip draws, in the accent, with a hairline of
- * paper inside it so it reads on any photograph. On the iPhone the roll
- * begins with the camera, in the camera's own dark.
+ * The roll, four to a row, edge to edge, two points between, as the
+ * owner's mock has it: each cell the member's own photograph, drawn
+ * straight off the phone at the cell's size and kept by the cell alone
+ * (never in the shared image cache, never on disk). The one selected
+ * wears a rust border three points wide, the accent, drawn inside the
+ * cell so nothing shifts. On the iPhone the roll begins with the camera:
+ * the paper, ruled in the strong line, with the camera's small mark in
+ * ink. Under a limited selection the tile after it is SHARE MORE, in the
+ * same paper, the way to let VINTAGE see more.
  *
  * A row is drawn again only when something in it changes: the selection
  * moving in or out of it, a cell opening, the tab letting its pictures go.
@@ -42,6 +44,7 @@ export const RollRow = React.memo(function RollRow({
   onCell,
   onPost,
   onCamera,
+  onShareMore,
 }: {
   row: Row;
   size: number;
@@ -59,12 +62,15 @@ export const RollRow = React.memo(function RollRow({
   onCell: (print: Print) => void;
   onPost: (print: Print) => void;
   onCamera?: () => void;
+  onShareMore?: () => void;
 }) {
   return (
     <View style={styles.row}>
       {row.items.map((item) =>
         item.kind === "camera" ? (
           <CameraTile key={item.key} size={size} busy={cameraBusy} held={held} onPress={onCamera} />
+        ) : item.kind === "more" ? (
+          <ShareMoreTile key={item.key} size={size} held={held} onPress={onShareMore} />
         ) : item.kind === "well" ? (
           <Well key={item.key} size={size} dim={dim} />
         ) : (
@@ -139,11 +145,7 @@ export const RollCell = React.memo(function RollCell({
           accessibilityIgnoresInvertColors
         />
       )}
-      {selected ? (
-        <View style={styles.box} pointerEvents="none">
-          <View style={styles.boxInner} />
-        </View>
-      ) : null}
+      {selected ? <View testID="post-cell-box" style={styles.box} pointerEvents="none" /> : null}
       {busy ? (
         <View style={styles.scrim} pointerEvents="none">
           <ActivityIndicator color={colors.onCamera} />
@@ -153,29 +155,41 @@ export const RollCell = React.memo(function RollCell({
   );
 });
 
-/** The camera, first in the roll on the iPhone: its mark and its word, light on the camera's dark. */
+/** The camera, first in the roll on the iPhone: the paper, ruled in the strong line, and its small mark in ink. */
 export function CameraTile({ size, busy, held, onPress }: { size: number; busy: boolean; held: boolean; onPress?: () => void }) {
   return (
     <Pressable
       testID="post-camera"
       onPress={onPress}
       disabled={held || !onPress}
-      style={({ pressed }) => [styles.camera, { width: size, height: size }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.tile, { width: size, height: size }, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel="Camera"
       accessibilityHint="Take one now"
       accessibilityState={{ busy, disabled: held }}
     >
-      {busy ? (
-        <ActivityIndicator color={colors.onCamera} />
-      ) : (
-        <>
-          <Feather name="camera" size={22} color={colors.onCamera} />
-          <Text style={styles.cameraWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
-            Camera
-          </Text>
-        </>
-      )}
+      {busy ? <ActivityIndicator color={colors.ink} /> : <Feather name="camera" size={CAMERA_MARK} color={colors.ink} />}
+    </Pressable>
+  );
+}
+
+/** Under a limited selection, after the camera: the way to let VINTAGE see more, in the camera tile's paper. */
+export function ShareMoreTile({ size, held, onPress }: { size: number; held: boolean; onPress?: () => void }) {
+  return (
+    <Pressable
+      testID="post-share-more"
+      onPress={onPress}
+      disabled={held || !onPress}
+      style={({ pressed }) => [styles.tile, styles.more, { width: size, height: size }, pressed && styles.pressed]}
+      accessibilityRole="button"
+      accessibilityLabel="Share more"
+      accessibilityHint="VINTAGE sees only the photographs you chose. Opens iOS’s list of them."
+      accessibilityState={{ disabled: held }}
+    >
+      <Feather name="plus" size={CAMERA_MARK} color={colors.ink} />
+      <Text style={styles.moreWord} maxFontSizeMultiplier={BAR_TYPE_CAP}>
+        Share more
+      </Text>
     </Pressable>
   );
 }
@@ -195,12 +209,18 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: GAP, marginBottom: GAP },
   cell: { backgroundColor: colors.paperSunken, overflow: "hidden" },
   pressed: { opacity: 0.6 },
-  // The grease pencil: the accent, and a hairline of paper inside it, so it reads on any photograph.
-  box: { ...StyleSheet.absoluteFillObject, borderWidth: 2.5, borderColor: colors.accent },
-  boxInner: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderWidth: 1, borderColor: colors.paper, opacity: 0.55 },
+  // The mock's rust border, inside the cell.
+  box: { ...StyleSheet.absoluteFillObject, borderWidth: SELECTED_BORDER, borderColor: colors.accent },
   scrim: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", backgroundColor: SCRIM },
-  camera: { backgroundColor: colors.cameraTile, alignItems: "center", justifyContent: "center", gap: 7 },
-  cameraWord: { fontFamily: type.mono, fontSize: 9.5, letterSpacing: 1.8, textTransform: "uppercase", color: colors.onCamera },
+  tile: {
+    backgroundColor: colors.paper,
+    borderWidth: CAMERA_LINE,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  more: { gap: 8 },
+  moreWord: { fontFamily: type.mono, fontSize: 9, letterSpacing: 1.8, textTransform: "uppercase", color: colors.ink, textAlign: "center" },
   well: { backgroundColor: colors.paperSunken },
   wellDim: { opacity: 0.7 },
 });

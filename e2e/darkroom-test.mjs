@@ -1,5 +1,5 @@
 // The Darkroom, walked through the real interface in the demo web build:
-// the door on the Post tab → the first-visit page → On this day, on the
+// MEMORY ROOM on the Post tab → the first-visit page → On this day, on the
 // app's own page, each plate with its signature line, CONTENTS a tab with
 // a line under it on a first visit, POST under the caption and the glide
 // strip under POST, with nothing pressed → a page turn, and the strip
@@ -204,11 +204,11 @@ const signIn = async (p) => {
   await seen(p.getByText("Sign in", { exact: true })).last().click();
   await p.waitForTimeout(3000);
 };
-/** Through the Post tab's door and the first-visit page, into On this day. */
+/** Through the Post tab's header, MEMORY ROOM, and the first-visit page, into On this day. */
 const enterRoom = async (p) => {
   await p.goto(B + "/create", { waitUntil: "networkidle" });
   await p.waitForTimeout(2200);
-  const bar = seen(p.getByRole("button", { name: /^The Memory Room/ })).first();
+  const bar = seen(p.locator('[data-testid="post-head-room"]')).first();
   if (await bar.count()) await bar.click();
   else await p.goto(B + "/darkroom", { waitUntil: "networkidle" });
   await seen(p.locator('[data-testid="darkroom-word-enter"]')).first().click({ timeout: 10000 });
@@ -219,21 +219,21 @@ const enterRoom = async (p) => {
 // --- signed in as a demo member ---------------------------------------------------
 await signIn(page);
 
-// --- the door on the Post tab -----------------------------------------------------
+// --- the way in on the Post tab ---------------------------------------------------
 await page.goto(B + "/create", { waitUntil: "networkidle" });
 await wait(2200);
 const post = await text();
 check(
-  "The Post tab offers the Memory Room",
-  /The Memory Room/.test(post) && /Rediscover something worth sharing\.|You left off in /.test(post),
+  "The Post tab offers the Memory Room, beside Recent at its top",
+  /Recent/.test(post) && /Memory Room/.test(post) && (await seen(page.getByRole("button", { name: /^Memory Room$/ })).count()) > 0,
 );
 check("The ordinary picker is still one tap away", (await seen(page.getByRole("button", { name: /^Library$/ })).count()) > 0);
 await shot("entry");
 
 // --- the first visit ----------------------------------------------------------------
-// The door is named by its eyebrow, then its line.
-const door = seen(page.getByRole("button", { name: /^The Memory Room/ })).first();
-check("The Memory Room has its own door on the Post tab", (await door.count()) > 0);
+// MEMORY ROOM in the Post tab's header, which slides to the room's door and opens the room.
+const door = seen(page.getByRole("button", { name: /^Memory Room$/ })).first();
+check("The Memory Room has its own way in on the Post tab", (await door.count()) > 0);
 if (await door.count()) await door.click();
 else await page.goto(B + "/darkroom", { waitUntil: "networkidle" });
 const firstVisit = await appears("darkroom-page-firstVisit");

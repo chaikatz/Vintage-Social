@@ -386,9 +386,11 @@ sentences as strings with `inviter`, and its import goes; in
 `NamedWords` go, `app/follows.tsx` hands it its two sentences as strings
 with `username` again (`undefined` while there is none), and
 `src/components/EraList.tsx` hands it `empty.body` and no `name`; in
-`app/(tabs)/_layout.tsx` the Profile tab's title loses `titleStyle` and
-`nameTitle`, and `useWindowDimensions`, `fontScale` and `styles.nameTitle`
-go.
+`app/(tabs)/_layout.tsx` the tab title's style loses `titleStyle` and
+`nameTitle` (it is `[styles.headerTitle, pages && styles.unseen]` again,
+as on `claude/product-polish`, the Post tab's title kept there unseen
+under its two words), and `useWindowDimensions`, `fontScale` and
+`styles.nameTitle` go.
 
 Outside the code, two lines of `APP_STORE_LAUNCH.md` are the
 experiment's: the "What you test on TestFlight" row of the table in

@@ -98,9 +98,11 @@ describe("what each panel says", () => {
       bar: { label: "Choose a photograph", hint: "Opens your photo library. Nothing is shared until you choose Share to VINTAGE.", act: "choose" },
     });
     const tab = code("app/(tabs)/create.tsx");
-    const alone = tab.slice(tab.indexOf("if (!door) {"), tab.indexOf("const dim"));
+    const alone = tab.slice(tab.indexOf("if (!room) {"), tab.indexOf("const dim"));
     expect(alone).toMatch(/kind="unavailable"/);
     expect(alone).toMatch(/\{clipNote\}/);
+    // No roll there, so the camera is a word on the line, beside LIBRARY and VIDEO.
+    expect(alone).toMatch(/<WaysRow[\s\S]*?camera=\{native\}[\s\S]*?canPost=\{false\}/);
     expect(tab).toMatch(/Platform\.OS !== "ios" \? \(/);
   });
 
@@ -147,5 +149,33 @@ describe("the one button before iOS's own prompt", () => {
     const words = firstVisitPage("undetermined").words;
     expect(words).toHaveLength(1);
     expect(words[0].label).toMatch(neutral);
+  });
+});
+
+describe("the panel's bar on the narrowest phone", () => {
+  it("keeps CHOOSE A PHOTOGRAPH on one line on a 320-point SE, clear of its arrow", async () => {
+    const { previewFrame, recentHeight } = await import("@/post/roll");
+    const src = readFileSync(path.join(root, "src/components/post/MountPanel.tsx"), "utf8");
+    const num = (re: RegExp) => Number(src.match(re)?.[1]);
+    // The SE's frame (20 points of status bar, no home indicator), the panel's narrow padding and border, the bar's narrow padding.
+    const frame = previewFrame(320, recentHeight(568, 20, 0));
+    expect(Math.round(frame.width)).toBe(253);
+    expect(src).toMatch(/panelNarrow: \{ paddingHorizontal: spacing\.lg,/);
+    const bar = frame.width - 2 * 1 - 2 * 16;
+    const pad = num(/barNarrow: \{[^}]*paddingHorizontal: (\d+)/);
+    const inside = bar - 2 * pad;
+    // Courier New's every letter is 0.6 of its size across; iOS spaces each, the last included.
+    const tracking = num(/barWordNarrow: \{ letterSpacing: ([\d.]+) \}/);
+    const label = "Choose a photograph";
+    const width = label.length * (11 * 0.6 + tracking);
+    expect(width).toBeLessThanOrEqual(inside - 12);
+    // Centred, it ends short of the arrow (16 across, this far in from the bar's end), the last spacing aside.
+    const arrowRight = num(/arrowNarrow: \{ right: (\d+) \}/);
+    const textEnd = bar / 2 + width / 2 - tracking;
+    expect(bar - arrowRight - 16 - textEnd).toBeGreaterThanOrEqual(4);
+    // At the wide phones' spacing and padding it was wider than the bar had inside: the line break the SE showed.
+    expect(label.length * (11 * 0.6 + 2.2)).toBeGreaterThan(bar - 2 * 32);
+    expect(src).toMatch(/style=\{\[styles\.barWord, narrow && styles\.barWordNarrow\]\}/);
+    expect(src).toMatch(/style=\{\[styles\.arrow, narrow && styles\.arrowNarrow\]\}/);
   });
 });

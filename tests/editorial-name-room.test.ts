@@ -389,7 +389,8 @@ describe("a bar titled with a username", () => {
     // The thread's title is a link, drawn by NameTitle under both layouts.
     expect(code("app/messages/[id].tsx")).toMatch(/<NameTitle tintColor=\{tintColor\} style=\{titleStyle\}>\s*\{children\}\s*<\/NameTitle>/);
     // The Profile tab's title, which the app draws itself, takes the room with the title style.
-    expect(code("app/(tabs)/_layout.tsx")).toMatch(/<Text style=\{\[styles\.headerTitle, titleStyle, nameTitle\]\}>\{title\}<\/Text>/);
+    // (The Post tab's title is kept there unseen, under its two words: `pages && styles.unseen`, product-polish's.)
+    expect(code("app/(tabs)/_layout.tsx")).toMatch(/<Text\s+style=\{\[styles\.headerTitle, titleStyle, nameTitle, pages && styles\.unseen\]\}[^>]*>\s*\{title\}\s*<\/Text>/);
   });
 });
 
