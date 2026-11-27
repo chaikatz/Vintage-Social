@@ -63,6 +63,8 @@ describe("the light print", () => {
     expect(onPaper).toEqual({
       ...light,
       wash: light.paperSunken,
+      // The other page's name in the Post tab's header: the soft ink, the faint one being under 3:1 on paper.
+      inkOther: light.inkSoft,
       like: "#B3402E",
       danger: "#A03B2E",
       success: "#5C7048",
