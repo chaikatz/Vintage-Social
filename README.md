@@ -187,9 +187,11 @@ builds, and most only to demo mode:
   photographs, the newest some hundred days old; no camera tile, and the
   clip's limit is written under the line, since the browser's picker has
   no trimmer). Recent slides to the Memory Room's door under a mouse or a
-  finger by the same rule as the phone (`src/post/slide.ts`), in the
-  browser's own pager (`PostPager.web.tsx`); `/memories`' library section
-  stays off on web.
+  finger in the same pager, by the same rule, as on the phone (`PostPager`,
+  `src/post/slide.ts`); in the browser only, a mouse dragged across it
+  picks up no picture and selects no words, and the click that ends a
+  slide is not taken as a tap. `/memories`' library section stays off on
+  web.
 - **Video thumbnails:** not generated on web; the grid falls back to the
   raw media.
 - **Dialogs:** native action sheets become `window.confirm`/`prompt`.
@@ -435,9 +437,10 @@ second page: MEMORY ROOM in its header, tapped, or Recent slid to the
 left, deliberately (see The Post tab, below); the room fades in over the
 door's page, in the room's own paper. On this day and Set aside are
 chapters in its own Contents. `app/memories.tsx` (reached from its
-notification) opens the room's On this day from its library rows, at
-every photograph of the day or at one year's. It exists on iOS and in the
-web demo only.
+notification, and from ON THIS DAY on your own profile on a day you
+posted from in an earlier year, `OnThisDayLine`) opens the room's On
+this day from its library rows, at every photograph of the day or at one
+year's. It exists on iOS and in the web demo only.
 
 There are four ways in, chosen in Contents (the chapter name, or the
 CONTENTS tab in the running head, which says what is inside until it is
@@ -590,8 +593,9 @@ room's door. Top to bottom:
 
 - **The header.** "Recent" and "Memory Room" side by side in the serif at
   20 points, the page you are on in ink and the other in the quieter ink
-  (`colors.inkOther`: the soft ink on paper, since the faint ink and the
-  mock's own are under 3:1 there; the faint ink on black). They stand in
+  (`colors.inkOther`: on paper #777063, the lightest tone of the mock's
+  hue that reads at 4.5:1, since the faint ink and the mock's own are
+  under 3:1 there; the faint ink on black). They stand in
   `TabHeader` where the other tabs' titles stand (`PostHeader`), the
   Post title kept there unseen so the header is the same height on every
   tab, in the mock's 56-point band, which reaches 20 points below the
@@ -631,16 +635,24 @@ room's door. Top to bottom:
   the tile after the camera is SHARE MORE.
 
 **The Memory Room, by the header or a slide.** The page is a two-page
-pager (`PostPager`: react-native-pager-view on the phone, the app's own
-in the browser). Tapping MEMORY ROOM slides to the second page (a cut
-under Reduce Motion); so does Recent slid to the left, deliberately: on
-the iPhone by UIKit's own paging (the nearer page on release, or the
-next on a clear flick) and its direction lock, so scrolling the roll
-never pages; in the browser by `src/post/slide.ts` (12 points to the
-left and plainly sideways before the page moves at all; past half the
-width, or a flick that has carried it a fifth of the way). When the
-pager comes to rest on the door's page (the room's paper, its name, and
-nothing read), the room is pushed, once, and only with the tab in front
+pager (`PostPager`), the app's own on the iPhone and in the browser
+alike: the two pages side by side in a row, moved by a responder that
+follows `src/post/slide.ts`. Tapping MEMORY ROOM slides to the second
+page (a cut under Reduce Motion); so does Recent slid to the left,
+deliberately. The page does not move at all until the finger has gone 12
+points to the left and at least one and a half times as far sideways as
+up or down, with one finger; it then follows the finger, and is let go
+to the door only past half the width, or on a clear flick (0.6 points a
+millisecond) that has already carried it a fifth of the way; anything
+less, a quick short flick included, slides back. The roll's vertical
+scroll is the list's own, native, and gives way only to a drag more
+sideways than up or down, so scrolling the roll never moves the page.
+The slide costs one value set per touch move while it moves, on the
+JavaScript thread, and nothing at rest. (It used to be
+react-native-pager-view, a UIPageViewController, whose paging turns the
+page on any quick flick however short; the tabs' own pager still is.)
+When the pager comes to rest on the door's page (the room's paper, its
+name, and nothing read), the room is pushed, once, and only with the tab in front
 (`createRoomDoor`); once the room covers the tab (the stack's
 `transitionEnd`, or 1.2 seconds), the pager goes back to Recent without
 animation, so the room's chevron or the left edge lands on Recent. While

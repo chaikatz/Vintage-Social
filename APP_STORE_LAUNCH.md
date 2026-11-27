@@ -901,8 +901,9 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
    a few pages; open CONTENTS (On this day and Set aside are there); POST
    one → editor → Share to VINTAGE. Back (chevron or left edge): the Post
    tab is on Recent. Slide Recent slowly to the left past half: the room
-   opens again; a short slide, a scroll of the roll or a diagonal drag
-   does not.
+   opens again. A slow slide let go short of half, a quick short flick
+   (a thumb's width), a scroll of the roll or a diagonal drag does not:
+   the page stays, or slides back to Recent.
 8. Post a photograph from Library, and a short film from Video. Both play
    and show when opened.
 9. From the second account: like and comment on it. Activity shows both;
@@ -917,7 +918,10 @@ Have a second account (or a second phone) for steps 9–13, 16 and 18.
     share sheet, VINTAGE adds that print to your library…". Allow; it is in
     Photos. Copy the link instead and open it in Safari: the page and the
     photograph show.
-12. Profile → Posted, Taken, Timeline, Eras, Map, Places all open.
+12. Profile → Posted, Taken, Timeline, Eras, Map, Places all open. On a
+    day you posted from in an earlier year, ON THIS DAY stands above them
+    ("1 year ago today…"); a tap opens On this day (a build from round 27
+    on; on other days the line is not there).
 13. Settings → Appearance → Dark: the page is black, type white. Back to
     Automatic.
 
